@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Plugin Name: My Tool Library
  * Plugin URI: https://mkelibrary.org
@@ -12,13 +11,15 @@
  * License: GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: my-tool-library
+ *
+ * @package My_Tool_Library
  */
 
-// Prevent direct file access
+// Prevent direct file access.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
-// Define the plugin directory path if not already defined
+// Define the plugin directory path if not already defined.
 if ( ! defined( 'MTL_PLUGIN_DIR' ) ) {
 	define( 'MTL_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 }
@@ -37,7 +38,7 @@ function mtl_format_date( $value, $format = 'm/d/Y' ) {
 		return '&mdash;';
 	}
 	$ts = strtotime( $value );
-	return $ts ? esc_html( date( $format, $ts ) ) : '&mdash;';
+	return $ts ? esc_html( gmdate( $format, $ts ) ) : '&mdash;';
 }
 
 /**
@@ -52,7 +53,7 @@ function mtl_format_date( $value, $format = 'm/d/Y' ) {
 function mtl_member_address_lines( $member ) {
 	$line1 = stripslashes( (string) $member->address_line1 );
 	$line2 = stripslashes( (string) $member->address_line2 );
-	if ( $line2 !== '' ) {
+	if ( '' !== $line2 ) {
 		$line1 .= ' ' . $line2;
 	}
 
@@ -62,7 +63,7 @@ function mtl_member_address_lines( $member ) {
 	$csz   = trim( trim( $city . ', ' . $state ) . ' ' . $zip );
 
 	$country    = trim( (string) $member->country );
-	$line2_full = $country !== '' ? trim( $csz . ', ' . $country, ', ' ) : $csz;
+	$line2_full = '' !== $country ? trim( $csz . ', ' . $country, ', ' ) : $csz;
 
 	return array( $line1, $line2_full );
 }
@@ -407,8 +408,8 @@ function mtl_valid_country( $value ) {
  * check an existing member record by ID, see member-pages.php's
  * mtl_member_is_verified().
  *
- * @param string|null $photo_id_scan_url
- * @param string|null $address_proof_scan_url
+ * @param string|null $photo_id_scan_url Candidate photo ID scan URL.
+ * @param string|null $address_proof_scan_url Candidate proof-of-address scan URL.
  * @return bool
  */
 function mtl_verification_urls_complete( $photo_id_scan_url, $address_proof_scan_url ) {
@@ -419,7 +420,7 @@ function mtl_verification_urls_complete( $photo_id_scan_url, $address_proof_scan
  * Finds the WordPress user account linked to a member row, if any (a member
  * added by staff with no online account has none).
  *
- * @param int $member_id
+ * @param int $member_id Member row ID.
  * @return int WP user ID, or 0 if unlinked.
  */
 function mtl_find_wp_user_id_by_member_id( $member_id ) {
@@ -450,7 +451,7 @@ function mtl_find_wp_user_id_by_member_id( $member_id ) {
  * alone, same as a retired tool's loan -- the member still physically has
  * the item, so it can still be ended normally whenever it's returned.
  *
- * @param int $member_id
+ * @param int $member_id Member row ID.
  * @return array{outcome:string,name:string,cancelled_reservations:int} outcome is 'deleted', 'anonymized', or 'not_found'; name is the display name captured before any changes.
  */
 function mtl_delete_or_anonymize_member( $member_id ) {
@@ -463,12 +464,13 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 	$name = trim(
 		(string) $wpdb->get_var(
 			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				"SELECT CONCAT(first_name, ' ', last_name) FROM {$tbl_members} WHERE member_id = %d",
 				$member_id
 			)
 		)
 	);
-	if ( $name === '' ) {
+	if ( '' === $name ) {
 		// Already gone (double-submit, stale page) -- nothing to do.
 		return array(
 			'outcome'                => 'not_found',
@@ -480,6 +482,7 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 
 	$cancelled_reservations = (int) $wpdb->query(
 		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 			"UPDATE {$tbl_res} SET expiry_date = %s WHERE member_id = %d AND expiry_date IS NULL",
 			current_time( 'mysql' ),
 			$member_id
@@ -528,19 +531,24 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 	);
 }
 
-// Admin pages
+// Admin pages.
 require_once MTL_PLUGIN_DIR . 'admin/dashboard-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/inventory-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/membership-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/loans-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/setup-page.php';
 
-// Public-facing customer pages
+// Public-facing customer pages.
 require_once MTL_PLUGIN_DIR . 'public/shop-page.php';
 require_once MTL_PLUGIN_DIR . 'public/member-pages.php';
 
-// Inject Custom Colors and Fonts into the Admin Pages
+// Inject Custom Colors and Fonts into the Admin Pages.
 add_action( 'admin_head', 'mtl_apply_custom_admin_styles' );
+
+/**
+ * Injects the branding colors/fonts configured on the Setup page as inline
+ * CSS on this plugin's own admin screens.
+ */
 function mtl_apply_custom_admin_styles() {
 	// Only apply these styles on this plugin's own pages. Every page slug
 	// starts with "mtl-" (mtl-dashboard, mtl-inventory, ...), which is present
@@ -549,28 +557,28 @@ function mtl_apply_custom_admin_styles() {
 	// (my-tool-library_page_mtl-inventory). Matching on it is what makes the
 	// theme apply on the dashboard too, not just the submenu pages.
 	$screen = get_current_screen();
-	if ( $screen && strpos( $screen->id, 'mtl-' ) !== false ) {
+	if ( $screen && false !== strpos( $screen->id, 'mtl-' ) ) {
 
-		// Header Options
+		// Header Options.
 		$h_color     = get_option( 'mtl_header_color', '#ff6600' );
 		$h_font      = get_option( 'mtl_header_font', 'inherit' );
 		$h_size      = get_option( 'mtl_header_size', '2em' );
 		$h_weight    = get_option( 'mtl_header_weight', '700' );
 		$h_transform = get_option( 'mtl_header_transform', 'none' );
 
-		// Body Options
+		// Body Options.
 		$b_color  = get_option( 'mtl_body_color', '#096491' );
 		$b_font   = get_option( 'mtl_body_font', 'inherit' );
 		$b_size   = get_option( 'mtl_body_size', '14px' );
 		$b_weight = get_option( 'mtl_body_weight', '400' );
 
-		// Link Options
+		// Link Options.
 		$l_color = get_option( 'mtl_link_color', '#00b3ff' );
 		$l_font  = get_option( 'mtl_link_font', 'inherit' );
 		$l_size  = get_option( 'mtl_link_size', 'inherit' );
 		$l_dec   = get_option( 'mtl_link_decoration', 'none' );
 
-		// Buttons & Page Accents
+		// Buttons & Page Accents.
 		$accent_color = get_option( 'mtl_accent_color', '#f7c600' );
 		$bg_color     = get_option( 'mtl_background_color', '#ffffff' );
 		$radius       = get_option( 'mtl_border_radius', '4px' );
@@ -660,6 +668,10 @@ function mtl_apply_custom_admin_styles() {
 // the top-level "My Tool Library" button stays visible, and navigation
 // happens through the portal tab bar.
 add_action( 'admin_menu', 'mtl_register_admin_menus' );
+
+/**
+ * Registers the plugin's top-level admin page and its four portal pages.
+ */
 function mtl_register_admin_menus() {
 	add_menu_page( 'My Tool Library Dashboard', 'My Tool Library', 'manage_options', 'mtl-dashboard', 'mtl_render_dashboard_page', 'dashicons-hammer', 25 );
 	add_submenu_page( 'mtl-dashboard', 'My Tool Library Dashboard', 'Dashboard', 'manage_options', 'mtl-dashboard', 'mtl_render_dashboard_page' );
@@ -681,6 +693,12 @@ function mtl_register_admin_menus() {
 // fires after all routing decisions are made but just before the sidebar menu
 // is printed, so the pages keep working while their sidebar links vanish.
 add_action( 'admin_head', 'mtl_hide_portal_sidebar_links' );
+
+/**
+ * Removes the four portal pages' sidebar entries, leaving only the
+ * top-level "My Tool Library" link. See the comment above for why this
+ * has to run on admin_head rather than admin_menu.
+ */
 function mtl_hide_portal_sidebar_links() {
 	remove_submenu_page( 'mtl-dashboard', 'mtl-dashboard' );
 	remove_submenu_page( 'mtl-dashboard', 'mtl-membership' );
@@ -697,9 +715,14 @@ function mtl_hide_portal_sidebar_links() {
 // portal without merging them into a single file.
 // ==========================================================================
 add_action( 'admin_notices', 'mtl_render_admin_portal_tabs' );
+
+/**
+ * Renders the Dashboard/Membership/Inventory/Loans/Setup tab strip shown
+ * at the top of all five plugin admin pages.
+ */
 function mtl_render_admin_portal_tabs() {
 	$screen = get_current_screen();
-	if ( ! $screen || strpos( $screen->id, 'mtl-' ) === false ) {
+	if ( ! $screen || false === strpos( $screen->id, 'mtl-' ) ) {
 		return;
 	}
 
@@ -721,7 +744,7 @@ function mtl_render_admin_portal_tabs() {
 		$style     = 'display: inline-block; padding: 12px 14px; text-decoration: none; font-weight: ' . ( $is_active ? '600' : '400' ) . ';'
 			. ' border-bottom: 3px solid ' . ( $is_active ? esc_attr( $h_color ) : 'transparent' ) . ';'
 			. ' color: ' . ( $is_active ? esc_attr( $h_color ) : '#3c434a' ) . ';';
-		echo '<a href="' . esc_url( admin_url( 'admin.php?page=' . $slug ) ) . '" style="' . $style . '">' . esc_html( $label ) . '</a>';
+		echo '<a href="' . esc_url( admin_url( 'admin.php?page=' . $slug ) ) . '" style="' . esc_attr( $style ) . '">' . esc_html( $label ) . '</a>';
 	}
 	echo '</nav>';
 
@@ -746,6 +769,10 @@ function mtl_render_admin_portal_tabs() {
 // ==========================================================================
 
 register_activation_hook( __FILE__, 'mtl_plugin_activate' );
+
+/**
+ * Registers and flushes the plugin's rewrite rule on activation.
+ */
 function mtl_plugin_activate() {
 	mtl_register_rewrite_rules();
 	// Rewrite rules are cached in the database. A fresh activation must
@@ -755,6 +782,10 @@ function mtl_plugin_activate() {
 }
 
 register_deactivation_hook( __FILE__, 'mtl_plugin_deactivate' );
+
+/**
+ * Flushes the plugin's rewrite rule out of the cache on deactivation.
+ */
 function mtl_plugin_deactivate() {
 	// Drops the custom rule from the cached rewrite rules on deactivation,
 	// so a deactivated plugin doesn't leave a dangling route behind.
@@ -762,27 +793,38 @@ function mtl_plugin_deactivate() {
 }
 
 add_action( 'init', 'mtl_register_rewrite_rules' );
+
+/**
+ * Registers the /tool-library/ rewrite rule.
+ */
 function mtl_register_rewrite_rules() {
 	add_rewrite_rule( '^tool-library/?$', 'index.php?mtl_page=main', 'top' );
 }
 
 add_filter( 'query_vars', 'mtl_register_query_vars' );
+
+/**
+ * Registers this plugin's public query vars so WordPress preserves them.
+ *
+ * @param string[] $vars Existing public query vars.
+ * @return string[] $vars with this plugin's vars appended.
+ */
 function mtl_register_query_vars( $vars ) {
 	$vars[] = 'mtl_page';
 	// Customer shopping-page controls. Registering them keeps WordPress's
 	// canonical-redirect from stripping these params off the public /tool-
 	// library/ URL, and lets the values survive on every permalink style.
-	$vars[] = 'mtl_q';       // basic search text
-	$vars[] = 'mtl_name';    // advanced: tool name
-	$vars[] = 'mtl_brand';   // advanced: brand
-	$vars[] = 'mtl_cat';     // advanced: category id
-	$vars[] = 'mtl_tag';     // advanced: tag id
-	$vars[] = 'mtl_status';  // advanced: availability
-	$vars[] = 'mtl_sort';    // sort order
-	$vars[] = 'mtl_view';    // tiles | rows
-	$vars[] = 'mtl_pg';      // page number
-	$vars[] = 'mtl_tool';    // selected tool id (for the detail box)
-	$vars[] = 'mtl_msg';     // one-off status banner key (after a POST action)
+	$vars[] = 'mtl_q';       // Basic search text.
+	$vars[] = 'mtl_name';    // Advanced: tool name.
+	$vars[] = 'mtl_brand';   // Advanced: brand.
+	$vars[] = 'mtl_cat';     // Advanced: category id.
+	$vars[] = 'mtl_tag';     // Advanced: tag id.
+	$vars[] = 'mtl_status';  // Advanced: availability.
+	$vars[] = 'mtl_sort';    // Sort order.
+	$vars[] = 'mtl_view';    // Tiles | rows.
+	$vars[] = 'mtl_pg';      // Page number.
+	$vars[] = 'mtl_tool';    // Selected tool id (for the detail box).
+	$vars[] = 'mtl_msg';     // One-off status banner key (after a POST action).
 	return $vars;
 }
 
@@ -819,23 +861,28 @@ function mtl_register_query_vars( $vars ) {
  * @return string Escaped URL.
  */
 function mtl_front_page_url( $page ) {
-	if ( $page === 'main' && get_option( 'permalink_structure' ) ) {
+	if ( 'main' === $page && get_option( 'permalink_structure' ) ) {
 		return home_url( '/tool-library/' );
 	}
 	return add_query_arg( 'mtl_page', rawurlencode( $page ), home_url( '/' ) );
 }
 
 add_action( 'template_redirect', 'mtl_handle_front_pages' );
+
+/**
+ * Routes the mtl_page query var (permalink or query-string form) to the
+ * matching front-end page renderer.
+ */
 function mtl_handle_front_pages() {
 	// get_query_var() recognizes BOTH the pretty /tool-library/ permalink
 	// (matched by the rewrite rule above) and the raw ?mtl_page=main query
 	// string, since "mtl_page" is registered as a public query var above.
 	// The $_GET check is a defensive fallback only.
 	$page = get_query_var( 'mtl_page' );
-	if ( $page === '' && isset( $_GET['mtl_page'] ) ) {
-		$page = wp_unslash( $_GET['mtl_page'] );
+	if ( '' === $page && isset( $_GET['mtl_page'] ) ) {
+		$page = sanitize_key( wp_unslash( $_GET['mtl_page'] ) );
 	}
-	if ( $page === '' || $page === false ) {
+	if ( '' === $page || false === $page ) {
 		return;
 	}
 
@@ -844,17 +891,17 @@ function mtl_handle_front_pages() {
 	// These pages depend on login state, so never let them be cached.
 	nocache_headers();
 
-	if ( $page === 'main' ) {
+	if ( 'main' === $page ) {
 		mtl_render_front_main_page();
-	} elseif ( $page === 'login' ) {
+	} elseif ( 'login' === $page ) {
 		mtl_render_front_login_page();
-	} elseif ( $page === 'admin' ) {
+	} elseif ( 'admin' === $page ) {
 		mtl_handle_admin_gate();
-	} elseif ( $page === 'signup' ) {
+	} elseif ( 'signup' === $page ) {
 		mtl_render_signup_page();
-	} elseif ( $page === 'reservations' ) {
+	} elseif ( 'reservations' === $page ) {
 		mtl_render_member_reservations_page();
-	} elseif ( $page === 'account' ) {
+	} elseif ( 'account' === $page ) {
 		mtl_render_account_page();
 	}
 	// Unknown values fall through to the theme's normal 404/home handling.
@@ -868,11 +915,11 @@ function mtl_handle_front_pages() {
  * @param string $body_html   Fills the centered main area. Built internally
  *                             from escaped pieces -- never from raw user input.
  * @param string $footer_html Fills the discreet footer link row at the bottom.
- * @return string
+ * @return void Outputs the page directly and exits.
  */
 function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 	$org_name = get_option( 'mtl_org_name', '' );
-	if ( $org_name === '' ) {
+	if ( '' === $org_name ) {
 		$org_name = 'My Tool Library';
 	}
 	$logo_url = get_option( 'mtl_logo_url', '' );
@@ -889,7 +936,7 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 	// On a standalone page "inherit" would fall back to the browser's default
 	// serif; substitute a neutral system stack instead.
 	$b_font = get_option( 'mtl_body_font', 'inherit' );
-	if ( $b_font === 'inherit' || $b_font === '' ) {
+	if ( 'inherit' === $b_font || '' === $b_font ) {
 		$b_font = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 	}
 
@@ -937,7 +984,7 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 			width: 100%;
 			background: #fff;
 			border: 1px solid #ccd0d4;
-			border-radius: <?php echo esc_html( $radius === '999px' ? '16px' : $radius ); ?>;
+			border-radius: <?php echo esc_html( '999px' === $radius ? '16px' : $radius ); ?>;
 			box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
 			padding: 30px;
 			text-align: center;
@@ -1005,11 +1052,17 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 		<h1><?php echo esc_html( $org_name ); ?></h1>
 	</header>
 	<main class="mtl-front-content">
-		<?php echo $body_html; // Built internally from escaped pieces. ?>
+		<?php
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built internally from esc_*()-wrapped pieces, never from raw user input (see docblock).
+		echo $body_html;
+		?>
 	</main>
-	<?php if ( $footer_html !== '' ) : ?>
+	<?php if ( '' !== $footer_html ) : ?>
 		<footer class="mtl-front-footer">
-			<?php echo $footer_html; // Built internally from escaped pieces. ?>
+			<?php
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built internally from esc_*()-wrapped pieces, never from raw user input (see docblock).
+			echo $footer_html;
+			?>
 		</footer>
 	<?php endif; ?>
 </body>
@@ -1018,9 +1071,12 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 	exit;
 }
 
-// The public main page -- the customer-facing shopping catalog, with a small,
-// discreet Admin Sign In link at the bottom of the page. The catalog itself is
-// built (server-side, no JavaScript) in public/shop-page.php.
+/**
+ * The public main page -- the customer-facing shopping catalog, with a
+ * small, discreet Admin Sign In link at the bottom of the page. The
+ * catalog itself is built (server-side, no JavaScript) in
+ * public/shop-page.php.
+ */
 function mtl_render_front_main_page() {
 	// Process a "reserve a tool" POST before any output, so it can finish
 	// with a redirect back to the catalog (no double-submit on refresh).
@@ -1030,7 +1086,7 @@ function mtl_render_front_main_page() {
 
 	// Discreet footer links, varying with login state. (The primary member
 	// sign-in / sign-up / account controls live in the catalog's own top-bar
-	// nav; these footer links are a quiet secondary path.)
+	// nav; these footer links are a quiet secondary path).
 	if ( is_user_logged_in() && current_user_can( 'manage_options' ) ) {
 		$footer  = '<a href="' . esc_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) . '">Open Admin Portal</a>';
 		$footer .= '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
@@ -1045,11 +1101,13 @@ function mtl_render_front_main_page() {
 	mtl_render_front_shell( 'Browse Tools', $body, $footer );
 }
 
-// Branded sign-in screen for members AND administrators. The form itself is
-// core's wp_login_form(): it posts to wp-login.php, so WordPress performs the
-// actual authentication and cookie handling. On success the user lands on the
-// admin gate below, which sends admins to the portal and members back to the
-// catalog.
+/**
+ * Branded sign-in screen for members AND administrators. The form itself
+ * is core's wp_login_form(): it posts to wp-login.php, so WordPress
+ * performs the actual authentication and cookie handling. On success the
+ * user lands on the admin gate below, which sends admins to the portal
+ * and members back to the catalog.
+ */
 function mtl_render_front_login_page() {
 	// Already signed in? Skip the form and go straight to the gate.
 	if ( is_user_logged_in() ) {
@@ -1080,11 +1138,13 @@ function mtl_render_front_login_page() {
 	mtl_render_front_shell( 'Sign In', $body, $footer );
 }
 
-// Post-login router. Administrators continue into the admin portal; any other
-// signed-in user (i.e. a member) is sent back to the public catalog, where
-// their reservation and account tools live. (This gate is a courtesy router --
-// the real enforcement is WordPress's own manage_options capability check on
-// every admin page and form handler.)
+/**
+ * Post-login router. Administrators continue into the admin portal; any
+ * other signed-in user (i.e. a member) is sent back to the public
+ * catalog, where their reservation and account tools live. (This gate is
+ * a courtesy router -- the real enforcement is WordPress's own
+ * manage_options capability check on every admin page and form handler.)
+ */
 function mtl_handle_admin_gate() {
 	if ( ! is_user_logged_in() ) {
 		wp_safe_redirect( mtl_front_page_url( 'login' ) );
@@ -1101,11 +1161,16 @@ function mtl_handle_admin_gate() {
 	exit;
 }
 
-// Add the Custom Footer to Plugin Pages
+// Add the Custom Footer to Plugin Pages.
 add_action( 'admin_footer', 'mtl_custom_admin_footer' );
+
+/**
+ * Renders the branded footer (org name/logo) at the bottom of this
+ * plugin's own admin screens.
+ */
 function mtl_custom_admin_footer() {
 	$screen = get_current_screen();
-	if ( $screen && strpos( $screen->id, 'mtl-' ) !== false ) {
+	if ( $screen && false !== strpos( $screen->id, 'mtl-' ) ) {
 
 		$org_name = get_option( 'mtl_org_name', '' );
 		$logo_url = get_option( 'mtl_logo_url', '' );
