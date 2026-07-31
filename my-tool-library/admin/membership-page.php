@@ -1,25 +1,33 @@
 <?php
-// Prevent direct file access
+/**
+ * Membership admin page.
+ *
+ * @package My_Tool_Library
+ */
+
+// Prevent direct file access.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
+
+add_action( 'admin_init', 'mtl_maybe_serve_member_csv_template' );
 
 /**
  * Serves a downloadable CSV template for the Membership Bulk Import feature.
  * Runs on admin_init (before any HTML) so it can send download headers, the
  * same way the inventory template download works.
  */
-add_action( 'admin_init', 'mtl_maybe_serve_member_csv_template' );
 function mtl_maybe_serve_member_csv_template() {
+	$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 	if (
-		! isset( $_GET['mtl_download_member_template'], $_GET['page'] ) ||
-		$_GET['page'] !== 'mtl-membership' ||
+		! isset( $_GET['mtl_download_member_template'] ) || '' === $page ||
+		'mtl-membership' !== $page ||
 		! current_user_can( 'manage_options' )
 	) {
 		return;
 	}
 
-	if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( $_GET['_wpnonce'], 'mtl_download_member_template_action' ) ) {
+	if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ), 'mtl_download_member_template_action' ) ) {
 		return;
 	}
 
@@ -66,7 +74,7 @@ function mtl_maybe_serve_member_csv_template() {
 			// The importer accepts any date string PHP's strtotime() understands
 			// (see the normalization a few lines below), but the template models
 			// the site-wide MM/DD/YYYY convention.
-			date( 'm/d/Y' ),
+			gmdate( 'm/d/Y' ),
 			'10.00',
 			'N',
 			'https://example.com/scans/photo-id.jpg',
@@ -91,6 +99,9 @@ function mtl_render_member_form_fields( $values, $id_prefix = '' ) {
 	$field_id = function ( $name ) use ( $id_prefix ) {
 		return esc_attr( $id_prefix . $name );
 	};
+	// $field_id() always returns esc_attr()-escaped output; phpcs can't see
+	// through a closure assigned to a variable to verify that.
+	// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped
 	?>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'first_name' ); ?>">First Name *</label></th>
@@ -204,6 +215,7 @@ function mtl_render_member_form_fields( $values, $id_prefix = '' ) {
 		</td>
 	</tr>
 	<?php
+	// phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
 }
 
 /**
@@ -231,7 +243,7 @@ function mtl_render_membership_page() {
 	// matching the Setup page's configured default loan length (same
 	// convention as Quick Loan on the Inventory page).
 	$mtl_default_loan_days = (int) get_option( 'mtl_default_loan_days', 21 );
-	$mtl_default_due_date  = date( 'Y-m-d', strtotime( '+' . $mtl_default_loan_days . ' days' ) );
+	$mtl_default_due_date  = gmdate( 'Y-m-d', strtotime( '+' . $mtl_default_loan_days . ' days' ) );
 
 	// Set by the loan/reservation action handlers below when they succeed, so
 	// the affected member's detail row can be reopened automatically after
@@ -258,7 +270,7 @@ function mtl_render_membership_page() {
 		'state'                     => '',
 		'zip_code'                  => '',
 		'country'                   => 'United States',
-		'signup_date'               => date( 'Y-m-d' ),
+		'signup_date'               => gmdate( 'Y-m-d' ),
 		'recurring_donation_amount' => '',
 		'has_donated_tools'         => 'N',
 		'photo_id_scan_url'         => '',
@@ -276,7 +288,7 @@ function mtl_render_membership_page() {
 
 	// 1. HANDLE "ADD" FORM SUBMISSION (Insert Data)
 	if ( isset( $_POST['mtl_add_member'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_add_member_nonce'] ) && wp_verify_nonce( $_POST['mtl_add_member_nonce'], 'mtl_add_member_action' ) ) {
+		if ( isset( $_POST['mtl_add_member_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_member_nonce'] ) ), 'mtl_add_member_action' ) ) {
 
 			// --- Gather + sanitize incoming data ---
 			// wp_unslash() removes WordPress magic quotes before sanitizing.
@@ -300,22 +312,22 @@ function mtl_render_membership_page() {
 
 			// Numeric field: keep the raw typed string for redisplay (so a blank
 			// field stays blank instead of turning into "0"), but store a float.
-			$donation_display = isset( $_POST['recurring_donation_amount'] ) ? trim( wp_unslash( $_POST['recurring_donation_amount'] ) ) : '';
+			$donation_display = isset( $_POST['recurring_donation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['recurring_donation_amount'] ) ) ) : '';
 			$donation         = floatval( $donation_display );
 
 			// CHAR(1) 'Y'/'N' column -- whitelist rather than trust the posted value.
-			$has_donated = ( isset( $_POST['has_donated_tools'] ) && $_POST['has_donated_tools'] === 'Y' ) ? 'Y' : 'N';
+			$has_donated = ( isset( $_POST['has_donated_tools'] ) && 'Y' === $_POST['has_donated_tools'] ) ? 'Y' : 'N';
 
 			// signup_date is NOT NULL in the schema; fall back to today.
-			if ( $signup_date === '' || ! strtotime( $signup_date ) ) {
-				$signup_date = date( 'Y-m-d' );
+			if ( '' === $signup_date || ! strtotime( $signup_date ) ) {
+				$signup_date = gmdate( 'Y-m-d' );
 			}
 
 			// country is NOT NULL with a DB default, but that default only
 			// applies when the column is omitted from the INSERT entirely --
 			// this form always supplies the field, so an emptied-out input
 			// needs its own fallback to the same default.
-			if ( $country === '' ) {
+			if ( '' === $country ) {
 				$country = 'United States';
 			}
 
@@ -324,13 +336,13 @@ function mtl_render_membership_page() {
 			$error_message        = '';
 			$clear_email_on_error = false;
 
-			if ( $first_name === '' || $last_name === '' || $phone_number === '' || $address_line1 === '' || $city === '' || $state === '' || $zip_code === '' ) {
+			if ( '' === $first_name || '' === $last_name || '' === $phone_number || '' === $address_line1 || '' === $city || '' === $state || '' === $zip_code ) {
 				// These columns are all NOT NULL in the schema. The HTML
 				// "required" attributes normally stop this client-side; this is
 				// a re-check in case they are bypassed.
 				$error         = true;
 				$error_message = 'First name, last name, phone number, and a complete address (street, city, state, ZIP) are all required. The member was not added.';
-			} elseif ( $email === '' || ! is_email( $email ) ) {
+			} elseif ( '' === $email || ! is_email( $email ) ) {
 				$error         = true;
 				$error_message = 'A valid email address is required. The member was not added.';
 			} else {
@@ -339,6 +351,7 @@ function mtl_render_membership_page() {
 				// backstop if two admins submit the same email simultaneously.
 				$email_in_use = $wpdb->get_var(
 					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 						"SELECT member_id FROM {$tbl_members} WHERE email = %s LIMIT 1",
 						$email
 					)
@@ -358,7 +371,7 @@ function mtl_render_membership_page() {
 						'first_name'                => $first_name,
 						'last_name'                 => $last_name,
 						'address_line1'             => $address_line1,
-						'address_line2'             => $address_line2 !== '' ? $address_line2 : null,
+						'address_line2'             => '' !== $address_line2 ? $address_line2 : null,
 						'city'                      => $city,
 						'state'                     => $state,
 						'zip_code'                  => $zip_code,
@@ -380,17 +393,17 @@ function mtl_render_membership_page() {
 					// one scan is provided -- staff can save whatever the member
 					// currently has on hand, one form of ID at a time. The member
 					// only counts as verified once both are present.
-					if ( $photo_id_url !== '' || $addr_proof_url !== '' ) {
+					if ( '' !== $photo_id_url || '' !== $addr_proof_url ) {
 						$wpdb->insert(
 							$tbl_verifications,
 							array(
 								'member_id'              => $new_member_id,
-								'photo_id_scan_url'      => $photo_id_url !== '' ? $photo_id_url : null,
-								'address_proof_scan_url' => $addr_proof_url !== '' ? $addr_proof_url : null,
+								'photo_id_scan_url'      => '' !== $photo_id_url ? $photo_id_url : null,
+								'address_proof_scan_url' => '' !== $addr_proof_url ? $addr_proof_url : null,
 							),
 							array( '%d', '%s', '%s' )
 						);
-						if ( $photo_id_url !== '' && $addr_proof_url !== '' ) {
+						if ( '' !== $photo_id_url && '' !== $addr_proof_url ) {
 							echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> ' . esc_html( stripslashes( $first_name . ' ' . $last_name ) ) . ' has been added as a verified member.</p></div>';
 						} else {
 							echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> ' . esc_html( stripslashes( $first_name . ' ' . $last_name ) ) . ' has been added with one verification document on file. Add the other via Edit to mark them verified.</p></div>';
@@ -447,16 +460,25 @@ function mtl_render_membership_page() {
 	$keep_bulk_panel_open = false;
 
 	if ( isset( $_POST['mtl_bulk_import_members'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_bulk_import_members_nonce'] ) && wp_verify_nonce( $_POST['mtl_bulk_import_members_nonce'], 'mtl_bulk_import_members_action' ) ) {
+		if ( isset( $_POST['mtl_bulk_import_members_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_bulk_import_members_nonce'] ) ), 'mtl_bulk_import_members_action' ) ) {
 			$keep_bulk_panel_open = true;
 
-			if ( ! isset( $_FILES['csv_file'] ) || $_FILES['csv_file']['error'] === UPLOAD_ERR_NO_FILE ) {
+			// $_FILES values below: 'error' and 'size' are always plain
+			// integers set by PHP itself (never sanitized per WPCS
+			// convention); 'name' and 'tmp_name' are sanitized once here and
+			// used via these locals for the rest of this block. 'tmp_name'
+			// is also verified with is_uploaded_file() before it's opened.
+			$csv_error    = isset( $_FILES['csv_file']['error'] ) ? (int) $_FILES['csv_file']['error'] : UPLOAD_ERR_NO_FILE;
+			$csv_name     = isset( $_FILES['csv_file']['name'] ) ? sanitize_file_name( wp_unslash( $_FILES['csv_file']['name'] ) ) : '';
+			$csv_tmp_name = isset( $_FILES['csv_file']['tmp_name'] ) ? sanitize_text_field( wp_unslash( $_FILES['csv_file']['tmp_name'] ) ) : '';
+
+			if ( ! isset( $_FILES['csv_file'] ) || UPLOAD_ERR_NO_FILE === $csv_error ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please choose a CSV file to upload.</p></div>';
-			} elseif ( $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK ) {
+			} elseif ( UPLOAD_ERR_OK !== $csv_error ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The file failed to upload. Please try again.</p></div>';
-			} elseif ( strtolower( pathinfo( $_FILES['csv_file']['name'], PATHINFO_EXTENSION ) ) !== 'csv' ) {
+			} elseif ( 'csv' !== strtolower( pathinfo( $csv_name, PATHINFO_EXTENSION ) ) ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please upload a .csv file.</p></div>';
-			} elseif ( ! is_uploaded_file( $_FILES['csv_file']['tmp_name'] ) ) {
+			} elseif ( ! is_uploaded_file( $csv_tmp_name ) ) {
 				// Confirms tmp_name genuinely came from this request's upload.
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The upload could not be verified. Please try again.</p></div>';
 			} elseif (
@@ -466,27 +488,27 @@ function mtl_render_membership_page() {
 				// 5.9, and this plugin supports 5.8+, so relying on core's
 				// default list would reject every CSV on a 5.8 install.
 				'csv' !== wp_check_filetype_and_ext(
-					$_FILES['csv_file']['tmp_name'],
-					$_FILES['csv_file']['name'],
+					$csv_tmp_name,
+					$csv_name,
 					array( 'csv' => 'text/csv' )
 				)['ext']
 			) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The uploaded file does not appear to be a genuine CSV file.</p></div>';
 			} else {
-				$handle = fopen( $_FILES['csv_file']['tmp_name'], 'r' );
+				$handle = fopen( $csv_tmp_name, 'r' );
 
 				if ( ! $handle ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Could not read the uploaded file.</p></div>';
 				} else {
 					// Strip a UTF-8 byte-order-mark some spreadsheet apps
 					// prepend, which would otherwise corrupt the first header.
-					if ( fread( $handle, 3 ) !== "\xEF\xBB\xBF" ) {
+					if ( "\xEF\xBB\xBF" !== fread( $handle, 3 ) ) {
 						rewind( $handle );
 					}
 
 					$header_row = fgetcsv( $handle );
 
-					if ( $header_row === false ) {
+					if ( false === $header_row ) {
 						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The CSV file appears to be empty.</p></div>';
 					} else {
 						// Map column name -> position so columns can appear in
@@ -520,11 +542,11 @@ function mtl_render_membership_page() {
 								return isset( $columns[ $name ], $row[ $columns[ $name ] ] ) ? trim( (string) $row[ $columns[ $name ] ] ) : '';
 							};
 
-							$row_number      = 1; // first data row is row 2 in a spreadsheet
+							$row_number      = 1; // First data row is row 2 in a spreadsheet.
 							$bulk_import_ran = true;
-							$max_bulk_rows   = 5000; // sanity cap so a huge file can't tie up the request indefinitely
+							$max_bulk_rows   = 5000; // Sanity cap so a huge file can't tie up the request indefinitely.
 
-							while ( ( $row = fgetcsv( $handle ) ) !== false ) {
+							while ( false !== ( $row = fgetcsv( $handle ) ) ) {
 								++$row_number;
 
 								if ( $row_number - 1 > $max_bulk_rows ) {
@@ -533,7 +555,7 @@ function mtl_render_membership_page() {
 								}
 
 								// Skip a genuinely blank line.
-								if ( count( $row ) === 1 && ( ! isset( $row[0] ) || trim( (string) $row[0] ) === '' ) ) {
+								if ( 1 === count( $row ) && ( ! isset( $row[0] ) || '' === trim( (string) $row[0] ) ) ) {
 									continue;
 								}
 
@@ -548,30 +570,30 @@ function mtl_render_membership_page() {
 								$row_state    = sanitize_text_field( $get_col( $row, 'state' ) );
 								$row_zip      = sanitize_text_field( $get_col( $row, 'zip_code' ) );
 								$row_country  = sanitize_text_field( $get_col( $row, 'country' ) );
-								if ( $row_country === '' ) {
+								if ( '' === $row_country ) {
 									$row_country = 'United States';
 								}
 								$row_photo = sanitize_url( $get_col( $row, 'photo_id_scan_url' ) );
 								$row_proof = sanitize_url( $get_col( $row, 'address_proof_scan_url' ) );
 
 								$row_signup_raw = $get_col( $row, 'signup_date' );
-								$row_signup     = ( $row_signup_raw !== '' && strtotime( $row_signup_raw ) ) ? date( 'Y-m-d', strtotime( $row_signup_raw ) ) : date( 'Y-m-d' );
+								$row_signup     = ( '' !== $row_signup_raw && strtotime( $row_signup_raw ) ) ? gmdate( 'Y-m-d', strtotime( $row_signup_raw ) ) : gmdate( 'Y-m-d' );
 
 								$row_donation = floatval( $get_col( $row, 'recurring_donation_amount' ) );
 
 								// has_donated_tools must be Y/N (case-insensitive);
 								// blank defaults to N, anything else fails the row.
 								$row_donated_raw = strtoupper( $get_col( $row, 'has_donated_tools' ) );
-								if ( $row_donated_raw === '' ) {
+								if ( '' === $row_donated_raw ) {
 									$row_donated = 'N';
-								} elseif ( $row_donated_raw === 'Y' || $row_donated_raw === 'N' ) {
+								} elseif ( 'Y' === $row_donated_raw || 'N' === $row_donated_raw ) {
 									$row_donated = $row_donated_raw;
 								} else {
-									$row_donated = null; // signals a formatting error below
+									$row_donated = null; // Signals a formatting error below.
 								}
 
 								// --- Per-row validation ---
-								if ( $row_first === '' || $row_last === '' || $row_phone === '' || $row_address1 === '' || $row_city === '' || $row_state === '' || $row_zip === '' ) {
+								if ( '' === $row_first || '' === $row_last || '' === $row_phone || '' === $row_address1 || '' === $row_city || '' === $row_state || '' === $row_zip ) {
 									$bulk_failed_rows[] = array(
 										'row'    => $row_number,
 										'reason' => 'Missing a required field (first_name, last_name, phone_number, address_line1, city, state and zip_code are all required).',
@@ -592,14 +614,14 @@ function mtl_render_membership_page() {
 									);
 									continue;
 								}
-								if ( $row_email === '' || ! is_email( $row_email ) ) {
+								if ( '' === $row_email || ! is_email( $row_email ) ) {
 									$bulk_failed_rows[] = array(
 										'row'    => $row_number,
 										'reason' => 'Missing or invalid email address.',
 									);
 									continue;
 								}
-								if ( $row_donated === null ) {
+								if ( null === $row_donated ) {
 									$bulk_failed_rows[] = array(
 										'row'    => $row_number,
 										'reason' => 'has_donated_tools must be "Y" or "N" (or left blank).',
@@ -616,6 +638,7 @@ function mtl_render_membership_page() {
 
 								$email_in_use = $wpdb->get_var(
 									$wpdb->prepare(
+										// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 										"SELECT member_id FROM {$tbl_members} WHERE email = %s LIMIT 1",
 										$row_email
 									)
@@ -635,7 +658,7 @@ function mtl_render_membership_page() {
 										'first_name'    => $row_first,
 										'last_name'     => $row_last,
 										'address_line1' => $row_address1,
-										'address_line2' => $row_address2 !== '' ? $row_address2 : null,
+										'address_line2' => '' !== $row_address2 ? $row_address2 : null,
 										'city'          => $row_city,
 										'state'         => $row_state,
 										'zip_code'      => $row_zip,
@@ -661,13 +684,13 @@ function mtl_render_membership_page() {
 								$new_member_id = $wpdb->insert_id;
 
 								// --- Insert into member_verifications (either or both URLs) ---
-								if ( $row_photo !== '' || $row_proof !== '' ) {
+								if ( '' !== $row_photo || '' !== $row_proof ) {
 									$v_inserted = $wpdb->insert(
 										$tbl_verifications,
 										array(
 											'member_id' => $new_member_id,
-											'photo_id_scan_url' => $row_photo !== '' ? $row_photo : null,
-											'address_proof_scan_url' => $row_proof !== '' ? $row_proof : null,
+											'photo_id_scan_url' => '' !== $row_photo ? $row_photo : null,
+											'address_proof_scan_url' => '' !== $row_proof ? $row_proof : null,
 										),
 										array( '%d', '%s', '%s' )
 									);
@@ -692,11 +715,11 @@ function mtl_render_membership_page() {
 			if ( $bulk_import_ran ) {
 				$bulk_fail_count = count( $bulk_failed_rows );
 
-				if ( $bulk_success_count > 0 && $bulk_fail_count === 0 ) {
+				if ( $bulk_success_count > 0 && 0 === $bulk_fail_count ) {
 					echo '<div class="notice notice-success is-dismissible"><p><strong>Bulk Import Complete!</strong> ' . intval( $bulk_success_count ) . ' member(s) were added.</p></div>';
 				} elseif ( $bulk_success_count > 0 && $bulk_fail_count > 0 ) {
 					echo '<div class="notice notice-warning is-dismissible"><p><strong>Bulk Import Finished with Errors:</strong> ' . intval( $bulk_success_count ) . ' member(s) added, but ' . intval( $bulk_fail_count ) . ' row(s) failed. See details below.</p></div>';
-				} elseif ( $bulk_success_count === 0 && $bulk_fail_count > 0 ) {
+				} elseif ( 0 === $bulk_success_count && $bulk_fail_count > 0 ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Bulk Import Failed:</strong> None of the ' . intval( $bulk_fail_count ) . ' row(s) could be added. See details below.</p></div>';
 				} else {
 					echo '<div class="notice notice-warning is-dismissible"><p><strong>Nothing to import.</strong> The CSV file had no data rows.</p></div>';
@@ -729,7 +752,7 @@ function mtl_render_membership_page() {
 
 	// 2. HANDLE "EDIT" FORM SUBMISSION (Update Data)
 	if ( isset( $_POST['mtl_update_member'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_edit_member_nonce'] ) && wp_verify_nonce( $_POST['mtl_edit_member_nonce'], 'mtl_edit_member_action' ) ) {
+		if ( isset( $_POST['mtl_edit_member_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_edit_member_nonce'] ) ), 'mtl_edit_member_action' ) ) {
 
 			$edit_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
 
@@ -751,16 +774,16 @@ function mtl_render_membership_page() {
 			$photo_id_url   = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
 			$addr_proof_url = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
 
-			$donation_display = isset( $_POST['recurring_donation_amount'] ) ? trim( wp_unslash( $_POST['recurring_donation_amount'] ) ) : '';
+			$donation_display = isset( $_POST['recurring_donation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['recurring_donation_amount'] ) ) ) : '';
 			$donation         = floatval( $donation_display );
 
-			$has_donated = ( isset( $_POST['has_donated_tools'] ) && $_POST['has_donated_tools'] === 'Y' ) ? 'Y' : 'N';
+			$has_donated = ( isset( $_POST['has_donated_tools'] ) && 'Y' === $_POST['has_donated_tools'] ) ? 'Y' : 'N';
 
-			if ( $signup_date === '' || ! strtotime( $signup_date ) ) {
-				$signup_date = date( 'Y-m-d' );
+			if ( '' === $signup_date || ! strtotime( $signup_date ) ) {
+				$signup_date = gmdate( 'Y-m-d' );
 			}
 
-			if ( $country === '' ) {
+			if ( '' === $country ) {
 				$country = 'United States';
 			}
 
@@ -770,16 +793,17 @@ function mtl_render_membership_page() {
 			if ( $edit_member_id <= 0 ) {
 				$error         = true;
 				$error_message = 'Could not determine which member to update. Please try again.';
-			} elseif ( $first_name === '' || $last_name === '' || $phone_number === '' || $address_line1 === '' || $city === '' || $state === '' || $zip_code === '' ) {
+			} elseif ( '' === $first_name || '' === $last_name || '' === $phone_number || '' === $address_line1 || '' === $city || '' === $state || '' === $zip_code ) {
 				$error         = true;
 				$error_message = 'First name, last name, phone number, and a complete address (street, city, state, ZIP) are all required. The member was not updated.';
-			} elseif ( $email === '' || ! is_email( $email ) ) {
+			} elseif ( '' === $email || ! is_email( $email ) ) {
 				$error         = true;
 				$error_message = 'A valid email address is required. The member was not updated.';
 			} else {
 				// Email must stay unique, but must not collide with ITSELF.
 				$email_in_use = $wpdb->get_var(
 					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 						"SELECT member_id FROM {$tbl_members} WHERE email = %s AND member_id != %d LIMIT 1",
 						$email,
 						$edit_member_id
@@ -800,7 +824,7 @@ function mtl_render_membership_page() {
 						'first_name'                => $first_name,
 						'last_name'                 => $last_name,
 						'address_line1'             => $address_line1,
-						'address_line2'             => $address_line2 !== '' ? $address_line2 : null,
+						'address_line2'             => '' !== $address_line2 ? $address_line2 : null,
 						'city'                      => $city,
 						'state'                     => $state,
 						'zip_code'                  => $zip_code,
@@ -819,7 +843,7 @@ function mtl_render_membership_page() {
 				// $wpdb->update() returns the number of rows changed, which is
 				// legitimately 0 when nothing actually differed -- only `false`
 				// means a real failure.
-				if ( $updated === false ) {
+				if ( false === $updated ) {
 					$error         = true;
 					$error_message = 'Failed to update member. Please verify the database connection and try again.';
 				} else {
@@ -827,6 +851,7 @@ function mtl_render_membership_page() {
 					// Either field can be blank -- a member may have only one
 					// form of ID on file so far; they're only "verified" once
 					// both are present (mtl_verification_urls_complete()).
+					// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 					$was_verified     = mtl_verification_urls_complete(
 						$wpdb->get_var( $wpdb->prepare( "SELECT photo_id_scan_url FROM {$tbl_verifications} WHERE member_id = %d", $edit_member_id ) ),
 						$wpdb->get_var( $wpdb->prepare( "SELECT address_proof_scan_url FROM {$tbl_verifications} WHERE member_id = %d", $edit_member_id ) )
@@ -837,13 +862,14 @@ function mtl_render_membership_page() {
 							$edit_member_id
 						)
 					);
+					// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 					$is_now_verified  = mtl_verification_urls_complete( $photo_id_url, $addr_proof_url );
 
 					$verification_note = '';
-					if ( $photo_id_url !== '' || $addr_proof_url !== '' ) {
+					if ( '' !== $photo_id_url || '' !== $addr_proof_url ) {
 						$v_data = array(
-							'photo_id_scan_url'      => $photo_id_url !== '' ? $photo_id_url : null,
-							'address_proof_scan_url' => $addr_proof_url !== '' ? $addr_proof_url : null,
+							'photo_id_scan_url'      => '' !== $photo_id_url ? $photo_id_url : null,
+							'address_proof_scan_url' => '' !== $addr_proof_url ? $addr_proof_url : null,
 						);
 						if ( $has_verification ) {
 							$wpdb->update(
@@ -911,7 +937,7 @@ function mtl_render_membership_page() {
 	// history has no ON DELETE CASCADE on member_id, by design), it
 	// anonymizes their personal data instead and leaves the history intact.
 	if ( isset( $_POST['mtl_delete_member'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_delete_member_nonce'] ) && wp_verify_nonce( $_POST['mtl_delete_member_nonce'], 'mtl_delete_member_action' ) ) {
+		if ( isset( $_POST['mtl_delete_member_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_member_nonce'] ) ), 'mtl_delete_member_action' ) ) {
 
 			$delete_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
 
@@ -922,9 +948,11 @@ function mtl_render_membership_page() {
 					? ( ' ' . (int) $result['cancelled_reservations'] . ' active reservation(s) of theirs were also cancelled.' )
 					: '';
 
-				if ( $result['outcome'] === 'deleted' ) {
+				if ( 'deleted' === $result['outcome'] ) {
+					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $display_name is esc_html()'d above.
 					echo '<div class="notice notice-success is-dismissible"><p><strong>Deleted.</strong> ' . $display_name . ' and their verification documents have been permanently removed.' . esc_html( $res_note ) . '</p></div>';
-				} elseif ( $result['outcome'] === 'anonymized' ) {
+				} elseif ( 'anonymized' === $result['outcome'] ) {
+					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $display_name is esc_html()'d above.
 					echo '<div class="notice notice-success is-dismissible"><p><strong>Personal data removed.</strong> ' . $display_name . ' had loan or reservation history on record, so it has been kept for accurate library statistics, but their personal information, verification documents, and online account have been removed.' . esc_html( $res_note ) . '</p></div>';
 				} else {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member could not be found or was already deleted.</p></div>';
@@ -939,8 +967,12 @@ function mtl_render_membership_page() {
 	// MODAL. Same effect as the Loans & Reservations / Inventory "mark
 	// returned" actions, reachable here too so staff never have to leave a
 	// member's record to close out their loan.
+	// Every {$tbl_*} fragment interpolated in the queries through the end of
+	// this member-detail-panel quick-action section is a table name only,
+	// built from $wpdb->prefix, never request data.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	if ( isset( $_POST['mtl_member_mark_returned'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_member_loan_nonce'] ) && wp_verify_nonce( $_POST['mtl_member_loan_nonce'], 'mtl_member_loan_action' ) ) {
+		if ( isset( $_POST['mtl_member_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_loan_nonce'] ) ), 'mtl_member_loan_action' ) ) {
 			$mr_loan_id = isset( $_POST['loan_id'] ) ? intval( $_POST['loan_id'] ) : 0;
 			$mr_done    = $wpdb->query(
 				$wpdb->prepare(
@@ -963,12 +995,12 @@ function mtl_render_membership_page() {
 	// 3C. HANDLE "EXTEND LOAN" FROM THE MEMBER DETAIL PANEL'S MANAGE-LOAN
 	// MODAL -- same effect as the Loans & Reservations "renew loan" action.
 	if ( isset( $_POST['mtl_member_extend_loan'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_member_loan_nonce'] ) && wp_verify_nonce( $_POST['mtl_member_loan_nonce'], 'mtl_member_loan_action' ) ) {
+		if ( isset( $_POST['mtl_member_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_loan_nonce'] ) ), 'mtl_member_loan_action' ) ) {
 			$ext_loan_id = isset( $_POST['loan_id'] ) ? intval( $_POST['loan_id'] ) : 0;
 			$ext_due     = isset( $_POST['due_date'] ) ? sanitize_text_field( wp_unslash( $_POST['due_date'] ) ) : '';
 			if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $ext_due ) || ! strtotime( $ext_due ) ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please provide a valid due date.</p></div>';
-			} elseif ( $ext_due < date( 'Y-m-d' ) ) {
+			} elseif ( $ext_due < gmdate( 'Y-m-d' ) ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The due date can&rsquo;t be in the past. Please pick today or a later date.</p></div>';
 			} else {
 				// Confirm the loan is still active before reporting success --
@@ -1003,7 +1035,7 @@ function mtl_render_membership_page() {
 	// 3D. HANDLE "CANCEL RESERVATION" FROM THE MEMBER DETAIL PANEL -- same
 	// effect as the Loans & Reservations "cancel reservation" action.
 	if ( isset( $_POST['mtl_member_cancel_reservation'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_member_cancel_reservation_nonce'] ) && wp_verify_nonce( $_POST['mtl_member_cancel_reservation_nonce'], 'mtl_member_cancel_reservation_action' ) ) {
+		if ( isset( $_POST['mtl_member_cancel_reservation_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_cancel_reservation_nonce'] ) ), 'mtl_member_cancel_reservation_action' ) ) {
 			$cr_reservation_id = isset( $_POST['reservation_id'] ) ? intval( $_POST['reservation_id'] ) : 0;
 			$cr_done           = $wpdb->query(
 				$wpdb->prepare(
@@ -1029,13 +1061,13 @@ function mtl_render_membership_page() {
 	// can both change between page load and submit), same pattern as the
 	// Loans & Reservations checkout action.
 	if ( isset( $_POST['mtl_member_start_loan'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_member_start_loan_nonce'] ) && wp_verify_nonce( $_POST['mtl_member_start_loan_nonce'], 'mtl_member_start_loan_action' ) ) {
+		if ( isset( $_POST['mtl_member_start_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_start_loan_nonce'] ) ), 'mtl_member_start_loan_action' ) ) {
 			$sl_reservation_id = isset( $_POST['reservation_id'] ) ? intval( $_POST['reservation_id'] ) : 0;
 			$sl_due            = isset( $_POST['due_date'] ) ? sanitize_text_field( wp_unslash( $_POST['due_date'] ) ) : '';
 			$sl_due_error      = false;
 			if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $sl_due ) || ! strtotime( $sl_due ) ) {
-				$sl_due = date( 'Y-m-d', strtotime( '+' . (int) get_option( 'mtl_default_loan_days', 21 ) . ' days' ) );
-			} elseif ( $sl_due < date( 'Y-m-d' ) ) {
+				$sl_due = gmdate( 'Y-m-d', strtotime( '+' . (int) get_option( 'mtl_default_loan_days', 21 ) . ' days' ) );
+			} elseif ( $sl_due < gmdate( 'Y-m-d' ) ) {
 				$sl_due_error = true;
 			}
 
@@ -1119,14 +1151,17 @@ function mtl_render_membership_page() {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
 		}
 	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	// 4. HANDLE "EDIT" LINK (GET) -- load the requested member into the Edit
 	// panel. Skipped if a submitted edit above already failed validation, since
 	// that block already populated $editing/$edit_values with the admin's input.
-	if ( ! $editing && current_user_can( 'manage_options' ) && isset( $_GET['mtl_action'], $_GET['member_id'] ) && $_GET['mtl_action'] === 'edit' ) {
+	$get_mtl_action = isset( $_GET['mtl_action'] ) ? sanitize_key( wp_unslash( $_GET['mtl_action'] ) ) : '';
+	if ( ! $editing && current_user_can( 'manage_options' ) && isset( $_GET['member_id'] ) && 'edit' === $get_mtl_action ) {
 		$edit_member_id = intval( $_GET['member_id'] );
 
 		if ( $edit_member_id > 0 ) {
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 			$member_row = $wpdb->get_row(
 				$wpdb->prepare(
 					"SELECT m.*, v.photo_id_scan_url, v.address_proof_scan_url
@@ -1136,6 +1171,7 @@ function mtl_render_membership_page() {
 					$edit_member_id
 				)
 			);
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 			if ( $member_row ) {
 				$editing     = true;
@@ -1637,6 +1673,10 @@ function mtl_render_membership_page() {
 	// LEFT JOIN so unverified members (no member_verifications row) still
 	// appear; their scan URL columns simply come back NULL, which the table
 	// renders as a "Not Verified" badge.
+	// Every {$tbl_*} fragment interpolated through the end of this
+	// data-gathering section is a table name only, built from $wpdb->prefix,
+	// never request data.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	$members = $wpdb->get_results(
 		"
         SELECT
@@ -1738,6 +1778,7 @@ function mtl_render_membership_page() {
 	foreach ( $active_res_rows as $row ) {
 		$active_res_by_member[ (int) $row->member_id ][] = $row;
 	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	// 6. RENDER THE FILTERABLE/SORTABLE MEMBERS TABLE
 	?>
@@ -1955,7 +1996,7 @@ function mtl_render_membership_page() {
 							<td class="mtl-truncate" title="<?php echo esc_attr( mtl_member_address_single_line( $member ) ); ?>"><?php echo esc_html( mtl_member_address_single_line( $member ) ); ?></td>
 							<td><?php echo mtl_format_date( $member->signup_date ); ?></td>
 							<td>$<?php echo esc_html( number_format( $member->recurring_donation_amount, 2 ) ); ?></td>
-							<td><?php echo $member->has_donated_tools === 'Y' ? 'Yes' : 'No'; ?></td>
+							<td><?php echo 'Y' === $member->has_donated_tools ? 'Yes' : 'No'; ?></td>
 							<td>
 								<?php if ( $is_anonymized ) : ?>
 									<span class="mtl-unverified-badge" title="Personal data removed at member request">Removed</span>
@@ -2064,7 +2105,7 @@ function mtl_render_membership_page() {
 														data-tool-name="<?php echo esc_attr( stripslashes( $res->tool_name ) ); ?>"
 														data-queue-place="<?php echo (int) $res->queue_place; ?>"
 														data-queue-size="<?php echo (int) $res->queue_size; ?>"
-														data-first-in-queue="<?php echo ( (int) $res->queue_place === 1 ) ? '1' : '0'; ?>"
+														data-first-in-queue="<?php echo ( 1 === (int) $res->queue_place ) ? '1' : '0'; ?>"
 														title="Click to manage this reservation">
 														<?php echo esc_html( stripslashes( $res->tool_name ) ); ?>
 														<span class="mtl-member-list-meta"><?php echo esc_html( stripslashes( $res->barcode ) ); ?> &bull; queue #<?php echo esc_html( $res->queue_place ); ?> of <?php echo esc_html( $res->queue_size ); ?></span>
@@ -2112,7 +2153,7 @@ function mtl_render_membership_page() {
 							<button type="button" class="button button-small mtl-lm-due-btn" data-days="<?php echo (int) $lm_days; ?>"><?php echo (int) $lm_days; ?> days</button>
 						<?php endforeach; ?>
 					</div>
-					<input type="date" name="due_date" id="mtl-lm-due" class="mtl-lm-due-input" value="" min="<?php echo esc_attr( date( 'Y-m-d' ) ); ?>" required>
+					<input type="date" name="due_date" id="mtl-lm-due" class="mtl-lm-due-input" value="" min="<?php echo esc_attr( gmdate( 'Y-m-d' ) ); ?>" required>
 
 					<div class="mtl-lm-actions">
 						<button type="submit" name="mtl_member_extend_loan" class="button button-primary">Save New Due Date</button>
@@ -2159,7 +2200,7 @@ function mtl_render_membership_page() {
 							<button type="button" class="button button-small mtl-rm-due-btn<?php echo $rm_days === $mtl_default_loan_days ? ' mtl-lm-due-active' : ''; ?>" data-days="<?php echo (int) $rm_days; ?>"><?php echo (int) $rm_days; ?> days</button>
 						<?php endforeach; ?>
 					</div>
-					<input type="date" name="due_date" id="mtl-rm-due" class="mtl-lm-due-input" value="<?php echo esc_attr( $mtl_default_due_date ); ?>" min="<?php echo esc_attr( date( 'Y-m-d' ) ); ?>" required>
+					<input type="date" name="due_date" id="mtl-rm-due" class="mtl-lm-due-input" value="<?php echo esc_attr( $mtl_default_due_date ); ?>" min="<?php echo esc_attr( gmdate( 'Y-m-d' ) ); ?>" required>
 
 					<div class="mtl-lm-actions">
 						<button type="submit" name="mtl_member_start_loan" class="button button-primary">Start Loan for This Member</button>
