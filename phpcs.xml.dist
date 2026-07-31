@@ -33,6 +33,8 @@
                 <element value="mtl_front_notice_html"/>
                 <element value="mtl_dash_bars"/>
                 <element value="mtl_dash_donut"/>
+                <element value="mtl_member_page_styles"/>
+                <element value="mtl_render_reservation_detail_panel"/>
             </property>
         </properties>
     </rule>

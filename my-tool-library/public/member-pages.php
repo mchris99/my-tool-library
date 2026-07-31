@@ -1,9 +1,4 @@
 <?php
-// Prevent direct file access
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
-
 /**
  * Public member accounts (server-side rendered, no JavaScript required).
  *
@@ -23,7 +18,14 @@ if ( ! defined( 'ABSPATH' ) ) {
  * table is the mtl_member_id stored in that user's meta at signup --
  * authoritative, so it survives even if the member later edits their email.
  * No password or other credential is ever stored in the plugin's own tables.
+ *
+ * @package My_Tool_Library
  */
+
+// Prevent direct file access.
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
 
 // Minimum member password length; WordPress handles the actual hashing/storage.
 if ( ! defined( 'MTL_MIN_PASSWORD_LENGTH' ) ) {
@@ -38,6 +40,10 @@ if ( ! defined( 'MTL_MIN_PASSWORD_LENGTH' ) ) {
 // rather than only on activation, so it also appears on installs that were
 // already active before this feature shipped.
 add_action( 'init', 'mtl_register_member_role' );
+
+/**
+ * Registers the low-privilege "mtl_member" role, if not already present.
+ */
 function mtl_register_member_role() {
 	if ( ! get_role( 'mtl_member' ) ) {
 		add_role( 'mtl_member', 'Tool Library Member', array( 'read' => true ) );
@@ -75,6 +81,7 @@ function mtl_current_member() {
 	}
 	global $wpdb;
 	$tbl    = $wpdb->prefix . 'members';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 	$member = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$tbl} WHERE member_id = %d", $member_id ) );
 	return $member;
 }
@@ -95,6 +102,7 @@ function mtl_member_is_verified( $member_id ) {
 	$tbl = $wpdb->prefix . 'member_verifications';
 	return (bool) $wpdb->get_var(
 		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 			"SELECT member_id FROM {$tbl} WHERE member_id = %d AND photo_id_scan_url IS NOT NULL AND address_proof_scan_url IS NOT NULL",
 			(int) $member_id
 		)
@@ -125,7 +133,9 @@ function mtl_front_notice( $key ) {
 	return isset( $map[ $key ] ) ? $map[ $key ] : null;
 }
 
-// Renders the current mtl_msg (if any) as a status banner, or '' if none.
+/**
+ * Renders the current mtl_msg (if any) as a status banner, or '' if none.
+ */
 function mtl_front_notice_html() {
 	if ( ! isset( $_GET['mtl_msg'] ) ) {
 		return '';
@@ -139,10 +149,12 @@ function mtl_front_notice_html() {
 		. '</div>';
 }
 
-// Top-right nav cluster for the shop page, adapting to login state: logged
-// out gets Sign In + Sign Up; signed-in member gets a native <details> account
-// menu (no JS needed); signed-in admin gets Admin Portal + Log Out. Rendered
-// inside the shop markup (public/shop-page.php), which supplies the CSS.
+/**
+ * Top-right nav cluster for the shop page, adapting to login state: logged
+ * out gets Sign In + Sign Up; signed-in member gets a native <details> account
+ * menu (no JS needed); signed-in admin gets Admin Portal + Log Out. Rendered
+ * inside the shop markup (public/shop-page.php), which supplies the CSS.
+ */
 function mtl_member_nav_html() {
 	$out = '<div class="mtl-shop-account-nav">';
 
@@ -172,9 +184,11 @@ function mtl_member_nav_html() {
 	return $out . '</div>';
 }
 
-// Shared <style> for the standalone member pages (signup / reservations /
-// account). Overrides .mtl-front-content to top-align (the front-end shell
-// normally centers a single card) and adds table / form / badge styling.
+/**
+ * Shared <style> for the standalone member pages (signup / reservations /
+ * account). Overrides .mtl-front-content to top-align (the front-end shell
+ * normally centers a single card) and adds table / form / badge styling.
+ */
 function mtl_member_page_styles() {
 	$accent = get_option( 'mtl_header_color', '#ff6600' );
 	ob_start();
@@ -547,7 +561,9 @@ function mtl_member_page_styles() {
 	return ob_get_clean();
 }
 
-// Standard "back to the shop" footer link for the member pages.
+/**
+ * Standard "back to the shop" footer link for the member pages.
+ */
 function mtl_member_page_footer() {
 	return '<a href="' . esc_url( mtl_front_page_url( 'main' ) ) . '">&larr; Back to the tool catalog</a>';
 }
@@ -555,14 +571,18 @@ function mtl_member_page_footer() {
 // --------------------------------------------------------------------------
 // Reserve a tool  (POST from the shop page's detail panel)
 // --------------------------------------------------------------------------
-// Called from mtl_render_front_main_page() before any output, so it can
-// finish with a Post/Redirect/Get back to the catalog (no double-submit on
-// refresh). Does nothing unless this request is actually a reserve POST.
+
+/**
+ * Called from mtl_render_front_main_page() before any output, so it can
+ * finish with a Post/Redirect/Get back to the catalog (no double-submit on
+ * refresh). Does nothing unless this request is actually a reserve POST.
+ */
 function mtl_handle_reserve_action() {
-	if ( ( $_SERVER['REQUEST_METHOD'] ?? '' ) !== 'POST' || ! isset( $_POST['mtl_action'] ) ) {
+	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
+	if ( 'POST' !== $request_method || ! isset( $_POST['mtl_action'] ) ) {
 		return;
 	}
-	if ( sanitize_key( wp_unslash( $_POST['mtl_action'] ) ) !== 'reserve' ) {
+	if ( 'reserve' !== sanitize_key( wp_unslash( $_POST['mtl_action'] ) ) ) {
 		return;
 	}
 
@@ -581,7 +601,7 @@ function mtl_handle_reserve_action() {
 	};
 
 	// Valid nonce required (blocks cross-site / accidental submissions).
-	if ( ! isset( $_POST['mtl_reserve_nonce'] ) || ! wp_verify_nonce( $_POST['mtl_reserve_nonce'], 'mtl_reserve_action' ) ) {
+	if ( ! isset( $_POST['mtl_reserve_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_reserve_nonce'] ) ), 'mtl_reserve_action' ) ) {
 		$redirect( 'reserve_failed' );
 	}
 
@@ -597,6 +617,7 @@ function mtl_handle_reserve_action() {
 
 	// Tool must exist and not be retired (closes off a stale/bookmarked
 	// reserve link against a since-retired tool).
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 	$exists = $wpdb->get_var( $wpdb->prepare( "SELECT tool_id FROM {$tbl_inv} WHERE tool_id = %d AND retired_at IS NULL", $tool_id ) );
 	if ( ! $exists ) {
 		$redirect( 'reserve_failed' );
@@ -605,6 +626,7 @@ function mtl_handle_reserve_action() {
 	// Can't reserve a tool the member already has checked out.
 	$on_loan = $wpdb->get_var(
 		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 			"SELECT loan_id FROM {$tbl_loans} WHERE member_id = %d AND tool_id = %d AND return_date IS NULL LIMIT 1",
 			(int) $member->member_id,
 			$tool_id
@@ -617,6 +639,7 @@ function mtl_handle_reserve_action() {
 	// Only one active reservation per member per tool.
 	$already = $wpdb->get_var(
 		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 			"SELECT reservation_id FROM {$tbl_res} WHERE member_id = %d AND tool_id = %d AND expiry_date IS NULL LIMIT 1",
 			(int) $member->member_id,
 			$tool_id
@@ -644,6 +667,10 @@ function mtl_handle_reserve_action() {
 // --------------------------------------------------------------------------
 // Sign-up page  (mtl_page=signup)
 // --------------------------------------------------------------------------
+
+/**
+ * Renders the member sign-up page and handles its POST submission.
+ */
 function mtl_render_signup_page() {
 	// Already signed in -- nothing to sign up for.
 	if ( is_user_logged_in() ) {
@@ -668,8 +695,9 @@ function mtl_render_signup_page() {
 		'email'         => '',
 	);
 
-	if ( ( $_SERVER['REQUEST_METHOD'] ?? '' ) === 'POST' && isset( $_POST['mtl_signup'] ) ) {
-		if ( ! isset( $_POST['mtl_signup_nonce'] ) || ! wp_verify_nonce( $_POST['mtl_signup_nonce'], 'mtl_signup_action' ) ) {
+	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
+	if ( 'POST' === $request_method && isset( $_POST['mtl_signup'] ) ) {
+		if ( ! isset( $_POST['mtl_signup_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_signup_nonce'] ) ), 'mtl_signup_action' ) ) {
 			$errors[] = 'Your session expired. Please try submitting the form again.';
 		} else {
 			$vals['first_name']    = sanitize_text_field( wp_unslash( $_POST['first_name'] ?? '' ) );
@@ -683,32 +711,35 @@ function mtl_render_signup_page() {
 			$vals['state']    = mtl_valid_state( sanitize_text_field( wp_unslash( $_POST['state'] ?? '' ) ) );
 			$vals['zip_code'] = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
 			$vals['country']  = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
-			if ( $vals['country'] === '' ) {
+			if ( '' === $vals['country'] ) {
 				$vals['country'] = 'United States';
 			}
 			$vals['phone_number'] = sanitize_text_field( wp_unslash( $_POST['phone_number'] ?? '' ) );
 			$vals['email']        = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
 			// Passwords are unslashed but NOT sanitized -- altering the
 			// characters would silently change the member's chosen password.
-			$password  = (string) wp_unslash( $_POST['password'] ?? '' );
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$password = (string) wp_unslash( $_POST['password'] ?? '' );
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$password2 = (string) wp_unslash( $_POST['password2'] ?? '' );
 
-			if ( $vals['first_name'] === '' || $vals['last_name'] === '' ) {
+			if ( '' === $vals['first_name'] || '' === $vals['last_name'] ) {
 				$errors[] = 'Please enter your first and last name.';
 			}
-			if ( $vals['address_line1'] === '' || $vals['city'] === '' || $vals['state'] === '' || $vals['zip_code'] === '' ) {
+			if ( '' === $vals['address_line1'] || '' === $vals['city'] || '' === $vals['state'] || '' === $vals['zip_code'] ) {
 				$errors[] = 'Please enter a complete address (street, city, state, and ZIP code).';
 			}
-			if ( $vals['phone_number'] === '' ) {
+			if ( '' === $vals['phone_number'] ) {
 				$errors[] = 'Please enter a phone number.';
 			}
-			if ( $vals['email'] === '' || ! is_email( $vals['email'] ) ) {
+			if ( '' === $vals['email'] || ! is_email( $vals['email'] ) ) {
 				$errors[] = 'Please enter a valid email address.';
 			} elseif ( email_exists( $vals['email'] ) ) {
 				$errors[] = 'An account with that email already exists. Try signing in instead.';
 			} else {
 				$tbl_members = $wpdb->prefix . 'members';
-				$dupe        = $wpdb->get_var( $wpdb->prepare( "SELECT member_id FROM {$tbl_members} WHERE email = %s", $vals['email'] ) );
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+				$dupe = $wpdb->get_var( $wpdb->prepare( "SELECT member_id FROM {$tbl_members} WHERE email = %s", $vals['email'] ) );
 				if ( $dupe ) {
 					$errors[] = 'An account with that email already exists. Try signing in instead.';
 				}
@@ -730,7 +761,7 @@ function mtl_render_signup_page() {
 						'first_name'    => $vals['first_name'],
 						'last_name'     => $vals['last_name'],
 						'address_line1' => $vals['address_line1'],
-						'address_line2' => $vals['address_line2'] !== '' ? $vals['address_line2'] : null,
+						'address_line2' => '' !== $vals['address_line2'] ? $vals['address_line2'] : null,
 						'city'          => $vals['city'],
 						'state'         => $vals['state'],
 						'zip_code'      => $vals['zip_code'],
@@ -910,7 +941,7 @@ function mtl_render_signup_page() {
  */
 function mtl_render_reservation_detail_panel( $r, $self ) {
 	$on_loan   = ( (int) $r->active_loans > 0 );
-	$is_first  = ( (int) $r->queue_place === 1 );
+	$is_first  = ( 1 === (int) $r->queue_place );
 	$available = ! $on_loan;
 
 	ob_start();
@@ -982,6 +1013,11 @@ function mtl_render_reservation_detail_panel( $r, $self ) {
 // --------------------------------------------------------------------------
 // My Reservations page  (mtl_page=reservations)
 // --------------------------------------------------------------------------
+
+/**
+ * Renders the member's "My Loans & Reservations" page and handles its
+ * cancel-reservation POST actions.
+ */
 function mtl_render_member_reservations_page() {
 	if ( ! is_user_logged_in() ) {
 		wp_safe_redirect( mtl_front_page_url( 'login' ) );
@@ -1007,6 +1043,7 @@ function mtl_render_member_reservations_page() {
 	// --- Active loans (currently checked out), soonest due date first. Each
 	// is flagged 'overdue', 'due_today', 'due_soon' (within 1-3 days), or
 	// 'normal' so the table can call out urgency. ---
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$active_loans = $wpdb->get_results(
 		$wpdb->prepare(
 			"SELECT l.loan_id, l.tool_id, l.due_date, t.tool_name
@@ -1017,12 +1054,13 @@ function mtl_render_member_reservations_page() {
 			(int) $member->member_id
 		)
 	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	$today_ts     = strtotime( current_time( 'Y-m-d' ) );
 	foreach ( $active_loans as $loan ) {
 		$days_left = (int) round( ( strtotime( $loan->due_date ) - $today_ts ) / DAY_IN_SECONDS );
 		if ( $days_left < 0 ) {
 			$loan->loan_status = 'overdue';
-		} elseif ( $days_left === 0 ) {
+		} elseif ( 0 === $days_left ) {
 			$loan->loan_status = 'due_today';
 		} elseif ( $days_left <= 3 ) {
 			$loan->loan_status = 'due_soon';
@@ -1043,19 +1081,21 @@ function mtl_render_member_reservations_page() {
 	);
 
 	// --- Handle cancel actions (POST + nonce), then PRG-redirect. ---
-	if ( ( $_SERVER['REQUEST_METHOD'] ?? '' ) === 'POST' && isset( $_POST['mtl_action'] ) ) {
+	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
+	if ( 'POST' === $request_method && isset( $_POST['mtl_action'] ) ) {
 		$action = sanitize_key( wp_unslash( $_POST['mtl_action'] ) );
-		$valid  = isset( $_POST['mtl_res_nonce'] ) && wp_verify_nonce( $_POST['mtl_res_nonce'], 'mtl_res_action' );
+		$valid  = isset( $_POST['mtl_res_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_res_nonce'] ) ), 'mtl_res_action' );
 
 		// Cancelling doesn't delete the row -- it closes the reservation by
 		// stamping expiry_date, so it becomes history. member_id is enforced
 		// in every WHERE so a member can only cancel their own reservations.
 		$today = current_time( 'mysql' );
 
-		if ( $valid && $action === 'cancel_reservation' ) {
+		if ( $valid && 'cancel_reservation' === $action ) {
 			$rid = isset( $_POST['reservation_id'] ) ? (int) $_POST['reservation_id'] : 0;
 			$wpdb->query(
 				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 					"UPDATE {$tbl_res} SET expiry_date = %s
                  WHERE reservation_id = %d AND member_id = %d AND expiry_date IS NULL",
 					$today,
@@ -1067,9 +1107,10 @@ function mtl_render_member_reservations_page() {
 			exit;
 		}
 
-		if ( $valid && $action === 'cancel_all' ) {
+		if ( $valid && 'cancel_all' === $action ) {
 			$wpdb->query(
 				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 					"UPDATE {$tbl_res} SET expiry_date = %s
                  WHERE member_id = %d AND expiry_date IS NULL",
 					$today,
@@ -1087,6 +1128,7 @@ function mtl_render_member_reservations_page() {
 	// queue_place counts same-tool reservations ahead in line (earlier
 	// reservation_date, ties broken by reservation_id) -- the same
 	// derivation the admin Loans & Reservations page uses. ---
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$rows = $wpdb->get_results(
 		$wpdb->prepare(
 			"SELECT r.reservation_id, r.tool_id, r.reservation_date,
@@ -1117,6 +1159,7 @@ function mtl_render_member_reservations_page() {
 			(int) $member->member_id
 		)
 	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	// --- Confirmation step (zero-JS): Cancel links just render an "Are you
 	// sure?" prompt via ?mtl_confirm=one|all; nothing is cancelled until
@@ -1126,7 +1169,7 @@ function mtl_render_member_reservations_page() {
 	$confirm     = isset( $_GET['mtl_confirm'] ) ? sanitize_key( wp_unslash( $_GET['mtl_confirm'] ) ) : '';
 	$confirm_rid = isset( $_GET['rid'] ) ? (int) $_GET['rid'] : 0;
 	$confirm_row = null;
-	if ( $confirm === 'one' && $confirm_rid > 0 ) {
+	if ( 'one' === $confirm && $confirm_rid > 0 ) {
 		foreach ( $rows as $candidate ) {
 			if ( (int) $candidate->reservation_id === $confirm_rid ) {
 				$confirm_row = $candidate;
@@ -1143,7 +1186,7 @@ function mtl_render_member_reservations_page() {
 			// detail), so it gets a wider wrap; the confirm and empty states stay
 			// in the standard narrow, single-column wrap.
 	?>
-	<?php $listing = ( $confirm === '' && ! empty( $rows ) ); ?>
+	<?php $listing = ( '' === $confirm && ! empty( $rows ) ); ?>
 	<div class="mtl-member-wrap<?php echo $listing ? ' mtl-member-wrap-wide' : ''; ?>">
 		<a class="mtl-member-back" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a>
 
@@ -1172,11 +1215,11 @@ function mtl_render_member_reservations_page() {
 								<td><?php echo esc_html( stripslashes( $loan->tool_name ) ); ?></td>
 								<td>
 									<?php echo mtl_format_date( $loan->due_date ); ?>
-									<?php if ( $loan->loan_status === 'overdue' ) : ?>
+									<?php if ( 'overdue' === $loan->loan_status ) : ?>
 										<span class="mtl-pill mtl-pill-red" style="margin-left:6px;">Overdue</span>
-									<?php elseif ( $loan->loan_status === 'due_today' ) : ?>
+									<?php elseif ( 'due_today' === $loan->loan_status ) : ?>
 										<span class="mtl-pill mtl-pill-orange" style="margin-left:6px;">Due today</span>
-									<?php elseif ( $loan->loan_status === 'due_soon' ) : ?>
+									<?php elseif ( 'due_soon' === $loan->loan_status ) : ?>
 										<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Due soon</span>
 									<?php endif; ?>
 								</td>
@@ -1187,14 +1230,14 @@ function mtl_render_member_reservations_page() {
 			<?php endif; ?>
 		</div>
 
-		<?php if ( $pickup_directions !== '' ) : ?>
+		<?php if ( '' !== $pickup_directions ) : ?>
 			<div class="mtl-member-card mtl-member-directions">
 				<strong>Picking up a tool</strong>
 				<p style="margin:6px 0 0 0;"><?php echo nl2br( esc_html( $pickup_directions ) ); ?></p>
 			</div>
 		<?php endif; ?>
 
-		<?php if ( $confirm === 'one' && $confirm_row ) : ?>
+		<?php if ( 'one' === $confirm && $confirm_row ) : ?>
 			<div class="mtl-member-card">
 				<h2>My Reservations</h2>
 				<?php
@@ -1214,7 +1257,7 @@ function mtl_render_member_reservations_page() {
 				</div>
 			</div>
 
-		<?php elseif ( $confirm === 'all' && ! empty( $rows ) ) : ?>
+		<?php elseif ( 'all' === $confirm && ! empty( $rows ) ) : ?>
 			<div class="mtl-member-card">
 				<h2>My Reservations</h2>
 				<?php // "Are you sure?" for cancelling ALL reservations. ?>
@@ -1258,8 +1301,8 @@ function mtl_render_member_reservations_page() {
 							<tbody>
 								<?php
 								foreach ( $rows as $r ) :
-									$is_first  = ( (int) $r->queue_place === 1 );
-									$available = ( (int) $r->active_loans === 0 );
+									$is_first  = ( 1 === (int) $r->queue_place );
+									$available = ( 0 === (int) $r->active_loans );
 									?>
 									<tr>
 										<td><a class="mtl-res-name-link" href="#<?php echo esc_attr( 'res-tool-' . (int) $r->reservation_id ); ?>"><?php echo esc_html( stripslashes( $r->tool_name ) ); ?></a></td>
@@ -1323,6 +1366,10 @@ function mtl_render_member_reservations_page() {
 // --------------------------------------------------------------------------
 // Account page  (mtl_page=account)
 // --------------------------------------------------------------------------
+
+/**
+ * Renders the member's Account page and handles its profile-update POST.
+ */
 function mtl_render_account_page() {
 	if ( ! is_user_logged_in() ) {
 		wp_safe_redirect( mtl_front_page_url( 'login' ) );
@@ -1344,8 +1391,9 @@ function mtl_render_account_page() {
 	$errors = array();
 
 	// --- Handle profile update (POST + nonce), then PRG-redirect. ---
-	if ( ( $_SERVER['REQUEST_METHOD'] ?? '' ) === 'POST' && isset( $_POST['mtl_update_account'] ) ) {
-		if ( ! isset( $_POST['mtl_account_nonce'] ) || ! wp_verify_nonce( $_POST['mtl_account_nonce'], 'mtl_account_action' ) ) {
+	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
+	if ( 'POST' === $request_method && isset( $_POST['mtl_update_account'] ) ) {
+		if ( ! isset( $_POST['mtl_account_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_account_nonce'] ) ), 'mtl_account_action' ) ) {
 			$errors[] = 'Your session expired. Please try again.';
 		} else {
 			$first    = sanitize_text_field( wp_unslash( $_POST['first_name'] ?? '' ) );
@@ -1357,17 +1405,17 @@ function mtl_render_account_page() {
 			$state    = mtl_valid_state( sanitize_text_field( wp_unslash( $_POST['state'] ?? '' ) ) );
 			$zip_code = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
 			$country  = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
-			if ( $country === '' ) {
+			if ( '' === $country ) {
 				$country = 'United States';
 			}
 
-			if ( $first === '' || $last === '' ) {
+			if ( '' === $first || '' === $last ) {
 				$errors[] = 'Please keep your first and last name filled in.';
 			}
-			if ( $phone === '' ) {
+			if ( '' === $phone ) {
 				$errors[] = 'Please keep a phone number on file.';
 			}
-			if ( $address1 === '' || $city === '' || $state === '' || $zip_code === '' ) {
+			if ( '' === $address1 || '' === $city || '' === $state || '' === $zip_code ) {
 				$errors[] = 'Please keep a complete address on file (street, city, state, and ZIP code).';
 			}
 
@@ -1391,7 +1439,7 @@ function mtl_render_account_page() {
 						'last_name'     => $last,
 						'phone_number'  => $phone,
 						'address_line1' => $address1,
-						'address_line2' => $address2 !== '' ? $address2 : null,
+						'address_line2' => '' !== $address2 ? $address2 : null,
 						'city'          => $city,
 						'state'         => $state,
 						'zip_code'      => $zip_code,
@@ -1434,8 +1482,9 @@ function mtl_render_account_page() {
 	// The confirmation step is the GET link to ?mtl_confirm_delete=1 below
 	// (this page has no JavaScript, so there's no confirm() dialog) -- this
 	// handler only runs on the follow-up POST from that confirmation form.
-	if ( ( $_SERVER['REQUEST_METHOD'] ?? '' ) === 'POST' && isset( $_POST['mtl_delete_account'] ) ) {
-		if ( ! isset( $_POST['mtl_delete_account_nonce'] ) || ! wp_verify_nonce( $_POST['mtl_delete_account_nonce'], 'mtl_delete_account_action' ) ) {
+	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
+	if ( 'POST' === $request_method && isset( $_POST['mtl_delete_account'] ) ) {
+		if ( ! isset( $_POST['mtl_delete_account_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_account_nonce'] ) ), 'mtl_delete_account_action' ) ) {
 			$errors[] = 'Your session expired. Please try again.';
 		} else {
 			mtl_delete_or_anonymize_member( (int) $member->member_id );
@@ -1450,7 +1499,7 @@ function mtl_render_account_page() {
 
 	$is_verified    = mtl_member_is_verified( $member->member_id );
 	$user           = wp_get_current_user();
-	$confirm_delete = isset( $_GET['mtl_confirm_delete'] ) && $_GET['mtl_confirm_delete'] === '1';
+	$confirm_delete = isset( $_GET['mtl_confirm_delete'] ) && '1' === $_GET['mtl_confirm_delete'];
 	// Admin-editable via the Setup page; blank hides it entirely (see the
 	// update_option() comment in setup-page.php for why blank stays blank).
 	// The fallback text here matches setup-page.php's default exactly, so a
@@ -1463,6 +1512,7 @@ function mtl_render_account_page() {
 	);
 
 	// Past + current loans for this member.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$loans = $wpdb->get_results(
 		$wpdb->prepare(
 			"SELECT l.loan_id, l.loan_date, l.due_date, l.return_date, t.tool_name
@@ -1473,12 +1523,14 @@ function mtl_render_account_page() {
 			(int) $member->member_id
 		)
 	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	// Whether deleting this account will anonymize (history on record) or
 	// fully remove it -- shown on the delete-confirmation view below.
 	$tbl_res     = $wpdb->prefix . 'tool_reservations';
 	$has_history = ! empty( $loans ) || (bool) $wpdb->get_var(
 		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 			"SELECT 1 FROM {$tbl_res} WHERE member_id = %d LIMIT 1",
 			(int) $member->member_id
 		)
@@ -1488,6 +1540,7 @@ function mtl_render_account_page() {
 	// concrete consequence than the general history note above.
 	$has_active_reservation = (bool) $wpdb->get_var(
 		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 			"SELECT 1 FROM {$tbl_res} WHERE member_id = %d AND expiry_date IS NULL LIMIT 1",
 			(int) $member->member_id
 		)
@@ -1548,7 +1601,7 @@ function mtl_render_account_page() {
 					<span class="mtl-pill mtl-pill-grey">Not yet verified</span>
 				<?php endif; ?>
 			</p>
-			<?php if ( ! $is_verified && $verification_directions !== '' ) : ?>
+			<?php if ( ! $is_verified && '' !== $verification_directions ) : ?>
 				<p class="mtl-member-hint" style="font-size:0.9em;"><?php echo nl2br( esc_html( $verification_directions ) ); ?></p>
 			<?php endif; ?>
 
@@ -1649,7 +1702,7 @@ function mtl_render_account_page() {
 								$overdue      = ( $l->due_date < $today );
 								$status_class = $overdue ? 'mtl-pill-red' : 'mtl-pill-amber';
 								$status_label = $overdue ? 'Overdue' : 'On loan';
-							} elseif ( date( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date ) {
+							} elseif ( gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date ) {
 								// Compare on the DATE portion only: return_date is a
 								// full timestamp, due_date stays a plain date, so a
 								// raw > comparison would wrongly call anything
@@ -1693,7 +1746,7 @@ function mtl_render_account_page() {
  * member-only page.
  *
  * @param string $page_title Page title to display.
- * @return string HTML.
+ * @return void Outputs the page directly (via mtl_render_front_shell()) and exits.
  */
 function mtl_render_member_only_notice( $page_title ) {
 	ob_start();
