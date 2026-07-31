@@ -546,7 +546,11 @@ function mtl_render_membership_page() {
 							$bulk_import_ran = true;
 							$max_bulk_rows   = 5000; // Sanity cap so a huge file can't tie up the request indefinitely.
 
-							while ( false !== ( $row = fgetcsv( $handle ) ) ) {
+							while ( true ) {
+								$row = fgetcsv( $handle );
+								if ( false === $row ) {
+									break;
+								}
 								++$row_number;
 
 								if ( $row_number - 1 > $max_bulk_rows ) {
@@ -863,7 +867,7 @@ function mtl_render_membership_page() {
 						)
 					);
 					// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-					$is_now_verified  = mtl_verification_urls_complete( $photo_id_url, $addr_proof_url );
+					$is_now_verified = mtl_verification_urls_complete( $photo_id_url, $addr_proof_url );
 
 					$verification_note = '';
 					if ( '' !== $photo_id_url || '' !== $addr_proof_url ) {

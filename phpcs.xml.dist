@@ -15,6 +15,57 @@
 
     <rule ref="WordPress">
         <exclude name="WordPress.Files.FileName"/>
+
+        <!-- This plugin's entire data layer is custom $wpdb tables (members,
+             tool_inventory, loans, tool_reservations, etc.); there is no
+             WP_Query/WP_User_Query equivalent for them, so direct $wpdb calls
+             are unavoidable, not an oversight. Wrapping every read in
+             wp_cache_get()/wp_cache_set() would be a real feature addition,
+             not a style fix, and risks serving stale data (e.g. showing a
+             tool as available right after it was checked out) if cache
+             invalidation isn't handled correctly on every insert/update/
+             delete path. Deferred as a deliberate, documented tradeoff. -->
+        <exclude name="WordPress.DB.DirectDatabaseQuery.DirectQuery"/>
+        <exclude name="WordPress.DB.DirectDatabaseQuery.NoCaching"/>
+
+        <!-- The Setup page's "Run Database Setup" button intentionally runs
+             CREATE/DROP TABLE statements from the plugin's own bundled
+             admin/schema.sql; that IS the feature, gated on
+             manage_options plus a nonce, not an accidental schema change. -->
+        <exclude name="WordPress.DB.DirectDatabaseQuery.SchemaChange"/>
+
+        <!-- mtl_find_wp_user_id_by_member_id() (my-tool-library.php) looks up
+             a WP user by the mtl_member_id usermeta value via get_users().
+             There is no non-meta way to do this reverse lookup through core
+             APIs; moving mtl_member_id into a first-class column is a schema
+             change outside the scope of a lint pass. -->
+        <exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_key"/>
+        <exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_value"/>
+
+        <!-- fopen()/fread()/fclose() here are always used on either a
+             php://output / php://temp stream (building a CSV/SQL/ZIP file
+             for direct download) or an already-validated uploaded tmp file
+             (is_uploaded_file() checked first); none of these are real
+             filesystem paths WP_Filesystem is designed for, and WP_Filesystem
+             has no stream-wrapper equivalent for php://output. -->
+        <exclude name="WordPress.WP.AlternativeFunctions.file_system_operations_fopen"/>
+        <exclude name="WordPress.WP.AlternativeFunctions.file_system_operations_fread"/>
+        <exclude name="WordPress.WP.AlternativeFunctions.file_system_operations_fclose"/>
+
+        <!-- setup-page.php reads the plugin's own bundled admin/schema.sql by
+             a hardcoded local path (never a URL or user input) to run Database
+             Setup. wp_remote_get() is for HTTP requests and doesn't apply;
+             WP_Filesystem() is avoided here since it can prompt for FTP/SSH
+             credentials on hosts without direct filesystem access, which
+             would turn a one-click admin action into a broken/blocked one. -->
+        <exclude name="WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents"/>
+
+        <!-- Every flagged site is a read-only GET action (catalog search/
+             filter/sort/pagination, admin tab highlighting, a status-banner
+             lookup); nothing here mutates state, so CSRF protection via a
+             nonce does not apply; all real mutations (POST forms) already
+             carry and verify a nonce elsewhere in these same files. -->
+        <exclude name="WordPress.Security.NonceVerification.Recommended"/>
     </rule>
 
     <!-- These plugin-defined helpers escape every interpolated value internally

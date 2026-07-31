@@ -283,7 +283,7 @@ function mtl_render_inventory_page() {
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_categories} ORDER BY category_name ASC" );
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-	$tags       = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
+	$tags = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
 
 	// 1. HANDLE "ADD" FORM SUBMISSION (Insert Data)
 	if ( isset( $_POST['mtl_add_tool'] ) && current_user_can( 'manage_options' ) ) {
@@ -524,7 +524,11 @@ function mtl_render_inventory_page() {
 							$bulk_import_ran = true;
 							$max_bulk_rows   = 5000; // Sanity cap so a huge file can't tie up the request indefinitely.
 
-							while ( false !== ( $row = fgetcsv( $handle ) ) ) {
+							while ( true ) {
+								$row = fgetcsv( $handle );
+								if ( false === $row ) {
+									break;
+								}
 								++$row_number;
 
 								if ( $row_number - 1 > $max_bulk_rows ) {
@@ -1067,7 +1071,7 @@ function mtl_render_inventory_page() {
 						$rt_tool_id
 					)
 				);
-				$rt_note      = $rt_cancelled ? ( ' ' . (int) $rt_cancelled . ' active reservation(s) for it were also cancelled.' ) : '';
+				$rt_note = $rt_cancelled ? ( ' ' . (int) $rt_cancelled . ' active reservation(s) for it were also cancelled.' ) : '';
 				echo '<div class="notice notice-success is-dismissible"><p><strong>Retired.</strong> This tool is now hidden from the public catalog and can&rsquo;t be loaned or reserved.' . esc_html( $rt_note ) . '</p></div>';
 			} else {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That tool could not be found, or is already retired.</p></div>';

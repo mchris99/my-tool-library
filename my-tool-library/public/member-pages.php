@@ -80,7 +80,7 @@ function mtl_current_member() {
 		return $member;
 	}
 	global $wpdb;
-	$tbl    = $wpdb->prefix . 'members';
+	$tbl = $wpdb->prefix . 'members';
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 	$member = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$tbl} WHERE member_id = %d", $member_id ) );
 	return $member;
@@ -935,11 +935,11 @@ function mtl_render_signup_page() {
  * (place in line, ready/on-loan status, dates) and a cancel link. Reuses the
  * shop's badge/pill helpers so it matches the catalog's detail box.
  *
- * @param object $r    Enriched reservation row from the query below.
- * @param string $self Current page URL, used to build the cancel link.
+ * @param object $r        Enriched reservation row from the query below.
+ * @param string $self_url Current page URL, used to build the cancel link.
  * @return string HTML.
  */
-function mtl_render_reservation_detail_panel( $r, $self ) {
+function mtl_render_reservation_detail_panel( $r, $self_url ) {
 	$on_loan   = ( (int) $r->active_loans > 0 );
 	$is_first  = ( 1 === (int) $r->queue_place );
 	$available = ! $on_loan;
@@ -1000,7 +1000,7 @@ function mtl_render_reservation_detail_panel( $r, $self ) {
 					'mtl_confirm' => 'one',
 					'rid'         => (int) $r->reservation_id,
 				),
-				$self
+				$self_url
 			)
 		);
 		?>
@@ -1055,7 +1055,7 @@ function mtl_render_member_reservations_page() {
 		)
 	);
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-	$today_ts     = strtotime( current_time( 'Y-m-d' ) );
+	$today_ts = strtotime( current_time( 'Y-m-d' ) );
 	foreach ( $active_loans as $loan ) {
 		$days_left = (int) round( ( strtotime( $loan->due_date ) - $today_ts ) / DAY_IN_SECONDS );
 		if ( $days_left < 0 ) {
