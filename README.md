@@ -9,17 +9,19 @@ Run a community tool-lending library from WordPress: inventory, memberships, res
 
 Built by the [Milwaukee Tool Library](https://mkelibrary.org) (Evan Maruszewski & Chris McHenry).
 
-![Public tool catalog](my-tool-library/documentation/assets/screenshot-1.png)
+![Public tool catalog](my-tool-library/documentation/assets/screenshot-3.png)
 
 ## What it does
 
 **For your community**
+
 - Browse and search/filter the tool catalog (no account required)
 - Create a free account, reserve a tool, and track queue position
 - View active loans and due dates (due soon, due today, overdue)
 - Works with **zero JavaScript** on every public-facing page
 
 **For your staff**
+
 - Configurable Dashboard of stat panels (membership, loans, overdue, popularity, asset value)
 - Inventory management with CSV bulk import and per-tool financial tracking
 - Membership management with CSV bulk import and identity-verification tracking
@@ -53,6 +55,7 @@ This plugin is built around a specific, deliberately simple operating model: sin
 - [`my-tool-library/documentation/staff-workflows.md`](my-tool-library/documentation/staff-workflows.md) — staff workflow guide
 - [`my-tool-library/documentation/mtl_database_schematic/schema.dbml`](my-tool-library/documentation/mtl_database_schematic/schema.dbml) — database schema
 - [`my-tool-library/documentation/dummy-data.sql`](my-tool-library/documentation/dummy-data.sql) — sample data for local testing
+  ![Database Schema](my-tool-library/documentation/assets/screenshot-7.png)
 
 ## License
 

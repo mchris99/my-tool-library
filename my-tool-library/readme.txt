@@ -139,6 +139,7 @@ No. There are no external network calls, no bundled third-party analytics, and n
 4. The Inventory admin page with a tool's detailed view expanded.
 5. The Loans & Reservations page: checking a reservation out as a loan.
 6. The Setup page's controls.
+7. Database schema diagram.
 
 == Changelog ==
 
