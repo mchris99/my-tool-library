@@ -1,5 +1,11 @@
 <?php
-// Prevent direct file access
+/**
+ * Inventory admin page.
+ *
+ * @package My_Tool_Library
+ */
+
+// Prevent direct file access.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
@@ -13,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 function mtl_render_pill_list( $csv ) {
 	$csv = trim( (string) $csv );
-	if ( $csv === '' ) {
+	if ( '' === $csv ) {
 		return '<span style="color: #999;">&mdash;</span>';
 	}
 
@@ -32,16 +38,21 @@ function mtl_render_pill_list( $csv ) {
  * WordPress has already output the page's <head> -- too late for download headers.
  */
 add_action( 'admin_init', 'mtl_maybe_serve_csv_template' );
+
+/**
+ * Serves the downloadable CSV template for the Bulk Import feature.
+ */
 function mtl_maybe_serve_csv_template() {
+	$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 	if (
-		! isset( $_GET['mtl_download_csv_template'], $_GET['page'] ) ||
-		$_GET['page'] !== 'mtl-inventory' ||
+		! isset( $_GET['mtl_download_csv_template'] ) || '' === $page ||
+		'mtl-inventory' !== $page ||
 		! current_user_can( 'manage_options' )
 	) {
 		return;
 	}
 
-	if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( $_GET['_wpnonce'], 'mtl_download_csv_template_action' ) ) {
+	if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ), 'mtl_download_csv_template_action' ) ) {
 		return;
 	}
 
@@ -82,7 +93,7 @@ function mtl_maybe_serve_csv_template() {
 			'5.00',
 			'Jane Doe',
 			// The importer accepts any date string strtotime() understands, but the template shows the site-wide MM/DD/YYYY convention.
-			date( 'm/d/Y' ),
+			gmdate( 'm/d/Y' ),
 			'Woodworking;General Hand Tools',
 			'Cordless;Heavy-Duty',
 			'Staff-only -- never shown publicly.',
@@ -106,6 +117,9 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = 
 	$field_id = function ( $name ) use ( $id_prefix ) {
 		return esc_attr( $id_prefix . $name );
 	};
+	// $field_id() always returns esc_attr()-escaped output; phpcs can't see
+	// through a closure assigned to a variable to verify that.
+	// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped
 	?>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'tool_name' ); ?>">Tool Name *</label></th>
@@ -207,6 +221,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = 
 		</td>
 	</tr>
 	<?php
+	// phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
 }
 
 /**
@@ -245,7 +260,7 @@ function mtl_render_inventory_page() {
 		'photo_url'                  => '',
 		'initial_cash_value'         => '',
 		'annual_depreciation_amount' => '',
-		'date_acquired'              => date( 'Y-m-d' ),
+		'date_acquired'              => gmdate( 'Y-m-d' ),
 		'donated_by'                 => '',
 		'components'                 => '',
 		'description'                => '',
@@ -265,12 +280,14 @@ function mtl_render_inventory_page() {
 	// Lookup data for the Category/Tag multi-selects -- fetched up front because
 	// the Bulk CSV Import handler below also needs to resolve category/tag
 	// names from the uploaded file against these same lists.
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_categories} ORDER BY category_name ASC" );
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$tags       = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
 
 	// 1. HANDLE "ADD" FORM SUBMISSION (Insert Data)
 	if ( isset( $_POST['mtl_add_tool'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_add_tool_nonce'] ) && wp_verify_nonce( $_POST['mtl_add_tool_nonce'], 'mtl_add_tool_action' ) ) {
+		if ( isset( $_POST['mtl_add_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_tool_nonce'] ) ), 'mtl_add_tool_action' ) ) {
 
 			// --- Gather + sanitize incoming data ---
 			// wp_unslash() removes WordPress magic quotes before sanitizing.
@@ -286,8 +303,8 @@ function mtl_render_inventory_page() {
 
 			// Numeric fields: keep the raw typed string for redisplay (so a blank
 			// field stays blank instead of turning into "0"), but store a float.
-			$initial_value_display = isset( $_POST['initial_cash_value'] ) ? trim( wp_unslash( $_POST['initial_cash_value'] ) ) : '';
-			$depreciation_display  = isset( $_POST['annual_depreciation_amount'] ) ? trim( wp_unslash( $_POST['annual_depreciation_amount'] ) ) : '';
+			$initial_value_display = isset( $_POST['initial_cash_value'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['initial_cash_value'] ) ) ) : '';
+			$depreciation_display  = isset( $_POST['annual_depreciation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['annual_depreciation_amount'] ) ) ) : '';
 			$initial_value         = floatval( $initial_value_display );
 			$depreciation          = floatval( $depreciation_display );
 
@@ -300,7 +317,7 @@ function mtl_render_inventory_page() {
 			$error         = false;
 			$error_message = '';
 
-			if ( $barcode === '' ) {
+			if ( '' === $barcode ) {
 				// Barcode is required. The HTML "required" attribute normally
 				// stops this client-side; this is a re-check in case it is bypassed.
 				$error         = true;
@@ -311,6 +328,7 @@ function mtl_render_inventory_page() {
 				// backstop if two admins submit the same barcode simultaneously.
 				$barcode_in_use = $wpdb->get_var(
 					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 						"SELECT tool_id FROM {$tbl_inventory} WHERE barcode = %s LIMIT 1",
 						$barcode
 					)
@@ -336,7 +354,7 @@ function mtl_render_inventory_page() {
 						'annual_depreciation_amount' => $depreciation,
 						'donated_by'                 => $donated_by,
 						'date_acquired'              => $date_acquired,
-						'private_notes'              => $private_notes !== '' ? $private_notes : null,
+						'private_notes'              => '' !== $private_notes ? $private_notes : null,
 					),
 					array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s' )
 				);
@@ -418,16 +436,25 @@ function mtl_render_inventory_page() {
 	$keep_bulk_panel_open = false;
 
 	if ( isset( $_POST['mtl_bulk_import'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_bulk_import_nonce'] ) && wp_verify_nonce( $_POST['mtl_bulk_import_nonce'], 'mtl_bulk_import_action' ) ) {
+		if ( isset( $_POST['mtl_bulk_import_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_bulk_import_nonce'] ) ), 'mtl_bulk_import_action' ) ) {
 			$keep_bulk_panel_open = true;
 
-			if ( ! isset( $_FILES['csv_file'] ) || $_FILES['csv_file']['error'] === UPLOAD_ERR_NO_FILE ) {
+			// $_FILES values below: 'error' and 'size' are always plain
+			// integers set by PHP itself (never sanitized per WPCS
+			// convention); 'name' and 'tmp_name' are sanitized once here and
+			// used via these locals for the rest of this block. 'tmp_name'
+			// is also verified with is_uploaded_file() before it's opened.
+			$csv_error    = isset( $_FILES['csv_file']['error'] ) ? (int) $_FILES['csv_file']['error'] : UPLOAD_ERR_NO_FILE;
+			$csv_name     = isset( $_FILES['csv_file']['name'] ) ? sanitize_file_name( wp_unslash( $_FILES['csv_file']['name'] ) ) : '';
+			$csv_tmp_name = isset( $_FILES['csv_file']['tmp_name'] ) ? sanitize_text_field( wp_unslash( $_FILES['csv_file']['tmp_name'] ) ) : '';
+
+			if ( ! isset( $_FILES['csv_file'] ) || UPLOAD_ERR_NO_FILE === $csv_error ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please choose a CSV file to upload.</p></div>';
-			} elseif ( $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK ) {
+			} elseif ( UPLOAD_ERR_OK !== $csv_error ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The file failed to upload. Please try again.</p></div>';
-			} elseif ( strtolower( pathinfo( $_FILES['csv_file']['name'], PATHINFO_EXTENSION ) ) !== 'csv' ) {
+			} elseif ( 'csv' !== strtolower( pathinfo( $csv_name, PATHINFO_EXTENSION ) ) ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please upload a .csv file.</p></div>';
-			} elseif ( ! is_uploaded_file( $_FILES['csv_file']['tmp_name'] ) ) {
+			} elseif ( ! is_uploaded_file( $csv_tmp_name ) ) {
 				// Standard defensive check for file uploads -- confirms
 				// tmp_name genuinely came from this request's file upload.
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The upload could not be verified. Please try again.</p></div>';
@@ -436,14 +463,14 @@ function mtl_render_inventory_page() {
 				// $mimes override is required because core didn't allow "csv" uploads by
 				// default until WP 5.9, and this plugin supports 5.8+.
 				'csv' !== wp_check_filetype_and_ext(
-					$_FILES['csv_file']['tmp_name'],
-					$_FILES['csv_file']['name'],
+					$csv_tmp_name,
+					$csv_name,
 					array( 'csv' => 'text/csv' )
 				)['ext']
 			) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The uploaded file does not appear to be a genuine CSV file.</p></div>';
 			} else {
-				$handle = fopen( $_FILES['csv_file']['tmp_name'], 'r' );
+				$handle = fopen( $csv_tmp_name, 'r' );
 
 				if ( ! $handle ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Could not read the uploaded file.</p></div>';
@@ -453,13 +480,13 @@ function mtl_render_inventory_page() {
 					// name (e.g. "tool_name" becomes an unmatched
 					// "\xEF\xBB\xBFtool_name" and the required-column check
 					// below fails even though the column is really there).
-					if ( fread( $handle, 3 ) !== "\xEF\xBB\xBF" ) {
+					if ( "\xEF\xBB\xBF" !== fread( $handle, 3 ) ) {
 						rewind( $handle );
 					}
 
 					$header_row = fgetcsv( $handle );
 
-					if ( $header_row === false ) {
+					if ( false === $header_row ) {
 						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The CSV file appears to be empty.</p></div>';
 					} else {
 						// Map column name -> position so the columns in the
@@ -493,11 +520,11 @@ function mtl_render_inventory_page() {
 								return isset( $columns[ $name ], $row[ $columns[ $name ] ] ) ? trim( (string) $row[ $columns[ $name ] ] ) : '';
 							};
 
-							$row_number      = 1; // first data row is row 2, matching what a spreadsheet program would show
+							$row_number      = 1; // First data row is row 2, matching what a spreadsheet program would show.
 							$bulk_import_ran = true;
-							$max_bulk_rows   = 5000; // sanity cap so a huge file can't tie up the request indefinitely
+							$max_bulk_rows   = 5000; // Sanity cap so a huge file can't tie up the request indefinitely.
 
-							while ( ( $row = fgetcsv( $handle ) ) !== false ) {
+							while ( false !== ( $row = fgetcsv( $handle ) ) ) {
 								++$row_number;
 
 								if ( $row_number - 1 > $max_bulk_rows ) {
@@ -506,7 +533,7 @@ function mtl_render_inventory_page() {
 								}
 
 								// Skip a genuinely blank line.
-								if ( count( $row ) === 1 && ( ! isset( $row[0] ) || trim( (string) $row[0] ) === '' ) ) {
+								if ( 1 === count( $row ) && ( ! isset( $row[0] ) || '' === trim( (string) $row[0] ) ) ) {
 									continue;
 								}
 
@@ -520,19 +547,19 @@ function mtl_render_inventory_page() {
 								$row_private_notes = sanitize_textarea_field( $get_col( $row, 'private_notes' ) );
 
 								$row_date_raw = $get_col( $row, 'date_acquired' );
-								$row_date     = ( $row_date_raw !== '' && strtotime( $row_date_raw ) ) ? date( 'Y-m-d', strtotime( $row_date_raw ) ) : date( 'Y-m-d' );
+								$row_date     = ( '' !== $row_date_raw && strtotime( $row_date_raw ) ) ? gmdate( 'Y-m-d', strtotime( $row_date_raw ) ) : gmdate( 'Y-m-d' );
 
 								$row_initial_value = floatval( $get_col( $row, 'initial_cash_value' ) );
 								$row_depreciation  = floatval( $get_col( $row, 'annual_depreciation_amount' ) );
 
-								if ( $row_tool_name === '' ) {
+								if ( '' === $row_tool_name ) {
 									$bulk_failed_rows[] = array(
 										'row'    => $row_number,
 										'reason' => 'Missing tool_name.',
 									);
 									continue;
 								}
-								if ( $row_barcode === '' ) {
+								if ( '' === $row_barcode ) {
 									$bulk_failed_rows[] = array(
 										'row'    => $row_number,
 										'reason' => 'Missing barcode.',
@@ -549,6 +576,7 @@ function mtl_render_inventory_page() {
 
 								$barcode_in_use = $wpdb->get_var(
 									$wpdb->prepare(
+										// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 										"SELECT tool_id FROM {$tbl_inventory} WHERE barcode = %s LIMIT 1",
 										$row_barcode
 									)
@@ -596,7 +624,7 @@ function mtl_render_inventory_page() {
 										'annual_depreciation_amount' => $row_depreciation,
 										'donated_by'    => $row_donated_by,
 										'date_acquired' => $row_date,
-										'private_notes' => $row_private_notes !== '' ? $row_private_notes : null,
+										'private_notes' => '' !== $row_private_notes ? $row_private_notes : null,
 									),
 									array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s' )
 								);
@@ -647,11 +675,11 @@ function mtl_render_inventory_page() {
 			if ( $bulk_import_ran ) {
 				$bulk_fail_count = count( $bulk_failed_rows );
 
-				if ( $bulk_success_count > 0 && $bulk_fail_count === 0 ) {
+				if ( $bulk_success_count > 0 && 0 === $bulk_fail_count ) {
 					echo '<div class="notice notice-success is-dismissible"><p><strong>Bulk Import Complete!</strong> ' . intval( $bulk_success_count ) . ' tool(s) were added to the inventory.</p></div>';
 				} elseif ( $bulk_success_count > 0 && $bulk_fail_count > 0 ) {
 					echo '<div class="notice notice-warning is-dismissible"><p><strong>Bulk Import Finished with Errors:</strong> ' . intval( $bulk_success_count ) . ' tool(s) added, but ' . intval( $bulk_fail_count ) . ' row(s) failed. See details below.</p></div>';
-				} elseif ( $bulk_success_count === 0 && $bulk_fail_count > 0 ) {
+				} elseif ( 0 === $bulk_success_count && $bulk_fail_count > 0 ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Bulk Import Failed:</strong> None of the ' . intval( $bulk_fail_count ) . ' row(s) could be added. See details below.</p></div>';
 				} else {
 					echo '<div class="notice notice-warning is-dismissible"><p><strong>Nothing to import.</strong> The CSV file had no data rows.</p></div>';
@@ -684,7 +712,7 @@ function mtl_render_inventory_page() {
 
 	// 2. HANDLE "EDIT" FORM SUBMISSION (Update Data)
 	if ( isset( $_POST['mtl_update_tool'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_edit_tool_nonce'] ) && wp_verify_nonce( $_POST['mtl_edit_tool_nonce'], 'mtl_edit_tool_action' ) ) {
+		if ( isset( $_POST['mtl_edit_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_edit_tool_nonce'] ) ), 'mtl_edit_tool_action' ) ) {
 
 			$edit_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
 
@@ -698,8 +726,8 @@ function mtl_render_inventory_page() {
 			$components    = sanitize_textarea_field( wp_unslash( $_POST['components'] ?? '' ) );
 			$private_notes = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
 
-			$initial_value_display = isset( $_POST['initial_cash_value'] ) ? trim( wp_unslash( $_POST['initial_cash_value'] ) ) : '';
-			$depreciation_display  = isset( $_POST['annual_depreciation_amount'] ) ? trim( wp_unslash( $_POST['annual_depreciation_amount'] ) ) : '';
+			$initial_value_display = isset( $_POST['initial_cash_value'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['initial_cash_value'] ) ) ) : '';
+			$depreciation_display  = isset( $_POST['annual_depreciation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['annual_depreciation_amount'] ) ) ) : '';
 			$initial_value         = floatval( $initial_value_display );
 			$depreciation          = floatval( $depreciation_display );
 
@@ -712,13 +740,14 @@ function mtl_render_inventory_page() {
 			if ( $edit_tool_id <= 0 ) {
 				$error         = true;
 				$error_message = 'Could not determine which tool to update. Please try again.';
-			} elseif ( $barcode === '' ) {
+			} elseif ( '' === $barcode ) {
 				$error         = true;
 				$error_message = 'A barcode is required. The tool was not updated.';
 			} else {
 				// Barcode must stay unique, but must not collide with ITSELF.
 				$barcode_in_use = $wpdb->get_var(
 					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 						"SELECT tool_id FROM {$tbl_inventory} WHERE barcode = %s AND tool_id != %d LIMIT 1",
 						$barcode,
 						$edit_tool_id
@@ -746,7 +775,7 @@ function mtl_render_inventory_page() {
 						'annual_depreciation_amount' => $depreciation,
 						'donated_by'                 => $donated_by,
 						'date_acquired'              => $date_acquired,
-						'private_notes'              => $private_notes !== '' ? $private_notes : null,
+						'private_notes'              => '' !== $private_notes ? $private_notes : null,
 					),
 					array( 'tool_id' => $edit_tool_id ),
 					array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s' ),
@@ -756,7 +785,7 @@ function mtl_render_inventory_page() {
 				// $wpdb->update() returns the number of rows changed, which is
 				// legitimately 0 when nothing actually differed -- only `false`
 				// means a real failure.
-				if ( $updated === false ) {
+				if ( false === $updated ) {
 					$error         = true;
 					$error_message = 'Failed to update tool. Please verify the database connection and try again.';
 				} else {
@@ -824,11 +853,12 @@ function mtl_render_inventory_page() {
 
 	// 3. HANDLE "DELETE" FORM SUBMISSION
 	if ( isset( $_POST['mtl_delete_tool'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_delete_tool_nonce'] ) && wp_verify_nonce( $_POST['mtl_delete_tool_nonce'], 'mtl_delete_tool_action' ) ) {
+		if ( isset( $_POST['mtl_delete_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_tool_nonce'] ) ), 'mtl_delete_tool_action' ) ) {
 
 			$delete_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
 
 			if ( $delete_tool_id > 0 ) {
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				$deleted_name = $wpdb->get_var( $wpdb->prepare( "SELECT tool_name FROM {$tbl_inventory} WHERE tool_id = %d", $delete_tool_id ) );
 				$deleted      = $wpdb->delete( $tbl_inventory, array( 'tool_id' => $delete_tool_id ), array( '%d' ) );
 
@@ -855,16 +885,20 @@ function mtl_render_inventory_page() {
 	// 3B. HANDLE "QUICK LOAN" SUBMISSION -- loan a tool directly to a member who
 	// has no reservation (a walk-in). Creates a loan row straight away, with the
 	// admin-entered due date, after confirming the tool isn't already out.
+	// Every {$tbl_*} fragment interpolated in the queries through the end of
+	// the Quick Reserve handler below is a table name only, built from
+	// $wpdb->prefix, never request data.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	if ( isset( $_POST['mtl_quick_loan'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_quick_loan_nonce'] ) && wp_verify_nonce( $_POST['mtl_quick_loan_nonce'], 'mtl_quick_loan_action' ) ) {
+		if ( isset( $_POST['mtl_quick_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_quick_loan_nonce'] ) ), 'mtl_quick_loan_action' ) ) {
 
 			$ql_tool_id   = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
 			$ql_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
 			$ql_due       = isset( $_POST['due_date'] ) ? sanitize_text_field( wp_unslash( $_POST['due_date'] ) ) : '';
 			$ql_due_error = false;
 			if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $ql_due ) || ! strtotime( $ql_due ) ) {
-				$ql_due = date( 'Y-m-d', strtotime( '+' . (int) get_option( 'mtl_default_loan_days', 21 ) . ' days' ) );
-			} elseif ( $ql_due < date( 'Y-m-d' ) ) {
+				$ql_due = gmdate( 'Y-m-d', strtotime( '+' . (int) get_option( 'mtl_default_loan_days', 21 ) . ' days' ) );
+			} elseif ( $ql_due < gmdate( 'Y-m-d' ) ) {
 				$ql_due_error = true;
 			}
 
@@ -914,7 +948,7 @@ function mtl_render_inventory_page() {
 	// rather than online. Uses the same shared Quick Loan modal/nonce, with
 	// the due-date field hidden -- reservations don't have one.
 	if ( isset( $_POST['mtl_quick_reserve'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_quick_loan_nonce'] ) && wp_verify_nonce( $_POST['mtl_quick_loan_nonce'], 'mtl_quick_loan_action' ) ) {
+		if ( isset( $_POST['mtl_quick_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_quick_loan_nonce'] ) ), 'mtl_quick_loan_action' ) ) {
 
 			$qr_tool_id   = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
 			$qr_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
@@ -972,6 +1006,7 @@ function mtl_render_inventory_page() {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
 		}
 	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	// 3C. HANDLE "MARK RETURNED" SUBMISSION -- the admin drop-off flow: scan the
 	// barcode, expand that tool's row, click Mark Returned. Sets the current
@@ -979,11 +1014,12 @@ function mtl_render_inventory_page() {
 	// back "in inventory" everywhere else on this page (return_date IS NULL
 	// == on loan).
 	if ( isset( $_POST['mtl_mark_returned'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_mark_returned_nonce'] ) && wp_verify_nonce( $_POST['mtl_mark_returned_nonce'], 'mtl_mark_returned_action' ) ) {
+		if ( isset( $_POST['mtl_mark_returned_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_mark_returned_nonce'] ) ), 'mtl_mark_returned_action' ) ) {
 
 			$mr_loan_id = isset( $_POST['loan_id'] ) ? intval( $_POST['loan_id'] ) : 0;
 			$mr_done    = $wpdb->query(
 				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 					"UPDATE {$tbl_loans} SET return_date = %s WHERE loan_id = %d AND return_date IS NULL",
 					current_time( 'mysql' ),
 					$mr_loan_id
@@ -1007,10 +1043,11 @@ function mtl_render_inventory_page() {
 	// the row and its full history intact -- and is reversible via Reactivate,
 	// unlike a member delete/anonymize.
 	if ( isset( $_POST['mtl_retire_tool'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_retire_tool_nonce'] ) && wp_verify_nonce( $_POST['mtl_retire_tool_nonce'], 'mtl_retire_tool_action' ) ) {
+		if ( isset( $_POST['mtl_retire_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_retire_tool_nonce'] ) ), 'mtl_retire_tool_action' ) ) {
 			$rt_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
 			$rt_done    = $wpdb->query(
 				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 					"UPDATE {$tbl_inventory} SET retired_at = %s WHERE tool_id = %d AND retired_at IS NULL",
 					current_time( 'mysql' ),
 					$rt_tool_id
@@ -1024,6 +1061,7 @@ function mtl_render_inventory_page() {
 				// normally whenever it's actually resolved.
 				$rt_cancelled = $wpdb->query(
 					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 						"UPDATE {$tbl_reservations} SET expiry_date = %s WHERE tool_id = %d AND expiry_date IS NULL",
 						current_time( 'mysql' ),
 						$rt_tool_id
@@ -1042,10 +1080,11 @@ function mtl_render_inventory_page() {
 	// 3E. HANDLE "REACTIVATE" SUBMISSION -- clears a Retire, unlike a member
 	// delete/anonymize this is fully and safely reversible.
 	if ( isset( $_POST['mtl_reactivate_tool'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_reactivate_tool_nonce'] ) && wp_verify_nonce( $_POST['mtl_reactivate_tool_nonce'], 'mtl_reactivate_tool_action' ) ) {
+		if ( isset( $_POST['mtl_reactivate_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_reactivate_tool_nonce'] ) ), 'mtl_reactivate_tool_action' ) ) {
 			$ra_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
 			$ra_done    = $wpdb->query(
 				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 					"UPDATE {$tbl_inventory} SET retired_at = NULL WHERE tool_id = %d",
 					$ra_tool_id
 				)
@@ -1063,14 +1102,18 @@ function mtl_render_inventory_page() {
 	// 4. HANDLE "EDIT" LINK (GET) -- load the requested tool into the Edit panel.
 	// Skipped if a submitted edit above already failed validation, since that
 	// block already populated $editing/$edit_values with the admin's input.
-	if ( ! $editing && current_user_can( 'manage_options' ) && isset( $_GET['mtl_action'], $_GET['tool_id'] ) && $_GET['mtl_action'] === 'edit' ) {
+	$get_mtl_action = isset( $_GET['mtl_action'] ) ? sanitize_key( wp_unslash( $_GET['mtl_action'] ) ) : '';
+	if ( ! $editing && current_user_can( 'manage_options' ) && isset( $_GET['tool_id'] ) && 'edit' === $get_mtl_action ) {
 		$edit_tool_id = intval( $_GET['tool_id'] );
 
 		if ( $edit_tool_id > 0 ) {
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 			$tool_row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$tbl_inventory} WHERE tool_id = %d", $edit_tool_id ) );
 
 			if ( $tool_row ) {
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				$existing_cat_ids = $wpdb->get_col( $wpdb->prepare( "SELECT category_id FROM {$tbl_cat_map} WHERE tool_id = %d", $edit_tool_id ) );
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				$existing_tag_ids = $wpdb->get_col( $wpdb->prepare( "SELECT tag_id FROM {$tbl_tag_map} WHERE tool_id = %d", $edit_tool_id ) );
 
 				$editing     = true;
@@ -1649,7 +1692,7 @@ function mtl_render_inventory_page() {
 	<?php if ( $editing && $edit_values ) : ?>
 		<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);" open>
 			<summary style="font-size: 1.1em; font-weight: 600; cursor: pointer; outline: none; color: var(--mtl-header-color);">
-				Edit Tool: <?php echo esc_html( $edit_values['tool_name'] !== '' ? $edit_values['tool_name'] : ( '#' . $edit_tool_id ) ); ?>
+				Edit Tool: <?php echo esc_html( '' !== $edit_values['tool_name'] ? $edit_values['tool_name'] : ( '#' . $edit_tool_id ) ); ?>
 			</summary>
 
 			<div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
@@ -1676,6 +1719,10 @@ function mtl_render_inventory_page() {
 	// tool's names into one comma-separated cell -- without it, the joins would
 	// return one row per mapping. DISTINCT keeps the category and tag joins from
 	// multiplying each other's values.
+	// Every {$tbl_*} fragment interpolated through the end of this
+	// data-gathering section is a table name only, built from $wpdb->prefix,
+	// never request data.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	$inventory = $wpdb->get_results(
 		"
         SELECT
@@ -1786,6 +1833,7 @@ function mtl_render_inventory_page() {
     "
 		) as $m
 	) {
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$ql_name      = trim( stripslashes( (string) $m->first_name ) . ' ' . stripslashes( (string) $m->last_name ) );
 		$ql_members[] = array(
 			'id'       => (int) $m->member_id,
@@ -1797,7 +1845,7 @@ function mtl_render_inventory_page() {
 		);
 	}
 	$ql_default_days = (int) get_option( 'mtl_default_loan_days', 21 );
-	$ql_default_due  = date( 'Y-m-d', strtotime( '+' . $ql_default_days . ' days' ) );
+	$ql_default_due  = gmdate( 'Y-m-d', strtotime( '+' . $ql_default_days . ' days' ) );
 
 	// 6. RENDER THE FILTERABLE/SORTABLE INVENTORY TABLE
 	?>
@@ -2260,7 +2308,7 @@ function mtl_render_inventory_page() {
 							<button type="button" class="button button-small mtl-ql-due-btn<?php echo $ql_days === $ql_default_days ? ' mtl-ql-due-active' : ''; ?>" data-days="<?php echo (int) $ql_days; ?>"><?php echo (int) $ql_days; ?> days</button>
 						<?php endforeach; ?>
 					</div>
-					<input type="date" name="due_date" id="mtl-ql-due" value="<?php echo esc_attr( $ql_default_due ); ?>" min="<?php echo esc_attr( date( 'Y-m-d' ) ); ?>" required>
+					<input type="date" name="due_date" id="mtl-ql-due" value="<?php echo esc_attr( $ql_default_due ); ?>" min="<?php echo esc_attr( gmdate( 'Y-m-d' ) ); ?>" required>
 				</div>
 
 				<div class="mtl-ql-actions">

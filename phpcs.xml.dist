@@ -35,6 +35,7 @@
                 <element value="mtl_dash_donut"/>
                 <element value="mtl_member_page_styles"/>
                 <element value="mtl_render_reservation_detail_panel"/>
+                <element value="mtl_render_pill_list"/>
             </property>
         </properties>
     </rule>
