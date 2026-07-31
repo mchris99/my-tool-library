@@ -1,6 +1,11 @@
 <?php
-// If this file is called directly (or the plugin was only deactivated, not
-// deleted), WordPress never defines this constant -- bail out immediately.
+/**
+ * If this file is called directly (or the plugin was only deactivated, not
+ * deleted), WordPress never defines this constant -- bail out immediately.
+ *
+ * @package My_Tool_Library
+ */
+
 if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }
