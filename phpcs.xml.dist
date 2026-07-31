@@ -31,6 +31,8 @@
                 <element value="mtl_render_shop_page"/>
                 <element value="mtl_member_nav_html"/>
                 <element value="mtl_front_notice_html"/>
+                <element value="mtl_dash_bars"/>
+                <element value="mtl_dash_donut"/>
             </property>
         </properties>
     </rule>

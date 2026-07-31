@@ -1,5 +1,11 @@
 <?php
-// Prevent direct file access
+/**
+ * Dashboard admin page.
+ *
+ * @package My_Tool_Library
+ */
+
+// Prevent direct file access.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
@@ -133,6 +139,12 @@ function mtl_get_dashboard_layout() {
  * CSS variables, so the Setup page's appearance settings restyle every chart
  * automatically.
  *
+ * @param string $seg_a_label  First segment's legend label.
+ * @param float  $seg_a_value  First segment's value.
+ * @param string $seg_b_label  Second segment's legend label.
+ * @param float  $seg_b_value  Second segment's value.
+ * @param string $center_label Label shown in the donut's center.
+ * @param string $currency     Currency symbol/prefix for the legend values.
  * @return string HTML markup.
  */
 function mtl_dash_donut( $seg_a_label, $seg_a_value, $seg_b_label, $seg_b_value, $center_label, $currency ) {
@@ -162,7 +174,8 @@ function mtl_dash_donut( $seg_a_label, $seg_a_value, $seg_b_label, $seg_b_value,
 /**
  * Renders a horizontal bar chart; bar widths are relative to the max value.
  *
- * @param array $items Array of [label, value, sublabel] tuples.
+ * @param array  $items         Array of [label, value, sublabel] tuples.
+ * @param string $bar_color_var CSS custom property name to color the bars with.
  * @return string HTML markup.
  */
 function mtl_dash_bars( $items, $bar_color_var = '--mtl-header-color' ) {
@@ -204,6 +217,12 @@ function mtl_render_dashboard_page() {
 	$tbl_inventory     = $wpdb->prefix . 'tool_inventory';
 	$tbl_loans         = $wpdb->prefix . 'loans';
 	$tbl_reservations  = $wpdb->prefix . 'tool_reservations';
+	// Every {$tbl_*} fragment interpolated in the queries below is a table
+	// name built only from $wpdb->prefix, never request data; all actual
+	// values go through $wpdb->prepare() placeholders. phpcs can't verify
+	// that across this many queries, hence disabling for this data-gathering
+	// section (through the layout/render section below).
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
 
 	$base_url = menu_page_url( 'mtl-dashboard', false );
 	$currency = get_option( 'mtl_currency_symbol', '$' );
@@ -215,7 +234,8 @@ function mtl_render_dashboard_page() {
 	// 1. HANDLE "SAVE LAYOUT" / "RESET LAYOUT" SUBMISSIONS
 	// ==========================================
 	if ( isset( $_POST['mtl_save_dashboard_layout'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_dashboard_layout_nonce'] ) && wp_verify_nonce( $_POST['mtl_dashboard_layout_nonce'], 'mtl_dashboard_layout_action' ) ) {
+		if ( isset( $_POST['mtl_dashboard_layout_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_dashboard_layout_nonce'] ) ), 'mtl_dashboard_layout_action' ) ) {
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- validated below: json_decode() must succeed, then every field is whitelist-checked against mtl_dashboard_panels() before use.
 			$raw     = isset( $_POST['mtl_dashboard_layout_json'] ) ? wp_unslash( $_POST['mtl_dashboard_layout_json'] ) : '';
 			$decoded = json_decode( $raw, true );
 
@@ -245,7 +265,7 @@ function mtl_render_dashboard_page() {
 	}
 
 	if ( isset( $_POST['mtl_reset_dashboard_layout'] ) && current_user_can( 'manage_options' ) ) {
-		if ( isset( $_POST['mtl_dashboard_layout_nonce'] ) && wp_verify_nonce( $_POST['mtl_dashboard_layout_nonce'], 'mtl_dashboard_layout_action' ) ) {
+		if ( isset( $_POST['mtl_dashboard_layout_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_dashboard_layout_nonce'] ) ), 'mtl_dashboard_layout_action' ) ) {
 			delete_user_meta( get_current_user_id(), 'mtl_dashboard_layout' );
 			echo '<div class="notice notice-success is-dismissible"><p><strong>Reset.</strong> The dashboard layout is back to its defaults.</p></div>';
 		} else {
@@ -260,21 +280,23 @@ function mtl_render_dashboard_page() {
 	// ==========================================
 	$date_from = '';
 	$date_to   = '';
-	if ( isset( $_GET['mtl_from'] ) && preg_match( '/^\d{4}-\d{2}-\d{2}$/', wp_unslash( $_GET['mtl_from'] ) ) ) {
-		$date_from = wp_unslash( $_GET['mtl_from'] );
+	$get_from  = isset( $_GET['mtl_from'] ) ? sanitize_text_field( wp_unslash( $_GET['mtl_from'] ) ) : '';
+	$get_to    = isset( $_GET['mtl_to'] ) ? sanitize_text_field( wp_unslash( $_GET['mtl_to'] ) ) : '';
+	if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $get_from ) ) {
+		$date_from = $get_from;
 	}
-	if ( isset( $_GET['mtl_to'] ) && preg_match( '/^\d{4}-\d{2}-\d{2}$/', wp_unslash( $_GET['mtl_to'] ) ) ) {
-		$date_to = wp_unslash( $_GET['mtl_to'] );
+	if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $get_to ) ) {
+		$date_to = $get_to;
 	}
 
 	// $date_from/$date_to themselves stay ISO below (SQL params + the
 	// <input type="date"> value attributes require it); only this display
 	// label is human-formatted.
-	if ( $date_from !== '' && $date_to !== '' ) {
+	if ( '' !== $date_from && '' !== $date_to ) {
 		$range_label = mtl_format_date( $date_from ) . ' to ' . mtl_format_date( $date_to );
-	} elseif ( $date_from !== '' ) {
+	} elseif ( '' !== $date_from ) {
 		$range_label = 'From ' . mtl_format_date( $date_from );
-	} elseif ( $date_to !== '' ) {
+	} elseif ( '' !== $date_to ) {
 		$range_label = 'Through ' . mtl_format_date( $date_to );
 	} else {
 		$range_label = 'All time';
@@ -345,14 +367,14 @@ function mtl_render_dashboard_page() {
 			$on_hand_current += $current;
 		}
 
-		if ( $oldest_tool === null || $age_years > $oldest_tool['age'] ) {
+		if ( null === $oldest_tool || $age_years > $oldest_tool['age'] ) {
 			$oldest_tool = array(
 				'name'    => $row->tool_name,
 				'barcode' => $row->barcode,
 				'age'     => $age_years,
 			);
 		}
-		if ( $newest_tool === null || $age_years < $newest_tool['age'] ) {
+		if ( null === $newest_tool || $age_years < $newest_tool['age'] ) {
 			$newest_tool = array(
 				'name'    => $row->tool_name,
 				'barcode' => $row->barcode,
@@ -428,11 +450,11 @@ function mtl_render_dashboard_page() {
 	// the "least popular" panel.
 	$pop_on     = 'l.tool_id = t.tool_id';
 	$pop_params = array();
-	if ( $date_from !== '' ) {
+	if ( '' !== $date_from ) {
 		$pop_on      .= ' AND l.loan_date >= %s';
 		$pop_params[] = $date_from;
 	}
-	if ( $date_to !== '' ) {
+	if ( '' !== $date_to ) {
 		// DATE(), not a raw <=: loan_date is a full timestamp, so a bare
 		// comparison against a plain "to" date would exclude any loan later
 		// that same day (its time-of-day would push it past midnight).
@@ -469,7 +491,7 @@ function mtl_render_dashboard_page() {
 		array_filter(
 			$popularity_rows,
 			function ( $r ) {
-				return (int) $r->loan_count === 0;
+				return 0 === (int) $r->loan_count;
 			}
 		)
 	);
@@ -477,11 +499,11 @@ function mtl_render_dashboard_page() {
 	// --- Member rental leaderboard (optionally date-filtered) ---
 	$rent_on     = 'l.member_id = m.member_id';
 	$rent_params = array();
-	if ( $date_from !== '' ) {
+	if ( '' !== $date_from ) {
 		$rent_on      .= ' AND l.loan_date >= %s';
 		$rent_params[] = $date_from;
 	}
-	if ( $date_to !== '' ) {
+	if ( '' !== $date_to ) {
 		// Same DATE() reasoning as the popularity query above.
 		$rent_on      .= ' AND DATE(l.loan_date) <= %s';
 		$rent_params[] = $date_to;
@@ -630,6 +652,7 @@ function mtl_render_dashboard_page() {
 			);
 		}
 	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
 
 	$layout = mtl_get_dashboard_layout();
 	$panels = mtl_dashboard_panels();
@@ -1186,7 +1209,7 @@ function mtl_render_dashboard_page() {
 			<label for="mtl_to">to</label>
 			<input type="date" id="mtl_to" name="mtl_to" value="<?php echo esc_attr( $date_to ); ?>">
 			<button type="submit" class="button">Apply</button>
-			<?php if ( $date_from !== '' || $date_to !== '' ) : ?>
+			<?php if ( '' !== $date_from || '' !== $date_to ) : ?>
 				<a href="<?php echo esc_url( $base_url ); ?>" class="button">Clear</a>
 			<?php endif; ?>
 		</form>
@@ -1226,7 +1249,7 @@ function mtl_render_dashboard_page() {
 
 	foreach ( $layout as $panel_id => $prefs ) {
 		$extra_class = $prefs['visible'] ? '' : ' mtl-hidden';
-		if ( $panel_id === 'overdue' && ! empty( $overdue_rows ) ) {
+		if ( 'overdue' === $panel_id && ! empty( $overdue_rows ) ) {
 			$extra_class .= ' mtl-panel-overdue-alert';
 		}
 
@@ -1234,7 +1257,7 @@ function mtl_render_dashboard_page() {
 		echo '<header class="mtl-panel-head">';
 		echo '<span class="mtl-drag-handle" title="Drag to rearrange">⠿</span>';
 		echo '<h4>' . esc_html( $panels[ $panel_id ]['title'] ) . '</h4>';
-		if ( $panel_id === 'overdue' && ! empty( $overdue_rows ) ) {
+		if ( 'overdue' === $panel_id && ! empty( $overdue_rows ) ) {
 			echo '<span class="mtl-count-pill">' . count( $overdue_rows ) . '</span>';
 		}
 		echo '<div class="mtl-panel-controls">';
@@ -1309,7 +1332,7 @@ function mtl_render_dashboard_page() {
 										<span style="color:#999;"><?php echo esc_html( $row->email ); ?> &bull; <?php echo esc_html( stripslashes( $row->phone_number ) ); ?></span>
 									</td>
 									<td><?php echo mtl_format_date( $row->due_date ); ?></td>
-									<td class="mtl-overdue-days"><?php echo esc_html( $row->days_overdue ); ?> day<?php echo (int) $row->days_overdue === 1 ? '' : 's'; ?></td>
+									<td class="mtl-overdue-days"><?php echo esc_html( $row->days_overdue ); ?> day<?php echo 1 === (int) $row->days_overdue ? '' : 's'; ?></td>
 								</tr>
 							<?php endforeach; ?>
 						</tbody>
@@ -1340,7 +1363,7 @@ function mtl_render_dashboard_page() {
 								<tr>
 									<td><strong><?php echo esc_html( stripslashes( $row->tool_name ) ); ?></strong><br><span style="color:#999;"><?php echo esc_html( stripslashes( $row->barcode ) ); ?></span></td>
 									<td><?php echo esc_html( stripslashes( $row->first_name . ' ' . $row->last_name ) ); ?><br><span style="color:#999;"><?php echo esc_html( $row->email ); ?></span></td>
-									<td><?php echo mtl_format_date( $row->reservation_date ); ?><br><span style="color:#999;"><?php echo esc_html( date( 'H:i', strtotime( $row->reservation_date ) ) ); ?></span></td>
+									<td><?php echo mtl_format_date( $row->reservation_date ); ?><br><span style="color:#999;"><?php echo esc_html( gmdate( 'H:i', strtotime( $row->reservation_date ) ) ); ?></span></td>
 									<td><?php echo esc_html( '#' . $row->queue_place . ' of ' . $row->queue_size ); ?></td>
 									<td><?php echo $row->tool_out_loan_id ? '<span class="mtl-wait-pill">Waiting, tool out</span>' : '<span class="mtl-ok-pill">Ready for pickup</span>'; ?></td>
 								</tr>
@@ -1355,6 +1378,7 @@ function mtl_render_dashboard_page() {
 				// $range_label already carries pre-escaped, formatted dates
 				// (mtl_format_date()) plus plain literal text -- not re-escaped
 				// here, since esc_html() would corrupt the em dash entity.
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $range_label is built from mtl_format_date() (self-escaping) plus literal text; esc_html() here would corrupt the &mdash;/&ndash; entities.
 				echo '<p class="mtl-panel-sub">' . $range_label . '</p>';
 				$bar_items = array();
 				foreach ( $most_popular as $row ) {
@@ -1394,6 +1418,7 @@ function mtl_render_dashboard_page() {
 
 			case 'unpopular':
 				// See 'popular' case above re: $range_label escaping.
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $range_label is built from mtl_format_date() (self-escaping) plus literal text; esc_html() here would corrupt the &mdash;/&ndash; entities.
 				echo '<p class="mtl-panel-sub">' . $range_label . '</p>';
 				$bar_items = array();
 				foreach ( $least_popular as $row ) {
@@ -1423,13 +1448,13 @@ function mtl_render_dashboard_page() {
 			case 'areas':
 				$bar_items = array();
 				foreach ( array_slice( $zip_counts, 0, 8, true ) as $zip => $count ) {
-					$bar_items[] = array( $zip === 'Unknown' ? 'Unknown' : 'ZIP ' . $zip, $count );
+					$bar_items[] = array( 'Unknown' === $zip ? 'Unknown' : 'ZIP ' . $zip, $count );
 				}
 				echo mtl_dash_bars( $bar_items, '--mtl-accent-color' );
 				if ( ! empty( $zip_counts ) ) {
 					$top_zip   = array_key_first( $zip_counts );
 					$top_share = $member_count > 0 ? round( reset( $zip_counts ) / $member_count * 100 ) : 0;
-					echo '<p class="mtl-insight">' . esc_html( $top_zip === 'Unknown' ? 'The largest member group has no ZIP on file' : 'ZIP ' . $top_zip . ' is the largest member area' ) . ' (<strong>' . esc_html( $top_share ) . '%</strong> of members).</p>';
+					echo '<p class="mtl-insight">' . esc_html( 'Unknown' === $top_zip ? 'The largest member group has no ZIP on file' : 'ZIP ' . $top_zip . ' is the largest member area' ) . ' (<strong>' . esc_html( $top_share ) . '%</strong> of members).</p>';
 					?>
 					<details class="mtl-panel-more">
 						<summary>View all areas (<?php echo count( $zip_counts ); ?>)</summary>
@@ -1445,7 +1470,7 @@ function mtl_render_dashboard_page() {
 								<tbody>
 									<?php foreach ( $zip_counts as $zip => $count ) : ?>
 										<tr>
-											<td><?php echo esc_html( $zip === 'Unknown' ? 'Unknown' : 'ZIP ' . $zip ); ?></td>
+											<td><?php echo esc_html( 'Unknown' === $zip ? 'Unknown' : 'ZIP ' . $zip ); ?></td>
 											<td><strong><?php echo esc_html( $count ); ?></strong></td>
 											<td><?php echo esc_html( $member_count > 0 ? round( $count / $member_count * 100 ) : 0 ); ?>%</td>
 										</tr>
@@ -1460,6 +1485,7 @@ function mtl_render_dashboard_page() {
 
 			case 'renters':
 				// See 'popular' case above re: $range_label escaping.
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $range_label is built from mtl_format_date() (self-escaping) plus literal text; esc_html() here would corrupt the &mdash;/&ndash; entities.
 				echo '<p class="mtl-panel-sub">' . $range_label . '</p>';
 				if ( empty( $renter_rows ) ) {
 					echo '<p class="mtl-empty">No loans recorded in this period.</p>';
@@ -1534,11 +1560,11 @@ function mtl_render_dashboard_page() {
 				<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>">
 					<input type="hidden" name="page" value="mtl-dashboard">
 					<?php
-					if ( $date_from !== '' ) :
+					if ( '' !== $date_from ) :
 						?>
 						<input type="hidden" name="mtl_from" value="<?php echo esc_attr( $date_from ); ?>"><?php endif; ?>
 					<?php
-					if ( $date_to !== '' ) :
+					if ( '' !== $date_to ) :
 						?>
 						<input type="hidden" name="mtl_to" value="<?php echo esc_attr( $date_to ); ?>"><?php endif; ?>
 					<input type="hidden" name="mtl_th_tool" id="mtl-th-tool-id" value="<?php echo esc_attr( $th_tool_id > 0 ? $th_tool_id : '' ); ?>">
@@ -1563,7 +1589,7 @@ function mtl_render_dashboard_page() {
 					?>
 					<div class="mtl-dash-lookup-header">
 						<h5><?php echo esc_html( stripslashes( $th_tool->tool_name ) ); ?> <span style="color:#999; font-weight:400;">(<?php echo esc_html( $th_tool->barcode ); ?>)</span><?php echo ! empty( $th_tool->retired_at ) ? ' <span style="color:#999; font-weight:400;">&mdash; retired</span>' : ''; ?></h5>
-						<span><strong><?php echo esc_html( $th_total ); ?></strong> total loan<?php echo $th_total === 1 ? '' : 's'; ?></span>
+						<span><strong><?php echo esc_html( $th_total ); ?></strong> total loan<?php echo 1 === $th_total ? '' : 's'; ?></span>
 					</div>
 
 					<?php if ( empty( $th_by_member ) ) : ?>
@@ -1608,8 +1634,8 @@ function mtl_render_dashboard_page() {
 									<tbody>
 										<?php
 										foreach ( $th_loans as $l ) :
-											$late        = ( $l->return_date !== null && date( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
-											$out_overdue = ( $l->return_date === null && $l->due_date < date( 'Y-m-d' ) );
+											$late        = ( null !== $l->return_date && gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
+											$out_overdue = ( null === $l->return_date && $l->due_date < gmdate( 'Y-m-d' ) );
 											?>
 											<tr>
 												<td><?php echo esc_html( trim( stripslashes( $l->first_name ) . ' ' . stripslashes( $l->last_name ) ) ); ?></td>
@@ -1644,11 +1670,11 @@ function mtl_render_dashboard_page() {
 				<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>">
 					<input type="hidden" name="page" value="mtl-dashboard">
 					<?php
-					if ( $date_from !== '' ) :
+					if ( '' !== $date_from ) :
 						?>
 						<input type="hidden" name="mtl_from" value="<?php echo esc_attr( $date_from ); ?>"><?php endif; ?>
 					<?php
-					if ( $date_to !== '' ) :
+					if ( '' !== $date_to ) :
 						?>
 						<input type="hidden" name="mtl_to" value="<?php echo esc_attr( $date_to ); ?>"><?php endif; ?>
 					<input type="hidden" name="mtl_mh_member" id="mtl-mh-member-id" value="<?php echo esc_attr( $mh_member_id > 0 ? $mh_member_id : '' ); ?>">
@@ -1686,7 +1712,7 @@ function mtl_render_dashboard_page() {
 					<?php if ( empty( $mh_loans ) ) : ?>
 						<p class="mtl-empty">This member has never rented a tool.</p>
 					<?php else : ?>
-						<p class="mtl-panel-sub"><strong><?php echo esc_html( $mh_total ); ?></strong> loan<?php echo $mh_total === 1 ? '' : 's'; ?> on record<?php echo $mh_active > 0 ? ', <strong>' . esc_html( $mh_active ) . '</strong> currently out' : ''; ?>.</p>
+						<p class="mtl-panel-sub"><strong><?php echo esc_html( $mh_total ); ?></strong> loan<?php echo 1 === $mh_total ? '' : 's'; ?> on record<?php echo $mh_active > 0 ? ', <strong>' . esc_html( $mh_active ) . '</strong> currently out' : ''; ?>.</p>
 						<div class="mtl-scroll-table">
 							<table>
 								<thead>
@@ -1700,8 +1726,8 @@ function mtl_render_dashboard_page() {
 								<tbody>
 									<?php
 									foreach ( $mh_loans as $l ) :
-										$late        = ( $l->return_date !== null && date( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
-										$out_overdue = ( $l->return_date === null && $l->due_date < date( 'Y-m-d' ) );
+										$late        = ( null !== $l->return_date && gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
+										$out_overdue = ( null === $l->return_date && $l->due_date < gmdate( 'Y-m-d' ) );
 										?>
 										<tr>
 											<td><strong><?php echo esc_html( stripslashes( $l->tool_name ) ); ?></strong><br><span style="color:#999;"><?php echo esc_html( stripslashes( $l->barcode ) ); ?></span></td>
