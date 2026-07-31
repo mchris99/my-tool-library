@@ -1,5 +1,11 @@
 <?php
-// Prevent direct file access
+/**
+ * Loans & Reservations admin page.
+ *
+ * @package My_Tool_Library
+ */
+
+// Prevent direct file access.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
@@ -54,7 +60,7 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 	$html  = '<div class="mtl-detail-headline"><span class="mtl-lr-pill ' . esc_attr( $rec['status_class'] ) . '">' . esc_html( $rec['status_label'] ) . '</span></div>';
 	$html .= '<h3 class="mtl-detail-tool">' . esc_html( $rec['tool_name'] ) . '</h3>';
 	$html .= '<p class="mtl-detail-sub">' . esc_html( $rec['barcode'] );
-	if ( $rec['brand'] !== '' ) {
+	if ( '' !== $rec['brand'] ) {
 		$html .= ' &bull; ' . esc_html( $rec['brand'] );
 	}
 	$html .= '</p>';
@@ -65,7 +71,7 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 
 	// Verification status matters when an admin is approving a checkout in
 	// person, so surface it on reservations and active loans.
-	if ( $rec['type'] === 'reservation' || $rec['type'] === 'current' ) {
+	if ( 'reservation' === $rec['type'] || 'current' === $rec['type'] ) {
 		$html .= mtl_lr_field(
 			'ID verified',
 			! empty( $rec['is_verified'] )
@@ -74,26 +80,26 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 		);
 	}
 
-	if ( $rec['type'] === 'reservation' ) {
+	if ( 'reservation' === $rec['type'] ) {
 		$html .= mtl_lr_field( 'Reserved', mtl_lr_fmt( $rec['reserved_at'], 'm/d/Y H:i' ) );
 		$html .= mtl_lr_field( 'Queue place', esc_html( '#' . $rec['queue_place'] . ' of ' . $rec['queue_size'] ) );
-		if ( $rec['current_loan_due'] !== '' ) {
+		if ( '' !== $rec['current_loan_due'] ) {
 			$html .= mtl_lr_field( 'Tool status', 'On loan to another member, due ' . mtl_lr_fmt( $rec['current_loan_due'] ) );
 		} else {
 			$html .= mtl_lr_field( 'Tool status', 'Available &mdash; not currently on loan' );
 		}
-	} elseif ( $rec['type'] === 'current' ) {
+	} elseif ( 'current' === $rec['type'] ) {
 		$html .= mtl_lr_field( 'On loan since', mtl_lr_fmt( $rec['loan_date'], 'm/d/Y H:i' ) );
 		$html .= mtl_lr_field( 'Due date', mtl_lr_fmt( $rec['due_date'] ) );
 		if ( $rec['overdue'] ) {
 			$d     = (int) $rec['days_past_due'];
-			$html .= mtl_lr_field( 'Status', '<span style="color:#b32d2e;font-weight:600;">Overdue by ' . esc_html( $d . ' day' . ( $d === 1 ? '' : 's' ) ) . '</span>' );
+			$html .= mtl_lr_field( 'Status', '<span style="color:#b32d2e;font-weight:600;">Overdue by ' . esc_html( $d . ' day' . ( 1 === $d ? '' : 's' ) ) . '</span>' );
 		} else {
 			$days  = -( (int) $rec['days_past_due'] );
-			$txt   = $days === 0 ? 'Due today' : ( 'Due in ' . $days . ' day' . ( $days === 1 ? '' : 's' ) );
+			$txt   = 0 === $days ? 'Due today' : ( 'Due in ' . $days . ' day' . ( 1 === $days ? '' : 's' ) );
 			$html .= mtl_lr_field( 'Status', esc_html( $txt ) );
 		}
-	} else { // previous
+	} else { // Previous.
 		$html .= mtl_lr_field( 'On loan', mtl_lr_fmt( $rec['loan_date'], 'm/d/Y H:i' ) );
 		$html .= mtl_lr_field( 'Due date', mtl_lr_fmt( $rec['due_date'] ) );
 		$html .= mtl_lr_field( 'Returned', mtl_lr_fmt( $rec['return_date'], 'm/d/Y H:i' ) );
@@ -114,10 +120,10 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 	// Each form posts back to this page (handled by mtl_lr_handle_actions).
 	// Forms live inside the hidden per-record detail source and are copied
 	// verbatim into the detail box on row-click, so they submit as-is.
-	if ( $rec['type'] === 'reservation' ) {
+	if ( 'reservation' === $rec['type'] ) {
 		$html .= '<p class="mtl-detail-section">Actions</p>';
 
-		if ( $rec['current_loan_due'] === '' ) {
+		if ( '' === $rec['current_loan_due'] ) {
 			// Available tools can be checked out to this member even if they
 			// aren't first in line -- the admin decides in person.
 			$html .= '<form method="post" action="" class="mtl-lr-action-form">';
@@ -130,11 +136,11 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 			// configured default day count starts active to match $default_due.
 			$html .= '<div class="mtl-lr-due-quick">';
 			foreach ( array( 7, 14, 21, 30 ) as $days_option ) {
-				$is_default = ( $days_option === $default_days );
+				$is_default = ( $default_days === $days_option );
 				$html      .= '<button type="button" class="button button-small' . ( $is_default ? ' mtl-lr-due-quick-active' : '' ) . '" onclick="mtl_lr_set_due(this, ' . (int) $days_option . ')">' . (int) $days_option . ' days</button>';
 			}
 			$html .= '</div>';
-			$html .= '<input type="date" name="due_date" value="' . esc_attr( $default_due ) . '" min="' . esc_attr( date( 'Y-m-d' ) ) . '" required>';
+			$html .= '<input type="date" name="due_date" value="' . esc_attr( $default_due ) . '" min="' . esc_attr( gmdate( 'Y-m-d' ) ) . '" required>';
 			$html .= '<button type="submit" class="button button-primary">Check out to this member</button>';
 			$html .= '</form>';
 		} else {
@@ -147,7 +153,7 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 		$html .= '<input type="hidden" name="reservation_id" value="' . (int) $rec['reservation_id'] . '">';
 		$html .= '<button type="submit" class="button mtl-lr-danger">Cancel reservation</button>';
 		$html .= '</form>';
-	} elseif ( $rec['type'] === 'current' ) {
+	} elseif ( 'current' === $rec['type'] ) {
 		$html .= '<p class="mtl-detail-section">Actions</p>';
 
 		// Renew pre-fills the loan's CURRENT due date (not a fresh default), so
@@ -163,7 +169,7 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 			$html .= '<button type="button" class="button button-small" onclick="mtl_lr_set_due(this, ' . (int) $days_option . ')">' . (int) $days_option . ' days</button>';
 		}
 		$html .= '</div>';
-		$html .= '<input type="date" name="due_date" value="' . esc_attr( $rec['due_date'] ) . '" min="' . esc_attr( date( 'Y-m-d' ) ) . '" required>';
+		$html .= '<input type="date" name="due_date" value="' . esc_attr( $rec['due_date'] ) . '" min="' . esc_attr( gmdate( 'Y-m-d' ) ) . '" required>';
 		$html .= '<button type="submit" class="button button-primary">Renew loan</button>';
 		$html .= '</form>';
 
@@ -189,13 +195,14 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
  * @return string Admin-notice HTML, or '' when there is nothing to do.
  */
 function mtl_lr_handle_actions() {
-	if ( ( $_SERVER['REQUEST_METHOD'] ?? '' ) !== 'POST' || ! isset( $_POST['mtl_lr_action'] ) ) {
+	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
+	if ( 'POST' !== $request_method || ! isset( $_POST['mtl_lr_action'] ) ) {
 		return '';
 	}
 	if ( ! current_user_can( 'manage_options' ) ) {
 		return '';
 	}
-	if ( ! isset( $_POST['mtl_lr_nonce'] ) || ! wp_verify_nonce( $_POST['mtl_lr_nonce'], 'mtl_lr_action' ) ) {
+	if ( ! isset( $_POST['mtl_lr_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_lr_nonce'] ) ), 'mtl_lr_action' ) ) {
 		return '<div class="notice notice-error is-dismissible"><p><strong>Security check failed.</strong> Please try again.</p></div>';
 	}
 
@@ -211,14 +218,14 @@ function mtl_lr_handle_actions() {
 	$today        = current_time( 'mysql' );
 	$default_days = (int) get_option( 'mtl_default_loan_days', 21 );
 
-	if ( $action === 'checkout' ) {
+	if ( 'checkout' === $action ) {
 		$reservation_id = isset( $_POST['reservation_id'] ) ? (int) $_POST['reservation_id'] : 0;
 		// Fall back to the Setup page's Default Loan Length if the posted
 		// value isn't a clean YYYY-MM-DD date.
 		$due_date = isset( $_POST['due_date'] ) ? sanitize_text_field( wp_unslash( $_POST['due_date'] ) ) : '';
 		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $due_date ) || ! strtotime( $due_date ) ) {
-			$due_date = date( 'Y-m-d', strtotime( $today . ' +' . $default_days . ' days' ) );
-		} elseif ( $due_date < date( 'Y-m-d', strtotime( $today ) ) ) {
+			$due_date = gmdate( 'Y-m-d', strtotime( $today . ' +' . $default_days . ' days' ) );
+		} elseif ( $due_date < gmdate( 'Y-m-d', strtotime( $today ) ) ) {
 			return '<div class="notice notice-error is-dismissible"><p>The due date can&rsquo;t be in the past. Please pick today or a later date.</p></div>';
 		}
 
@@ -226,6 +233,7 @@ function mtl_lr_handle_actions() {
 		// only if it is still active -- never trust posted tool/member ids.
 		$res = $wpdb->get_row(
 			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				"SELECT tool_id, member_id FROM {$tbl_reservations} WHERE reservation_id = %d AND expiry_date IS NULL",
 				$reservation_id
 			)
@@ -240,6 +248,7 @@ function mtl_lr_handle_actions() {
 		// elsewhere in this plugin.
 		$is_retired = $wpdb->get_var(
 			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				"SELECT retired_at FROM {$tbl_inventory} WHERE tool_id = %d",
 				(int) $res->tool_id
 			)
@@ -252,6 +261,7 @@ function mtl_lr_handle_actions() {
 		// already out on another loan.
 		$on_loan = $wpdb->get_var(
 			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				"SELECT loan_id FROM {$tbl_loans} WHERE tool_id = %d AND return_date IS NULL LIMIT 1",
 				(int) $res->tool_id
 			)
@@ -278,6 +288,7 @@ function mtl_lr_handle_actions() {
 		// it drops off their My Reservations list.
 		$wpdb->query(
 			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				"UPDATE {$tbl_reservations} SET expiry_date = %s WHERE reservation_id = %d AND expiry_date IS NULL",
 				$today,
 				$reservation_id
@@ -287,10 +298,11 @@ function mtl_lr_handle_actions() {
 		return '<div class="notice notice-success is-dismissible"><p><strong>Checked out.</strong> The tool is on loan, due ' . mtl_format_date( $due_date ) . ', and the member&rsquo;s reservation has been closed.</p></div>';
 	}
 
-	if ( $action === 'cancel_reservation' ) {
+	if ( 'cancel_reservation' === $action ) {
 		$reservation_id = isset( $_POST['reservation_id'] ) ? (int) $_POST['reservation_id'] : 0;
 		$done           = $wpdb->query(
 			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				"UPDATE {$tbl_reservations} SET expiry_date = %s WHERE reservation_id = %d AND expiry_date IS NULL",
 				$today,
 				$reservation_id
@@ -302,18 +314,19 @@ function mtl_lr_handle_actions() {
 		return '<div class="notice notice-error is-dismissible"><p>That reservation could not be cancelled (it may already be closed).</p></div>';
 	}
 
-	if ( $action === 'renew_loan' ) {
+	if ( 'renew_loan' === $action ) {
 		$loan_id = isset( $_POST['loan_id'] ) ? (int) $_POST['loan_id'] : 0;
 		// Same validation/fallback as checkout's due date.
 		$due_date = isset( $_POST['due_date'] ) ? sanitize_text_field( wp_unslash( $_POST['due_date'] ) ) : '';
 		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $due_date ) || ! strtotime( $due_date ) ) {
-			$due_date = date( 'Y-m-d', strtotime( $today . ' +' . $default_days . ' days' ) );
-		} elseif ( $due_date < date( 'Y-m-d', strtotime( $today ) ) ) {
+			$due_date = gmdate( 'Y-m-d', strtotime( $today . ' +' . $default_days . ' days' ) );
+		} elseif ( $due_date < gmdate( 'Y-m-d', strtotime( $today ) ) ) {
 			return '<div class="notice notice-error is-dismissible"><p>The due date can&rsquo;t be in the past. Please pick today or a later date.</p></div>';
 		}
 
 		$done = $wpdb->query(
 			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				"UPDATE {$tbl_loans} SET due_date = %s WHERE loan_id = %d AND return_date IS NULL",
 				$due_date,
 				$loan_id
@@ -325,10 +338,11 @@ function mtl_lr_handle_actions() {
 		return '<div class="notice notice-error is-dismissible"><p>That loan could not be renewed (it may already be returned).</p></div>';
 	}
 
-	if ( $action === 'end_loan' ) {
+	if ( 'end_loan' === $action ) {
 		$loan_id = isset( $_POST['loan_id'] ) ? (int) $_POST['loan_id'] : 0;
 		$done    = $wpdb->query(
 			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				"UPDATE {$tbl_loans} SET return_date = %s WHERE loan_id = %d AND return_date IS NULL",
 				$today,
 				$loan_id
@@ -364,10 +378,11 @@ function mtl_render_loans_page() {
 
 	echo '<div class="wrap mtl-admin-wrapper">';
 	echo '<h2>Loans &amp; Reservations</h2>';
-	echo $action_notice; // Success/error banner from mtl_lr_handle_actions() (pre-built, escaped).
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-built, escaped HTML from mtl_lr_handle_actions().
+	echo $action_notice;
 
 	// --- Loans (current + previous) ---
-    // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table names only ($wpdb->prefix-derived), no request-derived data.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only ($wpdb->prefix-derived), no request-derived data.
 	$loan_rows = $wpdb->get_results(
 		"
         SELECT l.loan_id, l.tool_id, l.member_id, l.loan_date, l.due_date, l.return_date,
@@ -385,7 +400,6 @@ function mtl_render_loans_page() {
 	// queue_place counts reservations for the same tool ahead in line (earlier
 	// reservation_date, ties broken by reservation_id). current_loan_due is the
 	// due date of the tool's active loan, if any.
-    // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table names only ($wpdb->prefix-derived), no request-derived data.
 	$res_rows = $wpdb->get_results(
 		"
         SELECT r.reservation_id, r.tool_id, r.member_id, r.reservation_date,
@@ -412,18 +426,19 @@ function mtl_render_loans_page() {
         ORDER BY t.tool_name ASC, r.reservation_date ASC
     "
 	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	// --- Per-tool activity totals ---
 	// Aggregates a tool's full history (across all members) for the detail
 	// box, keyed by tool_id for O(1) lookup below.
 	$tool_total_loans = array();
-    // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name only, no request-derived data.
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	foreach ( $wpdb->get_results( "SELECT tool_id, COUNT(*) AS total FROM {$tbl_loans} GROUP BY tool_id" ) as $row ) {
 		$tool_total_loans[ (int) $row->tool_id ] = (int) $row->total;
 	}
 
 	$tool_active_res = array();
-    // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name only, no request-derived data.
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	foreach ( $wpdb->get_results( "SELECT tool_id, COUNT(*) AS total FROM {$tbl_reservations} WHERE expiry_date IS NULL GROUP BY tool_id" ) as $row ) {
 		$tool_active_res[ (int) $row->tool_id ] = (int) $row->total;
 	}
@@ -432,7 +447,7 @@ function mtl_render_loans_page() {
 	$current_loans  = array();
 	$previous_loans = array();
 	foreach ( $loan_rows as $l ) {
-		if ( $l->return_date === null ) {
+		if ( null === $l->return_date ) {
 			$current_loans[] = $l;
 		} else {
 			$previous_loans[] = $l;
@@ -488,7 +503,7 @@ function mtl_render_loans_page() {
 	}
 
 	foreach ( $res_rows as $r ) {
-		$tool_out  = ( $r->current_loan_due !== null );
+		$tool_out  = ( null !== $r->current_loan_due );
 		$records[] = array(
 			'idx'              => $idx++,
 			'type'             => 'reservation',
@@ -514,7 +529,7 @@ function mtl_render_loans_page() {
 			'loan_id'          => 0,
 			'reservation_id'   => (int) $r->reservation_id,
 			'is_verified'      => ( (int) $r->is_verified > 0 ),
-			'current_loan_due' => ( $r->current_loan_due !== null ? $r->current_loan_due : '' ),
+			'current_loan_due' => ( null !== $r->current_loan_due ? $r->current_loan_due : '' ),
 			'returned_late'    => false,
 		);
 	}
@@ -524,7 +539,7 @@ function mtl_render_loans_page() {
 		// now, and due_date stays a plain date (implicitly midnight), so a
 		// raw > comparison would wrongly flag anything returned after 00:00
 		// on the due date itself as late.
-		$returned_late = ( $l->return_date !== null && $l->due_date !== null && date( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
+		$returned_late = ( null !== $l->return_date && null !== $l->due_date && gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
 		$records[]     = array(
 			'idx'              => $idx++,
 			'type'             => 'previous',
@@ -572,7 +587,7 @@ function mtl_render_loans_page() {
 		$rec_ref['tool_active_reservations'] = isset( $tool_active_res[ $tid ] ) ? $tool_active_res[ $tid ] : 0;
 		$rec_ref['status_rank']              = isset( $status_rank_map[ $rec_ref['status_label'] ] ) ? $status_rank_map[ $rec_ref['status_label'] ] : 9;
 	}
-	unset( $rec_ref ); // break the reference so later loops can't clobber the last record
+	unset( $rec_ref ); // Break the reference so later loops can't clobber the last record.
 
 	// Counts for the one-click view buttons.
 	$count_all     = count( $records );
@@ -580,7 +595,7 @@ function mtl_render_loans_page() {
 	$count_loans   = 0;
 	$count_overdue = 0;
 	foreach ( $records as $rec ) {
-		if ( $rec['type'] === 'reservation' ) {
+		if ( 'reservation' === $rec['type'] ) {
 			++$count_res;
 		} else {
 			++$count_loans;
@@ -1134,7 +1149,7 @@ function mtl_render_loans_page() {
 								// $reserved_date keeps the full ISO timestamp for data-reserved (JS sorts
 								// and filters on it); the visible cell uses the formatted display value.
 								$reserved_date         = $rec['reserved_at'];
-								$reserved_date_display = $reserved_date !== '' ? mtl_format_date( $reserved_date ) : '';
+								$reserved_date_display = '' !== $reserved_date ? mtl_format_date( $reserved_date ) : '';
 								?>
 								<tr class="mtl-lr-row"
 									data-rec="<?php echo esc_attr( $rec['idx'] ); ?>"
@@ -1148,22 +1163,22 @@ function mtl_render_loans_page() {
 									data-due="<?php echo esc_attr( $rec['due_date'] ); ?>"
 									data-status-rank="<?php echo esc_attr( $rec['status_rank'] ); ?>"
 									<?php // Blank (not 0) for non-reservations, so they sort to the bottom. ?>
-									data-queue="<?php echo $rec['type'] === 'reservation' ? esc_attr( $rec['queue_place'] ) : ''; ?>"
+									data-queue="<?php echo 'reservation' === $rec['type'] ? esc_attr( $rec['queue_place'] ) : ''; ?>"
 									<?php
 									// Advanced-filter flags: left blank on record types the question
 									// doesn't apply to, so a "No" filter doesn't sweep them in too.
 									?>
-									data-returnedlate="<?php echo $rec['type'] === 'previous' ? ( $rec['returned_late'] ? '1' : '0' ) : ''; ?>"
-									data-firstinqueue="<?php echo $rec['type'] === 'reservation' ? ( (int) $rec['queue_place'] === 1 ? '1' : '0' ) : ''; ?>"
-									data-toolonloan="<?php echo $rec['type'] === 'reservation' ? ( $rec['current_loan_due'] !== '' ? '1' : '0' ) : ''; ?>">
+									data-returnedlate="<?php echo 'previous' === $rec['type'] ? ( $rec['returned_late'] ? '1' : '0' ) : ''; ?>"
+									data-firstinqueue="<?php echo 'reservation' === $rec['type'] ? ( 1 === (int) $rec['queue_place'] ? '1' : '0' ) : ''; ?>"
+									data-toolonloan="<?php echo 'reservation' === $rec['type'] ? ( '' !== $rec['current_loan_due'] ? '1' : '0' ) : ''; ?>">
 									<td><span class="mtl-lr-pill <?php echo esc_attr( $rec['status_class'] ); ?>"><?php echo esc_html( $rec['status_label'] ); ?></span></td>
 									<td><?php echo esc_html( $rec['barcode'] ); ?></td>
 									<td><strong><?php echo esc_html( $rec['tool_name'] ); ?></strong></td>
 									<td><?php echo esc_html( $rec['member_name'] ); ?></td>
-									<td><?php echo $reserved_date_display !== '' ? $reserved_date_display : '<span class="mtl-lr-muted">&mdash;</span>'; ?></td>
-									<td><?php echo $rec['loan_date'] !== '' ? mtl_format_date( $rec['loan_date'] ) : '<span class="mtl-lr-muted">&mdash;</span>'; ?></td>
-									<td><?php echo $rec['due_date'] !== '' ? mtl_format_date( $rec['due_date'] ) : '<span class="mtl-lr-muted">&mdash;</span>'; ?></td>
-									<td><?php echo $rec['type'] === 'reservation' ? esc_html( '#' . $rec['queue_place'] . ' of ' . $rec['queue_size'] ) : '<span class="mtl-lr-muted">&mdash;</span>'; ?></td>
+									<td><?php echo '' !== $reserved_date_display ? $reserved_date_display : '<span class="mtl-lr-muted">&mdash;</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- mtl_format_date() escapes internally. ?></td>
+									<td><?php echo '' !== $rec['loan_date'] ? mtl_format_date( $rec['loan_date'] ) : '<span class="mtl-lr-muted">&mdash;</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- mtl_format_date() escapes internally. ?></td>
+									<td><?php echo '' !== $rec['due_date'] ? mtl_format_date( $rec['due_date'] ) : '<span class="mtl-lr-muted">&mdash;</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- mtl_format_date() escapes internally. ?></td>
+									<td><?php echo 'reservation' === $rec['type'] ? esc_html( '#' . $rec['queue_place'] . ' of ' . $rec['queue_size'] ) : '<span class="mtl-lr-muted">&mdash;</span>'; ?></td>
 								</tr>
 							<?php endforeach; ?>
 						<?php else : ?>
@@ -1202,11 +1217,11 @@ function mtl_render_loans_page() {
 	// without producing duplicate DOM ids.
 	$lr_nonce_field  = '<input type="hidden" name="mtl_lr_nonce" value="' . esc_attr( wp_create_nonce( 'mtl_lr_action' ) ) . '">';
 	$lr_default_days = (int) get_option( 'mtl_default_loan_days', 21 );
-	$lr_default_due  = date( 'Y-m-d', strtotime( current_time( 'Y-m-d' ) . ' +' . $lr_default_days . ' days' ) );
+	$lr_default_due  = gmdate( 'Y-m-d', strtotime( current_time( 'Y-m-d' ) . ' +' . $lr_default_days . ' days' ) );
 	?>
 	<div id="mtl-lr-detail-sources" style="display: none;">
 		<?php foreach ( $records as $rec ) : ?>
-			<div class="mtl-lr-detail-src" data-rec="<?php echo esc_attr( $rec['idx'] ); ?>"><?php echo mtl_lr_detail_html( $rec, $lr_nonce_field, $lr_default_due, $lr_default_days ); ?></div>
+			<div class="mtl-lr-detail-src" data-rec="<?php echo esc_attr( $rec['idx'] ); ?>"><?php echo mtl_lr_detail_html( $rec, $lr_nonce_field, $lr_default_due, $lr_default_days ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- mtl_lr_detail_html() escapes every interpolated value internally (see its docblock). ?></div>
 		<?php endforeach; ?>
 	</div>
 
