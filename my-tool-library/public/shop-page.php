@@ -1,7 +1,7 @@
 <?php
 // Prevent direct file access
-if (! defined('ABSPATH')) {
-    exit;
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
 
 /**
@@ -29,16 +29,15 @@ if (! defined('ABSPATH')) {
  * @param int  $res_count Number of active reservations for the tool.
  * @return string HTML markup.
  */
-function mtl_shop_status_badges($on_loan, $res_count)
-{
-    $out  = $on_loan
-        ? '<span class="mtl-shop-badge mtl-shop-badge-out">On Loan</span>'
-        : '<span class="mtl-shop-badge mtl-shop-badge-avail">Available</span>';
-    if ((int) $res_count > 0) {
-        $out .= '<span class="mtl-shop-badge mtl-shop-badge-res">'
-            . esc_html((int) $res_count) . ' reserved</span>';
-    }
-    return $out;
+function mtl_shop_status_badges( $on_loan, $res_count ) {
+	$out = $on_loan
+		? '<span class="mtl-shop-badge mtl-shop-badge-out">On Loan</span>'
+		: '<span class="mtl-shop-badge mtl-shop-badge-avail">Available</span>';
+	if ( (int) $res_count > 0 ) {
+		$out .= '<span class="mtl-shop-badge mtl-shop-badge-res">'
+			. esc_html( (int) $res_count ) . ' reserved</span>';
+	}
+	return $out;
 }
 
 /**
@@ -47,17 +46,16 @@ function mtl_shop_status_badges($on_loan, $res_count)
  * @param string $csv Comma-separated list of labels.
  * @return string HTML markup.
  */
-function mtl_shop_pills($csv)
-{
-    $csv = trim((string) $csv);
-    if ($csv === '') {
-        return '';
-    }
-    $out = '';
-    foreach (array_filter(array_map('trim', explode(',', $csv))) as $label) {
-        $out .= '<span class="mtl-shop-pill">' . esc_html($label) . '</span>';
-    }
-    return $out;
+function mtl_shop_pills( $csv ) {
+	$csv = trim( (string) $csv );
+	if ( $csv === '' ) {
+		return '';
+	}
+	$out = '';
+	foreach ( array_filter( array_map( 'trim', explode( ',', $csv ) ) ) as $label ) {
+		$out .= '<span class="mtl-shop-pill">' . esc_html( $label ) . '</span>';
+	}
+	return $out;
 }
 
 /**
@@ -68,9 +66,8 @@ function mtl_shop_pills($csv)
  * @param int $tool_id
  * @return string
  */
-function mtl_shop_panel_id($tool_id)
-{
-    return 'tool-' . (int) $tool_id;
+function mtl_shop_panel_id( $tool_id ) {
+	return 'tool-' . (int) $tool_id;
 }
 
 /**
@@ -83,10 +80,9 @@ function mtl_shop_panel_id($tool_id)
  * @param string $base
  * @return string Escaped URL.
  */
-function mtl_shop_tool_share_url($tool_id, $base)
-{
-    $url = add_query_arg('mtl_tool', (int) $tool_id, $base) . '#' . mtl_shop_panel_id($tool_id);
-    return esc_url($url);
+function mtl_shop_tool_share_url( $tool_id, $base ) {
+	$url = add_query_arg( 'mtl_tool', (int) $tool_id, $base ) . '#' . mtl_shop_panel_id( $tool_id );
+	return esc_url( $url );
 }
 
 /**
@@ -102,94 +98,99 @@ function mtl_shop_tool_share_url($tool_id, $base)
  *                      signup_url, reservations_url.
  * @return string
  */
-function mtl_shop_render_detail_panel($tool, $base, $ctx = array())
-{
-    $on_loan   = ((int) $tool->active_loans > 0);
-    $res       = (int) $tool->active_res;
-    $share_url = mtl_shop_tool_share_url($tool->tool_id, $base);
-    $tool_id   = (int) $tool->tool_id;
+function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
+	$on_loan   = ( (int) $tool->active_loans > 0 );
+	$res       = (int) $tool->active_res;
+	$share_url = mtl_shop_tool_share_url( $tool->tool_id, $base );
+	$tool_id   = (int) $tool->tool_id;
 
-    ob_start();
-    ?>
-    <?php if (! empty($tool->photo_url)) : ?>
-        <img class="mtl-shop-detail-photo" src="<?php echo esc_url($tool->photo_url); ?>" alt="<?php echo esc_attr(stripslashes($tool->tool_name)); ?>" loading="lazy">
-    <?php endif; ?>
-    <div class="mtl-shop-detail-body">
-        <p class="mtl-shop-detail-name"><?php echo esc_html(stripslashes($tool->tool_name)); ?></p>
-        <?php if (! empty($tool->brand)) : ?>
-            <p class="mtl-shop-detail-brand"><?php echo esc_html(stripslashes($tool->brand)); ?></p>
-        <?php endif; ?>
+	ob_start();
+	?>
+	<?php if ( ! empty( $tool->photo_url ) ) : ?>
+		<img class="mtl-shop-detail-photo" src="<?php echo esc_url( $tool->photo_url ); ?>" alt="<?php echo esc_attr( stripslashes( $tool->tool_name ) ); ?>" loading="lazy">
+	<?php endif; ?>
+	<div class="mtl-shop-detail-body">
+		<p class="mtl-shop-detail-name"><?php echo esc_html( stripslashes( $tool->tool_name ) ); ?></p>
+		<?php if ( ! empty( $tool->brand ) ) : ?>
+			<p class="mtl-shop-detail-brand"><?php echo esc_html( stripslashes( $tool->brand ) ); ?></p>
+		<?php endif; ?>
 
-        <div class="mtl-shop-badges"><?php echo mtl_shop_status_badges($on_loan, $res); ?></div>
+		<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $res ); ?></div>
 
-        <p class="mtl-shop-avail-line">
-            <?php echo $on_loan ? 'Currently on loan' : 'Available to borrow'; ?>
-        </p>
-        <p style="margin-top:0; color:#50575e; font-size:0.9em;">
-            <?php echo esc_html($res); ?> active reservation<?php echo $res === 1 ? '' : 's'; ?> in the queue.
-        </p>
+		<p class="mtl-shop-avail-line">
+			<?php echo $on_loan ? 'Currently on loan' : 'Available to borrow'; ?>
+		</p>
+		<p style="margin-top:0; color:#50575e; font-size:0.9em;">
+			<?php echo esc_html( $res ); ?> active reservation<?php echo $res === 1 ? '' : 's'; ?> in the queue.
+		</p>
 
-        <?php // Collapsed by default (native <details>, no JS) so visitors see
-              // a small button instead of a raw URL; the field is readonly
-              // since click-to-select would require JavaScript. ?>
-        <details class="mtl-shop-share">
-            <summary class="mtl-shop-btn mtl-shop-btn-ghost" style="list-style:none;">Link to this tool</summary>
-            <?php // $share_url is already esc_url()-escaped; wrapping it in
-                  // esc_attr() too would re-encode the "&" and corrupt the
-                  // link on any site whose base URL has a query string
-                  // (e.g. Plain-permalink installs). ?>
-            <input type="text" class="mtl-shop-share-input" readonly value="<?php echo $share_url; ?>" aria-label="Shareable link to this tool">
-        </details>
+		<?php
+		// Collapsed by default (native <details>, no JS) so visitors see
+				// a small button instead of a raw URL; the field is readonly
+				// since click-to-select would require JavaScript.
+		?>
+		<details class="mtl-shop-share">
+			<summary class="mtl-shop-btn mtl-shop-btn-ghost" style="list-style:none;">Link to this tool</summary>
+			<?php
+			// $share_url is already esc_url()-escaped; wrapping it in
+					// esc_attr() too would re-encode the "&" and corrupt the
+					// link on any site whose base URL has a query string
+					// (e.g. Plain-permalink installs).
+			?>
+			<input type="text" class="mtl-shop-share-input" readonly value="<?php echo $share_url; ?>" aria-label="Shareable link to this tool">
+		</details>
 
-        <?php if (! empty($tool->categories)) : ?>
-            <h4>Categories</h4>
-            <div><?php echo mtl_shop_pills($tool->categories); ?></div>
-        <?php endif; ?>
+		<?php if ( ! empty( $tool->categories ) ) : ?>
+			<h4>Categories</h4>
+			<div><?php echo mtl_shop_pills( $tool->categories ); ?></div>
+		<?php endif; ?>
 
-        <?php if (! empty($tool->tags)) : ?>
-            <h4>Tags</h4>
-            <div><?php echo mtl_shop_pills($tool->tags); ?></div>
-        <?php endif; ?>
+		<?php if ( ! empty( $tool->tags ) ) : ?>
+			<h4>Tags</h4>
+			<div><?php echo mtl_shop_pills( $tool->tags ); ?></div>
+		<?php endif; ?>
 
-        <?php if (! empty($tool->description)) : ?>
-            <h4>Description</h4>
-            <p><?php echo nl2br(esc_html(stripslashes($tool->description))); ?></p>
-        <?php endif; ?>
+		<?php if ( ! empty( $tool->description ) ) : ?>
+			<h4>Description</h4>
+			<p><?php echo nl2br( esc_html( stripslashes( $tool->description ) ) ); ?></p>
+		<?php endif; ?>
 
-        <?php if (! empty($tool->components)) : ?>
-            <h4>What's included</h4>
-            <p><?php echo nl2br(esc_html(stripslashes($tool->components))); ?></p>
-        <?php endif; ?>
+		<?php if ( ! empty( $tool->components ) ) : ?>
+			<h4>What's included</h4>
+			<p><?php echo nl2br( esc_html( stripslashes( $tool->components ) ) ); ?></p>
+		<?php endif; ?>
 
-        <?php // The Reserve control adapts to the viewer: a member with this
-              // tool already on loan/reserved sees a note instead of a
-              // button; a member otherwise gets a POST "Reserve" button; an
-              // admin gets a pointer to the admin tools; a logged-out
-              // visitor gets a sign-in prompt. Reserving is POST + nonce,
-              // never GET, so it can't be triggered by prefetch or CSRF. ?>
-        <?php if (! empty($ctx['is_member'])) : ?>
-            <?php if (isset($ctx['loaned'][$tool_id])) : ?>
-                <p class="mtl-shop-reserve-note">You currently have this tool checked out.</p>
-            <?php elseif (isset($ctx['reserved'][$tool_id])) : ?>
-                <p class="mtl-shop-reserve-note">You&rsquo;re in the queue for this tool. <a href="<?php echo esc_url($ctx['reservations_url']); ?>">View My Reservations</a>.</p>
-            <?php else : ?>
-                <form method="post" action="<?php echo esc_url($base); ?>">
-                    <?php echo $ctx['reserve_nonce_field']; ?>
-                    <input type="hidden" name="mtl_action" value="reserve">
-                    <input type="hidden" name="mtl_tool" value="<?php echo $tool_id; ?>">
-                    <button type="submit" class="mtl-shop-reserve">Reserve This Tool</button>
-                </form>
-                <p class="mtl-shop-reserve-note">You&rsquo;ll join the waiting queue and can track your place under My Reservations.</p>
-            <?php endif; ?>
-        <?php elseif (! empty($ctx['is_admin'])) : ?>
-            <p class="mtl-shop-reserve-note">Administrators manage reservations from the Loans &amp; Reservations page.</p>
-        <?php else : ?>
-            <a class="mtl-shop-reserve" href="<?php echo esc_url($ctx['login_url']); ?>">Sign In to Reserve</a>
-            <p class="mtl-shop-reserve-note">New here? <a href="<?php echo esc_url($ctx['signup_url']); ?>">Create a member account</a> to reserve tools.</p>
-        <?php endif; ?>
-    </div>
-    <?php
-    return ob_get_clean();
+		<?php
+		// The Reserve control adapts to the viewer: a member with this
+				// tool already on loan/reserved sees a note instead of a
+				// button; a member otherwise gets a POST "Reserve" button; an
+				// admin gets a pointer to the admin tools; a logged-out
+				// visitor gets a sign-in prompt. Reserving is POST + nonce,
+				// never GET, so it can't be triggered by prefetch or CSRF.
+		?>
+		<?php if ( ! empty( $ctx['is_member'] ) ) : ?>
+			<?php if ( isset( $ctx['loaned'][ $tool_id ] ) ) : ?>
+				<p class="mtl-shop-reserve-note">You currently have this tool checked out.</p>
+			<?php elseif ( isset( $ctx['reserved'][ $tool_id ] ) ) : ?>
+				<p class="mtl-shop-reserve-note">You&rsquo;re in the queue for this tool. <a href="<?php echo esc_url( $ctx['reservations_url'] ); ?>">View My Reservations</a>.</p>
+			<?php else : ?>
+				<form method="post" action="<?php echo esc_url( $base ); ?>">
+					<?php echo $ctx['reserve_nonce_field']; ?>
+					<input type="hidden" name="mtl_action" value="reserve">
+					<input type="hidden" name="mtl_tool" value="<?php echo $tool_id; ?>">
+					<button type="submit" class="mtl-shop-reserve">Reserve This Tool</button>
+				</form>
+				<p class="mtl-shop-reserve-note">You&rsquo;ll join the waiting queue and can track your place under My Reservations.</p>
+			<?php endif; ?>
+		<?php elseif ( ! empty( $ctx['is_admin'] ) ) : ?>
+			<p class="mtl-shop-reserve-note">Administrators manage reservations from the Loans &amp; Reservations page.</p>
+		<?php else : ?>
+			<a class="mtl-shop-reserve" href="<?php echo esc_url( $ctx['login_url'] ); ?>">Sign In to Reserve</a>
+			<p class="mtl-shop-reserve-note">New here? <a href="<?php echo esc_url( $ctx['signup_url'] ); ?>">Create a member account</a> to reserve tools.</p>
+		<?php endif; ?>
+	</div>
+	<?php
+	return ob_get_clean();
 }
 
 /**
@@ -197,1094 +198,1142 @@ function mtl_shop_render_detail_panel($tool, $base, $ctx = array())
  *
  * @return string Catalog HTML.
  */
-function mtl_render_shop_page()
-{
-    global $wpdb;
-
-    $tbl_inv     = $wpdb->prefix . 'tool_inventory';
-    $tbl_cats    = $wpdb->prefix . 'tool_categories';
-    $tbl_cat_map = $wpdb->prefix . 'tool_category_mappings';
-    $tbl_tags    = $wpdb->prefix . 'tool_tags';
-    $tbl_tag_map = $wpdb->prefix . 'tool_tag_mappings';
-    $tbl_loans   = $wpdb->prefix . 'loans';
-    $tbl_res     = $wpdb->prefix . 'tool_reservations';
-
-    // Bail gracefully if the plugin's tables don't exist yet.
-    if (! $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $tbl_inv))) {
-        return '<div class="mtl-front-card"><p>Our tool catalog is being set up. Please check back soon.</p></div>';
-    }
-
-    // Read + sanitize the request parameters.
-    $q        = isset($_GET['mtl_q']) ? sanitize_text_field(wp_unslash($_GET['mtl_q'])) : '';
-    $a_name   = isset($_GET['mtl_name']) ? sanitize_text_field(wp_unslash($_GET['mtl_name'])) : '';
-    $a_brand  = isset($_GET['mtl_brand']) ? sanitize_text_field(wp_unslash($_GET['mtl_brand'])) : '';
-    $a_cat    = isset($_GET['mtl_cat']) ? (int) $_GET['mtl_cat'] : 0;
-    $a_tag    = isset($_GET['mtl_tag']) ? (int) $_GET['mtl_tag'] : 0;
-    $a_status = isset($_GET['mtl_status']) ? sanitize_key(wp_unslash($_GET['mtl_status'])) : '';
-    $sort     = isset($_GET['mtl_sort']) ? sanitize_key(wp_unslash($_GET['mtl_sort'])) : '';
-    $view     = (isset($_GET['mtl_view']) && $_GET['mtl_view'] === 'rows') ? 'rows' : 'tiles';
-    $page_no  = isset($_GET['mtl_pg']) ? max(1, (int) $_GET['mtl_pg']) : 1;
-    $sel_id   = isset($_GET['mtl_tool']) ? (int) $_GET['mtl_tool'] : 0;
-
-    $advanced_active = ($a_name !== '' || $a_brand !== '' || $a_cat > 0 || $a_tag > 0 || $a_status !== '');
-
-    // Whitelisted sort orders -> safe ORDER BY fragments (never user SQL).
-    $sort_orders = array(
-        ''          => 't.tool_id DESC',
-        'newest'    => 't.tool_id DESC',
-        'oldest'    => 't.tool_id ASC',
-        'name'      => 't.tool_name ASC',
-        'name_desc' => 't.tool_name DESC',
-        'brand'     => 't.brand ASC',
-    );
-    $order_by = isset($sort_orders[$sort]) ? $sort_orders[$sort] : $sort_orders[''];
-
-    $per_page = ($view === 'rows') ? 20 : 12;
-
-    // Build the dynamic WHERE from the active filters. Conditions carry
-    // %s / %d placeholders; $args holds the matching values, run through
-    // $wpdb->prepare() below.
-    // Retired tools are never shown publicly -- see admin/schema.sql's note
-    // on tool_inventory.retired_at.
-    $where = array('t.retired_at IS NULL');
-    $args  = array();
-
-    if ($q !== '') {
-        $like = '%' . $wpdb->esc_like($q) . '%';
-        $where[] = "(t.tool_name LIKE %s OR t.brand LIKE %s OR t.description LIKE %s"
-            . " OR EXISTS (SELECT 1 FROM {$tbl_cat_map} xcm JOIN {$tbl_cats} xc ON xcm.category_id = xc.category_id WHERE xcm.tool_id = t.tool_id AND xc.category_name LIKE %s)"
-            . " OR EXISTS (SELECT 1 FROM {$tbl_tag_map} xtm JOIN {$tbl_tags} xt ON xtm.tag_id = xt.tag_id WHERE xtm.tool_id = t.tool_id AND xt.tag_name LIKE %s))";
-        array_push($args, $like, $like, $like, $like, $like);
-    }
-    if ($a_name !== '') {
-        $where[] = 't.tool_name LIKE %s';
-        $args[]  = '%' . $wpdb->esc_like($a_name) . '%';
-    }
-    if ($a_brand !== '') {
-        $where[] = 't.brand LIKE %s';
-        $args[]  = '%' . $wpdb->esc_like($a_brand) . '%';
-    }
-    if ($a_cat > 0) {
-        $where[] = "EXISTS (SELECT 1 FROM {$tbl_cat_map} fcm WHERE fcm.tool_id = t.tool_id AND fcm.category_id = %d)";
-        $args[]  = $a_cat;
-    }
-    if ($a_tag > 0) {
-        $where[] = "EXISTS (SELECT 1 FROM {$tbl_tag_map} ftm WHERE ftm.tool_id = t.tool_id AND ftm.tag_id = %d)";
-        $args[]  = $a_tag;
-    }
-    $where_sql = 'WHERE ' . implode(' AND ', $where);
-
-    // The availability filter compares computed loan/reservation counts, so
-    // it belongs in HAVING (after GROUP BY) rather than WHERE.
-    $having = '';
-    if ($a_status === 'available') {
-        $having = 'HAVING active_loans = 0';
-    } elseif ($a_status === 'onloan') {
-        $having = 'HAVING active_loans > 0';
-    } elseif ($a_status === 'noreserved') {
-        $having = 'HAVING active_res = 0';
-    }
-
-    // Scalar subqueries reused for both status and display -- no placeholders.
-    $sub_loans = "(SELECT COUNT(*) FROM {$tbl_loans} l WHERE l.tool_id = t.tool_id AND l.return_date IS NULL)";
-    $sub_res   = "(SELECT COUNT(*) FROM {$tbl_res} r WHERE r.tool_id = t.tool_id AND r.expiry_date IS NULL)";
-
-    $from = "FROM {$tbl_inv} t"
-        . " LEFT JOIN {$tbl_cat_map} tcm ON t.tool_id = tcm.tool_id"
-        . " LEFT JOIN {$tbl_cats} c ON tcm.category_id = c.category_id"
-        . " LEFT JOIN {$tbl_tag_map} ttm ON t.tool_id = ttm.tool_id"
-        . " LEFT JOIN {$tbl_tags} tg ON ttm.tag_id = tg.tag_id";
-
-    // Total matching count (for pagination).
-    $count_sql = "SELECT COUNT(*) FROM (SELECT t.tool_id, {$sub_loans} AS active_loans, {$sub_res} AS active_res {$from} {$where_sql} GROUP BY t.tool_id {$having}) sub";
-    $total = (int) ($args ? $wpdb->get_var($wpdb->prepare($count_sql, $args)) : $wpdb->get_var($count_sql)); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no-args branch: $count_sql carries no request-derived data when $args is empty.
-
-    $total_pages = max(1, (int) ceil($total / $per_page));
-    if ($page_no > $total_pages) {
-        $page_no = $total_pages;
-    }
-    $offset = ($page_no - 1) * $per_page;
-
-    // The page of results.
-    $page_sql = "SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url,"
-        . " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
-        . " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
-        . " {$sub_loans} AS active_loans, {$sub_res} AS active_res"
-        . " {$from} {$where_sql} GROUP BY t.tool_id {$having} ORDER BY {$order_by} LIMIT %d OFFSET %d";
-    $page_args = array_merge($args, array($per_page, $offset));
-    $tools = $wpdb->get_results($wpdb->prepare($page_sql, $page_args));
-
-    // The selected tool for the detail box, fetched independently so it
-    // shows even if it isn't on the current page of results.
-    $selected = null;
-    if ($sel_id > 0) {
-        $selected = $wpdb->get_row($wpdb->prepare(
-            "SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.date_acquired,"
-                . " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
-                . " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
-                . " {$sub_loans} AS active_loans, {$sub_res} AS active_res"
-                . " {$from} WHERE t.tool_id = %d AND t.retired_at IS NULL GROUP BY t.tool_id",
-            $sel_id
-        ));
-    }
-
-    // Every tool needing a pre-rendered detail panel: the current results
-    // page plus the deep-linked tool if not already among them. $tools rows
-    // already carry every column the detail view needs, so this adds no
-    // extra queries.
-    $panel_tools    = array();
-    $panel_tool_ids = array();
-    foreach ($tools as $tool) {
-        $panel_tools[]                       = $tool;
-        $panel_tool_ids[(int) $tool->tool_id] = true;
-    }
-    if ($selected && ! isset($panel_tool_ids[(int) $selected->tool_id])) {
-        $panel_tools[] = $selected;
-    }
-
-    // Dropdown data for the advanced panel.
-    $categories = $wpdb->get_results("SELECT category_id, category_name FROM {$tbl_cats} ORDER BY category_name ASC"); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name only, no request-derived data.
-    $tags_list  = $wpdb->get_results("SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC"); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name only, no request-derived data.
-
-    // URL helpers. All links preserve the current filter/sort/view state and
-    // only override what changes; the search form carries the same state
-    // through hidden inputs.
-    $base = mtl_front_page_url('main');
-    $state = array(
-        'mtl_q'      => $q,
-        'mtl_name'   => $a_name,
-        'mtl_brand'  => $a_brand,
-        'mtl_cat'    => $a_cat > 0 ? $a_cat : '',
-        'mtl_tag'    => $a_tag > 0 ? $a_tag : '',
-        'mtl_status' => $a_status,
-        'mtl_sort'   => ($sort !== '' && $sort !== 'newest') ? $sort : '',
-        'mtl_view'   => $view === 'rows' ? 'rows' : '',
-        'mtl_tool'   => $sel_id > 0 ? $sel_id : '',
-    );
-    // Drop empty values so URLs stay tidy.
-    $clean_state = array_filter($state, function ($v) {
-        return $v !== '' && $v !== null;
-    });
-
-    // Pagination, sort and view-toggle links change the query string, so they
-    // always trigger a full reload. Whenever the resulting URL carries
-    // mtl_tool, the matching #tool-<id> fragment is appended automatically so
-    // visibility (100% fragment/:target-driven) never gets left out of sync.
-    $make_url = function (array $overrides) use ($base, $clean_state) {
-        $args = array_merge($clean_state, $overrides);
-        $args = array_filter($args, function ($v) {
-            return $v !== '' && $v !== null;
-        });
-        $url = add_query_arg($args, $base);
-        if (! empty($args['mtl_tool'])) {
-            $url .= '#' . mtl_shop_panel_id($args['mtl_tool']);
-        }
-        return esc_url($url);
-    };
-
-    $result_word = ($total === 1) ? 'tool' : 'tools';
-
-    // Viewer's member context, fetched once and handed to every detail panel
-    // so the Reserve control can adapt to who's looking (see
-    // mtl_shop_render_detail_panel). The lookups only run when signed in.
-    $member_ctx = array(
-        'is_member'           => false,
-        'is_admin'            => (is_user_logged_in() && current_user_can('manage_options')),
-        'reserved'            => array(), // tool_id => true (active reservations)
-        'loaned'              => array(), // tool_id => true (currently on loan)
-        'reserve_nonce_field' => '',
-        'login_url'           => mtl_front_page_url('login'),
-        'signup_url'          => mtl_front_page_url('signup'),
-        'reservations_url'    => mtl_front_page_url('reservations'),
-    );
-    $viewer = mtl_current_member();
-    if ($viewer) {
-        $mid = (int) $viewer->member_id;
-        $member_ctx['is_member']           = true;
-        $member_ctx['reserve_nonce_field'] = wp_nonce_field('mtl_reserve_action', 'mtl_reserve_nonce', true, false);
-        foreach ($wpdb->get_col($wpdb->prepare("SELECT tool_id FROM {$tbl_res} WHERE member_id = %d AND expiry_date IS NULL", $mid)) as $tid) {
-            $member_ctx['reserved'][(int) $tid] = true;
-        }
-        foreach ($wpdb->get_col($wpdb->prepare("SELECT tool_id FROM {$tbl_loans} WHERE member_id = %d AND return_date IS NULL", $mid)) as $tid) {
-            $member_ctx['loaned'][(int) $tid] = true;
-        }
-    }
-
-    // ======================================================================
-    // RENDER
-    // ======================================================================
-    ob_start();
-    ?>
-    <style>
-        /* Full-width override for the shared shell's centered content area. */
-        .mtl-front-content {
-            display: block;
-            padding: 16px 20px 40px 20px;
-        }
-
-        .mtl-shop {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-
-        /* Button-styled <details>; hide the browser's default disclosure
-           triangle so only our own caret shows. */
-        .mtl-shop summary.mtl-shop-btn {
-            list-style: none;
-        }
-
-        .mtl-shop summary.mtl-shop-btn::-webkit-details-marker {
-            display: none;
-        }
-
-        .mtl-shop-toolbar {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: flex-end;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        .mtl-shop-search {
-            flex: 1 1 340px;
-        }
-
-        .mtl-shop-search-row {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .mtl-shop-search input[type="text"] {
-            flex: 1 1 220px;
-            padding: 9px 12px;
-            border: 1px solid #8c8f94;
-            border-radius: 4px;
-            font-size: 1em;
-        }
-
-        .mtl-shop-btn {
-            display: inline-block;
-            padding: 9px 16px;
-            border: 1px solid var(--mtl-shop-accent);
-            border-radius: 4px;
-            background: var(--mtl-shop-accent);
-            color: #fff;
-            font-size: 0.95em;
-            cursor: pointer;
-            text-decoration: none;
-            white-space: nowrap;
-        }
-
-        .mtl-shop-btn-ghost {
-            background: #fff;
-            color: #3c434a;
-            border-color: #ccd0d4;
-        }
-
-        /* Pinned to the screen corner (not the page top) so it stays reachable
-           while scrolling. z-index is below the mobile detail overlay's
-           (100/101, see max-width:900px block) so an open overlay covers it. */
-        .mtl-shop-home-btn {
-            position: fixed;
-            top: 16px;
-            left: 16px;
-            z-index: 10;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
-        }
-
-        /* Member nav, pinned top-right to mirror the Home button (same
-           z-index so an open detail overlay covers both). */
-        .mtl-shop-account-nav {
-            position: fixed;
-            top: 16px;
-            right: 16px;
-            z-index: 10;
-            display: flex;
-            gap: 8px;
-            align-items: flex-start;
-        }
-
-        .mtl-shop-account-nav .mtl-shop-btn {
-            box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
-        }
-
-        /* Native <details> account menu -- zero-JS disclosure. */
-        .mtl-shop-account-menu {
-            position: relative;
-        }
-
-        .mtl-shop-account-menu > summary {
-            list-style: none;
-        }
-
-        .mtl-shop-account-menu > summary::-webkit-details-marker {
-            display: none;
-        }
-
-        .mtl-shop-account-menu-panel {
-            position: absolute;
-            right: 0;
-            margin-top: 6px;
-            background: #fff;
-            border: 1px solid #ccd0d4;
-            border-radius: 4px;
-            box-shadow: 0 3px 10px rgba(0, 0, 0, .12);
-            min-width: 180px;
-            padding: 4px 0;
-        }
-
-        .mtl-shop-account-menu-panel a {
-            display: block;
-            padding: 8px 14px;
-            text-decoration: none;
-            color: #3c434a;
-        }
-
-        .mtl-shop-account-menu-panel a:hover {
-            background: #f6f7f7;
-        }
-
-        /* Status banner shown after a reserve / cancel action (via mtl_msg). */
-        .mtl-front-notice {
-            margin: 0 0 16px 0;
-            padding: 12px 16px;
-            border-radius: 6px;
-            font-size: 0.95em;
-        }
-
-        .mtl-front-notice-success {
-            background: #edf7ed;
-            border: 1px solid #b6dcb6;
-            color: #1e5b25;
-        }
-
-        .mtl-front-notice-error {
-            background: #fcf0f1;
-            border: 1px solid #f0c0c4;
-            color: #8a1f28;
-        }
-
-        .mtl-shop-advanced {
-            margin-top: 10px;
-            border: 1px solid #e2e5e8;
-            border-radius: 4px;
-            padding: 0 14px;
-        }
-
-        .mtl-shop-advanced > summary {
-            cursor: pointer;
-            padding: 10px 0;
-            font-weight: 600;
-            font-size: 0.9em;
-        }
-
-        .mtl-shop-adv-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 10px 12px;
-            padding: 0 0 14px 0;
-        }
-
-        .mtl-shop-adv-grid label {
-            display: block;
-            font-size: 0.78em;
-            font-weight: 600;
-            margin-bottom: 2px;
-        }
-
-        .mtl-shop-adv-grid input,
-        .mtl-shop-adv-grid select {
-            width: 100%;
-            box-sizing: border-box;
-            min-height: 30px;
-            padding: 3px 6px;
-        }
-
-        .mtl-shop-adv-actions {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            flex-wrap: wrap;
-            margin: 0 0 12px 0;
-        }
-
-        .mtl-shop-controls {
-            display: flex;
-            gap: 16px;
-            align-items: flex-end;
-            flex-wrap: wrap;
-        }
-
-        .mtl-shop-control-group {
-            font-size: 0.82em;
-        }
-
-        .mtl-shop-control-group .mtl-shop-control-label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 3px;
-            color: #50575e;
-        }
-
-        .mtl-shop-toggle a {
-            display: inline-block;
-            padding: 6px 12px;
-            border: 1px solid #ccd0d4;
-            text-decoration: none;
-            color: #3c434a;
-            font-size: 0.9em;
-        }
-
-        .mtl-shop-toggle a:first-child {
-            border-radius: 4px 0 0 4px;
-        }
-
-        .mtl-shop-toggle a:last-child {
-            border-radius: 0 4px 4px 0;
-            border-left: none;
-        }
-
-        .mtl-shop-toggle a.mtl-shop-active {
-            background: var(--mtl-shop-accent);
-            border-color: var(--mtl-shop-accent);
-            color: #fff;
-            font-weight: 600;
-        }
-
-        .mtl-shop-count {
-            font-size: 0.9em;
-            color: #50575e;
-            margin: 6px 0 14px 0;
-        }
-
-        /* Two-column layout: catalog left, detail box right. */
-        .mtl-shop-layout {
-            display: flex;
-            gap: 24px;
-            align-items: flex-start;
-        }
-
-        .mtl-shop-main {
-            flex: 1 1 auto;
-            min-width: 0;
-        }
-
-        .mtl-shop-detail-col {
-            flex: 0 0 340px;
-            position: sticky;
-            top: 16px;
-        }
-
-        @media (max-width: 900px) {
-            .mtl-shop-layout {
-                flex-direction: column;
-            }
-
-            .mtl-shop-detail-col {
-                position: static;
-                width: 100%;
-            }
-
-            /* On narrow screens, a selected tool's detail box is lifted out of
-               normal flow and pinned over the viewport instead of sitting
-               below a possibly long list of tiles/rows. position:fixed is
-               anchored to the viewport, not the page, so there's nothing in
-               page flow for the browser's native fragment-scroll to jump to.
-               Relies on :has() -- browsers without it simply keep the detail
-               box in normal flow below the grid (a functional, if less
-               convenient, fallback). */
-            .mtl-shop-detail-col:has(.mtl-shop-detail-panel:target) {
-                position: fixed;
-                inset: 0;
-                width: auto;
-                z-index: 100;
-                display: flex;
-                align-items: flex-start;
-                justify-content: center;
-                overflow-y: auto;
-                padding: 40px 14px;
-                background: rgba(30, 34, 38, .6);
-            }
-
-            .mtl-shop-detail-col:has(.mtl-shop-detail-panel:target) .mtl-shop-detail {
-                width: 100%;
-                max-width: 480px;
-                margin: auto 0;
-            }
-
-            .mtl-shop-detail-col:has(.mtl-shop-detail-panel:target) .mtl-shop-detail-close {
-                display: flex;
-            }
-        }
-
-        /* Tile grid */
-        .mtl-shop-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-            gap: 16px;
-        }
-
-        .mtl-shop-tile {
-            display: flex;
-            flex-direction: column;
-            border: 1px solid #d5d8dc;
-            border-radius: 8px;
-            overflow: hidden;
-            background: #fff;
-            text-decoration: none;
-            color: inherit;
-            transition: box-shadow 0.15s ease, border-color 0.15s ease;
-        }
-
-        .mtl-shop-tile:hover {
-            box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
-        }
-
-        .mtl-shop-thumb {
-            aspect-ratio: 4 / 3;
-            width: 100%;
-            object-fit: contain;
-            background: #f6f7f7;
-        }
-
-        .mtl-shop-noimg {
-            aspect-ratio: 4 / 3;
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #f0f1f2;
-            color: #a7abb0;
-            font-size: 0.85em;
-            letter-spacing: 0.03em;
-        }
-
-        .mtl-shop-tile-body {
-            padding: 10px 12px 12px 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .mtl-shop-tile-name {
-            font-weight: 700;
-            line-height: 1.25;
-        }
-
-        .mtl-shop-tile-brand {
-            font-size: 0.85em;
-            color: #787c82;
-        }
-
-        /* Row (compact) view */
-        .mtl-shop-rows {
-            display: flex;
-            flex-direction: column;
-            border: 1px solid #d5d8dc;
-            border-radius: 6px;
-            overflow: hidden;
-            background: #fff;
-        }
-
-        .mtl-shop-row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 14px;
-            border-top: 1px solid #eef0f2;
-            text-decoration: none;
-            color: inherit;
-        }
-
-        .mtl-shop-row:first-child {
-            border-top: none;
-        }
-
-        .mtl-shop-row:hover {
-            background: #f6fafd;
-        }
-
-        .mtl-shop-row-main {
-            flex: 1 1 auto;
-            min-width: 0;
-        }
-
-        .mtl-shop-row-name {
-            font-weight: 600;
-        }
-
-        .mtl-shop-row-sub {
-            font-size: 0.85em;
-            color: #787c82;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        /* Badges + pills */
-        .mtl-shop-badges {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
-            margin-top: 2px;
-        }
-
-        .mtl-shop-badge {
-            display: inline-block;
-            border-radius: 999px;
-            padding: 1px 9px;
-            font-size: 0.74em;
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
-        .mtl-shop-badge-avail {
-            background: #edf7ed;
-            color: #1e7e34;
-            border: 1px solid #bfe3c0;
-        }
-
-        .mtl-shop-badge-out {
-            background: #fff4e5;
-            color: #b45309;
-            border: 1px solid #f2cfa0;
-        }
-
-        .mtl-shop-badge-res {
-            background: #eaf3fb;
-            color: #135e96;
-            border: 1px solid #b9d7ef;
-        }
-
-        .mtl-shop-pill {
-            display: inline-block;
-            background: #f0f1f2;
-            color: #50575e;
-            border-radius: 12px;
-            padding: 1px 9px;
-            margin: 2px 3px 0 0;
-            font-size: 0.76em;
-        }
-
-        /* Detail box */
-        .mtl-shop-detail {
-            border: 1px solid #d5d8dc;
-            border-radius: 8px;
-            background: #fff;
-            overflow: hidden;
-        }
-
-        /* Every tool's panel is pre-rendered (hidden); CSS :target reveals
-           whichever one matches the URL fragment. */
-        .mtl-shop-detail-panel {
-            display: none;
-        }
-
-        .mtl-shop-detail-panel:target {
-            display: block;
-        }
-
-        .mtl-shop-detail:has(.mtl-shop-detail-panel:target) .mtl-shop-detail-empty {
-            display: none;
-        }
-
-        /* Zero-size and fixed, so navigating here to close the overlay (see
-           max-width:900px block) can't cause a scroll jump either. */
-        .mtl-shop-close-anchor {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 0;
-            height: 0;
-        }
-
-        /* Hidden by default; shown only while the narrow-screen overlay is
-           active. position:fixed so it stays pinned to the corner. */
-        .mtl-shop-detail-close {
-            display: none;
-            position: fixed;
-            top: 16px;
-            right: 16px;
-            z-index: 101;
-            width: 32px;
-            height: 32px;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            background: #fff;
-            color: #3c434a;
-            text-decoration: none;
-            font-size: 1.4em;
-            line-height: 1;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
-        }
-
-        .mtl-shop-detail-empty {
-            padding: 30px 20px;
-            text-align: center;
-            color: #8c8f94;
-        }
-
-        .mtl-shop-detail-photo {
-            width: 100%;
-            max-height: 240px;
-            object-fit: contain;
-            background: #f6f7f7;
-        }
-
-        .mtl-shop-detail-body {
-            padding: 16px 18px 20px 18px;
-        }
-
-        .mtl-shop-share {
-            margin: 14px 0;
-        }
-
-        /* Smaller variant of .mtl-shop-btn-ghost for this low-emphasis action. */
-        .mtl-shop-share summary.mtl-shop-btn {
-            padding: 4px 10px;
-            font-size: 0.78em;
-        }
-
-        .mtl-shop-share[open] summary.mtl-shop-btn {
-            margin-bottom: 6px;
-        }
-
-        .mtl-shop-share-input {
-            display: block;
-            width: 100%;
-            box-sizing: border-box;
-            padding: 7px 9px;
-            border: 1px solid #d5d8dc;
-            border-radius: 4px;
-            background: #f6f7f7;
-            color: #50575e;
-            font-family: Consolas, Menlo, monospace;
-            font-size: 0.82em;
-        }
-
-        .mtl-shop-detail-name {
-            font-size: 1.25em;
-            font-weight: 700;
-            margin: 0;
-        }
-
-        .mtl-shop-detail-brand {
-            color: #787c82;
-            margin: 2px 0 12px 0;
-        }
-
-        .mtl-shop-detail h4 {
-            font-size: 0.78em;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: #8c8f94;
-            margin: 16px 0 4px 0;
-        }
-
-        .mtl-shop-detail p {
-            margin: 4px 0;
-            line-height: 1.5;
-        }
-
-        .mtl-shop-avail-line {
-            font-weight: 600;
-            margin: 12px 0 4px 0;
-        }
-
-        .mtl-shop-reserve {
-            display: block;
-            width: 100%;
-            box-sizing: border-box;
-            margin-top: 16px;
-            padding: 11px 0;
-            border: none;
-            border-radius: 4px;
-            background: var(--mtl-shop-accent);
-            color: #fff;
-            font-size: 1.02em;
-            font-weight: 600;
-            text-align: center;
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        /* Keep the Reserve button flush with the panel; the form itself
-           adds no margin. */
-        .mtl-shop-detail-body form {
-            margin: 0;
-        }
-
-        .mtl-shop-reserve-note {
-            font-size: 0.8em;
-            color: #8c8f94;
-            text-align: center;
-            margin-top: 6px;
-        }
-
-        /* Pagination */
-        .mtl-shop-pagination {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 14px;
-            margin-top: 22px;
-            font-size: 0.9em;
-        }
-
-        .mtl-shop-pagination a {
-            display: inline-block;
-            padding: 7px 14px;
-            border: 1px solid #ccd0d4;
-            border-radius: 4px;
-            text-decoration: none;
-            color: #3c434a;
-        }
-
-        .mtl-shop-pagination span.mtl-shop-page-disabled {
-            display: inline-block;
-            padding: 7px 14px;
-            border: 1px solid #eef0f2;
-            border-radius: 4px;
-            color: #c3c7cb;
-        }
-
-        .mtl-shop-empty {
-            border: 1px dashed #ccd0d4;
-            border-radius: 8px;
-            padding: 40px 20px;
-            text-align: center;
-            color: #787c82;
-        }
-    </style>
-
-    <?php
-    // Accent color mirrors the admin theme's header color (set on the Setup
-    // page) so the shop matches it.
-    $accent = get_option('mtl_header_color', '#ff6600');
-    // Defaults to the real WordPress home page so this works with zero
-    // configuration; overridable on the Setup page.
-    $home_url = get_option('mtl_home_url', home_url('/'));
-    ?>
-    <div class="mtl-shop" style="--mtl-shop-accent: <?php echo esc_attr($accent); ?>;">
-
-        <a href="<?php echo esc_url($home_url); ?>" class="mtl-shop-btn mtl-shop-btn-ghost mtl-shop-home-btn">&larr; Home</a>
-
-        <?php // Member sign-in / sign-up (logged out) or account menu (signed
-              // in), pinned top-right to mirror the Home button. ?>
-        <?php echo mtl_member_nav_html(); ?>
-
-        <?php // Close target for the mobile detail overlay: its id matches no
-              // panel, so linking here clears :target and closes it. ?>
-        <div id="mtl-shop-closed" class="mtl-shop-close-anchor" aria-hidden="true"></div>
-
-        <?php // One-off status banner after a reserve/cancel action. ?>
-        <?php echo mtl_front_notice_html(); ?>
-
-        <!-- Search + advanced filter (one GET form; native <details> for advanced) -->
-        <div class="mtl-shop-toolbar">
-            <form class="mtl-shop-search" method="get" action="<?php echo esc_url($base); ?>">
-                <?php // Needed on Plain-permalink sites where the pretty route is unavailable. ?>
-                <input type="hidden" name="mtl_page" value="main">
-                <?php if ($view === 'rows') : ?><input type="hidden" name="mtl_view" value="rows"><?php endif; ?>
-                <?php if ($sort !== '' && $sort !== 'newest') : ?><input type="hidden" name="mtl_sort" value="<?php echo esc_attr($sort); ?>"><?php endif; ?>
-
-                <div class="mtl-shop-search-row">
-                    <input type="text" name="mtl_q" value="<?php echo esc_attr($q); ?>" placeholder="Search tools by name, brand, category or tag...">
-                    <button type="submit" class="mtl-shop-btn">Search</button>
-                    <?php if ($q !== '' || $advanced_active || $sel_id > 0) : ?>
-                        <a href="<?php echo esc_url($base); ?>" class="mtl-shop-btn mtl-shop-btn-ghost">Clear</a>
-                    <?php endif; ?>
-                </div>
-
-                <details class="mtl-shop-advanced" <?php echo $advanced_active ? 'open' : ''; ?>>
-                    <summary>Advanced Search</summary>
-                    <div class="mtl-shop-adv-grid">
-                        <div>
-                            <label for="mtl-a-name">Tool Name</label>
-                            <input type="text" id="mtl-a-name" name="mtl_name" value="<?php echo esc_attr($a_name); ?>">
-                        </div>
-                        <div>
-                            <label for="mtl-a-brand">Brand</label>
-                            <input type="text" id="mtl-a-brand" name="mtl_brand" value="<?php echo esc_attr($a_brand); ?>">
-                        </div>
-                        <div>
-                            <label for="mtl-a-cat">Category</label>
-                            <select id="mtl-a-cat" name="mtl_cat">
-                                <option value="0">Any</option>
-                                <?php foreach ($categories as $cat) : ?>
-                                    <option value="<?php echo esc_attr($cat->category_id); ?>" <?php selected($a_cat, (int) $cat->category_id); ?>><?php echo esc_html($cat->category_name); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div>
-                            <label for="mtl-a-tag">Tag</label>
-                            <select id="mtl-a-tag" name="mtl_tag">
-                                <option value="0">Any</option>
-                                <?php foreach ($tags_list as $tg) : ?>
-                                    <option value="<?php echo esc_attr($tg->tag_id); ?>" <?php selected($a_tag, (int) $tg->tag_id); ?>><?php echo esc_html($tg->tag_name); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div>
-                            <label for="mtl-a-status">Availability</label>
-                            <select id="mtl-a-status" name="mtl_status">
-                                <option value="">Any</option>
-                                <option value="available" <?php selected($a_status, 'available'); ?>>Available</option>
-                                <option value="onloan" <?php selected($a_status, 'onloan'); ?>>On Loan</option>
-                                <option value="noreserved" <?php selected($a_status, 'noreserved'); ?>>No Reservations</option>
-                            </select>
-                        </div>
-                    </div>
-                    <p class="mtl-shop-adv-actions">
-                        <button type="submit" class="mtl-shop-btn">Apply Filters</button>
-                        <a href="<?php echo esc_url($base); ?>" class="mtl-shop-btn mtl-shop-btn-ghost">Clear Filters</a>
-                    </p>
-                </details>
-            </form>
-
-            <!-- View toggle + sort (instant links, no JS) -->
-            <div class="mtl-shop-controls">
-                <div class="mtl-shop-control-group">
-                    <span class="mtl-shop-control-label">View</span>
-                    <span class="mtl-shop-toggle">
-                        <a href="<?php echo $make_url(array('mtl_view' => '', 'mtl_pg' => '')); ?>" class="<?php echo $view === 'tiles' ? 'mtl-shop-active' : ''; ?>">Tiles</a>
-                        <a href="<?php echo $make_url(array('mtl_view' => 'rows', 'mtl_pg' => '')); ?>" class="<?php echo $view === 'rows' ? 'mtl-shop-active' : ''; ?>">Rows</a>
-                    </span>
-                </div>
-                <div class="mtl-shop-control-group">
-                    <label class="mtl-shop-control-label" for="mtl-sort-jump">Sort</label>
-                    <details style="display:inline-block; position:relative;">
-                        <summary class="mtl-shop-btn mtl-shop-btn-ghost" style="list-style:none;">
-                            <?php
-                            $sort_labels = array(
-                                ''          => 'Newest',
-                                'newest'    => 'Newest',
-                                'oldest'    => 'Oldest',
-                                'name'      => 'Name A&ndash;Z',
-                                'name_desc' => 'Name Z&ndash;A',
-                                'brand'     => 'Brand',
-                            );
-                            echo isset($sort_labels[$sort]) ? $sort_labels[$sort] : 'Newest';
-                            ?> &#9662;
-                        </summary>
-                        <div style="position:absolute; right:0; z-index:20; background:#fff; border:1px solid #ccd0d4; border-radius:4px; box-shadow:0 3px 10px rgba(0,0,0,.12); min-width:150px; padding:4px 0;">
-                            <?php
-                            $sort_options = array(
-                                ''          => 'Newest',
-                                'oldest'    => 'Oldest',
-                                'name'      => 'Name A&ndash;Z',
-                                'name_desc' => 'Name Z&ndash;A',
-                                'brand'     => 'Brand',
-                            );
-                            foreach ($sort_options as $val => $label) :
-                                $is_active = ($val === $sort) || ($val === '' && ($sort === '' || $sort === 'newest'));
-                            ?>
-                                <a href="<?php echo $make_url(array('mtl_sort' => $val, 'mtl_pg' => '')); ?>" style="display:block; padding:6px 14px; text-decoration:none; color:<?php echo $is_active ? esc_attr($accent) : '#3c434a'; ?>; font-weight:<?php echo $is_active ? '600' : '400'; ?>;"><?php echo $label; ?></a>
-                            <?php endforeach; ?>
-                        </div>
-                    </details>
-                </div>
-            </div>
-        </div>
-
-        <p class="mtl-shop-count"><strong><?php echo esc_html(number_format($total)); ?></strong> <?php echo esc_html($result_word); ?> found<?php echo ($total > 0) ? ' &mdash; page ' . esc_html($page_no) . ' of ' . esc_html($total_pages) : ''; ?></p>
-
-        <div class="mtl-shop-layout">
-            <div class="mtl-shop-main">
-                <?php if (empty($tools)) : ?>
-                    <div class="mtl-shop-empty">
-                        <p style="margin:0;">No tools match your search. Try removing a filter or searching for something else.</p>
-                    </div>
-                <?php elseif ($view === 'rows') : ?>
-                    <div class="mtl-shop-rows">
-                        <?php foreach ($tools as $tool) :
-                            $on_loan = ((int) $tool->active_loans > 0);
-                            // Bare fragment (no query string) so the browser
-                            // treats this as same-document navigation and
-                            // never reloads.
-                            $row_url = '#' . mtl_shop_panel_id($tool->tool_id);
-                        ?>
-                            <a class="mtl-shop-row" href="<?php echo esc_url($row_url); ?>">
-                                <div class="mtl-shop-row-main">
-                                    <div class="mtl-shop-row-name"><?php echo esc_html(stripslashes($tool->tool_name)); ?></div>
-                                    <div class="mtl-shop-row-sub">
-                                        <?php echo esc_html(stripslashes((string) $tool->brand)); ?><?php
-                                        if (! empty($tool->categories)) {
-                                            echo ' &middot; ' . esc_html($tool->categories);
-                                        }
-                                        ?>
-                                    </div>
-                                </div>
-                                <div class="mtl-shop-badges"><?php echo mtl_shop_status_badges($on_loan, $tool->active_res); ?></div>
-                            </a>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else : ?>
-                    <div class="mtl-shop-grid">
-                        <?php foreach ($tools as $tool) :
-                            $on_loan  = ((int) $tool->active_loans > 0);
-                            $tile_url = '#' . mtl_shop_panel_id($tool->tool_id);
-                        ?>
-                            <a class="mtl-shop-tile" href="<?php echo esc_url($tile_url); ?>">
-                                <?php if (! empty($tool->photo_url)) : ?>
-                                    <img class="mtl-shop-thumb" src="<?php echo esc_url($tool->photo_url); ?>" alt="<?php echo esc_attr(stripslashes($tool->tool_name)); ?>" loading="lazy">
-                                <?php else : ?>
-                                    <div class="mtl-shop-noimg">No photo</div>
-                                <?php endif; ?>
-                                <div class="mtl-shop-tile-body">
-                                    <span class="mtl-shop-tile-name"><?php echo esc_html(stripslashes($tool->tool_name)); ?></span>
-                                    <?php if (! empty($tool->brand)) : ?>
-                                        <span class="mtl-shop-tile-brand"><?php echo esc_html(stripslashes($tool->brand)); ?></span>
-                                    <?php endif; ?>
-                                    <div class="mtl-shop-badges"><?php echo mtl_shop_status_badges($on_loan, $tool->active_res); ?></div>
-                                    <?php if (! empty($tool->categories)) : ?>
-                                        <div><?php echo mtl_shop_pills($tool->categories); ?></div>
-                                    <?php endif; ?>
-                                </div>
-                            </a>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-
-                <?php if ($total_pages > 1) : ?>
-                    <div class="mtl-shop-pagination">
-                        <?php if ($page_no > 1) : ?>
-                            <a href="<?php echo $make_url(array('mtl_pg' => ($page_no - 1 <= 1) ? '' : $page_no - 1)); ?>">&larr; Previous</a>
-                        <?php else : ?>
-                            <span class="mtl-shop-page-disabled">&larr; Previous</span>
-                        <?php endif; ?>
-
-                        <span>Page <?php echo esc_html($page_no); ?> of <?php echo esc_html($total_pages); ?></span>
-
-                        <?php if ($page_no < $total_pages) : ?>
-                            <a href="<?php echo $make_url(array('mtl_pg' => $page_no + 1)); ?>">Next &rarr;</a>
-                        <?php else : ?>
-                            <span class="mtl-shop-page-disabled">Next &rarr;</span>
-                        <?php endif; ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-
-            <!-- Detail box (right) -->
-            <div class="mtl-shop-detail-col">
-                <div class="mtl-shop-detail" id="mtl-shop-detail">
-                    <?php // Only visible on narrow screens while the overlay is open. ?>
-                    <a href="#mtl-shop-closed" class="mtl-shop-detail-close" aria-label="Close">&times;</a>
-                    <div class="mtl-shop-detail-empty">
-                        <p style="margin:0;">Select a tool to see its full details, availability and reservation options.</p>
-                    </div>
-                    <?php foreach ($panel_tools as $panel_tool) : ?>
-                        <div class="mtl-shop-detail-panel" id="<?php echo esc_attr(mtl_shop_panel_id($panel_tool->tool_id)); ?>" tabindex="-1">
-                            <?php echo mtl_shop_render_detail_panel($panel_tool, $base, $member_ctx); ?>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-    <?php
-    return ob_get_clean();
+function mtl_render_shop_page() {
+	global $wpdb;
+
+	$tbl_inv     = $wpdb->prefix . 'tool_inventory';
+	$tbl_cats    = $wpdb->prefix . 'tool_categories';
+	$tbl_cat_map = $wpdb->prefix . 'tool_category_mappings';
+	$tbl_tags    = $wpdb->prefix . 'tool_tags';
+	$tbl_tag_map = $wpdb->prefix . 'tool_tag_mappings';
+	$tbl_loans   = $wpdb->prefix . 'loans';
+	$tbl_res     = $wpdb->prefix . 'tool_reservations';
+
+	// Bail gracefully if the plugin's tables don't exist yet.
+	if ( ! $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $tbl_inv ) ) ) {
+		return '<div class="mtl-front-card"><p>Our tool catalog is being set up. Please check back soon.</p></div>';
+	}
+
+	// Read + sanitize the request parameters.
+	$q        = isset( $_GET['mtl_q'] ) ? sanitize_text_field( wp_unslash( $_GET['mtl_q'] ) ) : '';
+	$a_name   = isset( $_GET['mtl_name'] ) ? sanitize_text_field( wp_unslash( $_GET['mtl_name'] ) ) : '';
+	$a_brand  = isset( $_GET['mtl_brand'] ) ? sanitize_text_field( wp_unslash( $_GET['mtl_brand'] ) ) : '';
+	$a_cat    = isset( $_GET['mtl_cat'] ) ? (int) $_GET['mtl_cat'] : 0;
+	$a_tag    = isset( $_GET['mtl_tag'] ) ? (int) $_GET['mtl_tag'] : 0;
+	$a_status = isset( $_GET['mtl_status'] ) ? sanitize_key( wp_unslash( $_GET['mtl_status'] ) ) : '';
+	$sort     = isset( $_GET['mtl_sort'] ) ? sanitize_key( wp_unslash( $_GET['mtl_sort'] ) ) : '';
+	$view     = ( isset( $_GET['mtl_view'] ) && $_GET['mtl_view'] === 'rows' ) ? 'rows' : 'tiles';
+	$page_no  = isset( $_GET['mtl_pg'] ) ? max( 1, (int) $_GET['mtl_pg'] ) : 1;
+	$sel_id   = isset( $_GET['mtl_tool'] ) ? (int) $_GET['mtl_tool'] : 0;
+
+	$advanced_active = ( $a_name !== '' || $a_brand !== '' || $a_cat > 0 || $a_tag > 0 || $a_status !== '' );
+
+	// Whitelisted sort orders -> safe ORDER BY fragments (never user SQL).
+	$sort_orders = array(
+		''          => 't.tool_id DESC',
+		'newest'    => 't.tool_id DESC',
+		'oldest'    => 't.tool_id ASC',
+		'name'      => 't.tool_name ASC',
+		'name_desc' => 't.tool_name DESC',
+		'brand'     => 't.brand ASC',
+	);
+	$order_by    = isset( $sort_orders[ $sort ] ) ? $sort_orders[ $sort ] : $sort_orders[''];
+
+	$per_page = ( $view === 'rows' ) ? 20 : 12;
+
+	// Build the dynamic WHERE from the active filters. Conditions carry
+	// %s / %d placeholders; $args holds the matching values, run through
+	// $wpdb->prepare() below.
+	// Retired tools are never shown publicly -- see admin/schema.sql's note
+	// on tool_inventory.retired_at.
+	$where = array( 't.retired_at IS NULL' );
+	$args  = array();
+
+	if ( $q !== '' ) {
+		$like    = '%' . $wpdb->esc_like( $q ) . '%';
+		$where[] = '(t.tool_name LIKE %s OR t.brand LIKE %s OR t.description LIKE %s'
+			. " OR EXISTS (SELECT 1 FROM {$tbl_cat_map} xcm JOIN {$tbl_cats} xc ON xcm.category_id = xc.category_id WHERE xcm.tool_id = t.tool_id AND xc.category_name LIKE %s)"
+			. " OR EXISTS (SELECT 1 FROM {$tbl_tag_map} xtm JOIN {$tbl_tags} xt ON xtm.tag_id = xt.tag_id WHERE xtm.tool_id = t.tool_id AND xt.tag_name LIKE %s))";
+		array_push( $args, $like, $like, $like, $like, $like );
+	}
+	if ( $a_name !== '' ) {
+		$where[] = 't.tool_name LIKE %s';
+		$args[]  = '%' . $wpdb->esc_like( $a_name ) . '%';
+	}
+	if ( $a_brand !== '' ) {
+		$where[] = 't.brand LIKE %s';
+		$args[]  = '%' . $wpdb->esc_like( $a_brand ) . '%';
+	}
+	if ( $a_cat > 0 ) {
+		$where[] = "EXISTS (SELECT 1 FROM {$tbl_cat_map} fcm WHERE fcm.tool_id = t.tool_id AND fcm.category_id = %d)";
+		$args[]  = $a_cat;
+	}
+	if ( $a_tag > 0 ) {
+		$where[] = "EXISTS (SELECT 1 FROM {$tbl_tag_map} ftm WHERE ftm.tool_id = t.tool_id AND ftm.tag_id = %d)";
+		$args[]  = $a_tag;
+	}
+	$where_sql = 'WHERE ' . implode( ' AND ', $where );
+
+	// The availability filter compares computed loan/reservation counts, so
+	// it belongs in HAVING (after GROUP BY) rather than WHERE.
+	$having = '';
+	if ( $a_status === 'available' ) {
+		$having = 'HAVING active_loans = 0';
+	} elseif ( $a_status === 'onloan' ) {
+		$having = 'HAVING active_loans > 0';
+	} elseif ( $a_status === 'noreserved' ) {
+		$having = 'HAVING active_res = 0';
+	}
+
+	// Scalar subqueries reused for both status and display -- no placeholders.
+	$sub_loans = "(SELECT COUNT(*) FROM {$tbl_loans} l WHERE l.tool_id = t.tool_id AND l.return_date IS NULL)";
+	$sub_res   = "(SELECT COUNT(*) FROM {$tbl_res} r WHERE r.tool_id = t.tool_id AND r.expiry_date IS NULL)";
+
+	$from = "FROM {$tbl_inv} t"
+		. " LEFT JOIN {$tbl_cat_map} tcm ON t.tool_id = tcm.tool_id"
+		. " LEFT JOIN {$tbl_cats} c ON tcm.category_id = c.category_id"
+		. " LEFT JOIN {$tbl_tag_map} ttm ON t.tool_id = ttm.tool_id"
+		. " LEFT JOIN {$tbl_tags} tg ON ttm.tag_id = tg.tag_id";
+
+	// Total matching count (for pagination).
+	$count_sql = "SELECT COUNT(*) FROM (SELECT t.tool_id, {$sub_loans} AS active_loans, {$sub_res} AS active_res {$from} {$where_sql} GROUP BY t.tool_id {$having}) sub";
+	$total     = (int) ( $args ? $wpdb->get_var( $wpdb->prepare( $count_sql, $args ) ) : $wpdb->get_var( $count_sql ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no-args branch: $count_sql carries no request-derived data when $args is empty.
+
+	$total_pages = max( 1, (int) ceil( $total / $per_page ) );
+	if ( $page_no > $total_pages ) {
+		$page_no = $total_pages;
+	}
+	$offset = ( $page_no - 1 ) * $per_page;
+
+	// The page of results.
+	$page_sql  = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url,'
+		. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
+		. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
+		. " {$sub_loans} AS active_loans, {$sub_res} AS active_res"
+		. " {$from} {$where_sql} GROUP BY t.tool_id {$having} ORDER BY {$order_by} LIMIT %d OFFSET %d";
+	$page_args = array_merge( $args, array( $per_page, $offset ) );
+	$tools     = $wpdb->get_results( $wpdb->prepare( $page_sql, $page_args ) );
+
+	// The selected tool for the detail box, fetched independently so it
+	// shows even if it isn't on the current page of results.
+	$selected = null;
+	if ( $sel_id > 0 ) {
+		$selected = $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.date_acquired,'
+				. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
+				. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
+				. " {$sub_loans} AS active_loans, {$sub_res} AS active_res"
+				. " {$from} WHERE t.tool_id = %d AND t.retired_at IS NULL GROUP BY t.tool_id",
+				$sel_id
+			)
+		);
+	}
+
+	// Every tool needing a pre-rendered detail panel: the current results
+	// page plus the deep-linked tool if not already among them. $tools rows
+	// already carry every column the detail view needs, so this adds no
+	// extra queries.
+	$panel_tools    = array();
+	$panel_tool_ids = array();
+	foreach ( $tools as $tool ) {
+		$panel_tools[]                          = $tool;
+		$panel_tool_ids[ (int) $tool->tool_id ] = true;
+	}
+	if ( $selected && ! isset( $panel_tool_ids[ (int) $selected->tool_id ] ) ) {
+		$panel_tools[] = $selected;
+	}
+
+	// Dropdown data for the advanced panel.
+	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_cats} ORDER BY category_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name only, no request-derived data.
+	$tags_list  = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name only, no request-derived data.
+
+	// URL helpers. All links preserve the current filter/sort/view state and
+	// only override what changes; the search form carries the same state
+	// through hidden inputs.
+	$base  = mtl_front_page_url( 'main' );
+	$state = array(
+		'mtl_q'      => $q,
+		'mtl_name'   => $a_name,
+		'mtl_brand'  => $a_brand,
+		'mtl_cat'    => $a_cat > 0 ? $a_cat : '',
+		'mtl_tag'    => $a_tag > 0 ? $a_tag : '',
+		'mtl_status' => $a_status,
+		'mtl_sort'   => ( $sort !== '' && $sort !== 'newest' ) ? $sort : '',
+		'mtl_view'   => $view === 'rows' ? 'rows' : '',
+		'mtl_tool'   => $sel_id > 0 ? $sel_id : '',
+	);
+	// Drop empty values so URLs stay tidy.
+	$clean_state = array_filter(
+		$state,
+		function ( $v ) {
+			return $v !== '' && $v !== null;
+		}
+	);
+
+	// Pagination, sort and view-toggle links change the query string, so they
+	// always trigger a full reload. Whenever the resulting URL carries
+	// mtl_tool, the matching #tool-<id> fragment is appended automatically so
+	// visibility (100% fragment/:target-driven) never gets left out of sync.
+	$make_url = function ( array $overrides ) use ( $base, $clean_state ) {
+		$args = array_merge( $clean_state, $overrides );
+		$args = array_filter(
+			$args,
+			function ( $v ) {
+				return $v !== '' && $v !== null;
+			}
+		);
+		$url  = add_query_arg( $args, $base );
+		if ( ! empty( $args['mtl_tool'] ) ) {
+			$url .= '#' . mtl_shop_panel_id( $args['mtl_tool'] );
+		}
+		return esc_url( $url );
+	};
+
+	$result_word = ( $total === 1 ) ? 'tool' : 'tools';
+
+	// Viewer's member context, fetched once and handed to every detail panel
+	// so the Reserve control can adapt to who's looking (see
+	// mtl_shop_render_detail_panel). The lookups only run when signed in.
+	$member_ctx = array(
+		'is_member'           => false,
+		'is_admin'            => ( is_user_logged_in() && current_user_can( 'manage_options' ) ),
+		'reserved'            => array(), // tool_id => true (active reservations)
+		'loaned'              => array(), // tool_id => true (currently on loan)
+		'reserve_nonce_field' => '',
+		'login_url'           => mtl_front_page_url( 'login' ),
+		'signup_url'          => mtl_front_page_url( 'signup' ),
+		'reservations_url'    => mtl_front_page_url( 'reservations' ),
+	);
+	$viewer     = mtl_current_member();
+	if ( $viewer ) {
+		$mid                               = (int) $viewer->member_id;
+		$member_ctx['is_member']           = true;
+		$member_ctx['reserve_nonce_field'] = wp_nonce_field( 'mtl_reserve_action', 'mtl_reserve_nonce', true, false );
+		foreach ( $wpdb->get_col( $wpdb->prepare( "SELECT tool_id FROM {$tbl_res} WHERE member_id = %d AND expiry_date IS NULL", $mid ) ) as $tid ) {
+			$member_ctx['reserved'][ (int) $tid ] = true;
+		}
+		foreach ( $wpdb->get_col( $wpdb->prepare( "SELECT tool_id FROM {$tbl_loans} WHERE member_id = %d AND return_date IS NULL", $mid ) ) as $tid ) {
+			$member_ctx['loaned'][ (int) $tid ] = true;
+		}
+	}
+
+	// ======================================================================
+	// RENDER
+	// ======================================================================
+	ob_start();
+	?>
+	<style>
+		/* Full-width override for the shared shell's centered content area. */
+		.mtl-front-content {
+			display: block;
+			padding: 16px 20px 40px 20px;
+		}
+
+		.mtl-shop {
+			max-width: 1400px;
+			margin: 0 auto;
+		}
+
+		/* Button-styled <details>; hide the browser's default disclosure
+			triangle so only our own caret shows. */
+		.mtl-shop summary.mtl-shop-btn {
+			list-style: none;
+		}
+
+		.mtl-shop summary.mtl-shop-btn::-webkit-details-marker {
+			display: none;
+		}
+
+		.mtl-shop-toolbar {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: flex-end;
+			justify-content: space-between;
+			gap: 12px;
+			margin-bottom: 16px;
+		}
+
+		.mtl-shop-search {
+			flex: 1 1 340px;
+		}
+
+		.mtl-shop-search-row {
+			display: flex;
+			gap: 8px;
+			flex-wrap: wrap;
+		}
+
+		.mtl-shop-search input[type="text"] {
+			flex: 1 1 220px;
+			padding: 9px 12px;
+			border: 1px solid #8c8f94;
+			border-radius: 4px;
+			font-size: 1em;
+		}
+
+		.mtl-shop-btn {
+			display: inline-block;
+			padding: 9px 16px;
+			border: 1px solid var(--mtl-shop-accent);
+			border-radius: 4px;
+			background: var(--mtl-shop-accent);
+			color: #fff;
+			font-size: 0.95em;
+			cursor: pointer;
+			text-decoration: none;
+			white-space: nowrap;
+		}
+
+		.mtl-shop-btn-ghost {
+			background: #fff;
+			color: #3c434a;
+			border-color: #ccd0d4;
+		}
+
+		/* Pinned to the screen corner (not the page top) so it stays reachable
+			while scrolling. z-index is below the mobile detail overlay's
+			(100/101, see max-width:900px block) so an open overlay covers it. */
+		.mtl-shop-home-btn {
+			position: fixed;
+			top: 16px;
+			left: 16px;
+			z-index: 10;
+			box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
+		}
+
+		/* Member nav, pinned top-right to mirror the Home button (same
+			z-index so an open detail overlay covers both). */
+		.mtl-shop-account-nav {
+			position: fixed;
+			top: 16px;
+			right: 16px;
+			z-index: 10;
+			display: flex;
+			gap: 8px;
+			align-items: flex-start;
+		}
+
+		.mtl-shop-account-nav .mtl-shop-btn {
+			box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
+		}
+
+		/* Native <details> account menu -- zero-JS disclosure. */
+		.mtl-shop-account-menu {
+			position: relative;
+		}
+
+		.mtl-shop-account-menu > summary {
+			list-style: none;
+		}
+
+		.mtl-shop-account-menu > summary::-webkit-details-marker {
+			display: none;
+		}
+
+		.mtl-shop-account-menu-panel {
+			position: absolute;
+			right: 0;
+			margin-top: 6px;
+			background: #fff;
+			border: 1px solid #ccd0d4;
+			border-radius: 4px;
+			box-shadow: 0 3px 10px rgba(0, 0, 0, .12);
+			min-width: 180px;
+			padding: 4px 0;
+		}
+
+		.mtl-shop-account-menu-panel a {
+			display: block;
+			padding: 8px 14px;
+			text-decoration: none;
+			color: #3c434a;
+		}
+
+		.mtl-shop-account-menu-panel a:hover {
+			background: #f6f7f7;
+		}
+
+		/* Status banner shown after a reserve / cancel action (via mtl_msg). */
+		.mtl-front-notice {
+			margin: 0 0 16px 0;
+			padding: 12px 16px;
+			border-radius: 6px;
+			font-size: 0.95em;
+		}
+
+		.mtl-front-notice-success {
+			background: #edf7ed;
+			border: 1px solid #b6dcb6;
+			color: #1e5b25;
+		}
+
+		.mtl-front-notice-error {
+			background: #fcf0f1;
+			border: 1px solid #f0c0c4;
+			color: #8a1f28;
+		}
+
+		.mtl-shop-advanced {
+			margin-top: 10px;
+			border: 1px solid #e2e5e8;
+			border-radius: 4px;
+			padding: 0 14px;
+		}
+
+		.mtl-shop-advanced > summary {
+			cursor: pointer;
+			padding: 10px 0;
+			font-weight: 600;
+			font-size: 0.9em;
+		}
+
+		.mtl-shop-adv-grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+			gap: 10px 12px;
+			padding: 0 0 14px 0;
+		}
+
+		.mtl-shop-adv-grid label {
+			display: block;
+			font-size: 0.78em;
+			font-weight: 600;
+			margin-bottom: 2px;
+		}
+
+		.mtl-shop-adv-grid input,
+		.mtl-shop-adv-grid select {
+			width: 100%;
+			box-sizing: border-box;
+			min-height: 30px;
+			padding: 3px 6px;
+		}
+
+		.mtl-shop-adv-actions {
+			display: flex;
+			gap: 8px;
+			align-items: center;
+			flex-wrap: wrap;
+			margin: 0 0 12px 0;
+		}
+
+		.mtl-shop-controls {
+			display: flex;
+			gap: 16px;
+			align-items: flex-end;
+			flex-wrap: wrap;
+		}
+
+		.mtl-shop-control-group {
+			font-size: 0.82em;
+		}
+
+		.mtl-shop-control-group .mtl-shop-control-label {
+			display: block;
+			font-weight: 600;
+			margin-bottom: 3px;
+			color: #50575e;
+		}
+
+		.mtl-shop-toggle a {
+			display: inline-block;
+			padding: 6px 12px;
+			border: 1px solid #ccd0d4;
+			text-decoration: none;
+			color: #3c434a;
+			font-size: 0.9em;
+		}
+
+		.mtl-shop-toggle a:first-child {
+			border-radius: 4px 0 0 4px;
+		}
+
+		.mtl-shop-toggle a:last-child {
+			border-radius: 0 4px 4px 0;
+			border-left: none;
+		}
+
+		.mtl-shop-toggle a.mtl-shop-active {
+			background: var(--mtl-shop-accent);
+			border-color: var(--mtl-shop-accent);
+			color: #fff;
+			font-weight: 600;
+		}
+
+		.mtl-shop-count {
+			font-size: 0.9em;
+			color: #50575e;
+			margin: 6px 0 14px 0;
+		}
+
+		/* Two-column layout: catalog left, detail box right. */
+		.mtl-shop-layout {
+			display: flex;
+			gap: 24px;
+			align-items: flex-start;
+		}
+
+		.mtl-shop-main {
+			flex: 1 1 auto;
+			min-width: 0;
+		}
+
+		.mtl-shop-detail-col {
+			flex: 0 0 340px;
+			position: sticky;
+			top: 16px;
+		}
+
+		@media (max-width: 900px) {
+			.mtl-shop-layout {
+				flex-direction: column;
+			}
+
+			.mtl-shop-detail-col {
+				position: static;
+				width: 100%;
+			}
+
+			/* On narrow screens, a selected tool's detail box is lifted out of
+				normal flow and pinned over the viewport instead of sitting
+				below a possibly long list of tiles/rows. position:fixed is
+				anchored to the viewport, not the page, so there's nothing in
+				page flow for the browser's native fragment-scroll to jump to.
+				Relies on :has() -- browsers without it simply keep the detail
+				box in normal flow below the grid (a functional, if less
+				convenient, fallback). */
+			.mtl-shop-detail-col:has(.mtl-shop-detail-panel:target) {
+				position: fixed;
+				inset: 0;
+				width: auto;
+				z-index: 100;
+				display: flex;
+				align-items: flex-start;
+				justify-content: center;
+				overflow-y: auto;
+				padding: 40px 14px;
+				background: rgba(30, 34, 38, .6);
+			}
+
+			.mtl-shop-detail-col:has(.mtl-shop-detail-panel:target) .mtl-shop-detail {
+				width: 100%;
+				max-width: 480px;
+				margin: auto 0;
+			}
+
+			.mtl-shop-detail-col:has(.mtl-shop-detail-panel:target) .mtl-shop-detail-close {
+				display: flex;
+			}
+		}
+
+		/* Tile grid */
+		.mtl-shop-grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+			gap: 16px;
+		}
+
+		.mtl-shop-tile {
+			display: flex;
+			flex-direction: column;
+			border: 1px solid #d5d8dc;
+			border-radius: 8px;
+			overflow: hidden;
+			background: #fff;
+			text-decoration: none;
+			color: inherit;
+			transition: box-shadow 0.15s ease, border-color 0.15s ease;
+		}
+
+		.mtl-shop-tile:hover {
+			box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+		}
+
+		.mtl-shop-thumb {
+			aspect-ratio: 4 / 3;
+			width: 100%;
+			object-fit: contain;
+			background: #f6f7f7;
+		}
+
+		.mtl-shop-noimg {
+			aspect-ratio: 4 / 3;
+			width: 100%;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			background: #f0f1f2;
+			color: #a7abb0;
+			font-size: 0.85em;
+			letter-spacing: 0.03em;
+		}
+
+		.mtl-shop-tile-body {
+			padding: 10px 12px 12px 12px;
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+		}
+
+		.mtl-shop-tile-name {
+			font-weight: 700;
+			line-height: 1.25;
+		}
+
+		.mtl-shop-tile-brand {
+			font-size: 0.85em;
+			color: #787c82;
+		}
+
+		/* Row (compact) view */
+		.mtl-shop-rows {
+			display: flex;
+			flex-direction: column;
+			border: 1px solid #d5d8dc;
+			border-radius: 6px;
+			overflow: hidden;
+			background: #fff;
+		}
+
+		.mtl-shop-row {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			padding: 10px 14px;
+			border-top: 1px solid #eef0f2;
+			text-decoration: none;
+			color: inherit;
+		}
+
+		.mtl-shop-row:first-child {
+			border-top: none;
+		}
+
+		.mtl-shop-row:hover {
+			background: #f6fafd;
+		}
+
+		.mtl-shop-row-main {
+			flex: 1 1 auto;
+			min-width: 0;
+		}
+
+		.mtl-shop-row-name {
+			font-weight: 600;
+		}
+
+		.mtl-shop-row-sub {
+			font-size: 0.85em;
+			color: #787c82;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		/* Badges + pills */
+		.mtl-shop-badges {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 5px;
+			margin-top: 2px;
+		}
+
+		.mtl-shop-badge {
+			display: inline-block;
+			border-radius: 999px;
+			padding: 1px 9px;
+			font-size: 0.74em;
+			font-weight: 600;
+			white-space: nowrap;
+		}
+
+		.mtl-shop-badge-avail {
+			background: #edf7ed;
+			color: #1e7e34;
+			border: 1px solid #bfe3c0;
+		}
+
+		.mtl-shop-badge-out {
+			background: #fff4e5;
+			color: #b45309;
+			border: 1px solid #f2cfa0;
+		}
+
+		.mtl-shop-badge-res {
+			background: #eaf3fb;
+			color: #135e96;
+			border: 1px solid #b9d7ef;
+		}
+
+		.mtl-shop-pill {
+			display: inline-block;
+			background: #f0f1f2;
+			color: #50575e;
+			border-radius: 12px;
+			padding: 1px 9px;
+			margin: 2px 3px 0 0;
+			font-size: 0.76em;
+		}
+
+		/* Detail box */
+		.mtl-shop-detail {
+			border: 1px solid #d5d8dc;
+			border-radius: 8px;
+			background: #fff;
+			overflow: hidden;
+		}
+
+		/* Every tool's panel is pre-rendered (hidden); CSS :target reveals
+			whichever one matches the URL fragment. */
+		.mtl-shop-detail-panel {
+			display: none;
+		}
+
+		.mtl-shop-detail-panel:target {
+			display: block;
+		}
+
+		.mtl-shop-detail:has(.mtl-shop-detail-panel:target) .mtl-shop-detail-empty {
+			display: none;
+		}
+
+		/* Zero-size and fixed, so navigating here to close the overlay (see
+			max-width:900px block) can't cause a scroll jump either. */
+		.mtl-shop-close-anchor {
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 0;
+			height: 0;
+		}
+
+		/* Hidden by default; shown only while the narrow-screen overlay is
+			active. position:fixed so it stays pinned to the corner. */
+		.mtl-shop-detail-close {
+			display: none;
+			position: fixed;
+			top: 16px;
+			right: 16px;
+			z-index: 101;
+			width: 32px;
+			height: 32px;
+			align-items: center;
+			justify-content: center;
+			border-radius: 50%;
+			background: #fff;
+			color: #3c434a;
+			text-decoration: none;
+			font-size: 1.4em;
+			line-height: 1;
+			box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
+		}
+
+		.mtl-shop-detail-empty {
+			padding: 30px 20px;
+			text-align: center;
+			color: #8c8f94;
+		}
+
+		.mtl-shop-detail-photo {
+			width: 100%;
+			max-height: 240px;
+			object-fit: contain;
+			background: #f6f7f7;
+		}
+
+		.mtl-shop-detail-body {
+			padding: 16px 18px 20px 18px;
+		}
+
+		.mtl-shop-share {
+			margin: 14px 0;
+		}
+
+		/* Smaller variant of .mtl-shop-btn-ghost for this low-emphasis action. */
+		.mtl-shop-share summary.mtl-shop-btn {
+			padding: 4px 10px;
+			font-size: 0.78em;
+		}
+
+		.mtl-shop-share[open] summary.mtl-shop-btn {
+			margin-bottom: 6px;
+		}
+
+		.mtl-shop-share-input {
+			display: block;
+			width: 100%;
+			box-sizing: border-box;
+			padding: 7px 9px;
+			border: 1px solid #d5d8dc;
+			border-radius: 4px;
+			background: #f6f7f7;
+			color: #50575e;
+			font-family: Consolas, Menlo, monospace;
+			font-size: 0.82em;
+		}
+
+		.mtl-shop-detail-name {
+			font-size: 1.25em;
+			font-weight: 700;
+			margin: 0;
+		}
+
+		.mtl-shop-detail-brand {
+			color: #787c82;
+			margin: 2px 0 12px 0;
+		}
+
+		.mtl-shop-detail h4 {
+			font-size: 0.78em;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			color: #8c8f94;
+			margin: 16px 0 4px 0;
+		}
+
+		.mtl-shop-detail p {
+			margin: 4px 0;
+			line-height: 1.5;
+		}
+
+		.mtl-shop-avail-line {
+			font-weight: 600;
+			margin: 12px 0 4px 0;
+		}
+
+		.mtl-shop-reserve {
+			display: block;
+			width: 100%;
+			box-sizing: border-box;
+			margin-top: 16px;
+			padding: 11px 0;
+			border: none;
+			border-radius: 4px;
+			background: var(--mtl-shop-accent);
+			color: #fff;
+			font-size: 1.02em;
+			font-weight: 600;
+			text-align: center;
+			text-decoration: none;
+			cursor: pointer;
+		}
+
+		/* Keep the Reserve button flush with the panel; the form itself
+			adds no margin. */
+		.mtl-shop-detail-body form {
+			margin: 0;
+		}
+
+		.mtl-shop-reserve-note {
+			font-size: 0.8em;
+			color: #8c8f94;
+			text-align: center;
+			margin-top: 6px;
+		}
+
+		/* Pagination */
+		.mtl-shop-pagination {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 14px;
+			margin-top: 22px;
+			font-size: 0.9em;
+		}
+
+		.mtl-shop-pagination a {
+			display: inline-block;
+			padding: 7px 14px;
+			border: 1px solid #ccd0d4;
+			border-radius: 4px;
+			text-decoration: none;
+			color: #3c434a;
+		}
+
+		.mtl-shop-pagination span.mtl-shop-page-disabled {
+			display: inline-block;
+			padding: 7px 14px;
+			border: 1px solid #eef0f2;
+			border-radius: 4px;
+			color: #c3c7cb;
+		}
+
+		.mtl-shop-empty {
+			border: 1px dashed #ccd0d4;
+			border-radius: 8px;
+			padding: 40px 20px;
+			text-align: center;
+			color: #787c82;
+		}
+	</style>
+
+	<?php
+	// Accent color mirrors the admin theme's header color (set on the Setup
+	// page) so the shop matches it.
+	$accent = get_option( 'mtl_header_color', '#ff6600' );
+	// Defaults to the real WordPress home page so this works with zero
+	// configuration; overridable on the Setup page.
+	$home_url = get_option( 'mtl_home_url', home_url( '/' ) );
+	?>
+	<div class="mtl-shop" style="--mtl-shop-accent: <?php echo esc_attr( $accent ); ?>;">
+
+		<a href="<?php echo esc_url( $home_url ); ?>" class="mtl-shop-btn mtl-shop-btn-ghost mtl-shop-home-btn">&larr; Home</a>
+
+		<?php
+		// Member sign-in / sign-up (logged out) or account menu (signed
+				// in), pinned top-right to mirror the Home button.
+		?>
+		<?php echo mtl_member_nav_html(); ?>
+
+		<?php
+		// Close target for the mobile detail overlay: its id matches no
+				// panel, so linking here clears :target and closes it.
+		?>
+		<div id="mtl-shop-closed" class="mtl-shop-close-anchor" aria-hidden="true"></div>
+
+		<?php // One-off status banner after a reserve/cancel action. ?>
+		<?php echo mtl_front_notice_html(); ?>
+
+		<!-- Search + advanced filter (one GET form; native <details> for advanced) -->
+		<div class="mtl-shop-toolbar">
+			<form class="mtl-shop-search" method="get" action="<?php echo esc_url( $base ); ?>">
+				<?php // Needed on Plain-permalink sites where the pretty route is unavailable. ?>
+				<input type="hidden" name="mtl_page" value="main">
+				<?php
+				if ( $view === 'rows' ) :
+					?>
+					<input type="hidden" name="mtl_view" value="rows"><?php endif; ?>
+				<?php
+				if ( $sort !== '' && $sort !== 'newest' ) :
+					?>
+					<input type="hidden" name="mtl_sort" value="<?php echo esc_attr( $sort ); ?>"><?php endif; ?>
+
+				<div class="mtl-shop-search-row">
+					<input type="text" name="mtl_q" value="<?php echo esc_attr( $q ); ?>" placeholder="Search tools by name, brand, category or tag...">
+					<button type="submit" class="mtl-shop-btn">Search</button>
+					<?php if ( $q !== '' || $advanced_active || $sel_id > 0 ) : ?>
+						<a href="<?php echo esc_url( $base ); ?>" class="mtl-shop-btn mtl-shop-btn-ghost">Clear</a>
+					<?php endif; ?>
+				</div>
+
+				<details class="mtl-shop-advanced" <?php echo $advanced_active ? 'open' : ''; ?>>
+					<summary>Advanced Search</summary>
+					<div class="mtl-shop-adv-grid">
+						<div>
+							<label for="mtl-a-name">Tool Name</label>
+							<input type="text" id="mtl-a-name" name="mtl_name" value="<?php echo esc_attr( $a_name ); ?>">
+						</div>
+						<div>
+							<label for="mtl-a-brand">Brand</label>
+							<input type="text" id="mtl-a-brand" name="mtl_brand" value="<?php echo esc_attr( $a_brand ); ?>">
+						</div>
+						<div>
+							<label for="mtl-a-cat">Category</label>
+							<select id="mtl-a-cat" name="mtl_cat">
+								<option value="0">Any</option>
+								<?php foreach ( $categories as $cat ) : ?>
+									<option value="<?php echo esc_attr( $cat->category_id ); ?>" <?php selected( $a_cat, (int) $cat->category_id ); ?>><?php echo esc_html( $cat->category_name ); ?></option>
+								<?php endforeach; ?>
+							</select>
+						</div>
+						<div>
+							<label for="mtl-a-tag">Tag</label>
+							<select id="mtl-a-tag" name="mtl_tag">
+								<option value="0">Any</option>
+								<?php foreach ( $tags_list as $tg ) : ?>
+									<option value="<?php echo esc_attr( $tg->tag_id ); ?>" <?php selected( $a_tag, (int) $tg->tag_id ); ?>><?php echo esc_html( $tg->tag_name ); ?></option>
+								<?php endforeach; ?>
+							</select>
+						</div>
+						<div>
+							<label for="mtl-a-status">Availability</label>
+							<select id="mtl-a-status" name="mtl_status">
+								<option value="">Any</option>
+								<option value="available" <?php selected( $a_status, 'available' ); ?>>Available</option>
+								<option value="onloan" <?php selected( $a_status, 'onloan' ); ?>>On Loan</option>
+								<option value="noreserved" <?php selected( $a_status, 'noreserved' ); ?>>No Reservations</option>
+							</select>
+						</div>
+					</div>
+					<p class="mtl-shop-adv-actions">
+						<button type="submit" class="mtl-shop-btn">Apply Filters</button>
+						<a href="<?php echo esc_url( $base ); ?>" class="mtl-shop-btn mtl-shop-btn-ghost">Clear Filters</a>
+					</p>
+				</details>
+			</form>
+
+			<!-- View toggle + sort (instant links, no JS) -->
+			<div class="mtl-shop-controls">
+				<div class="mtl-shop-control-group">
+					<span class="mtl-shop-control-label">View</span>
+					<span class="mtl-shop-toggle">
+						<a href="
+						<?php
+						echo $make_url(
+							array(
+								'mtl_view' => '',
+								'mtl_pg'   => '',
+							)
+						);
+						?>
+									" class="<?php echo $view === 'tiles' ? 'mtl-shop-active' : ''; ?>">Tiles</a>
+						<a href="
+						<?php
+						echo $make_url(
+							array(
+								'mtl_view' => 'rows',
+								'mtl_pg'   => '',
+							)
+						);
+						?>
+						" class="<?php echo $view === 'rows' ? 'mtl-shop-active' : ''; ?>">Rows</a>
+					</span>
+				</div>
+				<div class="mtl-shop-control-group">
+					<label class="mtl-shop-control-label" for="mtl-sort-jump">Sort</label>
+					<details style="display:inline-block; position:relative;">
+						<summary class="mtl-shop-btn mtl-shop-btn-ghost" style="list-style:none;">
+							<?php
+							$sort_labels = array(
+								''          => 'Newest',
+								'newest'    => 'Newest',
+								'oldest'    => 'Oldest',
+								'name'      => 'Name A&ndash;Z',
+								'name_desc' => 'Name Z&ndash;A',
+								'brand'     => 'Brand',
+							);
+							echo isset( $sort_labels[ $sort ] ) ? $sort_labels[ $sort ] : 'Newest';
+							?>
+							&#9662;
+						</summary>
+						<div style="position:absolute; right:0; z-index:20; background:#fff; border:1px solid #ccd0d4; border-radius:4px; box-shadow:0 3px 10px rgba(0,0,0,.12); min-width:150px; padding:4px 0;">
+							<?php
+							$sort_options = array(
+								''          => 'Newest',
+								'oldest'    => 'Oldest',
+								'name'      => 'Name A&ndash;Z',
+								'name_desc' => 'Name Z&ndash;A',
+								'brand'     => 'Brand',
+							);
+							foreach ( $sort_options as $val => $label ) :
+								$is_active = ( $val === $sort ) || ( $val === '' && ( $sort === '' || $sort === 'newest' ) );
+								?>
+								<a href="
+								<?php
+								echo $make_url(
+									array(
+										'mtl_sort' => $val,
+										'mtl_pg'   => '',
+									)
+								);
+								?>
+								" style="display:block; padding:6px 14px; text-decoration:none; color:<?php echo $is_active ? esc_attr( $accent ) : '#3c434a'; ?>; font-weight:<?php echo $is_active ? '600' : '400'; ?>;"><?php echo $label; ?></a>
+							<?php endforeach; ?>
+						</div>
+					</details>
+				</div>
+			</div>
+		</div>
+
+		<p class="mtl-shop-count"><strong><?php echo esc_html( number_format( $total ) ); ?></strong> <?php echo esc_html( $result_word ); ?> found<?php echo ( $total > 0 ) ? ' &mdash; page ' . esc_html( $page_no ) . ' of ' . esc_html( $total_pages ) : ''; ?></p>
+
+		<div class="mtl-shop-layout">
+			<div class="mtl-shop-main">
+				<?php if ( empty( $tools ) ) : ?>
+					<div class="mtl-shop-empty">
+						<p style="margin:0;">No tools match your search. Try removing a filter or searching for something else.</p>
+					</div>
+				<?php elseif ( $view === 'rows' ) : ?>
+					<div class="mtl-shop-rows">
+						<?php
+						foreach ( $tools as $tool ) :
+							$on_loan = ( (int) $tool->active_loans > 0 );
+							// Bare fragment (no query string) so the browser
+							// treats this as same-document navigation and
+							// never reloads.
+							$row_url = '#' . mtl_shop_panel_id( $tool->tool_id );
+							?>
+							<a class="mtl-shop-row" href="<?php echo esc_url( $row_url ); ?>">
+								<div class="mtl-shop-row-main">
+									<div class="mtl-shop-row-name"><?php echo esc_html( stripslashes( $tool->tool_name ) ); ?></div>
+									<div class="mtl-shop-row-sub">
+										<?php echo esc_html( stripslashes( (string) $tool->brand ) ); ?>
+										<?php
+										if ( ! empty( $tool->categories ) ) {
+											echo ' &middot; ' . esc_html( $tool->categories );
+										}
+										?>
+									</div>
+								</div>
+								<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $tool->active_res ); ?></div>
+							</a>
+						<?php endforeach; ?>
+					</div>
+				<?php else : ?>
+					<div class="mtl-shop-grid">
+						<?php
+						foreach ( $tools as $tool ) :
+							$on_loan  = ( (int) $tool->active_loans > 0 );
+							$tile_url = '#' . mtl_shop_panel_id( $tool->tool_id );
+							?>
+							<a class="mtl-shop-tile" href="<?php echo esc_url( $tile_url ); ?>">
+								<?php if ( ! empty( $tool->photo_url ) ) : ?>
+									<img class="mtl-shop-thumb" src="<?php echo esc_url( $tool->photo_url ); ?>" alt="<?php echo esc_attr( stripslashes( $tool->tool_name ) ); ?>" loading="lazy">
+								<?php else : ?>
+									<div class="mtl-shop-noimg">No photo</div>
+								<?php endif; ?>
+								<div class="mtl-shop-tile-body">
+									<span class="mtl-shop-tile-name"><?php echo esc_html( stripslashes( $tool->tool_name ) ); ?></span>
+									<?php if ( ! empty( $tool->brand ) ) : ?>
+										<span class="mtl-shop-tile-brand"><?php echo esc_html( stripslashes( $tool->brand ) ); ?></span>
+									<?php endif; ?>
+									<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $tool->active_res ); ?></div>
+									<?php if ( ! empty( $tool->categories ) ) : ?>
+										<div><?php echo mtl_shop_pills( $tool->categories ); ?></div>
+									<?php endif; ?>
+								</div>
+							</a>
+						<?php endforeach; ?>
+					</div>
+				<?php endif; ?>
+
+				<?php if ( $total_pages > 1 ) : ?>
+					<div class="mtl-shop-pagination">
+						<?php if ( $page_no > 1 ) : ?>
+							<a href="<?php echo $make_url( array( 'mtl_pg' => ( $page_no - 1 <= 1 ) ? '' : $page_no - 1 ) ); ?>">&larr; Previous</a>
+						<?php else : ?>
+							<span class="mtl-shop-page-disabled">&larr; Previous</span>
+						<?php endif; ?>
+
+						<span>Page <?php echo esc_html( $page_no ); ?> of <?php echo esc_html( $total_pages ); ?></span>
+
+						<?php if ( $page_no < $total_pages ) : ?>
+							<a href="<?php echo $make_url( array( 'mtl_pg' => $page_no + 1 ) ); ?>">Next &rarr;</a>
+						<?php else : ?>
+							<span class="mtl-shop-page-disabled">Next &rarr;</span>
+						<?php endif; ?>
+					</div>
+				<?php endif; ?>
+			</div>
+
+			<!-- Detail box (right) -->
+			<div class="mtl-shop-detail-col">
+				<div class="mtl-shop-detail" id="mtl-shop-detail">
+					<?php // Only visible on narrow screens while the overlay is open. ?>
+					<a href="#mtl-shop-closed" class="mtl-shop-detail-close" aria-label="Close">&times;</a>
+					<div class="mtl-shop-detail-empty">
+						<p style="margin:0;">Select a tool to see its full details, availability and reservation options.</p>
+					</div>
+					<?php foreach ( $panel_tools as $panel_tool ) : ?>
+						<div class="mtl-shop-detail-panel" id="<?php echo esc_attr( mtl_shop_panel_id( $panel_tool->tool_id ) ); ?>" tabindex="-1">
+							<?php echo mtl_shop_render_detail_panel( $panel_tool, $base, $member_ctx ); ?>
+						</div>
+					<?php endforeach; ?>
+				</div>
+			</div>
+		</div>
+	</div>
+	<?php
+	return ob_get_clean();
 }
