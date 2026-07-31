@@ -1,0 +1,168 @@
+Project my_tool_library {
+  database_type: 'MySQL'
+  Note: '''
+    My Tool Library -- WordPress plugin database schema.
+
+    Table names shown here are LOGICAL names. At runtime every table is
+    prefixed with the site's WordPress table prefix (commonly `wp_`), e.g.
+    `members` becomes `wp_members`. See admin/schema.sql, where the
+    {{prefix}} placeholder is substituted for $wpdb->prefix before the DDL
+    is executed -- this keeps the plugin's tables namespaced per-site and
+    collision-free on multisite installs.
+
+    Not shown: a member who has signed up for an online account is linked
+    to a WordPress user via user meta (key "mtl_member_id" on wp_users /
+    wp_usermeta), not a database foreign key, so it isn't drawn as a
+    relationship below. A member row can exist with no linked WP user at
+    all (e.g. a walk-in added by staff who has never signed up online).
+  '''
+}
+
+// ---------------------------------------------------------------------
+// Members
+// ---------------------------------------------------------------------
+
+Table members {
+  member_id int [pk, increment]
+  first_name varchar(50) [not null]
+  last_name varchar(50) [not null]
+  address_line1 varchar(255) [not null]
+  address_line2 varchar(255) [note: 'Optional: apartment, suite, unit, etc.']
+  city varchar(100) [not null]
+  state varchar(10) [not null, note: 'Dropdown-constrained code: U.S. state/territory or Canadian province, or "N/A" for anywhere else -- see mtl_get_state_options()']
+  zip_code varchar(20) [not null]
+  country varchar(100) [not null, default: 'United States', note: 'Full ISO 3166-1 country name, dropdown-constrained -- see mtl_get_country_options(). Not restricted to the U.S.']
+  phone_number varchar(20) [not null]
+  email varchar(100) [not null, unique, note: 'Also the sign-in username for members who have created an online account']
+  signup_date date [not null]
+  recurring_donation_amount decimal(10,2) [default: 0.00]
+  has_donated_tools char(1) [default: 'N', note: 'Y or N']
+  anonymized_at timestamp [note: 'NULL = normal row. Set instead of a true delete when loans/tool_reservations history exists -- see mtl_delete_or_anonymize_member()']
+
+  Note: '''
+    One row per library member. Never stores a password -- WordPress core
+    (wp_users) owns all credential storage for members who sign in online.
+    Deleting a member with loan/reservation history isn't possible outright
+    (loans/tool_reservations reference member_id without ON DELETE CASCADE),
+    so that delete request anonymizes this row instead: personal fields are
+    overwritten with placeholders and their linked WordPress account and
+    member_verifications row are deleted, while loans/reservations stay
+    untouched so historical counts remain accurate.
+  '''
+}
+
+Table member_verifications {
+  member_id int [pk, note: '1:1 with members.member_id -- NOT auto-increment, always mirrors an existing member row']
+  photo_id_scan_url varchar(255) [note: 'nullable -- a member may have provided only one form of ID so far']
+  address_proof_scan_url varchar(255) [note: 'nullable -- a member may have provided only one form of ID so far']
+  verified_at timestamp [default: `CURRENT_TIMESTAMP`]
+
+  Note: '''
+    Sensitive identity-verification documents, deliberately split into
+    their own table. A row can exist with only one of the two URLs set,
+    for a member who has provided one form of ID but not the other yet.
+    A member is fully "verified" only when BOTH URLs are present -- see
+    mtl_member_is_verified() / mtl_verification_urls_complete(). ON DELETE
+    CASCADE from members.
+  '''
+}
+Ref: member_verifications.member_id - members.member_id
+
+// ---------------------------------------------------------------------
+// Tool inventory & lookup tables
+// ---------------------------------------------------------------------
+
+Table tool_inventory {
+  tool_id int [pk, increment]
+  tool_name varchar(100) [not null]
+  barcode varchar(100) [not null, unique]
+  brand varchar(50) [not null]
+  description text
+  components text
+  photo_url varchar(255)
+  initial_cash_value decimal(10,2) [not null, default: 0.00]
+  annual_depreciation_amount decimal(10,2) [default: 0.00]
+  donated_by varchar(255)
+  date_acquired date [default: `CURRENT_DATE`]
+  retired_at timestamp [note: 'NULL = active/lendable. Once set, hidden from the public catalog and blocked from new loans/reservations, but reversible (just clear it) -- see mtl_retire_tool()/mtl_reactivate_tool()']
+  private_notes text [note: 'Staff-only. Never selected by any public-facing query -- shown only in the admin Inventory page detail view.']
+
+  Note: 'One row per physical tool the library owns.'
+}
+
+Table tool_categories {
+  category_id int [pk, increment]
+  category_name varchar(50) [not null, unique]
+
+  Note: 'e.g. Woodworking, Gardening & Landscaping, Plumbing'
+}
+
+Table tool_tags {
+  tag_id int [pk, increment]
+  tag_name varchar(50) [not null, unique]
+
+  Note: 'e.g. Cordless, Heavy-Duty, Requires PPE'
+}
+
+Table tool_category_mappings {
+  tool_id int [not null]
+  category_id int [not null]
+
+  indexes {
+    (tool_id, category_id) [pk]
+  }
+
+  Note: 'Many-to-many join between tool_inventory and tool_categories. Both FKs ON DELETE CASCADE.'
+}
+Ref: tool_category_mappings.tool_id > tool_inventory.tool_id
+Ref: tool_category_mappings.category_id > tool_categories.category_id
+
+Table tool_tag_mappings {
+  tool_id int [not null]
+  tag_id int [not null]
+
+  indexes {
+    (tool_id, tag_id) [pk]
+  }
+
+  Note: 'Many-to-many join between tool_inventory and tool_tags. Both FKs ON DELETE CASCADE.'
+}
+Ref: tool_tag_mappings.tool_id > tool_inventory.tool_id
+Ref: tool_tag_mappings.tag_id > tool_tags.tag_id
+
+// ---------------------------------------------------------------------
+// Transactional tables
+// ---------------------------------------------------------------------
+
+Table loans {
+  loan_id int [pk, increment]
+  tool_id int [not null]
+  member_id int [not null]
+  loan_date timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'Full timestamp: the exact checkout moment']
+  due_date date [not null, note: 'Plain date -- an admin-picked calendar date, not a system-stamped moment']
+  return_date timestamp [note: 'NULL = tool is currently checked out. Set to a full timestamp when marked returned.']
+
+  Note: '''
+    One row per checkout. A given tool has at most one open loan at a time
+    (return_date IS NULL) -- enforced in application code, not a DB
+    constraint.
+  '''
+}
+Ref: loans.tool_id > tool_inventory.tool_id
+Ref: loans.member_id > members.member_id
+
+Table tool_reservations {
+  reservation_id int [pk, increment]
+  tool_id int [not null]
+  member_id int [not null]
+  reservation_date timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'Also sets queue order for the tool: earliest active reservation = position 1']
+  expiry_date timestamp [note: 'NULL = reservation is active/waiting. Set to the current moment when cancelled (by the member or an admin) or fulfilled by a loan.']
+
+  Note: '''
+    A tool may have many concurrent reservations, forming a waiting queue.
+    Queue position is derived on the fly from reservation_date, never
+    stored.
+  '''
+}
+Ref: tool_reservations.tool_id > tool_inventory.tool_id
+Ref: tool_reservations.member_id > members.member_id
