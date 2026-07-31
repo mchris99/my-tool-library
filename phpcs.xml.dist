@@ -17,6 +17,24 @@
         <exclude name="WordPress.Files.FileName"/>
     </rule>
 
+    <!-- These plugin-defined helpers escape every interpolated value internally
+         (see each function's docblock) and are safe to echo directly; this tells
+         the EscapeOutput sniff not to flag their call sites. -->
+    <rule ref="WordPress.Security.EscapeOutput">
+        <properties>
+            <property name="customEscapingFunctions" type="array">
+                <element value="mtl_format_date"/>
+                <element value="mtl_shop_status_badges"/>
+                <element value="mtl_shop_pills"/>
+                <element value="mtl_lr_detail_html"/>
+                <element value="mtl_shop_render_detail_panel"/>
+                <element value="mtl_render_shop_page"/>
+                <element value="mtl_member_nav_html"/>
+                <element value="mtl_front_notice_html"/>
+            </property>
+        </properties>
+    </rule>
+
     <config name="minimum_supported_wp_version" value="5.8"/>
     <rule ref="WordPress.WP.I18n">
         <properties>

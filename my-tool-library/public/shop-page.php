@@ -1,9 +1,4 @@
 <?php
-// Prevent direct file access
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
-
 /**
  * Public tool catalog (server-side rendered, no JavaScript required).
  *
@@ -20,7 +15,14 @@ if ( ! defined( 'ABSPATH' ) ) {
  * The main render function returns the catalog HTML as a string; the caller
  * drops it into the shared front-end shell (see mtl_render_front_main_page()
  * in my-tool-library.php).
+ *
+ * @package My_Tool_Library
  */
+
+// Prevent direct file access.
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
 
 /**
  * Renders the availability badges shared by tiles, rows and the detail box.
@@ -48,7 +50,7 @@ function mtl_shop_status_badges( $on_loan, $res_count ) {
  */
 function mtl_shop_pills( $csv ) {
 	$csv = trim( (string) $csv );
-	if ( $csv === '' ) {
+	if ( '' === $csv ) {
 		return '';
 	}
 	$out = '';
@@ -63,7 +65,7 @@ function mtl_shop_pills( $csv ) {
  * Used everywhere a fragment or panel id is needed so every call site stays
  * in sync with the same "tool-<id>" format.
  *
- * @param int $tool_id
+ * @param int $tool_id Tool row ID.
  * @return string
  */
 function mtl_shop_panel_id( $tool_id ) {
@@ -76,8 +78,8 @@ function mtl_shop_panel_id( $tool_id ) {
  * matching fragment makes the browser apply :target on load -- reliable
  * deep-linking with no JS.
  *
- * @param int    $tool_id
- * @param string $base
+ * @param int    $tool_id Tool row ID.
+ * @param string $base    Base page URL.
  * @return string Escaped URL.
  */
 function mtl_shop_tool_share_url( $tool_id, $base ) {
@@ -121,7 +123,7 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 			<?php echo $on_loan ? 'Currently on loan' : 'Available to borrow'; ?>
 		</p>
 		<p style="margin-top:0; color:#50575e; font-size:0.9em;">
-			<?php echo esc_html( $res ); ?> active reservation<?php echo $res === 1 ? '' : 's'; ?> in the queue.
+			<?php echo esc_html( $res ); ?> active reservation<?php echo 1 === $res ? '' : 's'; ?> in the queue.
 		</p>
 
 		<?php
@@ -137,7 +139,7 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 					// link on any site whose base URL has a query string
 					// (e.g. Plain-permalink installs).
 			?>
-			<input type="text" class="mtl-shop-share-input" readonly value="<?php echo $share_url; ?>" aria-label="Shareable link to this tool">
+			<input type="text" class="mtl-shop-share-input" readonly value="<?php echo $share_url; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- already esc_url()-escaped by mtl_shop_tool_share_url(); see comment above. ?>" aria-label="Shareable link to this tool">
 		</details>
 
 		<?php if ( ! empty( $tool->categories ) ) : ?>
@@ -175,9 +177,9 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 				<p class="mtl-shop-reserve-note">You&rsquo;re in the queue for this tool. <a href="<?php echo esc_url( $ctx['reservations_url'] ); ?>">View My Reservations</a>.</p>
 			<?php else : ?>
 				<form method="post" action="<?php echo esc_url( $base ); ?>">
-					<?php echo $ctx['reserve_nonce_field']; ?>
+					<?php echo $ctx['reserve_nonce_field']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-rendered wp_nonce_field() output. ?>
 					<input type="hidden" name="mtl_action" value="reserve">
-					<input type="hidden" name="mtl_tool" value="<?php echo $tool_id; ?>">
+					<input type="hidden" name="mtl_tool" value="<?php echo (int) $tool_id; ?>">
 					<button type="submit" class="mtl-shop-reserve">Reserve This Tool</button>
 				</form>
 				<p class="mtl-shop-reserve-note">You&rsquo;ll join the waiting queue and can track your place under My Reservations.</p>
@@ -222,11 +224,11 @@ function mtl_render_shop_page() {
 	$a_tag    = isset( $_GET['mtl_tag'] ) ? (int) $_GET['mtl_tag'] : 0;
 	$a_status = isset( $_GET['mtl_status'] ) ? sanitize_key( wp_unslash( $_GET['mtl_status'] ) ) : '';
 	$sort     = isset( $_GET['mtl_sort'] ) ? sanitize_key( wp_unslash( $_GET['mtl_sort'] ) ) : '';
-	$view     = ( isset( $_GET['mtl_view'] ) && $_GET['mtl_view'] === 'rows' ) ? 'rows' : 'tiles';
+	$view     = ( isset( $_GET['mtl_view'] ) && 'rows' === $_GET['mtl_view'] ) ? 'rows' : 'tiles';
 	$page_no  = isset( $_GET['mtl_pg'] ) ? max( 1, (int) $_GET['mtl_pg'] ) : 1;
 	$sel_id   = isset( $_GET['mtl_tool'] ) ? (int) $_GET['mtl_tool'] : 0;
 
-	$advanced_active = ( $a_name !== '' || $a_brand !== '' || $a_cat > 0 || $a_tag > 0 || $a_status !== '' );
+	$advanced_active = ( '' !== $a_name || '' !== $a_brand || $a_cat > 0 || $a_tag > 0 || '' !== $a_status );
 
 	// Whitelisted sort orders -> safe ORDER BY fragments (never user SQL).
 	$sort_orders = array(
@@ -239,28 +241,33 @@ function mtl_render_shop_page() {
 	);
 	$order_by    = isset( $sort_orders[ $sort ] ) ? $sort_orders[ $sort ] : $sort_orders[''];
 
-	$per_page = ( $view === 'rows' ) ? 20 : 12;
+	$per_page = ( 'rows' === $view ) ? 20 : 12;
 
 	// Build the dynamic WHERE from the active filters. Conditions carry
 	// %s / %d placeholders; $args holds the matching values, run through
-	// $wpdb->prepare() below.
+	// $wpdb->prepare() below. Every {$tbl_*} / {$sub_*} / {$from} fragment
+	// interpolated below is a table name or safe SQL fragment built only
+	// from $wpdb->prefix and this whitelist array, never request data --
+	// phpcs can't verify that across this many lines, hence the disable
+	// block through the end of the query-building section.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
 	// Retired tools are never shown publicly -- see admin/schema.sql's note
 	// on tool_inventory.retired_at.
 	$where = array( 't.retired_at IS NULL' );
 	$args  = array();
 
-	if ( $q !== '' ) {
+	if ( '' !== $q ) {
 		$like    = '%' . $wpdb->esc_like( $q ) . '%';
 		$where[] = '(t.tool_name LIKE %s OR t.brand LIKE %s OR t.description LIKE %s'
 			. " OR EXISTS (SELECT 1 FROM {$tbl_cat_map} xcm JOIN {$tbl_cats} xc ON xcm.category_id = xc.category_id WHERE xcm.tool_id = t.tool_id AND xc.category_name LIKE %s)"
 			. " OR EXISTS (SELECT 1 FROM {$tbl_tag_map} xtm JOIN {$tbl_tags} xt ON xtm.tag_id = xt.tag_id WHERE xtm.tool_id = t.tool_id AND xt.tag_name LIKE %s))";
 		array_push( $args, $like, $like, $like, $like, $like );
 	}
-	if ( $a_name !== '' ) {
+	if ( '' !== $a_name ) {
 		$where[] = 't.tool_name LIKE %s';
 		$args[]  = '%' . $wpdb->esc_like( $a_name ) . '%';
 	}
-	if ( $a_brand !== '' ) {
+	if ( '' !== $a_brand ) {
 		$where[] = 't.brand LIKE %s';
 		$args[]  = '%' . $wpdb->esc_like( $a_brand ) . '%';
 	}
@@ -277,11 +284,11 @@ function mtl_render_shop_page() {
 	// The availability filter compares computed loan/reservation counts, so
 	// it belongs in HAVING (after GROUP BY) rather than WHERE.
 	$having = '';
-	if ( $a_status === 'available' ) {
+	if ( 'available' === $a_status ) {
 		$having = 'HAVING active_loans = 0';
-	} elseif ( $a_status === 'onloan' ) {
+	} elseif ( 'onloan' === $a_status ) {
 		$having = 'HAVING active_loans > 0';
-	} elseif ( $a_status === 'noreserved' ) {
+	} elseif ( 'noreserved' === $a_status ) {
 		$having = 'HAVING active_res = 0';
 	}
 
@@ -329,6 +336,7 @@ function mtl_render_shop_page() {
 			)
 		);
 	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
 
 	// Every tool needing a pre-rendered detail panel: the current results
 	// page plus the deep-linked tool if not already among them. $tools rows
@@ -345,8 +353,8 @@ function mtl_render_shop_page() {
 	}
 
 	// Dropdown data for the advanced panel.
-	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_cats} ORDER BY category_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name only, no request-derived data.
-	$tags_list  = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name only, no request-derived data.
+	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_cats} ORDER BY category_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
+	$tags_list  = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 
 	// URL helpers. All links preserve the current filter/sort/view state and
 	// only override what changes; the search form carries the same state
@@ -359,15 +367,15 @@ function mtl_render_shop_page() {
 		'mtl_cat'    => $a_cat > 0 ? $a_cat : '',
 		'mtl_tag'    => $a_tag > 0 ? $a_tag : '',
 		'mtl_status' => $a_status,
-		'mtl_sort'   => ( $sort !== '' && $sort !== 'newest' ) ? $sort : '',
-		'mtl_view'   => $view === 'rows' ? 'rows' : '',
+		'mtl_sort'   => ( '' !== $sort && 'newest' !== $sort ) ? $sort : '',
+		'mtl_view'   => 'rows' === $view ? 'rows' : '',
 		'mtl_tool'   => $sel_id > 0 ? $sel_id : '',
 	);
 	// Drop empty values so URLs stay tidy.
 	$clean_state = array_filter(
 		$state,
 		function ( $v ) {
-			return $v !== '' && $v !== null;
+			return '' !== $v && null !== $v;
 		}
 	);
 
@@ -380,7 +388,7 @@ function mtl_render_shop_page() {
 		$args = array_filter(
 			$args,
 			function ( $v ) {
-				return $v !== '' && $v !== null;
+				return '' !== $v && null !== $v;
 			}
 		);
 		$url  = add_query_arg( $args, $base );
@@ -390,7 +398,7 @@ function mtl_render_shop_page() {
 		return esc_url( $url );
 	};
 
-	$result_word = ( $total === 1 ) ? 'tool' : 'tools';
+	$result_word = ( 1 === $total ) ? 'tool' : 'tools';
 
 	// Viewer's member context, fetched once and handed to every detail panel
 	// so the Reserve control can adapt to who's looking (see
@@ -398,8 +406,8 @@ function mtl_render_shop_page() {
 	$member_ctx = array(
 		'is_member'           => false,
 		'is_admin'            => ( is_user_logged_in() && current_user_can( 'manage_options' ) ),
-		'reserved'            => array(), // tool_id => true (active reservations)
-		'loaned'              => array(), // tool_id => true (currently on loan)
+		'reserved'            => array(), // Tool_id => true (active reservations).
+		'loaned'              => array(), // Tool_id => true (currently on loan).
 		'reserve_nonce_field' => '',
 		'login_url'           => mtl_front_page_url( 'login' ),
 		'signup_url'          => mtl_front_page_url( 'signup' ),
@@ -410,9 +418,11 @@ function mtl_render_shop_page() {
 		$mid                               = (int) $viewer->member_id;
 		$member_ctx['is_member']           = true;
 		$member_ctx['reserve_nonce_field'] = wp_nonce_field( 'mtl_reserve_action', 'mtl_reserve_nonce', true, false );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 		foreach ( $wpdb->get_col( $wpdb->prepare( "SELECT tool_id FROM {$tbl_res} WHERE member_id = %d AND expiry_date IS NULL", $mid ) ) as $tid ) {
 			$member_ctx['reserved'][ (int) $tid ] = true;
 		}
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 		foreach ( $wpdb->get_col( $wpdb->prepare( "SELECT tool_id FROM {$tbl_loans} WHERE member_id = %d AND return_date IS NULL", $mid ) ) as $tid ) {
 			$member_ctx['loaned'][ (int) $tid ] = true;
 		}
@@ -1101,18 +1111,18 @@ function mtl_render_shop_page() {
 				<?php // Needed on Plain-permalink sites where the pretty route is unavailable. ?>
 				<input type="hidden" name="mtl_page" value="main">
 				<?php
-				if ( $view === 'rows' ) :
+				if ( 'rows' === $view ) :
 					?>
 					<input type="hidden" name="mtl_view" value="rows"><?php endif; ?>
 				<?php
-				if ( $sort !== '' && $sort !== 'newest' ) :
+				if ( '' !== $sort && 'newest' !== $sort ) :
 					?>
 					<input type="hidden" name="mtl_sort" value="<?php echo esc_attr( $sort ); ?>"><?php endif; ?>
 
 				<div class="mtl-shop-search-row">
 					<input type="text" name="mtl_q" value="<?php echo esc_attr( $q ); ?>" placeholder="Search tools by name, brand, category or tag...">
 					<button type="submit" class="mtl-shop-btn">Search</button>
-					<?php if ( $q !== '' || $advanced_active || $sel_id > 0 ) : ?>
+					<?php if ( '' !== $q || $advanced_active || $sel_id > 0 ) : ?>
 						<a href="<?php echo esc_url( $base ); ?>" class="mtl-shop-btn mtl-shop-btn-ghost">Clear</a>
 					<?php endif; ?>
 				</div>
@@ -1170,24 +1180,28 @@ function mtl_render_shop_page() {
 					<span class="mtl-shop-toggle">
 						<a href="
 						<?php
+						// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- $make_url() always returns esc_url()-escaped output.
 						echo $make_url(
 							array(
 								'mtl_view' => '',
 								'mtl_pg'   => '',
 							)
 						);
+						// phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
 						?>
-									" class="<?php echo $view === 'tiles' ? 'mtl-shop-active' : ''; ?>">Tiles</a>
+									" class="<?php echo 'tiles' === $view ? 'mtl-shop-active' : ''; ?>">Tiles</a>
 						<a href="
 						<?php
+						// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- $make_url() always returns esc_url()-escaped output.
 						echo $make_url(
 							array(
 								'mtl_view' => 'rows',
 								'mtl_pg'   => '',
 							)
 						);
+						// phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
 						?>
-						" class="<?php echo $view === 'rows' ? 'mtl-shop-active' : ''; ?>">Rows</a>
+						" class="<?php echo 'rows' === $view ? 'mtl-shop-active' : ''; ?>">Rows</a>
 					</span>
 				</div>
 				<div class="mtl-shop-control-group">
@@ -1203,6 +1217,7 @@ function mtl_render_shop_page() {
 								'name_desc' => 'Name Z&ndash;A',
 								'brand'     => 'Brand',
 							);
+							// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static developer-defined labels above (incl. HTML entities like &ndash;), never user input.
 							echo isset( $sort_labels[ $sort ] ) ? $sort_labels[ $sort ] : 'Newest';
 							?>
 							&#9662;
@@ -1217,18 +1232,20 @@ function mtl_render_shop_page() {
 								'brand'     => 'Brand',
 							);
 							foreach ( $sort_options as $val => $label ) :
-								$is_active = ( $val === $sort ) || ( $val === '' && ( $sort === '' || $sort === 'newest' ) );
+								$is_active = ( $sort === $val ) || ( '' === $val && ( '' === $sort || 'newest' === $sort ) );
 								?>
 								<a href="
 								<?php
+								// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- $make_url() always returns esc_url()-escaped output; $val is a fixed array key from $sort_options above, never user input.
 								echo $make_url(
 									array(
 										'mtl_sort' => $val,
 										'mtl_pg'   => '',
 									)
 								);
+								// phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
 								?>
-								" style="display:block; padding:6px 14px; text-decoration:none; color:<?php echo $is_active ? esc_attr( $accent ) : '#3c434a'; ?>; font-weight:<?php echo $is_active ? '600' : '400'; ?>;"><?php echo $label; ?></a>
+								" style="display:block; padding:6px 14px; text-decoration:none; color:<?php echo $is_active ? esc_attr( $accent ) : '#3c434a'; ?>; font-weight:<?php echo $is_active ? '600' : '400'; ?>;"><?php echo $label; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static developer-defined label above (incl. HTML entities like &ndash;), never user input. ?></a>
 							<?php endforeach; ?>
 						</div>
 					</details>
@@ -1244,7 +1261,7 @@ function mtl_render_shop_page() {
 					<div class="mtl-shop-empty">
 						<p style="margin:0;">No tools match your search. Try removing a filter or searching for something else.</p>
 					</div>
-				<?php elseif ( $view === 'rows' ) : ?>
+				<?php elseif ( 'rows' === $view ) : ?>
 					<div class="mtl-shop-rows">
 						<?php
 						foreach ( $tools as $tool ) :
@@ -1301,7 +1318,7 @@ function mtl_render_shop_page() {
 				<?php if ( $total_pages > 1 ) : ?>
 					<div class="mtl-shop-pagination">
 						<?php if ( $page_no > 1 ) : ?>
-							<a href="<?php echo $make_url( array( 'mtl_pg' => ( $page_no - 1 <= 1 ) ? '' : $page_no - 1 ) ); ?>">&larr; Previous</a>
+							<a href="<?php echo $make_url( array( 'mtl_pg' => ( $page_no - 1 <= 1 ) ? '' : $page_no - 1 ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $make_url() always returns esc_url()-escaped output; $page_no is cast (int) at assignment. ?>">&larr; Previous</a>
 						<?php else : ?>
 							<span class="mtl-shop-page-disabled">&larr; Previous</span>
 						<?php endif; ?>
@@ -1309,7 +1326,7 @@ function mtl_render_shop_page() {
 						<span>Page <?php echo esc_html( $page_no ); ?> of <?php echo esc_html( $total_pages ); ?></span>
 
 						<?php if ( $page_no < $total_pages ) : ?>
-							<a href="<?php echo $make_url( array( 'mtl_pg' => $page_no + 1 ) ); ?>">Next &rarr;</a>
+							<a href="<?php echo $make_url( array( 'mtl_pg' => $page_no + 1 ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $make_url() always returns esc_url()-escaped output; $page_no is cast (int) at assignment. ?>">Next &rarr;</a>
 						<?php else : ?>
 							<span class="mtl-shop-page-disabled">Next &rarr;</span>
 						<?php endif; ?>
