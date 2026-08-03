@@ -1978,6 +1978,16 @@ function mtl_render_inventory_page() {
 	$ql_default_days = (int) get_option( 'mtl_default_loan_days', 21 );
 	$ql_default_due  = gmdate( 'Y-m-d', strtotime( '+' . $ql_default_days . ' days' ) );
 
+	// Donor display lookup: email (lowercased) => "First Last". Reuses the
+	// same member list as the donor autocomplete/Quick Loan above, so a
+	// tool's donated_by can be resolved to a member's name for display
+	// without an extra query per row (see mtl_maybe_flag_donor_as_donated(),
+	// which does the matching write-side; this is the read-side counterpart).
+	$donor_name_by_email = array();
+	foreach ( $ql_members as $m ) {
+		$donor_name_by_email[ strtolower( $m['email'] ) ] = $m['name'];
+	}
+
 	// 6. RENDER THE FILTERABLE/SORTABLE INVENTORY TABLE
 	?>
 	<div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 40px; margin-bottom: 10px;">
@@ -2382,7 +2392,19 @@ function mtl_render_inventory_page() {
 											<div class="mtl-tool-field" title="Initial value minus annual depreciation for each year since it was acquired"><span>Current value</span><span>$<?php echo esc_html( number_format( $t_curvalue, 2 ) ); ?></span></div>
 											<div class="mtl-tool-field"><span>Annual depreciation</span><span>$<?php echo esc_html( number_format( $item->annual_depreciation_amount, 2 ) ); ?></span></div>
 											<div class="mtl-tool-field"><span>Acquired</span><span><?php echo mtl_format_date( $item->date_acquired ); ?></span></div>
-											<div class="mtl-tool-field"><span>Donated by</span><span><?php echo trim( (string) $item->donated_by ) !== '' ? esc_html( stripslashes( $item->donated_by ) ) : '<span style="color:#999;">Not donated</span>'; ?></span></div>
+											<?php
+											$item_donor = trim( (string) $item->donated_by );
+											if ( '' === $item_donor ) {
+												$item_donor_display = '<span style="color:#999;">Not donated</span>';
+											} elseif ( isset( $donor_name_by_email[ strtolower( $item_donor ) ] ) ) {
+												// Matches a member's email (their username) -- show "Name, username" instead of the raw email.
+												$item_donor_display = esc_html( $donor_name_by_email[ strtolower( $item_donor ) ] . ', ' . $item_donor );
+											} else {
+												// No matching member -- plain text as entered (e.g. a non-member donor).
+												$item_donor_display = esc_html( stripslashes( $item_donor ) );
+											}
+											?>
+											<div class="mtl-tool-field"><span>Donated by</span><span><?php echo $item_donor_display; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- each branch above is either a static safe string or already esc_html()'d. ?></span></div>
 										</div>
 									</div>
 
