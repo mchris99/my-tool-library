@@ -60,6 +60,8 @@ function mtl_export_table_names() {
 	return array(
 		'members',
 		'member_verifications',
+		'member_trainings',
+		'member_training_mappings',
 		'tool_inventory',
 		'tool_categories',
 		'tool_category_mappings',
@@ -316,6 +318,7 @@ function mtl_render_setup_page() {
 
 	$tbl_categories = $wpdb->prefix . 'tool_categories';
 	$tbl_tags       = $wpdb->prefix . 'tool_tags';
+	$tbl_trainings  = $wpdb->prefix . 'member_trainings';
 
 	echo '<div class="wrap mtl-admin-wrapper">';
 	echo '<h2>My Tool Library Setup & Settings</h2>';
@@ -563,6 +566,80 @@ function mtl_render_setup_page() {
 	}
 
 	// ==========================================
+	// 3C. HANDLE "ADD TRAINING" SUBMISSION
+	// ==========================================
+	if ( isset( $_POST['mtl_add_training'] ) && current_user_can( 'manage_options' ) ) {
+		if ( isset( $_POST['mtl_add_training_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_training_nonce'] ) ), 'mtl_add_training_action' ) ) {
+			$new_training_name = isset( $_POST['new_training_name'] ) ? sanitize_text_field( wp_unslash( $_POST['new_training_name'] ) ) : '';
+
+			if ( '' === $new_training_name ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please enter a training name.</p></div>';
+			} elseif ( strlen( $new_training_name ) > 50 ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Training names must be 50 characters or fewer.</p></div>';
+			} else {
+				$existing = $wpdb->get_var(
+					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+						"SELECT training_id FROM {$tbl_trainings} WHERE training_name = %s LIMIT 1",
+						$new_training_name
+					)
+				);
+
+				if ( $existing ) {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That training already exists.</p></div>';
+				} else {
+					// training_id is AUTO_INCREMENT -- MySQL assigns the next id.
+					$inserted = $wpdb->insert(
+						$tbl_trainings,
+						array( 'training_name' => $new_training_name ),
+						array( '%s' )
+					);
+
+					if ( $inserted ) {
+						echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> Training &ldquo;' . esc_html( $new_training_name ) . '&rdquo; has been added. It will now show up when adding or editing members in the Membership tab.</p></div>';
+					} else {
+						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Failed to add training. Please try again.</p></div>';
+					}
+				}
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ==========================================
+	// 3D. HANDLE "DELETE TRAININGS" SUBMISSION
+	// ==========================================
+	if ( isset( $_POST['mtl_delete_trainings'] ) && current_user_can( 'manage_options' ) ) {
+		if ( isset( $_POST['mtl_delete_trainings_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_trainings_nonce'] ) ), 'mtl_delete_trainings_action' ) ) {
+			$delete_training_ids = isset( $_POST['delete_training_ids'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['delete_training_ids'] ) ) : array();
+			$delete_training_ids = array_filter(
+				$delete_training_ids,
+				function ( $id ) {
+					return $id > 0;
+				}
+			);
+
+			if ( empty( $delete_training_ids ) ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> No trainings were selected.</p></div>';
+			} else {
+				// Deleting a training cascades to member_training_mappings (see
+				// schema.sql), so any member who had completed it simply loses
+				// that record; it does not fail or delete the member.
+				$deleted_count = 0;
+				foreach ( $delete_training_ids as $id ) {
+					if ( $wpdb->delete( $tbl_trainings, array( 'training_id' => $id ), array( '%d' ) ) ) {
+						++$deleted_count;
+					}
+				}
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Removed.</strong> ' . intval( $deleted_count ) . ' training' . ( 1 === $deleted_count ? '' : 's' ) . ' deleted. Any members who had completed it no longer show it.</p></div>';
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ==========================================
 	// 4. HANDLE DATABASE SETUP SUBMISSION
 	// ==========================================
 	if ( isset( $_POST['mtl_run_db_setup'] ) && current_user_can( 'manage_options' ) ) {
@@ -666,6 +743,8 @@ function mtl_render_setup_page() {
 	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_categories} ORDER BY category_name ASC" );
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$tags = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
+	$trainings = $wpdb->get_results( "SELECT training_id, training_name FROM {$tbl_trainings} ORDER BY training_name ASC" );
 
 	$font_presets = mtl_font_preset_options();
 
@@ -1221,6 +1300,38 @@ function mtl_render_setup_page() {
 				<?php wp_nonce_field( 'mtl_add_tag_action', 'mtl_add_tag_nonce' ); ?>
 				<input type="text" name="new_tag_name" maxlength="50" placeholder="New tag name" class="regular-text" required>
 				<button type="submit" name="mtl_add_tag" class="button button-primary">Add Tag</button>
+			</form>
+		</div>
+
+		<!-- Member Trainings Management -->
+		<div style="flex: 1; min-width: 400px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04); height: fit-content;">
+			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Member Trainings</h3>
+			<p style="font-size: 0.9em; color: #666;">Safety and skill trainings a member can complete. Add them here so they&rsquo;re available to check off when adding or editing members in the Membership tab &mdash; they show staff at a glance which tools a member is qualified to use, and each member can see their own on their account page.</p>
+
+			<?php if ( $trainings ) : ?>
+				<form method="post" action="" onsubmit="return confirm('Delete the selected trainings? Any members who completed them will lose that record. This cannot be undone.');">
+					<?php wp_nonce_field( 'mtl_delete_trainings_action', 'mtl_delete_trainings_nonce' ); ?>
+					<div class="mtl-chip-row">
+						<?php foreach ( $trainings as $training ) : ?>
+							<label class="mtl-chip-checkbox">
+								<input type="checkbox" name="delete_training_ids[]" value="<?php echo esc_attr( $training->training_id ); ?>">
+								<?php echo esc_html( $training->training_name ); ?>
+							</label>
+						<?php endforeach; ?>
+					</div>
+					<p class="submit" style="margin: 8px 0 0 0;">
+						<button type="submit" name="mtl_delete_trainings" class="button mtl-btn-danger">Delete Selected</button>
+					</p>
+				</form>
+			<?php else : ?>
+				<div class="mtl-chip-row">
+					<span style="color: #999; font-size: 0.85em;">None yet.</span>
+				</div>
+			<?php endif; ?>
+			<form method="post" action="" class="mtl-add-lookup-form">
+				<?php wp_nonce_field( 'mtl_add_training_action', 'mtl_add_training_nonce' ); ?>
+				<input type="text" name="new_training_name" maxlength="50" placeholder="New training name" class="regular-text" required>
+				<button type="submit" name="mtl_add_training" class="button button-primary">Add Training</button>
 			</form>
 		</div>
 

@@ -1383,10 +1383,12 @@ function mtl_render_account_page() {
 	}
 
 	global $wpdb;
-	$tbl_members = $wpdb->prefix . 'members';
-	$tbl_verif   = $wpdb->prefix . 'member_verifications';
-	$tbl_loans   = $wpdb->prefix . 'loans';
-	$tbl_inv     = $wpdb->prefix . 'tool_inventory';
+	$tbl_members      = $wpdb->prefix . 'members';
+	$tbl_verif        = $wpdb->prefix . 'member_verifications';
+	$tbl_loans        = $wpdb->prefix . 'loans';
+	$tbl_inv          = $wpdb->prefix . 'tool_inventory';
+	$tbl_trainings    = $wpdb->prefix . 'member_trainings';
+	$tbl_training_map = $wpdb->prefix . 'member_training_mappings';
 
 	$errors = array();
 
@@ -1523,6 +1525,19 @@ function mtl_render_account_page() {
 			(int) $member->member_id
 		)
 	);
+	// Trainings this member has completed. Read-only here -- only staff can
+	// record a training (see the admin Membership page); this is purely so the
+	// member can see which tools they're already qualified to use.
+	$my_trainings = $wpdb->get_col(
+		$wpdb->prepare(
+			"SELECT t.training_name
+         FROM {$tbl_training_map} mtm
+         JOIN {$tbl_trainings} t ON t.training_id = mtm.training_id
+         WHERE mtm.member_id = %d
+         ORDER BY t.training_name ASC",
+			(int) $member->member_id
+		)
+	);
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	// Whether deleting this account will anonymize (history on record) or
@@ -1604,6 +1619,18 @@ function mtl_render_account_page() {
 			<?php if ( ! $is_verified && '' !== $verification_directions ) : ?>
 				<p class="mtl-member-hint" style="font-size:0.9em;"><?php echo nl2br( esc_html( $verification_directions ) ); ?></p>
 			<?php endif; ?>
+
+			<p style="margin-top:0;">
+				Trainings completed:
+				<?php if ( ! empty( $my_trainings ) ) : ?>
+					<?php foreach ( $my_trainings as $mtl_training_name ) : ?>
+						<span class="mtl-pill mtl-pill-green" style="margin-left:6px;"><?php echo esc_html( $mtl_training_name ); ?></span>
+					<?php endforeach; ?>
+				<?php else : ?>
+					<span class="mtl-pill mtl-pill-grey" style="margin-left:6px;">None yet</span>
+				<?php endif; ?>
+			</p>
+			<p class="mtl-member-hint" style="font-size:0.9em;">Trainings are recorded by library staff and show which tools you&rsquo;re qualified to use. Ask a staff member if you&rsquo;d like to take one.</p>
 
 			<h3>Your details</h3>
 			<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">

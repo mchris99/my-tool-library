@@ -17,6 +17,8 @@ DROP TABLE IF EXISTS {{prefix}}tool_tag_mappings;
 DROP TABLE IF EXISTS {{prefix}}tool_category_mappings;
 DROP TABLE IF EXISTS {{prefix}}tool_tags;
 DROP TABLE IF EXISTS {{prefix}}tool_categories;
+DROP TABLE IF EXISTS {{prefix}}member_training_mappings;
+DROP TABLE IF EXISTS {{prefix}}member_trainings;
 DROP TABLE IF EXISTS {{prefix}}member_verifications;
 DROP TABLE IF EXISTS {{prefix}}tool_inventory;
 DROP TABLE IF EXISTS {{prefix}}members;
@@ -154,6 +156,30 @@ CREATE TABLE {{prefix}}tool_tag_mappings (
     FOREIGN KEY (tag_id) REFERENCES {{prefix}}tool_tags(tag_id) ON DELETE CASCADE
 );
 
+-- Member Trainings (e.g., Table Saw Safety, Welding Basics)
+-- Managed by admins on the Setup page, exactly like categories and tags.
+-- These record which safety/skill trainings a member has completed, so staff
+-- can tell at a glance which tools that member is qualified to check out --
+-- the counterpart to the 'Requires Training' tool tag below.
+CREATE TABLE {{prefix}}member_trainings (
+    training_id INT AUTO_INCREMENT PRIMARY KEY,
+    training_name VARCHAR(50) UNIQUE NOT NULL
+);
+
+-- Junction table for Member <-> Trainings (Many-to-Many)
+-- ON DELETE CASCADE on member_id means a fully deleted member's training
+-- records go with them. A member who is anonymized instead (because they have
+-- loan/reservation history) keeps their row, so mtl_delete_or_anonymize_member()
+-- clears these mappings explicitly -- a completed training is personal data
+-- about a specific individual, not library statistics worth preserving.
+CREATE TABLE {{prefix}}member_training_mappings (
+    member_id INT,
+    training_id INT,
+    PRIMARY KEY (member_id, training_id),
+    FOREIGN KEY (member_id) REFERENCES {{prefix}}members(member_id) ON DELETE CASCADE,
+    FOREIGN KEY (training_id) REFERENCES {{prefix}}member_trainings(training_id) ON DELETE CASCADE
+);
+
 -- ==========================================
 -- 4. TRANSACTIONAL TABLES (Loans & Reservations)
 -- ==========================================
@@ -228,5 +254,16 @@ INSERT INTO {{prefix}}tool_tags (tag_id, tag_name) VALUES
 (10, 'Consumables Required'),
 (11, 'Requires Training'),
 (12, 'Large/Bulky');
+
+-- Starting set of trainings; admins add/remove their own on the Setup page.
+INSERT INTO {{prefix}}member_trainings (training_id, training_name) VALUES
+(1, 'General Shop Safety'),
+(2, 'Table Saw Safety'),
+(3, 'Miter Saw Safety'),
+(4, 'Chainsaw Safety'),
+(5, 'Angle Grinder Safety'),
+(6, 'Welding Basics'),
+(7, 'Lathe Operation'),
+(8, 'Ladder Safety');
 
 SET FOREIGN_KEY_CHECKS = 1;

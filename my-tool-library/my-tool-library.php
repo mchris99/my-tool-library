@@ -456,10 +456,11 @@ function mtl_find_wp_user_id_by_member_id( $member_id ) {
  */
 function mtl_delete_or_anonymize_member( $member_id ) {
 	global $wpdb;
-	$member_id   = (int) $member_id;
-	$tbl_members = $wpdb->prefix . 'members';
-	$tbl_verif   = $wpdb->prefix . 'member_verifications';
-	$tbl_res     = $wpdb->prefix . 'tool_reservations';
+	$member_id        = (int) $member_id;
+	$tbl_members      = $wpdb->prefix . 'members';
+	$tbl_verif        = $wpdb->prefix . 'member_verifications';
+	$tbl_res          = $wpdb->prefix . 'tool_reservations';
+	$tbl_training_map = $wpdb->prefix . 'member_training_mappings';
 
 	$name = trim(
 		(string) $wpdb->get_var(
@@ -516,6 +517,12 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 			array( '%d' )
 		);
 		$wpdb->delete( $tbl_verif, array( 'member_id' => $member_id ), array( '%d' ) );
+		// A completed training is personal data about a specific individual,
+		// not library statistics worth preserving -- so it goes with the rest
+		// of their details rather than being kept like loan history. A true
+		// delete above needs no equivalent, since member_training_mappings has
+		// ON DELETE CASCADE on member_id; see schema.sql.
+		$wpdb->delete( $tbl_training_map, array( 'member_id' => $member_id ), array( '%d' ) );
 		$outcome = 'anonymized';
 	}
 

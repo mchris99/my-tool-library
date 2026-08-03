@@ -55,6 +55,7 @@ function mtl_maybe_serve_member_csv_template() {
 			'photo_id_scan_url',
 			'address_proof_scan_url',
 			'private_notes',
+			'trainings',
 		)
 	);
 	// One clearly-fake example row so admins can see the expected format at a
@@ -81,6 +82,9 @@ function mtl_maybe_serve_member_csv_template() {
 			'https://example.com/scans/photo-id.jpg',
 			'https://example.com/scans/proof-of-address.pdf',
 			'',
+			// Semicolon-separated, matched by name against the trainings set up
+			// on the Setup page (see the importer's lookup below).
+			'General Shop Safety;Table Saw Safety',
 		)
 	);
 	fclose( $out );
@@ -93,11 +97,12 @@ function mtl_maybe_serve_member_csv_template() {
  * Mirrors mtl_render_tool_form_fields() on the Inventory page.
  *
  * @param array  $values    Field values keyed by field name.
+ * @param array  $trainings Available trainings (from the Setup page).
  * @param string $id_prefix Prefix for element IDs (e.g. "edit_") so
  *                           <label for="..."> stays unique when both forms
  *                           are on the page at once.
  */
-function mtl_render_member_form_fields( $values, $id_prefix = '' ) {
+function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '' ) {
 	$field_id = function ( $name ) use ( $id_prefix ) {
 		return esc_attr( $id_prefix . $name );
 	};
@@ -203,6 +208,21 @@ function mtl_render_member_form_fields( $values, $id_prefix = '' ) {
 		</td>
 	</tr>
 	<tr>
+		<th scope="row"><label for="<?php echo $field_id( 'training_id' ); ?>">Trainings Completed</label></th>
+		<td>
+			<?php if ( $trainings ) : ?>
+				<select name="training_id[]" id="<?php echo $field_id( 'training_id' ); ?>" multiple size="6" class="mtl-resizable-select">
+					<?php foreach ( $trainings as $mtl_training ) : ?>
+						<option value="<?php echo esc_attr( $mtl_training->training_id ); ?>" <?php echo in_array( (int) $mtl_training->training_id, $values['training_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $mtl_training->training_name ); ?></option>
+					<?php endforeach; ?>
+				</select>
+				<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every training this member has completed &mdash; it shows staff which tools they&rsquo;re qualified to use, and the member can see the list on their own account page. Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to select or unselect multiple. Drag the bottom-right corner to resize the box. Leave blank if none apply.</p>
+			<?php else : ?>
+				<p style="font-size: 0.85em; color: #666; margin: 0;">No trainings have been set up yet. Add them under <strong>Setup &rarr; Member Trainings</strong>, then they&rsquo;ll be selectable here.</p>
+			<?php endif; ?>
+		</td>
+	</tr>
+	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'photo_id_scan_url' ); ?>">Photo ID Scan URL</label></th>
 		<td>
 			<input type="url" name="photo_id_scan_url" id="<?php echo $field_id( 'photo_id_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['photo_id_scan_url'] ); ?>" placeholder="https://...">
@@ -241,6 +261,13 @@ function mtl_render_membership_page() {
 	$tbl_loans         = $wpdb->prefix . 'loans';
 	$tbl_inventory     = $wpdb->prefix . 'tool_inventory';
 	$tbl_reservations  = $wpdb->prefix . 'tool_reservations';
+	$tbl_trainings     = $wpdb->prefix . 'member_trainings';
+	$tbl_training_map  = $wpdb->prefix . 'member_training_mappings';
+
+	// Available trainings, shown as a multi-select on the Add/Edit forms and
+	// matched by name during CSV bulk import. Managed on the Setup page.
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	$trainings = $wpdb->get_results( "SELECT training_id, training_name FROM {$tbl_trainings} ORDER BY training_name ASC" );
 
 	// Every form on this page posts back to this exact (query-string-free)
 	// URL rather than action="". That keeps an in-progress "?mtl_action=edit"
@@ -285,6 +312,7 @@ function mtl_render_membership_page() {
 		'photo_id_scan_url'         => '',
 		'address_proof_scan_url'    => '',
 		'private_notes'             => '',
+		'training_ids'              => array(),
 	);
 	$keep_form_open = false;
 
@@ -320,6 +348,7 @@ function mtl_render_membership_page() {
 			$photo_id_url   = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
 			$addr_proof_url = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
 			$private_notes  = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
+			$training_ids   = isset( $_POST['training_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['training_id'] ) ) : array();
 
 			// Numeric field: keep the raw typed string for redisplay (so a blank
 			// field stays blank instead of turning into "0"), but store a float.
@@ -400,6 +429,21 @@ function mtl_render_membership_page() {
 				if ( $inserted ) {
 					// member_id is AUTO_INCREMENT, so read back the ID MySQL assigned.
 					$new_member_id = $wpdb->insert_id;
+
+					// MANY-TO-MANY: one row per completed training in the mapping table.
+					foreach ( $training_ids as $tid ) {
+						if ( $tid > 0 ) {
+							$wpdb->insert(
+								$tbl_training_map,
+								array(
+									'member_id'   => $new_member_id,
+									'training_id' => $tid,
+								),
+								array( '%d', '%d' )
+							);
+						}
+					}
+
 					// Verification documents live in their own table, separated
 					// for security compliance. Insert a row as soon as at least
 					// one scan is provided -- staff can save whatever the member
@@ -452,6 +496,7 @@ function mtl_render_membership_page() {
 				$form_values['photo_id_scan_url']         = $photo_id_url;
 				$form_values['address_proof_scan_url']    = $addr_proof_url;
 				$form_values['private_notes']             = $private_notes;
+				$form_values['training_ids']              = $training_ids;
 				// On a duplicate-email error the email is intentionally
 				// cleared -- it is the field that must change.
 			}
@@ -546,6 +591,14 @@ function mtl_render_membership_page() {
 							// as literal text instead of styling the column names.
 							echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The CSV is missing required column(s): <code>' . implode( '</code>, <code>', array_map( 'esc_html', $missing_cols ) ) . '</code>. Please use the downloadable template.</p></div>';
 						} else {
+							// Case-insensitive name -> id lookup so trainings in the
+							// CSV can be matched by name, same as categories/tags
+							// in the Inventory importer.
+							$training_lookup = array();
+							foreach ( $trainings as $mtl_training ) {
+								$training_lookup[ strtolower( $mtl_training->training_name ) ] = (int) $mtl_training->training_id;
+							}
+
 							// Emails already claimed earlier in THIS file -- the
 							// DB uniqueness check can't catch two rows in the same
 							// upload sharing an email, since neither exists yet.
@@ -669,6 +722,22 @@ function mtl_render_membership_page() {
 									continue;
 								}
 
+								// Unknown training names don't fail the row -- they're just
+								// skipped and reported as notes, since trainings are optional.
+								// Parsed here, after the validation continues above, so a row
+								// that gets skipped entirely never emits a training warning.
+								// sanitize_text_field() runs here (not just at output) as
+								// defense in depth alongside the esc_html() applied when
+								// warnings render.
+								$row_training_ids = array();
+								foreach ( array_filter( array_map( 'sanitize_text_field', explode( ';', $get_col( $row, 'trainings' ) ) ) ) as $name ) {
+									if ( isset( $training_lookup[ strtolower( $name ) ] ) ) {
+										$row_training_ids[] = $training_lookup[ strtolower( $name ) ];
+									} else {
+										$bulk_warnings[] = 'Row ' . $row_number . ': unknown training "' . $name . '" was skipped.';
+									}
+								}
+
 								// --- Insert into members ---
 								$inserted = $wpdb->insert(
 									$tbl_members,
@@ -701,6 +770,18 @@ function mtl_render_membership_page() {
 
 								// member_id is AUTO_INCREMENT -- never from the CSV.
 								$new_member_id = $wpdb->insert_id;
+
+								// --- Insert into member_training_mappings ---
+								foreach ( $row_training_ids as $tid ) {
+									$wpdb->insert(
+										$tbl_training_map,
+										array(
+											'member_id'   => $new_member_id,
+											'training_id' => $tid,
+										),
+										array( '%d', '%d' )
+									);
+								}
 
 								// --- Insert into member_verifications (either or both URLs) ---
 								if ( '' !== $row_photo || '' !== $row_proof ) {
@@ -793,6 +874,7 @@ function mtl_render_membership_page() {
 			$photo_id_url   = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
 			$addr_proof_url = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
 			$private_notes  = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
+			$training_ids   = isset( $_POST['training_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['training_id'] ) ) : array();
 
 			$donation_display = isset( $_POST['recurring_donation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['recurring_donation_amount'] ) ) ) : '';
 			$donation         = floatval( $donation_display );
@@ -868,6 +950,23 @@ function mtl_render_membership_page() {
 					$error         = true;
 					$error_message = 'Failed to update member. Please verify the database connection and try again.';
 				} else {
+					// Re-sync the training mappings by clearing and re-inserting the
+					// current selections -- simplest way to add AND remove mappings
+					// in one step without diffing old vs. new.
+					$wpdb->delete( $tbl_training_map, array( 'member_id' => $edit_member_id ), array( '%d' ) );
+					foreach ( $training_ids as $tid ) {
+						if ( $tid > 0 ) {
+							$wpdb->insert(
+								$tbl_training_map,
+								array(
+									'member_id'   => $edit_member_id,
+									'training_id' => $tid,
+								),
+								array( '%d', '%d' )
+							);
+						}
+					}
+
 					// Sync the verification row with the submitted scan URLs.
 					// Either field can be blank -- a member may have only one
 					// form of ID on file so far; they're only "verified" once
@@ -946,6 +1045,7 @@ function mtl_render_membership_page() {
 					'photo_id_scan_url'         => $photo_id_url,
 					'address_proof_scan_url'    => $addr_proof_url,
 					'private_notes'             => $private_notes,
+					'training_ids'              => $training_ids,
 				);
 			}
 		} else {
@@ -1196,6 +1296,9 @@ function mtl_render_membership_page() {
 			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 			if ( $member_row ) {
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+				$existing_training_ids = $wpdb->get_col( $wpdb->prepare( "SELECT training_id FROM {$tbl_training_map} WHERE member_id = %d", $edit_member_id ) );
+
 				$editing     = true;
 				$edit_values = array(
 					'first_name'                => stripslashes( $member_row->first_name ),
@@ -1214,6 +1317,7 @@ function mtl_render_membership_page() {
 					'photo_id_scan_url'         => (string) $member_row->photo_id_scan_url,
 					'address_proof_scan_url'    => (string) $member_row->address_proof_scan_url,
 					'private_notes'             => stripslashes( (string) $member_row->private_notes ),
+					'training_ids'              => array_map( 'intval', $existing_training_ids ),
 				);
 			} else {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Not found.</strong> That member no longer exists.</p></div>';
@@ -1223,6 +1327,29 @@ function mtl_render_membership_page() {
 	?>
 
 	<style>
+		/* Multi-selects: let the admin drag-resize them instead of being stuck at size="6". */
+		.mtl-resizable-select {
+			min-width: 250px;
+			min-height: 120px;
+			padding: 4px;
+			resize: vertical;
+			overflow: auto;
+		}
+
+		/* Training chips in the detail panel -- matches the Inventory page's
+			category/tag badges. */
+		.mtl-badge {
+			display: inline-block;
+			background: #eef3f7;
+			color: #096491;
+			border: 1px solid #d3dde4;
+			border-radius: 12px;
+			padding: 2px 9px;
+			margin: 2px 4px 2px 0;
+			font-size: 0.8em;
+			white-space: nowrap;
+		}
+
 		/* Members table appearance -- mirrors the Inventory page styling. */
 		.mtl-table-wrap {
 			overflow-x: auto;
@@ -1627,7 +1754,7 @@ function mtl_render_membership_page() {
 				<?php wp_nonce_field( 'mtl_add_member_action', 'mtl_add_member_nonce' ); ?>
 
 				<table class="form-table" style="margin-top: 0;">
-					<?php mtl_render_member_form_fields( $form_values ); ?>
+					<?php mtl_render_member_form_fields( $form_values, $trainings ); ?>
 				</table>
 				<p class="submit">
 					<input type="submit" name="mtl_add_member" id="mtl_add_member" class="button button-primary" value="Save to Database">
@@ -1656,6 +1783,7 @@ function mtl_render_membership_page() {
 				<li>To mark a member <strong>verified</strong>, provide <em>both</em> <code>photo_id_scan_url</code> and <code>address_proof_scan_url</code>. Either can be left blank if the member only has one form of ID on file so far &mdash; the row still imports, just unverified until the other is added later via Edit.</li>
 				<li>Do not include a <code>member_id</code> column &mdash; it is assigned automatically.</li>
 				<li><strong>Optional:</strong> <code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form &mdash; but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
+				<li><strong>Optional:</strong> for <code>trainings</code>, separate multiple values with a semicolon (e.g. &ldquo;General Shop Safety;Table Saw Safety&rdquo;). Names must match existing trainings exactly &mdash; add new ones under <strong>Setup &rarr; Member Trainings</strong> first if needed. Unrecognized names are skipped and reported, and don&rsquo;t fail the row.</li>
 				<li>If a row fails, the rest of the file is still processed &mdash; failed rows are listed after upload.</li>
 			</ul>
 			<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
@@ -1681,7 +1809,7 @@ function mtl_render_membership_page() {
 					<input type="hidden" name="member_id" value="<?php echo esc_attr( $edit_member_id ); ?>">
 
 					<table class="form-table" style="margin-top: 0;">
-						<?php mtl_render_member_form_fields( $edit_values, 'edit_' ); ?>
+						<?php mtl_render_member_form_fields( $edit_values, $trainings, 'edit_' ); ?>
 					</table>
 					<p class="submit">
 						<input type="submit" name="mtl_update_member" class="button button-primary" value="Update Member">
@@ -1728,6 +1856,24 @@ function mtl_render_membership_page() {
         ORDER BY m.member_id DESC
     "
 	);
+
+	// Completed trainings per member, as one whole-table query grouped into a
+	// member_id-keyed map -- same reasoning as the borrowing-activity maps
+	// below, and the reason this isn't a GROUP_CONCAT joined onto the main
+	// member query above (which would need a GROUP BY across every selected
+	// column just to attach one list).
+	$member_trainings     = array();
+	$member_training_rows = $wpdb->get_results(
+		"
+        SELECT mtm.member_id, t.training_name
+        FROM {$tbl_training_map} mtm
+        JOIN {$tbl_trainings} t ON t.training_id = mtm.training_id
+        ORDER BY t.training_name ASC
+    "
+	);
+	foreach ( $member_training_rows as $mt_row ) {
+		$member_trainings[ (int) $mt_row->member_id ][] = $mt_row->training_name;
+	}
 
 	// 5B. PER-MEMBER BORROWING ACTIVITY
 	// Fetched as three whole-table queries and grouped into member_id-keyed
@@ -2081,6 +2227,17 @@ function mtl_render_membership_page() {
 											<p class="mtl-sensitive-note">These documents contain sensitive personal information. Only open them when necessary, and never share the links.</p>
 										<?php else : ?>
 											<p style="color: #999;">No verification documents on file. Use Edit to add the member&rsquo;s photo ID and/or proof-of-address scan.</p>
+										<?php endif; ?>
+
+										<strong>Trainings Completed</strong>
+										<?php if ( ! empty( $member_trainings[ $mid ] ) ) : ?>
+											<p>
+												<?php foreach ( $member_trainings[ $mid ] as $mtl_training_name ) : ?>
+													<span class="mtl-badge"><?php echo esc_html( $mtl_training_name ); ?></span>
+												<?php endforeach; ?>
+											</p>
+										<?php else : ?>
+											<p style="color: #999;">None on record. Use Edit to record a training this member has completed.</p>
 										<?php endif; ?>
 
 										<?php if ( ! empty( $member->private_notes ) ) : ?>
