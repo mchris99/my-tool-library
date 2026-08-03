@@ -3,16 +3,17 @@
 --
 -- USAGE:
 --   1. Run the schema first (Setup page -> "Run Database Setup"). This file
---      assumes the tables exist and the categories/tags lookup tables are
---      already seeded by schema.sql (category ids 1-11 / tag ids 1-12 are
---      referenced below).
+--      assumes the tables exist and the categories/tags/trainings lookup
+--      tables are already seeded by schema.sql (category ids 1-11 / tag ids
+--      1-12 / training ids 1-6 are referenced below).
 --
 -- CONTENTS: 60 members (45 verified / 15 unverified), 125 tools, their
 -- category/tag mappings, 81 loans (26 active, 10 currently overdue, 5
--- returned late), and 16 reservations (several tools carry multi-member
--- queues). Machine-generated for volume testing (e.g. table pagination);
--- repeated tool types carry different brands, values, barcodes, and
--- acquisition dates so every row is distinct.
+-- returned late), 16 reservations (several tools carry multi-member
+-- queues), and 38 member/training records across 24 members.
+-- Machine-generated for volume testing (e.g. table pagination); repeated
+-- tool types carry different brands, values, barcodes, and acquisition
+-- dates so every row is distinct.
 --
 -- WARNING: The DELETE statements below wipe any existing member, tool, loan
 -- and reservation rows so the file can be re-run safely. Do NOT run this
@@ -27,12 +28,13 @@
 -- ==========================================
 -- 0. CLEAR EXISTING DATA (so this file is safe to re-run)
 --    Ordered children-first to satisfy FK constraints.
---    Categories/tags are left alone -- schema.sql seeds those.
+--    Categories/tags/trainings are left alone -- schema.sql seeds those.
 -- ==========================================
 DELETE FROM wp_tool_reservations;
 DELETE FROM wp_loans;
 DELETE FROM wp_tool_tag_mappings;
 DELETE FROM wp_tool_category_mappings;
+DELETE FROM wp_member_training_mappings;
 DELETE FROM wp_member_verifications;
 DELETE FROM wp_tool_inventory;
 DELETE FROM wp_members;
@@ -105,6 +107,17 @@ INSERT INTO wp_members
 (58, 'Mason', 'Fitzgerald', '8046 W Forest Home Ave', NULL, 'Milwaukee', 'WI', '53204', 'United States', '(414) 555-0158', 'mason.fitzgerald.58@example.com', '2026-05-20', 0.00, 'N'),
 (59, 'Sophia', 'Walker', '8183 W Historic Mitchell St', NULL, 'Milwaukee', 'WI', '53212', 'United States', '(414) 555-0159', 'sophia.walker.59@example.com', '2026-06-04', 0.00, 'N'),
 (60, 'Ethan', 'Nelson', '8320 W Lisbon Ave', 'Unit 3', 'Milwaukee', 'WI', '53202', 'United States', '(414) 555-0160', 'ethan.nelson.60@example.com', '2026-06-19', 15.00, 'N');
+
+-- Staff-only notes on a handful of members. Set with a follow-up UPDATE
+-- rather than a column on the INSERT above, since only 5 of the 60 have one
+-- and 55 trailing NULLs would bury the rows that matter. private_notes is
+-- never shown to members (see the Membership page's detail view).
+UPDATE wp_members SET private_notes = 'Prefers pickup after 5pm on weekdays; called ahead twice to arrange it.' WHERE member_id = 3;
+UPDATE wp_members SET private_notes = 'Returned the table saw with a chipped blade in March 2026 and paid for the replacement without being asked. Good standing.' WHERE member_id = 24;
+UPDATE wp_members SET private_notes = 'Two overdue returns in a row -- reminded about the 3-week limit on 2026-06-02. No issues since.' WHERE member_id = 39;
+UPDATE wp_members SET private_notes = 'Runs a neighborhood repair cafe; often borrows in bulk for events. Coordinate ahead for large pickups.' WHERE member_id = 44;
+UPDATE wp_members SET private_notes = 'Phone number on file is a shared household line -- ask for Mason by name.' WHERE member_id = 58;
+
 -- ==========================================
 -- 2. MEMBER VERIFICATIONS (45 of 60 verified)
 --    Members whose id is a multiple of 4 have no row here, so the admin
@@ -893,3 +906,51 @@ INSERT INTO wp_tool_reservations (reservation_id, tool_id, member_id, reservatio
 (15, 59, 44, '2026-07-26 17:45:00', NULL),
 -- Tool 75 (available): single reservation
 (16, 75, 30, '2026-07-28 12:00:00', NULL);
+
+-- ==========================================
+-- 8. MEMBER <-> TRAINING MAPPINGS (38 records across 24 of 60 members)
+--    training_ids 1-6 are seeded by schema.sql:
+--      1 Ladder Safety         4 Chainsaw Safety
+--      2 Table Saw Safety      5 Angle Grinder Safety
+--      3 Miter Saw Safety      6 Welding Basics
+--
+--    Kept consistent with the loan/reservation history above: ten tools are
+--    tagged "Requires Training" (tag 11) -- Table Saws 3, 31, 59, 87, 115 and
+--    Chainsaws 8, 36, 64, 92, 120. Every member who has borrowed or reserved
+--    one of those Table Saws (21, 22, 23, 24, 39, 44) holds Table Saw Safety
+--    below, so no row in this file shows a member using a tool they aren't
+--    qualified for. No member has borrowed a Chainsaw, so Chainsaw Safety is
+--    assigned freely.
+--
+--    Most members have no trainings at all, so the "None on record" empty
+--    state is reachable without editing anything. These are all independent
+--    tool-specific trainings with no prerequisite between them, so members
+--    hold them in any combination.
+-- ==========================================
+INSERT INTO wp_member_training_mappings (member_id, training_id) VALUES
+(1, 2), (1, 3),
+(3, 1),
+(5, 3),
+(6, 2), (6, 4), (6, 6),
+(9, 1), (9, 4),
+(12, 5),
+(13, 2), (13, 3),
+(17, 5), (17, 6),
+-- Members 21-24 have each borrowed a Table Saw (tools 115, 87, 59, 31).
+(21, 2),
+(22, 2), (22, 3),
+(23, 2),
+(24, 1), (24, 2),
+(26, 1),
+(30, 6),
+(33, 1),
+(35, 2), (35, 5),
+-- Members 39 and 44 are both in the reservation queue for Table Saw 59.
+(39, 2), (39, 4),
+(41, 1),
+(44, 2), (44, 5), (44, 6),
+(47, 3),
+(52, 1),
+(55, 4), (55, 6),
+(58, 1),
+(60, 2), (60, 4);

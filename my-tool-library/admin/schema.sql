@@ -257,13 +257,11 @@ INSERT INTO {{prefix}}tool_tags (tag_id, tag_name) VALUES
 
 -- Starting set of trainings; admins add/remove their own on the Setup page.
 INSERT INTO {{prefix}}member_trainings (training_id, training_name) VALUES
-(1, 'General Shop Safety'),
+(1, 'Ladder Safety'),
 (2, 'Table Saw Safety'),
 (3, 'Miter Saw Safety'),
 (4, 'Chainsaw Safety'),
 (5, 'Angle Grinder Safety'),
-(6, 'Welding Basics'),
-(7, 'Lathe Operation'),
-(8, 'Ladder Safety');
+(6, 'Welding Basics');
 
 SET FOREIGN_KEY_CHECKS = 1;
