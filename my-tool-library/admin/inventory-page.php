@@ -31,6 +31,62 @@ function mtl_render_pill_list( $csv ) {
 }
 
 /**
+ * Resolves the Add/Edit forms' two separate annual-depreciation inputs (a
+ * dollar amount OR a percentage of the tool's initial value) into a single
+ * dollar figure for storage. Exactly one of the two may be filled in --
+ * filling both is a validation error, since it's ambiguous which one wins.
+ *
+ * @param string $dollar_display  Raw (sticky) dollar-amount field value.
+ * @param string $percent_display Raw (sticky) percentage field value.
+ * @param float  $initial_value   The tool's initial cash value.
+ * @return array{amount:float,error:string} amount is the resolved dollar
+ *         value (0.0 when both inputs are blank, matching the old
+ *         single-field behavior); error is '' on success.
+ */
+function mtl_resolve_depreciation_amount( $dollar_display, $percent_display, $initial_value ) {
+	$dollar_display  = trim( (string) $dollar_display );
+	$percent_display = trim( (string) $percent_display );
+
+	if ( '' !== $dollar_display && '' !== $percent_display ) {
+		return array(
+			'amount' => 0.0,
+			'error'  => 'Please enter the annual depreciation as either a dollar amount or a percentage of the initial value &mdash; not both.',
+		);
+	}
+
+	if ( '' !== $percent_display ) {
+		return array(
+			'amount' => round( (float) $initial_value * ( floatval( $percent_display ) / 100 ), 2 ),
+			'error'  => '',
+		);
+	}
+
+	return array(
+		'amount' => floatval( $dollar_display ),
+		'error'  => '',
+	);
+}
+
+/**
+ * Resolves a single Bulk Import CSV cell for annual_depreciation_amount:
+ * a value containing "%" (e.g. "5%") is treated as a percentage of the
+ * row's initial_cash_value and converted to a dollar figure; anything else
+ * is treated as a plain dollar amount, same as before this feature existed.
+ *
+ * @param string $raw_value     Raw CSV cell value for annual_depreciation_amount.
+ * @param float  $initial_value The row's initial_cash_value.
+ * @return float Resolved dollar amount.
+ */
+function mtl_resolve_depreciation_csv_value( $raw_value, $initial_value ) {
+	$raw_value = trim( (string) $raw_value );
+	if ( '' !== $raw_value && false !== strpos( $raw_value, '%' ) ) {
+		$percent = floatval( str_replace( '%', '', $raw_value ) );
+		return round( (float) $initial_value * ( $percent / 100 ), 2 );
+	}
+	return floatval( $raw_value );
+}
+
+/**
  * Serves a downloadable CSV template for the Bulk Import feature.
  *
  * Runs on admin_init (before any HTML is sent) rather than inside
@@ -179,10 +235,14 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = 
 		</td>
 	</tr>
 	<tr>
-		<th scope="row"><label for="<?php echo $field_id( 'annual_depreciation_amount' ); ?>">Annual Depreciation ($)</label></th>
+		<th scope="row">Annual Depreciation</th>
 		<td>
-			<input type="number" step="0.01" min="0" name="annual_depreciation_amount" id="<?php echo $field_id( 'annual_depreciation_amount' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['annual_depreciation_amount'] ); ?>" placeholder="0.00">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Leave blank or enter 0.00 if unknown.</p>
+			<label for="<?php echo $field_id( 'annual_depreciation_amount' ); ?>" style="display:inline-block; min-width: 100px;">Dollar amount ($)</label>
+			<input type="number" step="0.01" min="0" name="annual_depreciation_amount" id="<?php echo $field_id( 'annual_depreciation_amount' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['annual_depreciation_amount'] ); ?>" placeholder="0.00" style="max-width: 150px;">
+			<br>
+			<label for="<?php echo $field_id( 'annual_depreciation_percent' ); ?>" style="display:inline-block; min-width: 100px; margin-top: 6px;">Percent (%)</label>
+			<input type="number" step="0.01" min="0" max="100" name="annual_depreciation_percent" id="<?php echo $field_id( 'annual_depreciation_percent' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['annual_depreciation_percent'] ); ?>" placeholder="0.00" style="max-width: 150px;">
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Enter <strong>either</strong> a dollar amount <strong>or</strong> a percentage of the Initial Cash Value above &mdash; not both. A percentage is converted to a dollar amount and stored as one, same as if you&rsquo;d typed it directly. Leave both blank or enter 0 if unknown.</p>
 		</td>
 	</tr>
 	<tr>
@@ -254,19 +314,20 @@ function mtl_render_inventory_page() {
 	// deliberately NOT preserved (it's the field that must change to fix the error).
 	// $keep_form_open forces the panel open after an error so the data is visible.
 	$form_values    = array(
-		'tool_name'                  => '',
-		'barcode'                    => '',
-		'brand'                      => '',
-		'photo_url'                  => '',
-		'initial_cash_value'         => '',
-		'annual_depreciation_amount' => '',
-		'date_acquired'              => gmdate( 'Y-m-d' ),
-		'donated_by'                 => '',
-		'components'                 => '',
-		'description'                => '',
-		'private_notes'              => '',
-		'category_ids'               => array(),
-		'tag_ids'                    => array(),
+		'tool_name'                   => '',
+		'barcode'                     => '',
+		'brand'                       => '',
+		'photo_url'                   => '',
+		'initial_cash_value'          => '',
+		'annual_depreciation_amount'  => '',
+		'annual_depreciation_percent' => '',
+		'date_acquired'               => gmdate( 'Y-m-d' ),
+		'donated_by'                  => '',
+		'components'                  => '',
+		'description'                 => '',
+		'private_notes'               => '',
+		'category_ids'                => array(),
+		'tag_ids'                     => array(),
 	);
 	$keep_form_open = false;
 
@@ -303,10 +364,12 @@ function mtl_render_inventory_page() {
 
 			// Numeric fields: keep the raw typed string for redisplay (so a blank
 			// field stays blank instead of turning into "0"), but store a float.
-			$initial_value_display = isset( $_POST['initial_cash_value'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['initial_cash_value'] ) ) ) : '';
-			$depreciation_display  = isset( $_POST['annual_depreciation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['annual_depreciation_amount'] ) ) ) : '';
-			$initial_value         = floatval( $initial_value_display );
-			$depreciation          = floatval( $depreciation_display );
+			$initial_value_display    = isset( $_POST['initial_cash_value'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['initial_cash_value'] ) ) ) : '';
+			$depreciation_display     = isset( $_POST['annual_depreciation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['annual_depreciation_amount'] ) ) ) : '';
+			$depreciation_pct_display = isset( $_POST['annual_depreciation_percent'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['annual_depreciation_percent'] ) ) ) : '';
+			$initial_value            = floatval( $initial_value_display );
+			$depreciation_resolved    = mtl_resolve_depreciation_amount( $depreciation_display, $depreciation_pct_display, $initial_value );
+			$depreciation             = $depreciation_resolved['amount'];
 
 			// Multi-selects submit an ARRAY of IDs, and submit NOTHING at all when
 			// nothing is chosen. Guard with isset() and coerce every value to int.
@@ -317,7 +380,10 @@ function mtl_render_inventory_page() {
 			$error         = false;
 			$error_message = '';
 
-			if ( '' === $barcode ) {
+			if ( '' !== $depreciation_resolved['error'] ) {
+				$error         = true;
+				$error_message = $depreciation_resolved['error'];
+			} elseif ( '' === $barcode ) {
 				// Barcode is required. The HTML "required" attribute normally
 				// stops this client-side; this is a re-check in case it is bypassed.
 				$error         = true;
@@ -405,18 +471,19 @@ function mtl_render_inventory_page() {
 
 				$keep_form_open = true;
 
-				$form_values['tool_name']                  = $tool_name;
-				$form_values['brand']                      = $brand;
-				$form_values['photo_url']                  = $photo_url;
-				$form_values['initial_cash_value']         = $initial_value_display;
-				$form_values['annual_depreciation_amount'] = $depreciation_display;
-				$form_values['date_acquired']              = $date_acquired;
-				$form_values['donated_by']                 = $donated_by;
-				$form_values['components']                 = $components;
-				$form_values['description']                = $description;
-				$form_values['private_notes']              = $private_notes;
-				$form_values['category_ids']               = $category_ids;
-				$form_values['tag_ids']                    = $tag_ids;
+				$form_values['tool_name']                   = $tool_name;
+				$form_values['brand']                       = $brand;
+				$form_values['photo_url']                   = $photo_url;
+				$form_values['initial_cash_value']          = $initial_value_display;
+				$form_values['annual_depreciation_amount']  = $depreciation_display;
+				$form_values['annual_depreciation_percent'] = $depreciation_pct_display;
+				$form_values['date_acquired']               = $date_acquired;
+				$form_values['donated_by']                  = $donated_by;
+				$form_values['components']                  = $components;
+				$form_values['description']                 = $description;
+				$form_values['private_notes']               = $private_notes;
+				$form_values['category_ids']                = $category_ids;
+				$form_values['tag_ids']                     = $tag_ids;
 				// 'barcode' intentionally left as '' so the admin re-enters it.
 			}
 		} else {
@@ -554,7 +621,9 @@ function mtl_render_inventory_page() {
 								$row_date     = ( '' !== $row_date_raw && strtotime( $row_date_raw ) ) ? gmdate( 'Y-m-d', strtotime( $row_date_raw ) ) : gmdate( 'Y-m-d' );
 
 								$row_initial_value = floatval( $get_col( $row, 'initial_cash_value' ) );
-								$row_depreciation  = floatval( $get_col( $row, 'annual_depreciation_amount' ) );
+								// A "%" in this column (e.g. "5%") is a percentage of
+								// initial_cash_value; anything else is a plain dollar amount.
+								$row_depreciation = mtl_resolve_depreciation_csv_value( $get_col( $row, 'annual_depreciation_amount' ), $row_initial_value );
 
 								if ( '' === $row_tool_name ) {
 									$bulk_failed_rows[] = array(
@@ -730,10 +799,12 @@ function mtl_render_inventory_page() {
 			$components    = sanitize_textarea_field( wp_unslash( $_POST['components'] ?? '' ) );
 			$private_notes = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
 
-			$initial_value_display = isset( $_POST['initial_cash_value'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['initial_cash_value'] ) ) ) : '';
-			$depreciation_display  = isset( $_POST['annual_depreciation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['annual_depreciation_amount'] ) ) ) : '';
-			$initial_value         = floatval( $initial_value_display );
-			$depreciation          = floatval( $depreciation_display );
+			$initial_value_display    = isset( $_POST['initial_cash_value'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['initial_cash_value'] ) ) ) : '';
+			$depreciation_display     = isset( $_POST['annual_depreciation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['annual_depreciation_amount'] ) ) ) : '';
+			$depreciation_pct_display = isset( $_POST['annual_depreciation_percent'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['annual_depreciation_percent'] ) ) ) : '';
+			$initial_value            = floatval( $initial_value_display );
+			$depreciation_resolved    = mtl_resolve_depreciation_amount( $depreciation_display, $depreciation_pct_display, $initial_value );
+			$depreciation             = $depreciation_resolved['amount'];
 
 			$category_ids = isset( $_POST['category_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['category_id'] ) ) : array();
 			$tag_ids      = isset( $_POST['tag_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['tag_id'] ) ) : array();
@@ -741,7 +812,10 @@ function mtl_render_inventory_page() {
 			$error         = false;
 			$error_message = '';
 
-			if ( $edit_tool_id <= 0 ) {
+			if ( '' !== $depreciation_resolved['error'] ) {
+				$error         = true;
+				$error_message = $depreciation_resolved['error'];
+			} elseif ( $edit_tool_id <= 0 ) {
 				$error         = true;
 				$error_message = 'Could not determine which tool to update. Please try again.';
 			} elseif ( '' === $barcode ) {
@@ -835,19 +909,20 @@ function mtl_render_inventory_page() {
 				// stale copy) so a validation error never discards their edits.
 				$editing     = true;
 				$edit_values = array(
-					'tool_name'                  => $tool_name,
-					'barcode'                    => $barcode,
-					'brand'                      => $brand,
-					'photo_url'                  => $photo_url,
-					'initial_cash_value'         => $initial_value_display,
-					'annual_depreciation_amount' => $depreciation_display,
-					'date_acquired'              => $date_acquired,
-					'donated_by'                 => $donated_by,
-					'components'                 => $components,
-					'description'                => $description,
-					'private_notes'              => $private_notes,
-					'category_ids'               => $category_ids,
-					'tag_ids'                    => $tag_ids,
+					'tool_name'                   => $tool_name,
+					'barcode'                     => $barcode,
+					'brand'                       => $brand,
+					'photo_url'                   => $photo_url,
+					'initial_cash_value'          => $initial_value_display,
+					'annual_depreciation_amount'  => $depreciation_display,
+					'annual_depreciation_percent' => $depreciation_pct_display,
+					'date_acquired'               => $date_acquired,
+					'donated_by'                  => $donated_by,
+					'components'                  => $components,
+					'description'                 => $description,
+					'private_notes'               => $private_notes,
+					'category_ids'                => $category_ids,
+					'tag_ids'                     => $tag_ids,
 				);
 			}
 		} else {
@@ -1122,19 +1197,23 @@ function mtl_render_inventory_page() {
 
 				$editing     = true;
 				$edit_values = array(
-					'tool_name'                  => stripslashes( $tool_row->tool_name ),
-					'barcode'                    => stripslashes( $tool_row->barcode ),
-					'brand'                      => stripslashes( $tool_row->brand ),
-					'photo_url'                  => $tool_row->photo_url,
-					'initial_cash_value'         => $tool_row->initial_cash_value,
-					'annual_depreciation_amount' => $tool_row->annual_depreciation_amount,
-					'date_acquired'              => $tool_row->date_acquired,
-					'donated_by'                 => stripslashes( (string) $tool_row->donated_by ),
-					'components'                 => stripslashes( (string) $tool_row->components ),
-					'description'                => stripslashes( (string) $tool_row->description ),
-					'private_notes'              => stripslashes( (string) $tool_row->private_notes ),
-					'category_ids'               => array_map( 'intval', $existing_cat_ids ),
-					'tag_ids'                    => array_map( 'intval', $existing_tag_ids ),
+					'tool_name'                   => stripslashes( $tool_row->tool_name ),
+					'barcode'                     => stripslashes( $tool_row->barcode ),
+					'brand'                       => stripslashes( $tool_row->brand ),
+					'photo_url'                   => $tool_row->photo_url,
+					'initial_cash_value'          => $tool_row->initial_cash_value,
+					'annual_depreciation_amount'  => $tool_row->annual_depreciation_amount,
+					// DB only ever stores a dollar amount; this stays blank so Edit
+					// opens with the $ field populated and the % field empty, same
+					// as if the admin had originally typed a dollar amount.
+					'annual_depreciation_percent' => '',
+					'date_acquired'               => $tool_row->date_acquired,
+					'donated_by'                  => stripslashes( (string) $tool_row->donated_by ),
+					'components'                  => stripslashes( (string) $tool_row->components ),
+					'description'                 => stripslashes( (string) $tool_row->description ),
+					'private_notes'               => stripslashes( (string) $tool_row->private_notes ),
+					'category_ids'                => array_map( 'intval', $existing_cat_ids ),
+					'tag_ids'                     => array_map( 'intval', $existing_tag_ids ),
 				);
 			} else {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Not found.</strong> That tool no longer exists.</p></div>';
@@ -1680,6 +1759,7 @@ function mtl_render_inventory_page() {
 				<li><code>tool_name</code> and <code>barcode</code> are required for every row; each barcode must be unique.</li>
 				<li>Do not include a <code>tool_id</code> column &mdash; it is assigned automatically when each tool is added.</li>
 				<li>For <code>categories</code> and <code>tags</code>, separate multiple values with a semicolon (e.g. &ldquo;Woodworking;General Hand Tools&rdquo;). Names must match existing categories/tags exactly &mdash; add new ones on the Setup page first if needed.</li>
+				<li><code>annual_depreciation_amount</code> accepts either a plain dollar amount (e.g. &ldquo;5.00&rdquo;) or a percentage of that row&rsquo;s <code>initial_cash_value</code> (e.g. &ldquo;5%&rdquo;) &mdash; any value containing a % sign is converted to a dollar amount before it&rsquo;s stored.</li>
 				<li><code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form &mdash; but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
 				<li>Leave a cell blank to skip that field. If a row fails, the rest of the file still gets processed &mdash; failures are listed after upload.</li>
 			</ul>
