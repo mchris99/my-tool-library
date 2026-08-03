@@ -87,6 +87,7 @@
                 <element value="mtl_member_page_styles"/>
                 <element value="mtl_render_reservation_detail_panel"/>
                 <element value="mtl_render_pill_list"/>
+                <element value="mtl_markdown_to_html"/>
             </property>
         </properties>
     </rule>

@@ -536,6 +536,7 @@ require_once MTL_PLUGIN_DIR . 'admin/dashboard-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/inventory-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/membership-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/loans-page.php';
+require_once MTL_PLUGIN_DIR . 'admin/workflows-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/setup-page.php';
 
 // Public-facing customer pages.
@@ -663,14 +664,14 @@ function mtl_apply_custom_admin_styles() {
 
 // ADMIN MENUS: Register the portal pages.
 // add_submenu_page() both places a sidebar link AND registers the page's
-// routing/render callback/capability check -- so all four must stay
+// routing/render callback/capability check -- so all six must stay
 // registered here even though their sidebar links are hidden below; only
 // the top-level "My Tool Library" button stays visible, and navigation
 // happens through the portal tab bar.
 add_action( 'admin_menu', 'mtl_register_admin_menus' );
 
 /**
- * Registers the plugin's top-level admin page and its four portal pages.
+ * Registers the plugin's top-level admin page and its six portal pages.
  */
 function mtl_register_admin_menus() {
 	add_menu_page( 'My Tool Library Dashboard', 'My Tool Library', 'manage_options', 'mtl-dashboard', 'mtl_render_dashboard_page', 'dashicons-hammer', 25 );
@@ -678,10 +679,11 @@ function mtl_register_admin_menus() {
 	add_submenu_page( 'mtl-dashboard', 'Manage Membership', 'Membership', 'manage_options', 'mtl-membership', 'mtl_render_membership_page' );
 	add_submenu_page( 'mtl-dashboard', 'Tool Inventory', 'Inventory', 'manage_options', 'mtl-inventory', 'mtl_render_inventory_page' );
 	add_submenu_page( 'mtl-dashboard', 'Loans & Reservations', 'Loans & Reservations', 'manage_options', 'mtl-loans', 'mtl_render_loans_page' );
+	add_submenu_page( 'mtl-dashboard', 'Staff Workflows', 'Workflows', 'manage_options', 'mtl-workflows', 'mtl_render_workflows_page' );
 	add_submenu_page( 'mtl-dashboard', 'Plugin Setup', 'Setup', 'manage_options', 'mtl-setup', 'mtl_render_setup_page' );
 }
 
-// Hide the submenu links from the WordPress sidebar so the four pages are
+// Hide the submenu links from the WordPress sidebar so the six pages are
 // reached only via the portal tab bar (the top-level "My Tool Library" button
 // stays and opens the Dashboard).
 //
@@ -695,7 +697,7 @@ function mtl_register_admin_menus() {
 add_action( 'admin_head', 'mtl_hide_portal_sidebar_links' );
 
 /**
- * Removes the four portal pages' sidebar entries, leaving only the
+ * Removes the six portal pages' sidebar entries, leaving only the
  * top-level "My Tool Library" link. See the comment above for why this
  * has to run on admin_head rather than admin_menu.
  */
@@ -704,21 +706,22 @@ function mtl_hide_portal_sidebar_links() {
 	remove_submenu_page( 'mtl-dashboard', 'mtl-membership' );
 	remove_submenu_page( 'mtl-dashboard', 'mtl-inventory' );
 	remove_submenu_page( 'mtl-dashboard', 'mtl-loans' );
+	remove_submenu_page( 'mtl-dashboard', 'mtl-workflows' );
 	remove_submenu_page( 'mtl-dashboard', 'mtl-setup' );
 }
 
 // ==========================================================================
 // ADMIN PORTAL TAB BAR
-// Renders a horizontal Dashboard / Membership / Inventory / Setup tab strip
-// across the top of all four plugin admin pages, plus "View Main Page" and
-// "Log Out" links -- so the four separate page files read as one tabbed
-// portal without merging them into a single file.
+// Renders a horizontal Dashboard / Membership / Inventory / Loans / Workflows
+// / Setup tab strip across the top of all six plugin admin pages, plus
+// "View Main Page" and "Log Out" links -- so the six separate page files
+// read as one tabbed portal without merging them into a single file.
 // ==========================================================================
 add_action( 'admin_notices', 'mtl_render_admin_portal_tabs' );
 
 /**
- * Renders the Dashboard/Membership/Inventory/Loans/Setup tab strip shown
- * at the top of all five plugin admin pages.
+ * Renders the Dashboard/Membership/Inventory/Loans/Workflows/Setup tab strip
+ * shown at the top of all six plugin admin pages.
  */
 function mtl_render_admin_portal_tabs() {
 	$screen = get_current_screen();
@@ -731,6 +734,7 @@ function mtl_render_admin_portal_tabs() {
 		'mtl-membership' => 'Membership',
 		'mtl-inventory'  => 'Inventory',
 		'mtl-loans'      => 'Loans & Reservations',
+		'mtl-workflows'  => 'Workflows',
 		'mtl-setup'      => 'Setup',
 	);
 	$current = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
