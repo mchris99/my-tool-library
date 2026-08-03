@@ -1,5 +1,5 @@
 === My Tool Library ===
-Contributors: mkelibrary
+Contributors: chrismchenry5, ToolLibrarian
 Donate link: https://mkelibrary.org
 Tags: tool library, lending library, inventory, reservations, membership
 Requires at least: 5.8

@@ -35,7 +35,7 @@ Built by the [Milwaukee Tool Library](https://mkelibrary.org) (Evan Maruszewski 
 
 ## Installation
 
-1. Upload the plugin to `/wp-content/plugins/my-tool-library`, or install via the Plugins screen.
+1. Upload the plugin folder (`my-tool-library`) to `/wp-content/plugins/`, or install via the Plugins screen (only the `my-tool-library` folder is required).
 2. Activate the plugin.
 3. Go to **My Tool Library > Setup** and click **Run Database Setup**.
 4. Confirm your site's timezone under **Settings > General > Timezone**.
