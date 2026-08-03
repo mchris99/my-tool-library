@@ -573,6 +573,16 @@ function mtl_render_dashboard_page() {
 		);
 	}
 
+	// Donor display lookup: email (lowercased) => "First Last". Reuses the
+	// member list above so the donor leaderboard can resolve a donated_by
+	// that matches a member's email (their username) to their name, without
+	// an extra query. See mtl_maybe_flag_donor_as_donated() in
+	// admin/inventory-page.php, which does the matching write-side.
+	$donor_name_by_email = array();
+	foreach ( $dash_member_options as $m ) {
+		$donor_name_by_email[ strtolower( $m['sub'] ) ] = $m['name'];
+	}
+
 	// --- Selected tool's detail: who has rented it, grouped by member, plus
 	// the full loan-by-loan log. ---
 	$th_tool      = null;
@@ -1540,10 +1550,20 @@ function mtl_render_dashboard_page() {
 							</tr>
 						</thead>
 						<tbody>
-							<?php foreach ( $donor_rows as $i => $row ) : ?>
+							<?php
+							foreach ( $donor_rows as $i => $row ) :
+								$row_donor = trim( (string) $row->donated_by );
+								if ( isset( $donor_name_by_email[ strtolower( $row_donor ) ] ) ) {
+									// Matches a member's email (their username) -- show "Name, username" instead of the raw email.
+									$row_donor_display = $donor_name_by_email[ strtolower( $row_donor ) ] . ', ' . $row_donor;
+								} else {
+									// No matching member -- plain text as entered (e.g. a non-member donor).
+									$row_donor_display = stripslashes( $row_donor );
+								}
+								?>
 								<tr>
 									<td><?php echo esc_html( isset( $medals[ $i ] ) ? $medals[ $i ] : $i + 1 ); ?></td>
-									<td><?php echo esc_html( stripslashes( $row->donated_by ) ); ?></td>
+									<td><?php echo esc_html( $row_donor_display ); ?></td>
 									<td><strong><?php echo esc_html( $row->items_donated ); ?></strong></td>
 									<td><?php echo esc_html( $currency . number_format( (float) $row->total_value, 2 ) ); ?></td>
 								</tr>
