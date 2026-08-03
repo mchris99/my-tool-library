@@ -87,6 +87,32 @@ function mtl_resolve_depreciation_csv_value( $raw_value, $initial_value ) {
 }
 
 /**
+ * If $donated_by matches an existing member's email -- their WP username,
+ * since members sign in with their email (see mtl_render_tool_form_fields()'s
+ * donor autocomplete, which fills this field with a selected member's email;
+ * Bulk Import checks the plain-text donated_by column the same way) -- flags
+ * that member as having donated tools. A donated_by that matches no member
+ * (a non-member donor, stored as plain free text) or is blank is a no-op.
+ *
+ * @param string $donated_by Raw donated_by value as saved to tool_inventory.
+ */
+function mtl_maybe_flag_donor_as_donated( $donated_by ) {
+	$donated_by = trim( (string) $donated_by );
+	if ( '' === $donated_by ) {
+		return;
+	}
+	global $wpdb;
+	$tbl_members = $wpdb->prefix . 'members';
+	$wpdb->update(
+		$tbl_members,
+		array( 'has_donated_tools' => 'Y' ),
+		array( 'email' => $donated_by ),
+		array( '%s' ),
+		array( '%s' )
+	);
+}
+
+/**
  * Serves a downloadable CSV template for the Bulk Import feature.
  *
  * Runs on admin_init (before any HTML is sent) rather than inside
@@ -255,8 +281,11 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = 
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'donated_by' ); ?>">Donated By</label></th>
 		<td>
-			<input type="text" name="donated_by" id="<?php echo $field_id( 'donated_by' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['donated_by'] ); ?>">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Leave blank if unknown.</p>
+			<div class="mtl-donor-autocomplete">
+				<input type="text" name="donated_by" id="<?php echo $field_id( 'donated_by' ); ?>" class="regular-text mtl-donor-search" autocomplete="off" value="<?php echo esc_attr( $values['donated_by'] ); ?>" placeholder="Name, or type to search members...">
+				<div class="mtl-ql-dropdown" style="display: none;"></div>
+			</div>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Type a member&rsquo;s name or email to find and select them &mdash; selecting one stores their email so they&rsquo;re automatically credited as a donor. Or just type any name for a non-member donor. Leave blank if unknown.</p>
 		</td>
 	</tr>
 	<tr>
@@ -456,6 +485,8 @@ function mtl_render_inventory_page() {
 							);
 						}
 					}
+
+					mtl_maybe_flag_donor_as_donated( $donated_by );
 
 					echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> ' . esc_html( stripslashes( $tool_name ) ) . ' has been added to the database.</p></div>';
 					// On success the form is left blank (defaults) for the next entry.
@@ -734,6 +765,8 @@ function mtl_render_inventory_page() {
 									);
 								}
 
+								mtl_maybe_flag_donor_as_donated( $row_donated_by );
+
 								$seen_barcodes[ strtolower( $row_barcode ) ] = true;
 								++$bulk_success_count;
 							}
@@ -897,6 +930,8 @@ function mtl_render_inventory_page() {
 							);
 						}
 					}
+
+					mtl_maybe_flag_donor_as_donated( $donated_by );
 
 					echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> ' . esc_html( stripslashes( $tool_name ) ) . ' has been updated.</p></div>';
 				}
@@ -1512,6 +1547,17 @@ function mtl_render_inventory_page() {
 			border-radius: 4px;
 		}
 
+		<?php // Donor search on the Add/Edit Tool forms; shares .mtl-ql-dropdown/.mtl-ql-option styling below, but not .mtl-ql-autocomplete's global click-outside handler (a different, narrower one is wired up for this field). ?>
+		.mtl-donor-autocomplete {
+			position: relative;
+			max-width: 400px;
+		}
+
+		.mtl-donor-autocomplete .mtl-donor-search {
+			width: 100%;
+			box-sizing: border-box;
+		}
+
 		.mtl-ql-dropdown {
 			position: absolute;
 			left: 0;
@@ -1760,6 +1806,7 @@ function mtl_render_inventory_page() {
 				<li>Do not include a <code>tool_id</code> column &mdash; it is assigned automatically when each tool is added.</li>
 				<li>For <code>categories</code> and <code>tags</code>, separate multiple values with a semicolon (e.g. &ldquo;Woodworking;General Hand Tools&rdquo;). Names must match existing categories/tags exactly &mdash; add new ones on the Setup page first if needed.</li>
 				<li><code>annual_depreciation_amount</code> accepts either a plain dollar amount (e.g. &ldquo;5.00&rdquo;) or a percentage of that row&rsquo;s <code>initial_cash_value</code> (e.g. &ldquo;5%&rdquo;) &mdash; any value containing a % sign is converted to a dollar amount before it&rsquo;s stored.</li>
+				<li><code>donated_by</code> is plain text. If it exactly matches an existing member&rsquo;s email address (their sign-in username), that member is automatically credited as a donor &mdash; otherwise it&rsquo;s just stored as-is (e.g. for a non-member donor).</li>
 				<li><code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form &mdash; but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
 				<li>Leave a cell blank to skip that field. If a row fails, the rest of the file still gets processed &mdash; failures are listed after upload.</li>
 			</ul>
@@ -2985,6 +3032,81 @@ function mtl_render_inventory_page() {
 					memberHint.classList.add('mtl-ql-hint-error');
 					searchInput.focus();
 				}
+			});
+		});
+	</script>
+
+	<script>
+		// ---- Donor autocomplete (Add + Edit Tool forms' "Donated By" field) ----
+		// Unlike Quick Loan, there's no hidden member_id: selecting a match just
+		// fills this plain-text field with that member's email (their WP
+		// username), which the server then matches back to flag has_donated_tools.
+		// Typing a name with no match, or leaving it, submits as free text.
+		document.addEventListener('DOMContentLoaded', function() {
+			<?php // JSON_HEX_TAG/AMP/APOS/QUOT so a member name/email containing "</script>" or quotes can't break out of this inline script. ?>
+			const donorMembers = <?php echo wp_json_encode( $ql_members, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>;
+
+			function hideDonorDropdown( dropdown ) {
+				dropdown.style.display = 'none';
+				dropdown.innerHTML = '';
+			}
+
+			document.querySelectorAll('.mtl-donor-search').forEach(function(input) {
+				const dropdown = input.nextElementSibling;
+				if (!dropdown || !dropdown.classList.contains('mtl-ql-dropdown')) {
+					return;
+				}
+
+				input.addEventListener('input', function() {
+					const q = this.value.trim().toLowerCase();
+					if (!q) {
+						hideDonorDropdown(dropdown);
+						return;
+					}
+					const matches = donorMembers.filter(function(m) {
+						return m.search.indexOf(q) !== -1;
+					}).slice(0, 8);
+
+					if (matches.length === 0) {
+						dropdown.innerHTML = '<div class="mtl-ql-empty">No matching members</div>';
+						dropdown.style.display = 'block';
+						return;
+					}
+					dropdown.innerHTML = '';
+					matches.forEach(function(m) {
+						const opt = document.createElement('div');
+						opt.className = 'mtl-ql-option';
+						const name = document.createElement('span');
+						name.textContent = m.name + ' ';
+						const email = document.createElement('span');
+						email.className = 'mtl-ql-option-email';
+						email.textContent = '(' + m.email + ')';
+						opt.appendChild(name);
+						opt.appendChild(email);
+						// mousedown (not click) so it fires before the input's blur.
+						opt.addEventListener('mousedown', function(e) {
+							e.preventDefault();
+							input.value = m.email;
+							hideDonorDropdown(dropdown);
+						});
+						dropdown.appendChild(opt);
+					});
+					dropdown.style.display = 'block';
+				});
+
+				input.addEventListener('focus', function() {
+					if (this.value.trim()) {
+						this.dispatchEvent(new Event('input'));
+					}
+				});
+			});
+
+			// Hide any open donor dropdown when focus/click leaves its autocomplete.
+			document.addEventListener('click', function(e) {
+				if (e.target.closest('.mtl-donor-autocomplete')) {
+					return;
+				}
+				document.querySelectorAll('.mtl-donor-autocomplete .mtl-ql-dropdown').forEach(hideDonorDropdown);
 			});
 		});
 	</script>
