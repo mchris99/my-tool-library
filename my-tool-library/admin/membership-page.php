@@ -54,6 +54,7 @@ function mtl_maybe_serve_member_csv_template() {
 			'has_donated_tools',
 			'photo_id_scan_url',
 			'address_proof_scan_url',
+			'private_notes',
 		)
 	);
 	// One clearly-fake example row so admins can see the expected format at a
@@ -79,6 +80,7 @@ function mtl_maybe_serve_member_csv_template() {
 			'N',
 			'https://example.com/scans/photo-id.jpg',
 			'https://example.com/scans/proof-of-address.pdf',
+			'',
 		)
 	);
 	fclose( $out );
@@ -214,6 +216,13 @@ function mtl_render_member_form_fields( $values, $id_prefix = '' ) {
 			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Link to the scan of the member&rsquo;s proof of address (utility bill, lease, etc.). It&rsquo;s fine to save just this one for now; required together with the photo ID scan above to mark the member as verified.</p>
 		</td>
 	</tr>
+	<tr>
+		<th scope="row"><label for="<?php echo $field_id( 'private_notes' ); ?>">Private Notes</label></th>
+		<td>
+			<textarea name="private_notes" id="<?php echo $field_id( 'private_notes' ); ?>" rows="4" style="width: 100%; max-width: 400px;"><?php echo esc_textarea( $values['private_notes'] ); ?></textarea>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Staff-only. Never shown on the public catalog, the member&rsquo;s account page, or anywhere else a member can see it.</p>
+		</td>
+	</tr>
 	<?php
 	// phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
 }
@@ -275,6 +284,7 @@ function mtl_render_membership_page() {
 		'has_donated_tools'         => 'N',
 		'photo_id_scan_url'         => '',
 		'address_proof_scan_url'    => '',
+		'private_notes'             => '',
 	);
 	$keep_form_open = false;
 
@@ -309,6 +319,7 @@ function mtl_render_membership_page() {
 			$signup_date    = sanitize_text_field( wp_unslash( $_POST['signup_date'] ?? '' ) );
 			$photo_id_url   = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
 			$addr_proof_url = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
+			$private_notes  = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
 
 			// Numeric field: keep the raw typed string for redisplay (so a blank
 			// field stays blank instead of turning into "0"), but store a float.
@@ -381,8 +392,9 @@ function mtl_render_membership_page() {
 						'signup_date'               => $signup_date,
 						'recurring_donation_amount' => $donation,
 						'has_donated_tools'         => $has_donated,
+						'private_notes'             => '' !== $private_notes ? $private_notes : null,
 					),
-					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s' )
+					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s' )
 				);
 
 				if ( $inserted ) {
@@ -439,6 +451,7 @@ function mtl_render_membership_page() {
 				$form_values['has_donated_tools']         = $has_donated;
 				$form_values['photo_id_scan_url']         = $photo_id_url;
 				$form_values['address_proof_scan_url']    = $addr_proof_url;
+				$form_values['private_notes']             = $private_notes;
 				// On a duplicate-email error the email is intentionally
 				// cleared -- it is the field that must change.
 			}
@@ -579,6 +592,7 @@ function mtl_render_membership_page() {
 								}
 								$row_photo = sanitize_url( $get_col( $row, 'photo_id_scan_url' ) );
 								$row_proof = sanitize_url( $get_col( $row, 'address_proof_scan_url' ) );
+								$row_notes = sanitize_textarea_field( $get_col( $row, 'private_notes' ) );
 
 								$row_signup_raw = $get_col( $row, 'signup_date' );
 								$row_signup     = ( '' !== $row_signup_raw && strtotime( $row_signup_raw ) ) ? gmdate( 'Y-m-d', strtotime( $row_signup_raw ) ) : gmdate( 'Y-m-d' );
@@ -672,8 +686,9 @@ function mtl_render_membership_page() {
 										'signup_date'   => $row_signup,
 										'recurring_donation_amount' => $row_donation,
 										'has_donated_tools' => $row_donated,
+										'private_notes' => '' !== $row_notes ? $row_notes : null,
 									),
-									array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s' )
+									array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s' )
 								);
 
 								if ( ! $inserted ) {
@@ -777,6 +792,7 @@ function mtl_render_membership_page() {
 			$signup_date    = sanitize_text_field( wp_unslash( $_POST['signup_date'] ?? '' ) );
 			$photo_id_url   = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
 			$addr_proof_url = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
+			$private_notes  = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
 
 			$donation_display = isset( $_POST['recurring_donation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['recurring_donation_amount'] ) ) ) : '';
 			$donation         = floatval( $donation_display );
@@ -838,9 +854,10 @@ function mtl_render_membership_page() {
 						'signup_date'               => $signup_date,
 						'recurring_donation_amount' => $donation,
 						'has_donated_tools'         => $has_donated,
+						'private_notes'             => '' !== $private_notes ? $private_notes : null,
 					),
 					array( 'member_id' => $edit_member_id ),
-					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s' ),
+					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s' ),
 					array( '%d' )
 				);
 
@@ -928,6 +945,7 @@ function mtl_render_membership_page() {
 					'has_donated_tools'         => $has_donated,
 					'photo_id_scan_url'         => $photo_id_url,
 					'address_proof_scan_url'    => $addr_proof_url,
+					'private_notes'             => $private_notes,
 				);
 			}
 		} else {
@@ -1195,6 +1213,7 @@ function mtl_render_membership_page() {
 					'has_donated_tools'         => $member_row->has_donated_tools,
 					'photo_id_scan_url'         => (string) $member_row->photo_id_scan_url,
 					'address_proof_scan_url'    => (string) $member_row->address_proof_scan_url,
+					'private_notes'             => stripslashes( (string) $member_row->private_notes ),
 				);
 			} else {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Not found.</strong> That member no longer exists.</p></div>';
@@ -1636,6 +1655,7 @@ function mtl_render_membership_page() {
 				<li><code>has_donated_tools</code> must be exactly <code>Y</code> or <code>N</code> (blank counts as <code>N</code>).</li>
 				<li>To mark a member <strong>verified</strong>, provide <em>both</em> <code>photo_id_scan_url</code> and <code>address_proof_scan_url</code>. Either can be left blank if the member only has one form of ID on file so far &mdash; the row still imports, just unverified until the other is added later via Edit.</li>
 				<li>Do not include a <code>member_id</code> column &mdash; it is assigned automatically.</li>
+				<li><strong>Optional:</strong> <code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form &mdash; but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
 				<li>If a row fails, the rest of the file is still processed &mdash; failed rows are listed after upload.</li>
 			</ul>
 			<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
@@ -1699,6 +1719,7 @@ function mtl_render_membership_page() {
             m.recurring_donation_amount,
             m.has_donated_tools,
             m.anonymized_at,
+            m.private_notes,
             v.photo_id_scan_url,
             v.address_proof_scan_url,
             v.verified_at
@@ -2060,6 +2081,14 @@ function mtl_render_membership_page() {
 											<p class="mtl-sensitive-note">These documents contain sensitive personal information. Only open them when necessary, and never share the links.</p>
 										<?php else : ?>
 											<p style="color: #999;">No verification documents on file. Use Edit to add the member&rsquo;s photo ID and/or proof-of-address scan.</p>
+										<?php endif; ?>
+
+										<?php if ( ! empty( $member->private_notes ) ) : ?>
+											<strong>Private Notes</strong>
+											<div class="mtl-sensitive-note">
+												<?php echo nl2br( esc_html( stripslashes( $member->private_notes ) ) ); ?>
+												<p style="margin: 6px 0 0 0; font-style: italic;">Staff-only &mdash; never shown on the public catalog, the member&rsquo;s account page, or anywhere else a member can see it.</p>
+											</div>
 										<?php endif; ?>
 									</div>
 

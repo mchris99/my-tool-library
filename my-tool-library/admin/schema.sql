@@ -68,7 +68,11 @@ CREATE TABLE {{prefix}}members (
     signup_date DATE NOT NULL,
     recurring_donation_amount DECIMAL(10, 2) DEFAULT 0.00,
     has_donated_tools CHAR(1) DEFAULT 'N',
-    anonymized_at TIMESTAMP NULL DEFAULT NULL
+    anonymized_at TIMESTAMP NULL DEFAULT NULL,
+    -- private_notes is staff-only, like tool_inventory.private_notes below: it
+    -- is never selected by any public-facing or member-self-service query and
+    -- is shown only in the admin Membership page's detail view.
+    private_notes TEXT DEFAULT NULL
 );
 
 -- Sensitive Member Data (Separated for security compliance)
