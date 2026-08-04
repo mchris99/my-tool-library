@@ -48,13 +48,15 @@ DROP TABLE IF EXISTS {{prefix}}members;
 -- but any member -- admin-entered or self-signed-up -- can select a
 -- different one; this plugin is not restricted to U.S. libraries.
 --
--- Deleting a member is only a true row deletion when they have no
--- loans/tool_reservations history (those tables reference member_id without
--- ON DELETE CASCADE, so a member with history can't be removed outright).
--- Otherwise the delete request is honored by anonymizing this row instead:
--- personal fields are overwritten with placeholders and anonymized_at is
--- set, while their loan/reservation rows stay untouched so historical
--- counts remain accurate. See mtl_delete_or_anonymize_member().
+-- Deleting a member never drops this row. The request is honored by
+-- anonymizing it: identifying fields are overwritten with placeholders,
+-- anonymized_at is stamped, and the member reads as "Former Member"
+-- afterwards. Their loans, reservations and completed trainings all stay
+-- attached to it so tool histories, borrowing counts and training records
+-- remain accurate -- keeping the row is what makes that possible, since
+-- member_training_mappings and member_verifications both cascade off it.
+-- Their WordPress account is a separate matter and IS deleted outright
+-- (wp_users plus wp_usermeta). See mtl_delete_or_anonymize_member().
 CREATE TABLE {{prefix}}members (
     member_id INT AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(50) NOT NULL,
@@ -167,11 +169,11 @@ CREATE TABLE {{prefix}}member_trainings (
 );
 
 -- Junction table for Member <-> Trainings (Many-to-Many)
--- ON DELETE CASCADE on member_id means a fully deleted member's training
--- records go with them. A member who is anonymized instead (because they have
--- loan/reservation history) keeps their row, so mtl_delete_or_anonymize_member()
--- clears these mappings explicitly -- a completed training is personal data
--- about a specific individual, not library statistics worth preserving.
+-- ON DELETE CASCADE on member_id is a safety net for a row that is genuinely
+-- removed (a manual cleanup, or the whole table being rebuilt). It is NOT the
+-- path a member deletion takes: mtl_delete_or_anonymize_member() anonymizes
+-- the members row rather than dropping it, precisely so these training
+-- records survive as library history, re-attached to a "Former Member".
 CREATE TABLE {{prefix}}member_training_mappings (
     member_id INT,
     training_id INT,

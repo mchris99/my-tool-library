@@ -1123,11 +1123,11 @@ function mtl_render_membership_page() {
 		}
 	}
 
-	// 3. HANDLE "DELETE" FORM SUBMISSION -- always presented to staff as one
-	// "Delete" action. mtl_delete_or_anonymize_member() removes the member
-	// outright when they have no loan/reservation history; when they do (that
-	// history has no ON DELETE CASCADE on member_id, by design), it
-	// anonymizes their personal data instead and leaves the history intact.
+	// 3. HANDLE "DELETE" FORM SUBMISSION. mtl_delete_or_anonymize_member()
+	// strips the member's identifying details, deletes their verification
+	// documents and their WordPress sign-in outright, and keeps everything
+	// that records what they did with the library -- loans, reservations and
+	// completed trainings -- attached to a "Former Member" row.
 	if ( isset( $_POST['mtl_delete_member'] ) && mtl_can_delete_members() ) {
 		if ( isset( $_POST['mtl_delete_member_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_member_nonce'] ) ), 'mtl_delete_member_action' ) ) {
 
@@ -1147,12 +1147,9 @@ function mtl_render_membership_page() {
 					? ' Their online sign-in could not be matched to this record, so it was left in place &mdash; remove it under Users if it is no longer needed.'
 					: '';
 
-				if ( 'deleted' === $result['outcome'] ) {
+				if ( 'anonymized' === $result['outcome'] ) {
 					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $display_name is esc_html()'d above.
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Deleted.</strong> ' . $display_name . ' and their verification documents have been permanently removed.' . esc_html( $res_note ) . wp_kses_post( $orphan_note ) . '</p></div>';
-				} elseif ( 'anonymized' === $result['outcome'] ) {
-					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $display_name is esc_html()'d above.
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Personal data removed.</strong> ' . $display_name . ' had loan or reservation history on record, so it has been kept for accurate library statistics, but their personal information, verification documents, and online account have been removed.' . esc_html( $res_note ) . wp_kses_post( $orphan_note ) . '</p></div>';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Personal data removed.</strong> ' . $display_name . ' is now shown as a former member. Their personal details, verification documents and online sign-in have been permanently removed, while their loans, reservations and completed trainings have been kept so the library&rsquo;s records stay accurate.' . esc_html( $res_note ) . wp_kses_post( $orphan_note ) . '</p></div>';
 				} else {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member could not be found or was already deleted.</p></div>';
 				}

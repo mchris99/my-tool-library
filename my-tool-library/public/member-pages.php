@@ -1680,10 +1680,9 @@ function mtl_render_account_page() {
 						// same as the "cancel reservation(s)" confirm views.
 				?>
 				<p style="margin-top:0;">This permanently deletes your account and cannot be undone.</p>
+				<p>Your name, address, contact details and verification documents will all be removed, and your sign-in will be deleted entirely &mdash; you will not be able to log in again.</p>
 				<?php if ( $has_history ) : ?>
-					<p>You have loan or reservation history on record, so that history will be kept (it keeps the library&rsquo;s records accurate), but your name, address, contact details, and verification documents will all be removed, and your sign-in will be deleted.</p>
-				<?php else : ?>
-					<p>You have no loan or reservation history on record, so your account and all of your information will be fully removed.</p>
+					<p>Your borrowing record is kept, but with nothing identifying you attached to it: past loans and reservations stay on file against a &ldquo;former member&rdquo; so the library&rsquo;s tool histories and totals remain accurate.</p>
 				<?php endif; ?>
 				<?php if ( $has_active_reservation ) : ?>
 					<p>You currently have an active reservation. It will be cancelled as part of deleting your account, freeing up your spot for the next person in line.</p>

@@ -278,18 +278,30 @@ To put things right:
 
 **Administrators only.** Editors have no **Delete** button on the Membership page — if a member needs removing and you're an Editor, ask an administrator, or point the member at the self-service option below, which is always available to them.
 
-Click **Delete** next to a member on the **Membership** page. What actually happens depends on whether that member has ever borrowed or reserved a tool:
+Click **Delete** next to a member on the **Membership** page. Deleting a member removes the person, not the library's records of what they did.
 
-- **No loan or reservation history** — the member is removed outright: their record and their WordPress account are both permanently gone.
-- **Has loan or reservation history** — deleting their record outright would corrupt tool-level statistics (like a tool's total-loans count), so instead their personal data is **anonymized**: name, address, phone, and email are replaced with placeholders, their verification documents are deleted, and their WordPress account is deleted, but their loan/reservation rows are left untouched so the library's records stay accurate. The row then shows a **Removed** badge in place of Verified/Not Verified, and Edit/Delete disappear — there's nothing left to do with it.
+**What is permanently removed:**
 
-In both cases the WordPress account is only deleted when it can be confirmed as that member's (its email still matches the record). If it can't — usually because a database reset renumbered the records — the account is left in place and the confirmation message says so, since deleting the wrong person's sign-in is not reversible. Remove it under **Users** if it is no longer needed.
+- Their name, address, phone number and email, replaced with placeholders.
+- Their verification documents (photo ID and proof-of-address links).
+- Any private staff notes on their record.
+- Their **WordPress sign-in — deleted outright**, account and all its settings. They cannot log in again.
 
-Either way, any reservation the member currently has (for any tool) is **cancelled** as part of the delete. A currently open loan is left alone, since deleting the account doesn't return the tool.
+**What is kept:**
 
-Either outcome is **permanent and cannot be undone**, and the confirmation dialog explains which one a given member will get before you confirm.
+- Every loan they ever had, so each tool's borrowing history and totals stay correct.
+- Their reservations, past and present.
+- The trainings they completed, so the library's training records stay complete.
 
-**Members can always do this themselves, without staff involvement.** Signed in on the public site, a member goes to their **Account** page and, under **Danger Zone**, clicks **Delete Account and Remove Personal Data**. That walks them through the same two-step confirmation and produces the exact same outcome (full removal or anonymization, depending on their history, plus cancelling any active reservation). This is always available to them no matter which staff roles exist, so a member never has to wait on an administrator to have their data removed.
+Their row stays on the Membership page as **Former Member** with a **Removed** badge in place of Verified/Not Verified, and Edit/Delete disappear — there's nothing left on it to edit. Everything above stays attached to that row rather than to a name.
+
+The WordPress account is only deleted when it can be confirmed as that member's (its email still matches the record). If it can't — usually because a database reset renumbered the records — the account is left in place and the confirmation message says so, since deleting the wrong person's sign-in is not reversible. Remove it yourself under **Users** in that case.
+
+Any reservation the member currently has is **cancelled** as part of the delete, freeing their place in the queue. A currently open loan is left alone, since deleting the record doesn't bring the tool back.
+
+This is **permanent and cannot be undone.**
+
+**Members can always do this themselves, without staff involvement.** Signed in on the public site, a member goes to their **Account** page and, under **Danger Zone**, clicks **Delete Account and Remove Personal Data**. That walks them through the same two-step confirmation and produces exactly the same outcome described above. It is always available to them no matter which staff roles exist, so a member never has to wait on an administrator to have their personal data removed.
 
 ### Retiring or deleting a tool
 

@@ -562,35 +562,44 @@ function mtl_sync_member_email_from_wp_user( $user_id, $old_user_data ) {
 
 /**
  * Honors a member delete request -- self-service (Account page) or
- * admin-initiated (Membership page). A member with no loans/tool_reservations
- * history is removed outright. One with history can't be (those tables
- * reference member_id with no ON DELETE CASCADE, by design), so their
- * personal fields are overwritten with placeholders instead, leaving their
- * loan/reservation rows untouched so historical counts stay accurate.
- * Either way, their member_verifications row is deleted and any still-active
- * reservations are cancelled first -- otherwise a deleted/anonymized member
- * would keep occupying a spot in a tool's queue indefinitely. This mirrors
- * how retiring a tool auto-cancels its own active reservations (see the
+ * admin-initiated (Membership page).
+ *
+ * The member's row is always ANONYMIZED, never dropped: their identifying
+ * fields are overwritten with placeholders, anonymized_at is stamped, and
+ * they read as "Former Member" everywhere afterwards. Everything that records
+ * what they did with the library is deliberately kept -- loans, reservations,
+ * and the trainings they completed -- so tool-level statistics, borrowing
+ * counts and training records all stay accurate. Keeping the row is what
+ * makes that possible: loans and tool_reservations reference member_id, and
+ * member_training_mappings would be swept away by ON DELETE CASCADE if the
+ * row were dropped (see schema.sql).
+ *
+ * What IS destroyed is the personal, identifying material: the row's own
+ * name/address/contact fields, the member_verifications row holding their ID
+ * and proof-of-address scans, and -- fully, not anonymized -- their WordPress
+ * account, which wp_delete_user() removes from both wp_users and wp_usermeta.
+ *
+ * Any still-active reservation is cancelled first, otherwise a departed
+ * member would keep occupying a spot in a tool's queue indefinitely; this
+ * mirrors how retiring a tool auto-cancels its own reservations (see the
  * Retire handler in admin/inventory-page.php). A currently open loan is
  * deliberately left alone, same as a retired tool's loan -- the member still
  * physically has the item, so it can still be ended normally when returned.
  *
- * Their linked WordPress account is deleted too, but only when it still
- * proves the link (see mtl_find_wp_user_id_by_member_id()). An account whose
- * mtl_member_id is stale is left in place and reported via wp_user_orphaned,
- * since deleting a sign-in cannot be undone and the id alone no longer shows
- * whose it is.
+ * The WordPress account is only deleted when it still proves the link (see
+ * mtl_find_wp_user_id_by_member_id()). An account whose mtl_member_id is
+ * stale is left in place and reported via wp_user_orphaned: deleting a
+ * sign-in cannot be undone, and a stale id is not evidence of whose it is.
  *
  * @param int $member_id Member row ID.
- * @return array{outcome:string,name:string,cancelled_reservations:int,wp_user_orphaned:bool} outcome is 'deleted', 'anonymized', or 'not_found'; name is the display name captured before any changes; wp_user_orphaned is true when an account still claims this member id but could not be verified, so it was left alone.
+ * @return array{outcome:string,name:string,cancelled_reservations:int,wp_user_orphaned:bool} outcome is 'anonymized' or 'not_found'; name is the display name captured before any changes; wp_user_orphaned is true when an account still claims this member id but could not be verified, so it was left alone.
  */
 function mtl_delete_or_anonymize_member( $member_id ) {
 	global $wpdb;
-	$member_id        = (int) $member_id;
-	$tbl_members      = $wpdb->prefix . 'members';
-	$tbl_verif        = $wpdb->prefix . 'member_verifications';
-	$tbl_res          = $wpdb->prefix . 'tool_reservations';
-	$tbl_training_map = $wpdb->prefix . 'member_training_mappings';
+	$member_id   = (int) $member_id;
+	$tbl_members = $wpdb->prefix . 'members';
+	$tbl_verif   = $wpdb->prefix . 'member_verifications';
+	$tbl_res     = $wpdb->prefix . 'tool_reservations';
 
 	$row = $wpdb->get_row(
 		$wpdb->prepare(
@@ -610,9 +619,10 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 	}
 	$name = trim( $row->first_name . ' ' . $row->last_name );
 
-	// Only an account that still proves the link is deleted. If the link is
-	// stale -- e.g. a database reset renumbered member ids out from under the
-	// surviving sign-ins -- the account is left alone rather than risk
+	// Resolved BEFORE the row is anonymized, while its email still identifies
+	// the person. Only an account that proves the link is deleted: if the link
+	// is stale -- e.g. a database reset renumbered member ids out from under
+	// the surviving sign-ins -- the account is left alone rather than risk
 	// deleting an unrelated person's WordPress login, which is irreversible.
 	$wp_user_id       = mtl_find_wp_user_id_by_member_id( $member_id, (string) $row->email );
 	$wp_user_orphaned = ( 0 === $wp_user_id && ! empty( mtl_find_wp_user_ids_claiming_member_id( $member_id ) ) );
@@ -626,49 +636,47 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 		)
 	);
 
-	$deleted = $wpdb->delete( $tbl_members, array( 'member_id' => $member_id ), array( '%d' ) );
-	$outcome = 'deleted';
+	$wpdb->update(
+		$tbl_members,
+		array(
+			'first_name'    => 'Former',
+			'last_name'     => 'Member',
+			'address_line1' => '(removed)',
+			'address_line2' => null,
+			'city'          => '(removed)',
+			'state'         => 'N/A',
+			'zip_code'      => '00000',
+			'country'       => 'United States',
+			'phone_number'  => '(removed)',
+			// .invalid is the IANA-reserved, never-resolving TLD (RFC 2606) --
+			// guaranteed unique against the UNIQUE constraint without risking a
+			// real mailbox, and it frees their real address for a future signup.
+			'email'         => 'deleted-member-' . $member_id . '@example.invalid',
+			// Staff-only notes are about the person, so they go with the rest
+			// of their identifying details.
+			'private_notes' => null,
+			'anonymized_at' => current_time( 'mysql' ),
+		),
+		array( 'member_id' => $member_id ),
+		array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ),
+		array( '%d' )
+	);
 
-	if ( ! $deleted ) {
-		$wpdb->update(
-			$tbl_members,
-			array(
-				'first_name'    => 'Former',
-				'last_name'     => 'Member',
-				'address_line1' => '(removed)',
-				'address_line2' => null,
-				'city'          => '(removed)',
-				'state'         => 'N/A',
-				'zip_code'      => '00000',
-				'country'       => 'United States',
-				'phone_number'  => '(removed)',
-				// .invalid is the IANA-reserved, never-resolving TLD (RFC
-				// 2606) -- guaranteed unique against the UNIQUE constraint
-				// without risking a real mailbox.
-				'email'         => 'deleted-member-' . $member_id . '@example.invalid',
-				'anonymized_at' => current_time( 'mysql' ),
-			),
-			array( 'member_id' => $member_id ),
-			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ),
-			array( '%d' )
-		);
-		$wpdb->delete( $tbl_verif, array( 'member_id' => $member_id ), array( '%d' ) );
-		// A completed training is personal data about a specific individual,
-		// not library statistics worth preserving -- so it goes with the rest
-		// of their details rather than being kept like loan history. A true
-		// delete above needs no equivalent, since member_training_mappings has
-		// ON DELETE CASCADE on member_id; see schema.sql.
-		$wpdb->delete( $tbl_training_map, array( 'member_id' => $member_id ), array( '%d' ) );
-		$outcome = 'anonymized';
-	}
+	// Their ID and proof-of-address scans: identifying material, so removed
+	// outright. Their training records are NOT touched -- those are library
+	// history, and the anonymized row keeps them attached to a "Former Member"
+	// rather than to a name.
+	$wpdb->delete( $tbl_verif, array( 'member_id' => $member_id ), array( '%d' ) );
 
 	if ( $wp_user_id ) {
+		// Deletes the wp_users row and every wp_usermeta row belonging to it,
+		// including the mtl_member_id link. Nothing about the sign-in is kept.
 		require_once ABSPATH . 'wp-admin/includes/user.php';
 		wp_delete_user( $wp_user_id );
 	}
 
 	return array(
-		'outcome'                => $outcome,
+		'outcome'                => 'anonymized',
 		'name'                   => $name,
 		'cancelled_reservations' => $cancelled_reservations,
 		'wp_user_orphaned'       => $wp_user_orphaned,
