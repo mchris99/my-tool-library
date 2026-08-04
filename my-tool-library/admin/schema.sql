@@ -67,7 +67,16 @@ CREATE TABLE {{prefix}}members (
     state VARCHAR(10) NOT NULL,
     zip_code VARCHAR(20) NOT NULL,
     country VARCHAR(100) NOT NULL DEFAULT 'United States',
-    phone_number VARCHAR(20) NOT NULL,
+    -- Always stored pre-formatted as "+<calling code> <national number>"
+    -- (e.g. "+1 (414) 555-0123"), the canonical form every write path
+    -- produces via mtl_format_phone_number() in my-tool-library.php --
+    -- Signup, Account edit, Add/Edit Member, and CSV import all funnel
+    -- through it, so every phone number in this column is guaranteed to be
+    -- in the same format. 32 chars comfortably covers the longest realistic
+    -- value (a 3-digit calling code plus a 14-digit national number grouped
+    -- with spaces). See the "PHONE NUMBERS" block comment in
+    -- my-tool-library.php for the full design.
+    phone_number VARCHAR(32) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     signup_date DATE NOT NULL,
     recurring_donation_amount DECIMAL(10, 2) DEFAULT 0.00,

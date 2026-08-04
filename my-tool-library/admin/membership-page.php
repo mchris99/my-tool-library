@@ -130,10 +130,10 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '' ) {
 		</td>
 	</tr>
 	<tr>
-		<th scope="row"><label for="<?php echo $field_id( 'phone_number' ); ?>">Phone Number *</label></th>
+		<th scope="row"><label for="<?php echo $field_id( 'phone_national' ); ?>">Phone Number *</label></th>
 		<td>
-			<input type="tel" name="phone_number" id="<?php echo $field_id( 'phone_number' ); ?>" class="regular-text" maxlength="20" value="<?php echo esc_attr( $values['phone_number'] ); ?>" required>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Digits, spaces, dashes and parentheses are all fine (e.g. &ldquo;(414) 555-0123&rdquo;).</p>
+			<?php mtl_render_phone_input( $values['phone_country'], $values['phone_national'], $id_prefix ); ?>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Pick the country, then type the number &mdash; it&rsquo;s formatted automatically.</p>
 		</td>
 	</tr>
 	<tr>
@@ -299,7 +299,8 @@ function mtl_render_membership_page() {
 		'first_name'                => '',
 		'last_name'                 => '',
 		'email'                     => '',
-		'phone_number'              => '',
+		'phone_country'             => 'US',
+		'phone_national'            => '',
 		'address_line1'             => '',
 		'address_line2'             => '',
 		'city'                      => '',
@@ -330,13 +331,15 @@ function mtl_render_membership_page() {
 
 			// --- Gather + sanitize incoming data ---
 			// wp_unslash() removes WordPress magic quotes before sanitizing.
-			$first_name    = sanitize_text_field( wp_unslash( $_POST['first_name'] ?? '' ) );
-			$last_name     = sanitize_text_field( wp_unslash( $_POST['last_name'] ?? '' ) );
-			$email         = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
-			$phone_number  = sanitize_text_field( wp_unslash( $_POST['phone_number'] ?? '' ) );
-			$address_line1 = sanitize_text_field( wp_unslash( $_POST['address_line1'] ?? '' ) );
-			$address_line2 = sanitize_text_field( wp_unslash( $_POST['address_line2'] ?? '' ) );
-			$city          = sanitize_text_field( wp_unslash( $_POST['city'] ?? '' ) );
+			$first_name     = sanitize_text_field( wp_unslash( $_POST['first_name'] ?? '' ) );
+			$last_name      = sanitize_text_field( wp_unslash( $_POST['last_name'] ?? '' ) );
+			$email          = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
+			$phone_country  = mtl_valid_phone_country( sanitize_text_field( wp_unslash( $_POST['phone_country'] ?? '' ) ) );
+			$phone_national = sanitize_text_field( wp_unslash( $_POST['phone_national'] ?? '' ) );
+			$phone_result   = mtl_format_phone_number( $phone_country, $phone_national );
+			$address_line1  = sanitize_text_field( wp_unslash( $_POST['address_line1'] ?? '' ) );
+			$address_line2  = sanitize_text_field( wp_unslash( $_POST['address_line2'] ?? '' ) );
+			$city           = sanitize_text_field( wp_unslash( $_POST['city'] ?? '' ) );
 			// Both are <select> dropdowns; mtl_valid_*() coerces anything
 			// outside their whitelist (a tampered request) to '' so the
 			// existing required-field / blank-defaults-to-US logic below
@@ -376,12 +379,15 @@ function mtl_render_membership_page() {
 			$error_message        = '';
 			$clear_email_on_error = false;
 
-			if ( '' === $first_name || '' === $last_name || '' === $phone_number || '' === $address_line1 || '' === $city || '' === $state || '' === $zip_code ) {
+			if ( '' === $first_name || '' === $last_name || '' === $address_line1 || '' === $city || '' === $state || '' === $zip_code ) {
 				// These columns are all NOT NULL in the schema. The HTML
 				// "required" attributes normally stop this client-side; this is
 				// a re-check in case they are bypassed.
 				$error         = true;
 				$error_message = 'First name, last name, phone number, and a complete address (street, city, state, ZIP) are all required. The member was not added.';
+			} elseif ( '' !== $phone_result['error'] ) {
+				$error         = true;
+				$error_message = $phone_result['error'] . ' The member was not added.';
 			} elseif ( '' === $email || ! is_email( $email ) ) {
 				$error         = true;
 				$error_message = 'A valid email address is required. The member was not added.';
@@ -416,7 +422,7 @@ function mtl_render_membership_page() {
 						'state'                     => $state,
 						'zip_code'                  => $zip_code,
 						'country'                   => $country,
-						'phone_number'              => $phone_number,
+						'phone_number'              => $phone_result['value'],
 						'email'                     => $email,
 						'signup_date'               => $signup_date,
 						'recurring_donation_amount' => $donation,
@@ -483,7 +489,8 @@ function mtl_render_membership_page() {
 				$form_values['first_name']                = $first_name;
 				$form_values['last_name']                 = $last_name;
 				$form_values['email']                     = $clear_email_on_error ? '' : $email;
-				$form_values['phone_number']              = $phone_number;
+				$form_values['phone_country']             = $phone_country;
+				$form_values['phone_national']            = $phone_national;
 				$form_values['address_line1']             = $address_line1;
 				$form_values['address_line2']             = $address_line2;
 				$form_values['city']                      = $city;
@@ -630,16 +637,24 @@ function mtl_render_membership_page() {
 								}
 
 								// --- Sanitize every field (security cleaning) ---
-								$row_first    = sanitize_text_field( $get_col( $row, 'first_name' ) );
-								$row_last     = sanitize_text_field( $get_col( $row, 'last_name' ) );
-								$row_email    = sanitize_email( $get_col( $row, 'email' ) );
-								$row_phone    = sanitize_text_field( $get_col( $row, 'phone_number' ) );
-								$row_address1 = sanitize_text_field( $get_col( $row, 'address_line1' ) );
-								$row_address2 = sanitize_text_field( $get_col( $row, 'address_line2' ) );
-								$row_city     = sanitize_text_field( $get_col( $row, 'city' ) );
-								$row_state    = sanitize_text_field( $get_col( $row, 'state' ) );
-								$row_zip      = sanitize_text_field( $get_col( $row, 'zip_code' ) );
-								$row_country  = sanitize_text_field( $get_col( $row, 'country' ) );
+								$row_first = sanitize_text_field( $get_col( $row, 'first_name' ) );
+								$row_last  = sanitize_text_field( $get_col( $row, 'last_name' ) );
+								$row_email = sanitize_email( $get_col( $row, 'email' ) );
+								$row_phone = sanitize_text_field( $get_col( $row, 'phone_number' ) );
+								// mtl_parse_stored_phone_number() reads a bare 10-digit
+								// number as U.S./+1 (no leading "+" required), and a
+								// "+<code> ..." value as whichever country that code
+								// belongs to -- the same handling as re-editing an
+								// already-stored value, since a CSV cell is just another
+								// external representation of the same kind of text.
+								$row_phone_parsed = mtl_parse_stored_phone_number( $row_phone );
+								$row_phone_result = mtl_format_phone_number( $row_phone_parsed['iso'], $row_phone_parsed['national'] );
+								$row_address1     = sanitize_text_field( $get_col( $row, 'address_line1' ) );
+								$row_address2     = sanitize_text_field( $get_col( $row, 'address_line2' ) );
+								$row_city         = sanitize_text_field( $get_col( $row, 'city' ) );
+								$row_state        = sanitize_text_field( $get_col( $row, 'state' ) );
+								$row_zip          = sanitize_text_field( $get_col( $row, 'zip_code' ) );
+								$row_country      = sanitize_text_field( $get_col( $row, 'country' ) );
 								if ( '' === $row_country ) {
 									$row_country = 'United States';
 								}
@@ -668,6 +683,13 @@ function mtl_render_membership_page() {
 									$bulk_failed_rows[] = array(
 										'row'    => $row_number,
 										'reason' => 'Missing a required field (first_name, last_name, phone_number, address_line1, city, state and zip_code are all required).',
+									);
+									continue;
+								}
+								if ( '' !== $row_phone_result['error'] ) {
+									$bulk_failed_rows[] = array(
+										'row'    => $row_number,
+										'reason' => 'Invalid phone_number "' . $row_phone . '": ' . $row_phone_result['error'],
 									);
 									continue;
 								}
@@ -750,7 +772,7 @@ function mtl_render_membership_page() {
 										'state'         => $row_state,
 										'zip_code'      => $row_zip,
 										'country'       => $row_country,
-										'phone_number'  => $row_phone,
+										'phone_number'  => $row_phone_result['value'],
 										'email'         => $row_email,
 										'signup_date'   => $row_signup,
 										'recurring_donation_amount' => $row_donation,
@@ -856,13 +878,15 @@ function mtl_render_membership_page() {
 
 			$edit_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
 
-			$first_name    = sanitize_text_field( wp_unslash( $_POST['first_name'] ?? '' ) );
-			$last_name     = sanitize_text_field( wp_unslash( $_POST['last_name'] ?? '' ) );
-			$email         = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
-			$phone_number  = sanitize_text_field( wp_unslash( $_POST['phone_number'] ?? '' ) );
-			$address_line1 = sanitize_text_field( wp_unslash( $_POST['address_line1'] ?? '' ) );
-			$address_line2 = sanitize_text_field( wp_unslash( $_POST['address_line2'] ?? '' ) );
-			$city          = sanitize_text_field( wp_unslash( $_POST['city'] ?? '' ) );
+			$first_name     = sanitize_text_field( wp_unslash( $_POST['first_name'] ?? '' ) );
+			$last_name      = sanitize_text_field( wp_unslash( $_POST['last_name'] ?? '' ) );
+			$email          = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
+			$phone_country  = mtl_valid_phone_country( sanitize_text_field( wp_unslash( $_POST['phone_country'] ?? '' ) ) );
+			$phone_national = sanitize_text_field( wp_unslash( $_POST['phone_national'] ?? '' ) );
+			$phone_result   = mtl_format_phone_number( $phone_country, $phone_national );
+			$address_line1  = sanitize_text_field( wp_unslash( $_POST['address_line1'] ?? '' ) );
+			$address_line2  = sanitize_text_field( wp_unslash( $_POST['address_line2'] ?? '' ) );
+			$city           = sanitize_text_field( wp_unslash( $_POST['city'] ?? '' ) );
 			// Both are <select> dropdowns; mtl_valid_*() coerces anything
 			// outside their whitelist (a tampered request) to '' so the
 			// existing required-field / blank-defaults-to-US logic below
@@ -900,9 +924,12 @@ function mtl_render_membership_page() {
 			if ( $edit_member_id <= 0 ) {
 				$error         = true;
 				$error_message = 'Could not determine which member to update. Please try again.';
-			} elseif ( '' === $first_name || '' === $last_name || '' === $phone_number || '' === $address_line1 || '' === $city || '' === $state || '' === $zip_code ) {
+			} elseif ( '' === $first_name || '' === $last_name || '' === $address_line1 || '' === $city || '' === $state || '' === $zip_code ) {
 				$error         = true;
 				$error_message = 'First name, last name, phone number, and a complete address (street, city, state, ZIP) are all required. The member was not updated.';
+			} elseif ( '' !== $phone_result['error'] ) {
+				$error         = true;
+				$error_message = $phone_result['error'] . ' The member was not updated.';
 			} elseif ( '' === $email || ! is_email( $email ) ) {
 				$error         = true;
 				$error_message = 'A valid email address is required. The member was not updated.';
@@ -959,7 +986,7 @@ function mtl_render_membership_page() {
 						'state'                     => $state,
 						'zip_code'                  => $zip_code,
 						'country'                   => $country,
-						'phone_number'              => $phone_number,
+						'phone_number'              => $phone_result['value'],
 						'email'                     => $email,
 						'signup_date'               => $signup_date,
 						'recurring_donation_amount' => $donation,
@@ -1102,7 +1129,8 @@ function mtl_render_membership_page() {
 					'first_name'                => $first_name,
 					'last_name'                 => $last_name,
 					'email'                     => $email,
-					'phone_number'              => $phone_number,
+					'phone_country'             => $phone_country,
+					'phone_national'            => $phone_national,
 					'address_line1'             => $address_line1,
 					'address_line2'             => $address_line2,
 					'city'                      => $city,
@@ -1384,13 +1412,17 @@ function mtl_render_membership_page() {
 			if ( $member_row ) {
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				$existing_training_ids = $wpdb->get_col( $wpdb->prepare( "SELECT training_id FROM {$tbl_training_map} WHERE member_id = %d", $edit_member_id ) );
+				// Splits the stored "+<code> <national number>" value back
+				// into the two pieces the phone widget needs to prefill.
+				$edit_phone_parsed = mtl_parse_stored_phone_number( $member_row->phone_number );
 
 				$editing     = true;
 				$edit_values = array(
 					'first_name'                => stripslashes( $member_row->first_name ),
 					'last_name'                 => stripslashes( $member_row->last_name ),
 					'email'                     => $member_row->email,
-					'phone_number'              => stripslashes( $member_row->phone_number ),
+					'phone_country'             => $edit_phone_parsed['iso'],
+					'phone_national'            => $edit_phone_parsed['national'],
 					'address_line1'             => stripslashes( $member_row->address_line1 ),
 					'address_line2'             => stripslashes( (string) $member_row->address_line2 ),
 					'city'                      => stripslashes( $member_row->city ),
@@ -1862,6 +1894,7 @@ function mtl_render_membership_page() {
 			</p>
 			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
 				<li><strong>Required for every row:</strong> <code>first_name</code>, <code>last_name</code>, <code>email</code>, <code>phone_number</code>, <code>address_line1</code>, <code>city</code>, <code>state</code>, <code>zip_code</code>. Each email must be unique.</li>
+				<li><code>phone_number</code> with no <code>+</code> is read as a 10-digit U.S./Canada number (e.g. <code>(414) 555-0123</code> or just <code>4145550123</code>). For any other country, lead with <code>+</code> and the calling code (e.g. <code>+44 20 7946 0958</code>). Every number is reformatted automatically on import to match what Add/Edit Member produces &mdash; a row with a phone number that can&rsquo;t be read as a real number fails with a specific reason.</li>
 				<li><code>state</code> must be a valid 2-letter U.S. state/territory or Canadian province code (e.g. <code>WI</code>, <code>ON</code>), or <code>N/A</code> for anywhere else.</li>
 				<li><code>country</code> is optional (defaults to <code>United States</code> if blank), but if provided must exactly match a supported country name (the same list the Add/Edit form's Country dropdown uses).</li>
 				<li><strong>Optional:</strong> <code>address_line2</code> (apartment/suite/unit), <code>signup_date</code> (defaults to today if blank; use <code>MM/DD/YYYY</code>), <code>recurring_donation_amount</code> (defaults to 0.00).</li>
@@ -3017,5 +3050,8 @@ function mtl_render_membership_page() {
 		});
 	</script>
 	<?php
+	// Covers both the Add and Edit forms' phone widgets in one call --
+	// mtl_phone_formatter_script() queries every .mtl-phone-widget on the page.
+	mtl_phone_formatter_script();
 	echo '</div>';
 }

@@ -401,6 +401,1112 @@ function mtl_valid_country( $value ) {
 	return in_array( $value, mtl_get_country_options(), true ) ? $value : '';
 }
 
+// ==========================================================================
+// PHONE NUMBERS
+//
+// Every phone number in this plugin is collected as two pieces -- a country
+// (an ISO 3166-1 alpha-2 code, picked from a <select>) and a national number
+// (free-typed digits) -- and stored as ONE canonical string:
+// "+<calling code> <national number, grouped for readability>", e.g.
+// "+1 (414) 555-0123" or "+44 20 7946 0958". There is no separate "country"
+// column; the stored string is self-describing, and every existing display
+// site in the plugin already just echoes phone_number as-is, so storing it
+// pre-formatted means no display code anywhere needs to change.
+//
+// This is deliberately NOT a full international validator (that is what
+// libphonenumber exists for, and this plugin takes no third-party
+// dependencies -- see readme.txt's FAQ). NANP numbers (country code 1: the
+// US, Canada, and the Caribbean nations that share the same numbering plan)
+// get real formatting, because that is this library's primary audience and
+// the format is simple and fixed (10 digits, NXX-NXX-XXXX). Every other
+// country gets a generic "group digits in 3s" treatment and a loose length
+// sanity check (4-14 digits) rather than that country's true national
+// format, which would require per-country metadata this plugin doesn't
+// carry. See mtl_format_phone_number().
+// ==========================================================================
+
+/**
+ * Country, ISO code, and calling code for every phone-number country
+ * selector in the plugin (Signup, My Account, Add/Edit Member). Same country
+ * set and order as mtl_get_country_options() -- United States pinned first,
+ * everything else alphabetical -- so the two dropdowns read consistently,
+ * keyed by ISO 3166-1 alpha-2 for O(1) lookup by mtl_format_phone_number()
+ * and mtl_parse_stored_phone_number().
+ *
+ * Several entries share a calling code on purpose: the US, Canada, and every
+ * NANP Caribbean nation all dial as country code 1 and format identically
+ * (10-digit NXX-NXX-XXXX), so mtl_format_phone_number() only ever branches
+ * on the code, never on which specific country was picked.
+ *
+ * @return array<string,array{country:string,code:string}>
+ */
+function mtl_get_phone_country_options() {
+	return array(
+		'US' => array(
+			'country' => 'United States',
+			'code'    => '1',
+		),
+		'AF' => array(
+			'country' => 'Afghanistan',
+			'code'    => '93',
+		),
+		'AL' => array(
+			'country' => 'Albania',
+			'code'    => '355',
+		),
+		'DZ' => array(
+			'country' => 'Algeria',
+			'code'    => '213',
+		),
+		'AD' => array(
+			'country' => 'Andorra',
+			'code'    => '376',
+		),
+		'AO' => array(
+			'country' => 'Angola',
+			'code'    => '244',
+		),
+		'AG' => array(
+			'country' => 'Antigua and Barbuda',
+			'code'    => '1',
+		),
+		'AR' => array(
+			'country' => 'Argentina',
+			'code'    => '54',
+		),
+		'AM' => array(
+			'country' => 'Armenia',
+			'code'    => '374',
+		),
+		'AU' => array(
+			'country' => 'Australia',
+			'code'    => '61',
+		),
+		'AT' => array(
+			'country' => 'Austria',
+			'code'    => '43',
+		),
+		'AZ' => array(
+			'country' => 'Azerbaijan',
+			'code'    => '994',
+		),
+		'BS' => array(
+			'country' => 'Bahamas',
+			'code'    => '1',
+		),
+		'BH' => array(
+			'country' => 'Bahrain',
+			'code'    => '973',
+		),
+		'BD' => array(
+			'country' => 'Bangladesh',
+			'code'    => '880',
+		),
+		'BB' => array(
+			'country' => 'Barbados',
+			'code'    => '1',
+		),
+		'BY' => array(
+			'country' => 'Belarus',
+			'code'    => '375',
+		),
+		'BE' => array(
+			'country' => 'Belgium',
+			'code'    => '32',
+		),
+		'BZ' => array(
+			'country' => 'Belize',
+			'code'    => '501',
+		),
+		'BJ' => array(
+			'country' => 'Benin',
+			'code'    => '229',
+		),
+		'BT' => array(
+			'country' => 'Bhutan',
+			'code'    => '975',
+		),
+		'BO' => array(
+			'country' => 'Bolivia',
+			'code'    => '591',
+		),
+		'BA' => array(
+			'country' => 'Bosnia and Herzegovina',
+			'code'    => '387',
+		),
+		'BW' => array(
+			'country' => 'Botswana',
+			'code'    => '267',
+		),
+		'BR' => array(
+			'country' => 'Brazil',
+			'code'    => '55',
+		),
+		'BN' => array(
+			'country' => 'Brunei',
+			'code'    => '673',
+		),
+		'BG' => array(
+			'country' => 'Bulgaria',
+			'code'    => '359',
+		),
+		'BF' => array(
+			'country' => 'Burkina Faso',
+			'code'    => '226',
+		),
+		'BI' => array(
+			'country' => 'Burundi',
+			'code'    => '257',
+		),
+		'CV' => array(
+			'country' => 'Cabo Verde',
+			'code'    => '238',
+		),
+		'KH' => array(
+			'country' => 'Cambodia',
+			'code'    => '855',
+		),
+		'CM' => array(
+			'country' => 'Cameroon',
+			'code'    => '237',
+		),
+		'CA' => array(
+			'country' => 'Canada',
+			'code'    => '1',
+		),
+		'CF' => array(
+			'country' => 'Central African Republic',
+			'code'    => '236',
+		),
+		'TD' => array(
+			'country' => 'Chad',
+			'code'    => '235',
+		),
+		'CL' => array(
+			'country' => 'Chile',
+			'code'    => '56',
+		),
+		'CN' => array(
+			'country' => 'China',
+			'code'    => '86',
+		),
+		'CO' => array(
+			'country' => 'Colombia',
+			'code'    => '57',
+		),
+		'KM' => array(
+			'country' => 'Comoros',
+			'code'    => '269',
+		),
+		'CG' => array(
+			'country' => 'Congo (Congo-Brazzaville)',
+			'code'    => '242',
+		),
+		'CR' => array(
+			'country' => 'Costa Rica',
+			'code'    => '506',
+		),
+		'HR' => array(
+			'country' => 'Croatia',
+			'code'    => '385',
+		),
+		'CU' => array(
+			'country' => 'Cuba',
+			'code'    => '53',
+		),
+		'CY' => array(
+			'country' => 'Cyprus',
+			'code'    => '357',
+		),
+		'CZ' => array(
+			'country' => 'Czechia',
+			'code'    => '420',
+		),
+		'CD' => array(
+			'country' => 'Democratic Republic of the Congo',
+			'code'    => '243',
+		),
+		'DK' => array(
+			'country' => 'Denmark',
+			'code'    => '45',
+		),
+		'DJ' => array(
+			'country' => 'Djibouti',
+			'code'    => '253',
+		),
+		'DM' => array(
+			'country' => 'Dominica',
+			'code'    => '1',
+		),
+		'DO' => array(
+			'country' => 'Dominican Republic',
+			'code'    => '1',
+		),
+		'EC' => array(
+			'country' => 'Ecuador',
+			'code'    => '593',
+		),
+		'EG' => array(
+			'country' => 'Egypt',
+			'code'    => '20',
+		),
+		'SV' => array(
+			'country' => 'El Salvador',
+			'code'    => '503',
+		),
+		'GQ' => array(
+			'country' => 'Equatorial Guinea',
+			'code'    => '240',
+		),
+		'ER' => array(
+			'country' => 'Eritrea',
+			'code'    => '291',
+		),
+		'EE' => array(
+			'country' => 'Estonia',
+			'code'    => '372',
+		),
+		'SZ' => array(
+			'country' => 'Eswatini',
+			'code'    => '268',
+		),
+		'ET' => array(
+			'country' => 'Ethiopia',
+			'code'    => '251',
+		),
+		'FJ' => array(
+			'country' => 'Fiji',
+			'code'    => '679',
+		),
+		'FI' => array(
+			'country' => 'Finland',
+			'code'    => '358',
+		),
+		'FR' => array(
+			'country' => 'France',
+			'code'    => '33',
+		),
+		'GA' => array(
+			'country' => 'Gabon',
+			'code'    => '241',
+		),
+		'GM' => array(
+			'country' => 'Gambia',
+			'code'    => '220',
+		),
+		'GE' => array(
+			'country' => 'Georgia',
+			'code'    => '995',
+		),
+		'DE' => array(
+			'country' => 'Germany',
+			'code'    => '49',
+		),
+		'GH' => array(
+			'country' => 'Ghana',
+			'code'    => '233',
+		),
+		'GR' => array(
+			'country' => 'Greece',
+			'code'    => '30',
+		),
+		'GD' => array(
+			'country' => 'Grenada',
+			'code'    => '1',
+		),
+		'GT' => array(
+			'country' => 'Guatemala',
+			'code'    => '502',
+		),
+		'GN' => array(
+			'country' => 'Guinea',
+			'code'    => '224',
+		),
+		'GW' => array(
+			'country' => 'Guinea-Bissau',
+			'code'    => '245',
+		),
+		'GY' => array(
+			'country' => 'Guyana',
+			'code'    => '592',
+		),
+		'HT' => array(
+			'country' => 'Haiti',
+			'code'    => '509',
+		),
+		'HN' => array(
+			'country' => 'Honduras',
+			'code'    => '504',
+		),
+		'HU' => array(
+			'country' => 'Hungary',
+			'code'    => '36',
+		),
+		'IS' => array(
+			'country' => 'Iceland',
+			'code'    => '354',
+		),
+		'IN' => array(
+			'country' => 'India',
+			'code'    => '91',
+		),
+		'ID' => array(
+			'country' => 'Indonesia',
+			'code'    => '62',
+		),
+		'IR' => array(
+			'country' => 'Iran',
+			'code'    => '98',
+		),
+		'IQ' => array(
+			'country' => 'Iraq',
+			'code'    => '964',
+		),
+		'IE' => array(
+			'country' => 'Ireland',
+			'code'    => '353',
+		),
+		'IL' => array(
+			'country' => 'Israel',
+			'code'    => '972',
+		),
+		'IT' => array(
+			'country' => 'Italy',
+			'code'    => '39',
+		),
+		'CI' => array(
+			'country' => 'Ivory Coast',
+			'code'    => '225',
+		),
+		'JM' => array(
+			'country' => 'Jamaica',
+			'code'    => '1',
+		),
+		'JP' => array(
+			'country' => 'Japan',
+			'code'    => '81',
+		),
+		'JO' => array(
+			'country' => 'Jordan',
+			'code'    => '962',
+		),
+		'KZ' => array(
+			'country' => 'Kazakhstan',
+			'code'    => '7',
+		),
+		'KE' => array(
+			'country' => 'Kenya',
+			'code'    => '254',
+		),
+		'KI' => array(
+			'country' => 'Kiribati',
+			'code'    => '686',
+		),
+		'XK' => array(
+			'country' => 'Kosovo',
+			'code'    => '383',
+		),
+		'KW' => array(
+			'country' => 'Kuwait',
+			'code'    => '965',
+		),
+		'KG' => array(
+			'country' => 'Kyrgyzstan',
+			'code'    => '996',
+		),
+		'LA' => array(
+			'country' => 'Laos',
+			'code'    => '856',
+		),
+		'LV' => array(
+			'country' => 'Latvia',
+			'code'    => '371',
+		),
+		'LB' => array(
+			'country' => 'Lebanon',
+			'code'    => '961',
+		),
+		'LS' => array(
+			'country' => 'Lesotho',
+			'code'    => '266',
+		),
+		'LR' => array(
+			'country' => 'Liberia',
+			'code'    => '231',
+		),
+		'LY' => array(
+			'country' => 'Libya',
+			'code'    => '218',
+		),
+		'LI' => array(
+			'country' => 'Liechtenstein',
+			'code'    => '423',
+		),
+		'LT' => array(
+			'country' => 'Lithuania',
+			'code'    => '370',
+		),
+		'LU' => array(
+			'country' => 'Luxembourg',
+			'code'    => '352',
+		),
+		'MG' => array(
+			'country' => 'Madagascar',
+			'code'    => '261',
+		),
+		'MW' => array(
+			'country' => 'Malawi',
+			'code'    => '265',
+		),
+		'MY' => array(
+			'country' => 'Malaysia',
+			'code'    => '60',
+		),
+		'MV' => array(
+			'country' => 'Maldives',
+			'code'    => '960',
+		),
+		'ML' => array(
+			'country' => 'Mali',
+			'code'    => '223',
+		),
+		'MT' => array(
+			'country' => 'Malta',
+			'code'    => '356',
+		),
+		'MH' => array(
+			'country' => 'Marshall Islands',
+			'code'    => '692',
+		),
+		'MR' => array(
+			'country' => 'Mauritania',
+			'code'    => '222',
+		),
+		'MU' => array(
+			'country' => 'Mauritius',
+			'code'    => '230',
+		),
+		'MX' => array(
+			'country' => 'Mexico',
+			'code'    => '52',
+		),
+		'FM' => array(
+			'country' => 'Micronesia',
+			'code'    => '691',
+		),
+		'MD' => array(
+			'country' => 'Moldova',
+			'code'    => '373',
+		),
+		'MC' => array(
+			'country' => 'Monaco',
+			'code'    => '377',
+		),
+		'MN' => array(
+			'country' => 'Mongolia',
+			'code'    => '976',
+		),
+		'ME' => array(
+			'country' => 'Montenegro',
+			'code'    => '382',
+		),
+		'MA' => array(
+			'country' => 'Morocco',
+			'code'    => '212',
+		),
+		'MZ' => array(
+			'country' => 'Mozambique',
+			'code'    => '258',
+		),
+		'MM' => array(
+			'country' => 'Myanmar',
+			'code'    => '95',
+		),
+		'NA' => array(
+			'country' => 'Namibia',
+			'code'    => '264',
+		),
+		'NR' => array(
+			'country' => 'Nauru',
+			'code'    => '674',
+		),
+		'NP' => array(
+			'country' => 'Nepal',
+			'code'    => '977',
+		),
+		'NL' => array(
+			'country' => 'Netherlands',
+			'code'    => '31',
+		),
+		'NZ' => array(
+			'country' => 'New Zealand',
+			'code'    => '64',
+		),
+		'NI' => array(
+			'country' => 'Nicaragua',
+			'code'    => '505',
+		),
+		'NE' => array(
+			'country' => 'Niger',
+			'code'    => '227',
+		),
+		'NG' => array(
+			'country' => 'Nigeria',
+			'code'    => '234',
+		),
+		'KP' => array(
+			'country' => 'North Korea',
+			'code'    => '850',
+		),
+		'MK' => array(
+			'country' => 'North Macedonia',
+			'code'    => '389',
+		),
+		'NO' => array(
+			'country' => 'Norway',
+			'code'    => '47',
+		),
+		'OM' => array(
+			'country' => 'Oman',
+			'code'    => '968',
+		),
+		'PK' => array(
+			'country' => 'Pakistan',
+			'code'    => '92',
+		),
+		'PW' => array(
+			'country' => 'Palau',
+			'code'    => '680',
+		),
+		'PS' => array(
+			'country' => 'Palestine',
+			'code'    => '970',
+		),
+		'PA' => array(
+			'country' => 'Panama',
+			'code'    => '507',
+		),
+		'PG' => array(
+			'country' => 'Papua New Guinea',
+			'code'    => '675',
+		),
+		'PY' => array(
+			'country' => 'Paraguay',
+			'code'    => '595',
+		),
+		'PE' => array(
+			'country' => 'Peru',
+			'code'    => '51',
+		),
+		'PH' => array(
+			'country' => 'Philippines',
+			'code'    => '63',
+		),
+		'PL' => array(
+			'country' => 'Poland',
+			'code'    => '48',
+		),
+		'PT' => array(
+			'country' => 'Portugal',
+			'code'    => '351',
+		),
+		'QA' => array(
+			'country' => 'Qatar',
+			'code'    => '974',
+		),
+		'RO' => array(
+			'country' => 'Romania',
+			'code'    => '40',
+		),
+		'RU' => array(
+			'country' => 'Russia',
+			'code'    => '7',
+		),
+		'RW' => array(
+			'country' => 'Rwanda',
+			'code'    => '250',
+		),
+		'KN' => array(
+			'country' => 'Saint Kitts and Nevis',
+			'code'    => '1',
+		),
+		'LC' => array(
+			'country' => 'Saint Lucia',
+			'code'    => '1',
+		),
+		'VC' => array(
+			'country' => 'Saint Vincent and the Grenadines',
+			'code'    => '1',
+		),
+		'WS' => array(
+			'country' => 'Samoa',
+			'code'    => '685',
+		),
+		'SM' => array(
+			'country' => 'San Marino',
+			'code'    => '378',
+		),
+		'ST' => array(
+			'country' => 'Sao Tome and Principe',
+			'code'    => '239',
+		),
+		'SA' => array(
+			'country' => 'Saudi Arabia',
+			'code'    => '966',
+		),
+		'SN' => array(
+			'country' => 'Senegal',
+			'code'    => '221',
+		),
+		'RS' => array(
+			'country' => 'Serbia',
+			'code'    => '381',
+		),
+		'SC' => array(
+			'country' => 'Seychelles',
+			'code'    => '248',
+		),
+		'SL' => array(
+			'country' => 'Sierra Leone',
+			'code'    => '232',
+		),
+		'SG' => array(
+			'country' => 'Singapore',
+			'code'    => '65',
+		),
+		'SK' => array(
+			'country' => 'Slovakia',
+			'code'    => '421',
+		),
+		'SI' => array(
+			'country' => 'Slovenia',
+			'code'    => '386',
+		),
+		'SB' => array(
+			'country' => 'Solomon Islands',
+			'code'    => '677',
+		),
+		'SO' => array(
+			'country' => 'Somalia',
+			'code'    => '252',
+		),
+		'ZA' => array(
+			'country' => 'South Africa',
+			'code'    => '27',
+		),
+		'KR' => array(
+			'country' => 'South Korea',
+			'code'    => '82',
+		),
+		'SS' => array(
+			'country' => 'South Sudan',
+			'code'    => '211',
+		),
+		'ES' => array(
+			'country' => 'Spain',
+			'code'    => '34',
+		),
+		'LK' => array(
+			'country' => 'Sri Lanka',
+			'code'    => '94',
+		),
+		'SD' => array(
+			'country' => 'Sudan',
+			'code'    => '249',
+		),
+		'SR' => array(
+			'country' => 'Suriname',
+			'code'    => '597',
+		),
+		'SE' => array(
+			'country' => 'Sweden',
+			'code'    => '46',
+		),
+		'CH' => array(
+			'country' => 'Switzerland',
+			'code'    => '41',
+		),
+		'SY' => array(
+			'country' => 'Syria',
+			'code'    => '963',
+		),
+		'TW' => array(
+			'country' => 'Taiwan',
+			'code'    => '886',
+		),
+		'TJ' => array(
+			'country' => 'Tajikistan',
+			'code'    => '992',
+		),
+		'TZ' => array(
+			'country' => 'Tanzania',
+			'code'    => '255',
+		),
+		'TH' => array(
+			'country' => 'Thailand',
+			'code'    => '66',
+		),
+		'TL' => array(
+			'country' => 'Timor-Leste',
+			'code'    => '670',
+		),
+		'TG' => array(
+			'country' => 'Togo',
+			'code'    => '228',
+		),
+		'TO' => array(
+			'country' => 'Tonga',
+			'code'    => '676',
+		),
+		'TT' => array(
+			'country' => 'Trinidad and Tobago',
+			'code'    => '1',
+		),
+		'TN' => array(
+			'country' => 'Tunisia',
+			'code'    => '216',
+		),
+		'TR' => array(
+			'country' => 'Turkey',
+			'code'    => '90',
+		),
+		'TM' => array(
+			'country' => 'Turkmenistan',
+			'code'    => '993',
+		),
+		'TV' => array(
+			'country' => 'Tuvalu',
+			'code'    => '688',
+		),
+		'UG' => array(
+			'country' => 'Uganda',
+			'code'    => '256',
+		),
+		'UA' => array(
+			'country' => 'Ukraine',
+			'code'    => '380',
+		),
+		'AE' => array(
+			'country' => 'United Arab Emirates',
+			'code'    => '971',
+		),
+		'GB' => array(
+			'country' => 'United Kingdom',
+			'code'    => '44',
+		),
+		'UY' => array(
+			'country' => 'Uruguay',
+			'code'    => '598',
+		),
+		'UZ' => array(
+			'country' => 'Uzbekistan',
+			'code'    => '998',
+		),
+		'VU' => array(
+			'country' => 'Vanuatu',
+			'code'    => '678',
+		),
+		'VA' => array(
+			'country' => 'Vatican City',
+			'code'    => '39',
+		),
+		'VE' => array(
+			'country' => 'Venezuela',
+			'code'    => '58',
+		),
+		'VN' => array(
+			'country' => 'Vietnam',
+			'code'    => '84',
+		),
+		'YE' => array(
+			'country' => 'Yemen',
+			'code'    => '967',
+		),
+		'ZM' => array(
+			'country' => 'Zambia',
+			'code'    => '260',
+		),
+		'ZW' => array(
+			'country' => 'Zimbabwe',
+			'code'    => '263',
+		),
+	);
+}
+
+/**
+ * Whitelists a phone-country ISO code against mtl_get_phone_country_options(),
+ * same purpose as mtl_valid_state()/mtl_valid_country(). Falls back to "US"
+ * rather than '' -- there is no blank option in the phone country <select>
+ * (it always has a real selection, U.S. pinned first/default), so an invalid
+ * or tampered value should behave exactly like nothing was selected at all.
+ *
+ * @param string $value Posted ISO code.
+ * @return string A valid ISO code -- $value if it was one, else 'US'.
+ */
+function mtl_valid_phone_country( $value ) {
+	$value = strtoupper( trim( (string) $value ) );
+	return isset( mtl_get_phone_country_options()[ $value ] ) ? $value : 'US';
+}
+
+/**
+ * Groups a digit string into a generic, readable "chunks of 3" phone format
+ * for any country this plugin doesn't have real formatting rules for (see
+ * the PHONE NUMBERS block comment above). Chunks from the RIGHT so a
+ * leftover short group lands at the front (e.g. "2079460958" -> "2 079 460
+ * 958"), never as a lone trailing digit.
+ *
+ * @param string $digits Digits only, no punctuation.
+ * @return string Space-separated groups.
+ */
+function mtl_group_digits_generic( $digits ) {
+	$groups = array();
+	for ( $i = strlen( $digits ); $i > 0; $i -= 3 ) {
+		$start = max( 0, $i - 3 );
+		array_unshift( $groups, substr( $digits, $start, $i - $start ) );
+	}
+	return implode( ' ', $groups );
+}
+
+/**
+ * Validates and formats a phone number into this plugin's canonical stored
+ * form: "+<calling code> <national number>". This is the single source of
+ * truth for every phone_number write in the plugin (Signup, Account edit,
+ * Add/Edit Member, CSV import) -- the client-side live formatter
+ * (mtl_phone_formatter_script()) is cosmetic only; this is what actually
+ * gets validated and stored, regardless of what the browser sent.
+ *
+ * @param string $iso          Country ISO code from the phone <select> (see
+ *                              mtl_get_phone_country_options()); coerced to
+ *                              "US" if invalid via mtl_valid_phone_country().
+ * @param string $national_raw Raw national-number text -- any punctuation,
+ *                              spaces, or a habitually-typed leading "+code"
+ *                              / NANP "1" are stripped before formatting.
+ * @return array{value:string,error:string} value is '' on failure; error is
+ *         '' on success.
+ */
+function mtl_format_phone_number( $iso, $national_raw ) {
+	$iso       = mtl_valid_phone_country( $iso );
+	$countries = mtl_get_phone_country_options();
+	$code      = $countries[ $iso ]['code'];
+
+	$digits = preg_replace( '/\D+/', '', (string) $national_raw );
+
+	// Trim a redundant country/NANP prefix the member typed out of habit,
+	// e.g. selecting "United States" and then typing "1-414-555-0123" or
+	// "+1 414 555 0123". Conservative: only trimmed when enough digits are
+	// left afterward to plausibly still be a real number.
+	if ( '1' === $code && 11 === strlen( $digits ) && '1' === $digits[0] ) {
+		$digits = substr( $digits, 1 );
+	} elseif ( '1' !== $code && 0 === strpos( $digits, $code ) && strlen( $digits ) - strlen( $code ) >= 4 ) {
+		$digits = substr( $digits, strlen( $code ) );
+	}
+
+	if ( '' === $digits ) {
+		return array(
+			'value' => '',
+			'error' => 'Please enter a phone number.',
+		);
+	}
+
+	if ( '1' === $code ) {
+		// NANP: always exactly 10 digits (area code + exchange + line).
+		if ( 10 !== strlen( $digits ) ) {
+			return array(
+				'value' => '',
+				'error' => 'Please enter a valid 10-digit U.S./Canada phone number.',
+			);
+		}
+		$formatted = '(' . substr( $digits, 0, 3 ) . ') ' . substr( $digits, 3, 3 ) . '-' . substr( $digits, 6, 4 );
+	} else {
+		// No per-country metadata to check against (see the PHONE NUMBERS
+		// block comment) -- just a loose sanity range. 4 is short enough to
+		// cover small nations' shortest lines; 14 is the longest a national
+		// number can be and still fit an E.164 total of 15 digits alongside
+		// a 1-digit calling code.
+		if ( strlen( $digits ) < 4 || strlen( $digits ) > 14 ) {
+			return array(
+				'value' => '',
+				'error' => 'Please enter a valid phone number.',
+			);
+		}
+		$formatted = mtl_group_digits_generic( $digits );
+	}
+
+	return array(
+		'value' => '+' . $code . ' ' . $formatted,
+		'error' => '',
+	);
+}
+
+/**
+ * Splits a stored phone_number value back into (ISO country, raw national
+ * digits) for redisplaying in the two-part editor -- Edit Member's prefill,
+ * and CSV bulk import's per-row parsing (a CSV cell is just another external
+ * representation of the same "maybe has a country prefix, maybe doesn't"
+ * text this function already has to handle).
+ *
+ * A value with no leading "+" is read as a legacy NANP number -- every
+ * phone_number in this plugin was stored as plain NANP text before this
+ * feature existed, with no country code at all.
+ *
+ * Ambiguity note: several countries share calling code 1 (US, Canada, and
+ * NANP Caribbean nations). A stored "+1 ..." value can't be traced back to
+ * which of them was originally selected, so this always resolves a shared
+ * code to whichever of those countries is listed first in
+ * mtl_get_phone_country_options() (the United States). That only affects
+ * which country name is pre-selected on re-edit -- formatting and storage
+ * are identical for all of them either way.
+ *
+ * @param string $stored Raw phone_number value (from the DB or a CSV cell).
+ * @return array{iso:string,national:string}
+ */
+function mtl_parse_stored_phone_number( $stored ) {
+	$stored = trim( (string) $stored );
+	if ( '' === $stored ) {
+		return array(
+			'iso'      => 'US',
+			'national' => '',
+		);
+	}
+
+	if ( '+' !== substr( $stored, 0, 1 ) ) {
+		return array(
+			'iso'      => 'US',
+			'national' => preg_replace( '/\D+/', '', $stored ),
+		);
+	}
+
+	$digits    = preg_replace( '/\D+/', '', $stored );
+	$countries = mtl_get_phone_country_options();
+	// Calling codes are 1-3 digits; try the longest prefix first so e.g. a
+	// 2-digit code isn't mistaken for a 1-digit code plus wrong leftovers.
+	foreach ( array( 3, 2, 1 ) as $len ) {
+		$candidate = substr( $digits, 0, $len );
+		foreach ( $countries as $iso => $info ) {
+			if ( $info['code'] === $candidate ) {
+				return array(
+					'iso'      => $iso,
+					'national' => substr( $digits, $len ),
+				);
+			}
+		}
+	}
+
+	return array(
+		'iso'      => 'US',
+		'national' => $digits,
+	);
+}
+
+/**
+ * Renders the two-part phone number control (country <select> + national
+ * number text input) shared by every place a phone number is collected --
+ * Signup, My Account, and the admin Add/Edit Member form -- so the option
+ * list, markup, and JS hook (.mtl-phone-widget) can never drift between
+ * them. Echoes directly (matches mtl_render_member_form_fields()'s own
+ * style); every value is escaped inline, so no customEscapingFunctions entry
+ * is needed.
+ *
+ * Both inputs are named phone_country / phone_national in every caller.
+ * That's safe even when two instances of this widget are on the same PAGE at
+ * once (the admin Membership page's Add and Edit forms both call this) --
+ * each instance lives inside its own <form>, so only that form's own fields
+ * are ever submitted together. $id_prefix only needs to keep the *ids*
+ * unique page-wide, same purpose as everywhere else that pattern is used.
+ *
+ * @param string $iso       Selected ISO country code.
+ * @param string $national  Raw national-number text to prefill.
+ * @param string $id_prefix Prefix for element ids, e.g. "edit_".
+ */
+function mtl_render_phone_input( $iso, $national, $id_prefix = '' ) {
+	$countries  = mtl_get_phone_country_options();
+	$iso        = mtl_valid_phone_country( $iso );
+	$codes_json = wp_json_encode( wp_list_pluck( $countries, 'code' ) );
+	?>
+	<div class="mtl-phone-widget" data-codes="<?php echo esc_attr( $codes_json ); ?>">
+		<select name="phone_country" id="<?php echo esc_attr( $id_prefix . 'phone_country' ); ?>" class="mtl-phone-country" required>
+			<?php foreach ( $countries as $c_iso => $info ) : ?>
+				<option value="<?php echo esc_attr( $c_iso ); ?>" <?php selected( $iso, $c_iso ); ?>><?php echo esc_html( $info['country'] ); ?> (+<?php echo esc_html( $info['code'] ); ?>)</option>
+			<?php endforeach; ?>
+		</select>
+		<input type="tel" name="phone_national" id="<?php echo esc_attr( $id_prefix . 'phone_national' ); ?>" class="mtl-phone-national" value="<?php echo esc_attr( $national ); ?>" placeholder="(414) 555-0123" required>
+	</div>
+	<?php
+}
+
+/**
+ * Live-formatting <script> for every .mtl-phone-widget on the current page
+ * (there can be more than one -- e.g. the admin Membership page's Add and
+ * Edit forms are both in the DOM at once; one call here covers all of them).
+ * Purely cosmetic: mtl_format_phone_number() always re-derives the canonical
+ * value from scratch server-side on submit, using only the digits, so
+ * nothing typed here has to be trusted.
+ */
+function mtl_phone_formatter_script() {
+	?>
+	<script>
+	( function () {
+		document.querySelectorAll( '.mtl-phone-widget' ).forEach( function ( widget ) {
+			var countrySelect = widget.querySelector( '.mtl-phone-country' );
+			var numberInput   = widget.querySelector( '.mtl-phone-national' );
+			if ( ! countrySelect || ! numberInput ) {
+				return;
+			}
+			var codes = {};
+			try {
+				codes = JSON.parse( widget.getAttribute( 'data-codes' ) || '{}' );
+			} catch ( e ) {
+				codes = {};
+			}
+
+			function format() {
+				var code   = codes[ countrySelect.value ] || '1';
+				var digits = numberInput.value.replace( /\D+/g, '' );
+
+				if ( '1' === code ) {
+					if ( digits.length > 10 ) {
+						digits = digits.slice( -10 );
+					}
+					var area = digits.slice( 0, 3 );
+					var mid  = digits.slice( 3, 6 );
+					var last = digits.slice( 6, 10 );
+					var out  = '';
+					if ( area ) {
+						out = '(' + area;
+					}
+					if ( 3 === area.length ) {
+						out += ') ';
+					}
+					out += mid;
+					if ( 3 === mid.length && last ) {
+						out += '-';
+					}
+					out += last;
+					numberInput.value = out;
+					return;
+				}
+
+				if ( digits.length > 14 ) {
+					digits = digits.slice( 0, 14 );
+				}
+				var groups = [];
+				for ( var i = digits.length; i > 0; i -= 3 ) {
+					groups.unshift( digits.slice( Math.max( 0, i - 3 ), i ) );
+				}
+				numberInput.value = groups.join( ' ' );
+			}
+
+			numberInput.addEventListener( 'input', format );
+			countrySelect.addEventListener( 'change', format );
+			if ( numberInput.value ) {
+				format();
+			}
+		} );
+	}() );
+	</script>
+	<?php
+}
+
 /**
  * A member is verified only once BOTH scan URLs are on file. Either one alone
  * (a member with only one form of ID so far) is not enough. Used where the

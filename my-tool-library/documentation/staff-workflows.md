@@ -140,6 +140,7 @@ Go to **My Tool Library > Membership**.
 
 1. Click **Add a New Member**.
 2. Fill in their name, address (Address Line 1, optional Line 2, City, State/Province, ZIP/Postal Code, Country), phone number, and email address. Email doubles as their sign-in username if they later create an online account, so it must be unique.
+    - **Phone number** is two fields: a country dropdown (defaults to United States) and the number itself. Pick the country first, then just type the digits — it's formatted for you as you go, and staff, members signing themselves up, and CSV imports all end up with phone numbers in the exact same format on file.
 3. Leave the two verification fields (below) blank for now if you haven't yet checked their ID, or fill in just one if that's all the member has provided so far. Either way the member is added as **unverified** until both are on file, which does not block them from browsing or reserving tools online.
 4. Save.
 

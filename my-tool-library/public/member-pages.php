@@ -827,16 +827,17 @@ function mtl_render_signup_page() {
 	// Sticky values so a validation error doesn't wipe the form (password
 	// fields are intentionally never repopulated).
 	$vals = array(
-		'first_name'    => '',
-		'last_name'     => '',
-		'address_line1' => '',
-		'address_line2' => '',
-		'city'          => '',
-		'state'         => '',
-		'zip_code'      => '',
-		'country'       => 'United States',
-		'phone_number'  => '',
-		'email'         => '',
+		'first_name'     => '',
+		'last_name'      => '',
+		'address_line1'  => '',
+		'address_line2'  => '',
+		'city'           => '',
+		'state'          => '',
+		'zip_code'       => '',
+		'country'        => 'United States',
+		'phone_country'  => 'US',
+		'phone_national' => '',
+		'email'          => '',
 	);
 
 	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
@@ -858,8 +859,12 @@ function mtl_render_signup_page() {
 			if ( '' === $vals['country'] ) {
 				$vals['country'] = 'United States';
 			}
-			$vals['phone_number'] = sanitize_text_field( wp_unslash( $_POST['phone_number'] ?? '' ) );
-			$vals['email']        = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
+			// phone_country falls back to 'US' for anything outside the
+			// dropdown's own options (mtl_valid_phone_country()), same
+			// whitelist-or-default pattern as state/country above.
+			$vals['phone_country']  = mtl_valid_phone_country( sanitize_text_field( wp_unslash( $_POST['phone_country'] ?? '' ) ) );
+			$vals['phone_national'] = sanitize_text_field( wp_unslash( $_POST['phone_national'] ?? '' ) );
+			$vals['email']          = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
 			// Passwords are unslashed but NOT sanitized -- altering the
 			// characters would silently change the member's chosen password.
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -867,14 +872,20 @@ function mtl_render_signup_page() {
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$password2 = (string) wp_unslash( $_POST['password2'] ?? '' );
 
+			// The single source of truth for what gets stored -- see
+			// mtl_format_phone_number()'s docblock. Computed once here so
+			// both the validation check below and the INSERT further down
+			// use the exact same result.
+			$phone_result = mtl_format_phone_number( $vals['phone_country'], $vals['phone_national'] );
+
 			if ( '' === $vals['first_name'] || '' === $vals['last_name'] ) {
 				$errors[] = 'Please enter your first and last name.';
 			}
 			if ( '' === $vals['address_line1'] || '' === $vals['city'] || '' === $vals['state'] || '' === $vals['zip_code'] ) {
 				$errors[] = 'Please enter a complete address (street, city, state, and ZIP code).';
 			}
-			if ( '' === $vals['phone_number'] ) {
-				$errors[] = 'Please enter a phone number.';
+			if ( '' !== $phone_result['error'] ) {
+				$errors[] = $phone_result['error'];
 			}
 			if ( '' === $vals['email'] || ! is_email( $vals['email'] ) ) {
 				$errors[] = 'Please enter a valid email address.';
@@ -910,7 +921,7 @@ function mtl_render_signup_page() {
 						'state'         => $vals['state'],
 						'zip_code'      => $vals['zip_code'],
 						'country'       => $vals['country'],
-						'phone_number'  => $vals['phone_number'],
+						'phone_number'  => $phone_result['value'],
 						'email'         => $vals['email'],
 						'signup_date'   => current_time( 'Y-m-d' ),
 					),
@@ -1035,8 +1046,8 @@ function mtl_render_signup_page() {
 
 				<div class="mtl-member-row">
 					<div class="mtl-member-field">
-						<label for="mtl-su-phone">Phone number</label>
-						<input type="tel" id="mtl-su-phone" name="phone_number" value="<?php echo esc_attr( $vals['phone_number'] ); ?>" required>
+						<label for="mtl-su-phone_national">Phone number</label>
+						<?php mtl_render_phone_input( $vals['phone_country'], $vals['phone_national'], 'mtl-su-' ); ?>
 					</div>
 					<div class="mtl-member-field">
 						<label for="mtl-su-email">Email address</label>
@@ -1068,6 +1079,7 @@ function mtl_render_signup_page() {
 		</p>
 	</div>
 	<?php
+	mtl_phone_formatter_script();
 	$body = ob_get_clean();
 
 	mtl_render_front_shell( 'Create Account', $body );
@@ -1583,15 +1595,17 @@ function mtl_render_account_page() {
 		if ( ! isset( $_POST['mtl_account_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_account_nonce'] ) ), 'mtl_account_action' ) ) {
 			$errors[] = 'Your session expired. Please try again.';
 		} else {
-			$first    = sanitize_text_field( wp_unslash( $_POST['first_name'] ?? '' ) );
-			$last     = sanitize_text_field( wp_unslash( $_POST['last_name'] ?? '' ) );
-			$phone    = sanitize_text_field( wp_unslash( $_POST['phone_number'] ?? '' ) );
-			$address1 = sanitize_text_field( wp_unslash( $_POST['address_line1'] ?? '' ) );
-			$address2 = sanitize_text_field( wp_unslash( $_POST['address_line2'] ?? '' ) );
-			$city     = sanitize_text_field( wp_unslash( $_POST['city'] ?? '' ) );
-			$state    = mtl_valid_state( sanitize_text_field( wp_unslash( $_POST['state'] ?? '' ) ) );
-			$zip_code = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
-			$country  = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
+			$first          = sanitize_text_field( wp_unslash( $_POST['first_name'] ?? '' ) );
+			$last           = sanitize_text_field( wp_unslash( $_POST['last_name'] ?? '' ) );
+			$phone_country  = mtl_valid_phone_country( sanitize_text_field( wp_unslash( $_POST['phone_country'] ?? '' ) ) );
+			$phone_national = sanitize_text_field( wp_unslash( $_POST['phone_national'] ?? '' ) );
+			$phone_result   = mtl_format_phone_number( $phone_country, $phone_national );
+			$address1       = sanitize_text_field( wp_unslash( $_POST['address_line1'] ?? '' ) );
+			$address2       = sanitize_text_field( wp_unslash( $_POST['address_line2'] ?? '' ) );
+			$city           = sanitize_text_field( wp_unslash( $_POST['city'] ?? '' ) );
+			$state          = mtl_valid_state( sanitize_text_field( wp_unslash( $_POST['state'] ?? '' ) ) );
+			$zip_code       = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
+			$country        = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
 			if ( '' === $country ) {
 				$country = 'United States';
 			}
@@ -1599,8 +1613,8 @@ function mtl_render_account_page() {
 			if ( '' === $first || '' === $last ) {
 				$errors[] = 'Please keep your first and last name filled in.';
 			}
-			if ( '' === $phone ) {
-				$errors[] = 'Please keep a phone number on file.';
+			if ( '' !== $phone_result['error'] ) {
+				$errors[] = $phone_result['error'];
 			}
 			if ( '' === $address1 || '' === $city || '' === $state || '' === $zip_code ) {
 				$errors[] = 'Please keep a complete address on file (street, city, state, and ZIP code).';
@@ -1624,7 +1638,7 @@ function mtl_render_account_page() {
 					array(
 						'first_name'    => $first,
 						'last_name'     => $last,
-						'phone_number'  => $phone,
+						'phone_number'  => $phone_result['value'],
 						'address_line1' => $address1,
 						'address_line2' => '' !== $address2 ? $address2 : null,
 						'city'          => $city,
@@ -1687,6 +1701,12 @@ function mtl_render_account_page() {
 	$is_verified    = mtl_member_is_verified( $member->member_id );
 	$user           = wp_get_current_user();
 	$confirm_delete = isset( $_GET['mtl_confirm_delete'] ) && '1' === $_GET['mtl_confirm_delete'];
+	// Splits the stored "+<code> <national number>" value back into the two
+	// pieces the phone widget needs to prefill. Matches this form's existing
+	// pattern of always rendering from the DB row rather than sticky POST
+	// values (see first_name/last_name/etc. below) -- a failed save reverts
+	// the phone field too, same as every other field on this form.
+	$phone_parsed = mtl_parse_stored_phone_number( $member->phone_number );
 	// Admin-editable via the Setup page; blank hides it entirely (see the
 	// update_option() comment in setup-page.php for why blank stays blank).
 	// The fallback text here matches setup-page.php's default exactly, so a
@@ -1857,8 +1877,8 @@ function mtl_render_account_page() {
 					</div>
 
 					<div class="mtl-member-field">
-						<label for="mtl-ac-phone">Phone number</label>
-						<input type="tel" id="mtl-ac-phone" name="phone_number" value="<?php echo esc_attr( stripslashes( $member->phone_number ) ); ?>" required>
+						<label for="mtl-ac-phone_national">Phone number</label>
+						<?php mtl_render_phone_input( $phone_parsed['iso'], $phone_parsed['national'], 'mtl-ac-' ); ?>
 					</div>
 
 					<div class="mtl-member-field">
@@ -1969,6 +1989,7 @@ function mtl_render_account_page() {
 		<?php endif; ?>
 	</div>
 	<?php
+	mtl_phone_formatter_script();
 	$body = ob_get_clean();
 
 	mtl_render_front_shell( 'My Account', $body, mtl_member_page_footer() );
