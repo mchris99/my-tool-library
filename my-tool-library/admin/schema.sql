@@ -163,9 +163,15 @@ CREATE TABLE {{prefix}}tool_tag_mappings (
 -- These record which safety/skill trainings a member has completed, so staff
 -- can tell at a glance which tools that member is qualified to check out --
 -- the counterpart to the 'Requires Training' tool tag below.
+-- badge_image_url is optional and admin-set (Setup page): when present, the
+-- member's own My Account page shows this image (with the training name as
+-- alt/hover text) instead of the plain green pill. Public-facing only -- the
+-- staff-side admin pages always show trainings as plain names/pills, never
+-- as images.
 CREATE TABLE {{prefix}}member_trainings (
     training_id INT AUTO_INCREMENT PRIMARY KEY,
-    training_name VARCHAR(50) UNIQUE NOT NULL
+    training_name VARCHAR(50) UNIQUE NOT NULL,
+    badge_image_url VARCHAR(255) DEFAULT NULL
 );
 
 -- Junction table for Member <-> Trainings (Many-to-Many)

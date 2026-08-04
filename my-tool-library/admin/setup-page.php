@@ -353,6 +353,7 @@ function mtl_render_setup_page() {
 			update_option( 'mtl_contact_email', isset( $_POST['mtl_contact_email'] ) ? sanitize_email( wp_unslash( $_POST['mtl_contact_email'] ) ) : '' );
 			update_option( 'mtl_currency_symbol', isset( $_POST['mtl_currency_symbol'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_currency_symbol'] ) ) : '' );
 			update_option( 'mtl_logo_url', isset( $_POST['mtl_logo_url'] ) ? sanitize_url( wp_unslash( $_POST['mtl_logo_url'] ) ) : '' );
+			update_option( 'mtl_verified_badge_image_url', isset( $_POST['mtl_verified_badge_image_url'] ) ? sanitize_url( wp_unslash( $_POST['mtl_verified_badge_image_url'] ) ) : '' );
 
 			// Header Options.
 			update_option( 'mtl_header_color', isset( $_POST['mtl_header_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['mtl_header_color'] ) ) : '' );
@@ -675,6 +676,54 @@ function mtl_render_setup_page() {
 	}
 
 	// ==========================================
+	// 3E. HANDLE "SAVE TRAINING BADGE IMAGES" SUBMISSION
+	// One bulk save for every training at once (there is no per-row edit
+	// action anywhere else in this plugin either -- Categories/Tags are the
+	// same add-or-delete-only pattern), rather than a URL per training add
+	// form, since these are set on trainings that already exist.
+	// ==========================================
+	if ( isset( $_POST['mtl_save_training_badges'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_save_training_badges_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_save_training_badges_nonce'] ) ), 'mtl_save_training_badges_action' ) ) {
+			// training_badge_url[training_id] => url, posted as one field per
+			// row in the table below. sanitize_url() runs on every value right
+			// here, before anything else touches it -- (string) first in case a
+			// malformed request nests an array under one of the training ids:
+			// sanitize_url() calls ltrim() internally, which throws a TypeError
+			// on a non-string argument in PHP 8, so the plain
+			// array_map( 'sanitize_url', ... ) form the sniff below normally
+			// looks for is not safe to use here.
+			// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- every value is run through sanitize_url() in the closure directly below; the sniff cannot see through the closure.
+			$posted_badges = isset( $_POST['training_badge_url'] ) && is_array( $_POST['training_badge_url'] )
+				? array_map(
+					function ( $mtl_raw_url ) {
+						return sanitize_url( (string) $mtl_raw_url );
+					},
+					wp_unslash( $_POST['training_badge_url'] )
+				)
+				: array();
+			// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+			foreach ( $posted_badges as $posted_training_id => $clean_url ) {
+				$posted_training_id = (int) $posted_training_id;
+				if ( $posted_training_id <= 0 ) {
+					continue;
+				}
+				$wpdb->update(
+					$tbl_trainings,
+					array( 'badge_image_url' => ( '' !== $clean_url ? $clean_url : null ) ),
+					array( 'training_id' => $posted_training_id ),
+					array( '%s' ),
+					array( '%d' )
+				);
+			}
+
+			echo '<div class="notice notice-success is-dismissible"><p><strong>Saved.</strong> Training badge images have been updated. Any training left blank falls back to the plain green pill on a member&rsquo;s account page.</p></div>';
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ==========================================
 	// 4. HANDLE DATABASE SETUP SUBMISSION
 	// ==========================================
 	if ( isset( $_POST['mtl_run_db_setup'] ) && mtl_can_manage_settings() ) {
@@ -749,10 +798,11 @@ function mtl_render_setup_page() {
 		}
 	}
 
-	$org_name      = get_option( 'mtl_org_name', '' );
-	$contact_email = get_option( 'mtl_contact_email', get_option( 'admin_email' ) );
-	$currency      = get_option( 'mtl_currency_symbol', '$' );
-	$logo_url      = get_option( 'mtl_logo_url', '' );
+	$org_name                 = get_option( 'mtl_org_name', '' );
+	$contact_email            = get_option( 'mtl_contact_email', get_option( 'admin_email' ) );
+	$currency                 = get_option( 'mtl_currency_symbol', '$' );
+	$logo_url                 = get_option( 'mtl_logo_url', '' );
+	$verified_badge_image_url = get_option( 'mtl_verified_badge_image_url', '' );
 
 	$h_color     = get_option( 'mtl_header_color', '#ff6600' );
 	$h_font      = get_option( 'mtl_header_font', 'inherit' );
@@ -793,7 +843,7 @@ function mtl_render_setup_page() {
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$tags = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-	$trainings = $wpdb->get_results( "SELECT training_id, training_name FROM {$tbl_trainings} ORDER BY training_name ASC" );
+	$trainings = $wpdb->get_results( "SELECT training_id, training_name, badge_image_url FROM {$tbl_trainings} ORDER BY training_name ASC" );
 
 	$font_presets = mtl_font_preset_options();
 
@@ -1105,6 +1155,13 @@ function mtl_render_setup_page() {
 						</td>
 					</tr>
 					<tr>
+						<th scope="row"><label for="mtl_verified_badge_image_url">Verified Badge Image URL</label></th>
+						<td>
+							<input type="url" name="mtl_verified_badge_image_url" id="mtl_verified_badge_image_url" class="regular-text" value="<?php echo esc_url( $verified_badge_image_url ); ?>" placeholder="https://...">
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Optional. Shown on a member's My Account page in place of the plain green &ldquo;Verified&rdquo; pill once they&rsquo;re verified. Leave blank to keep using the pill.</p>
+						</td>
+					</tr>
+					<tr>
 						<th scope="row"><label for="mtl_contact_email">Public Contact Email</label></th>
 						<td><input type="email" name="mtl_contact_email" id="mtl_contact_email" class="regular-text" value="<?php echo esc_attr( $contact_email ); ?>"></td>
 					</tr>
@@ -1394,6 +1451,28 @@ function mtl_render_setup_page() {
 				<input type="text" name="new_training_name" maxlength="50" placeholder="New training name" class="regular-text" required>
 				<button type="submit" name="mtl_add_training" class="button button-primary">Add Training</button>
 			</form>
+
+			<?php if ( $trainings ) : ?>
+				<hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
+				<h4 style="margin-bottom: 4px;">Badge Images</h4>
+				<p style="font-size: 0.85em; color: #666; margin: 0 0 10px 0;">Optional. Upload each badge to the WordPress Media Library and paste its File URL below &mdash; it replaces the plain green pill on a member&rsquo;s own account page for that training. Leave any of these blank to keep using the pill.</p>
+				<form method="post" action="">
+					<?php wp_nonce_field( 'mtl_save_training_badges_action', 'mtl_save_training_badges_nonce' ); ?>
+					<table class="form-table" style="margin: 0;">
+						<?php foreach ( $trainings as $training ) : ?>
+							<tr>
+								<th scope="row" style="padding: 6px 10px 6px 0; font-weight: 600;"><?php echo esc_html( $training->training_name ); ?></th>
+								<td style="padding: 6px 0;">
+									<input type="url" name="training_badge_url[<?php echo esc_attr( $training->training_id ); ?>]" class="regular-text" value="<?php echo esc_url( (string) $training->badge_image_url ); ?>" placeholder="https://...">
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</table>
+					<p class="submit" style="margin: 8px 0 0 0;">
+						<button type="submit" name="mtl_save_training_badges" class="button button-primary">Save Badge Images</button>
+					</p>
+				</form>
+			<?php endif; ?>
 		</div>
 
 		<!-- Database Setup Tool -->

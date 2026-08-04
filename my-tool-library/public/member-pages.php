@@ -332,6 +332,52 @@ function mtl_member_page_styles() {
 			font-size: 1.05em;
 		}
 
+		/* <details>-based cards (Your details, Your loan history): collapsed by
+			default, no JavaScript required to open them. */
+		details.mtl-member-card {
+			padding: 0;
+		}
+
+		.mtl-member-summary {
+			display: block;
+			cursor: pointer;
+			padding: 22px 24px;
+			font-weight: 600;
+			font-size: 1.05em;
+			outline: none;
+		}
+
+		details.mtl-member-card[open] .mtl-member-summary {
+			padding-bottom: 10px;
+		}
+
+		.mtl-member-collapsible-body {
+			padding: 0 24px 22px 24px;
+		}
+
+		/* Admin-uploaded badge images (training/verified) -- small and inline,
+			same spot the plain green pill would otherwise occupy. The training
+			name/label lives in both alt (accessibility, and shown if the image
+			fails to load) and title (mouse hover tooltip). */
+		.mtl-badge-img {
+			display: inline-block;
+			vertical-align: middle;
+			border-radius: 4px;
+		}
+
+		.mtl-verified-badge-img {
+			height: 28px;
+			width: auto;
+		}
+
+		.mtl-training-badge-img {
+			height: 36px;
+			width: 36px;
+			object-fit: cover;
+			border: 1px solid #ccd0d4;
+			margin-left: 6px;
+		}
+
 		.mtl-member-back {
 			display: inline-block;
 			margin-bottom: 16px;
@@ -1651,6 +1697,9 @@ function mtl_render_account_page() {
 			'A government issued ID and proof of address are required to become a verified member and to check out tools. Stop by our office to verify membership.'
 		)
 	);
+	// Optional admin-uploaded image (Setup page) shown instead of the plain
+	// green "Verified" pill below, once this member is verified.
+	$verified_badge_image_url = trim( (string) get_option( 'mtl_verified_badge_image_url', '' ) );
 
 	// Past + current loans for this member.
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
@@ -1667,9 +1716,11 @@ function mtl_render_account_page() {
 	// Trainings this member has completed. Read-only here -- only staff can
 	// record a training (see the admin Membership page); this is purely so the
 	// member can see which tools they're already qualified to use.
-	$my_trainings = $wpdb->get_col(
+	// badge_image_url is admin-set on the Setup page; a training with none set
+	// falls back to the plain green pill (see the render loop below).
+	$my_trainings = $wpdb->get_results(
 		$wpdb->prepare(
-			"SELECT t.training_name
+			"SELECT t.training_name, t.badge_image_url
          FROM {$tbl_training_map} mtm
          JOIN {$tbl_trainings} t ON t.training_id = mtm.training_id
          WHERE mtm.member_id = %d
@@ -1748,7 +1799,9 @@ function mtl_render_account_page() {
 				<h2>My Account</h2>
 				<p style="margin-top:0;">
 					Membership status:
-					<?php if ( $is_verified ) : ?>
+					<?php if ( $is_verified && '' !== $verified_badge_image_url ) : ?>
+						<img class="mtl-badge-img mtl-verified-badge-img" src="<?php echo esc_url( $verified_badge_image_url ); ?>" alt="Verified" title="Verified">
+					<?php elseif ( $is_verified ) : ?>
 						<span class="mtl-pill mtl-pill-green">Verified</span>
 					<?php else : ?>
 						<span class="mtl-pill mtl-pill-grey">Not yet verified</span>
@@ -1761,16 +1814,28 @@ function mtl_render_account_page() {
 				<p style="margin-top:0;">
 					Trainings completed:
 					<?php if ( ! empty( $my_trainings ) ) : ?>
-						<?php foreach ( $my_trainings as $mtl_training_name ) : ?>
-							<span class="mtl-pill mtl-pill-green" style="margin-left:6px;"><?php echo esc_html( $mtl_training_name ); ?></span>
+						<?php foreach ( $my_trainings as $mtl_training ) : ?>
+							<?php if ( '' !== (string) $mtl_training->badge_image_url ) : ?>
+								<img class="mtl-badge-img mtl-training-badge-img" src="<?php echo esc_url( $mtl_training->badge_image_url ); ?>" alt="<?php echo esc_attr( $mtl_training->training_name ); ?>" title="<?php echo esc_attr( $mtl_training->training_name ); ?>">
+							<?php else : ?>
+								<span class="mtl-pill mtl-pill-green" style="margin-left:6px;"><?php echo esc_html( $mtl_training->training_name ); ?></span>
+							<?php endif; ?>
 						<?php endforeach; ?>
 					<?php else : ?>
 						<span class="mtl-pill mtl-pill-grey" style="margin-left:6px;">None yet</span>
 					<?php endif; ?>
 				</p>
 				<p class="mtl-member-hint" style="font-size:0.9em;">Trainings are recorded by library staff and show which tools you&rsquo;re qualified to use. Ask a staff member if you&rsquo;d like to take one.</p>
+			</div>
 
-				<h3>Your details</h3>
+			<?php
+			// Collapsed by default, but forced open when a submitted edit
+			// just failed validation -- otherwise the error banner above
+			// would point at a form the member can no longer see.
+			?>
+			<details class="mtl-member-card" <?php echo ! empty( $errors ) ? 'open' : ''; ?>>
+				<summary class="mtl-member-summary">Your details</summary>
+				<div class="mtl-member-collapsible-body">
 				<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">
 					<?php wp_nonce_field( 'mtl_account_action', 'mtl_account_nonce' ); ?>
 
@@ -1841,10 +1906,12 @@ function mtl_render_account_page() {
 						<button type="submit" name="mtl_update_account" value="1" class="mtl-member-btn">Save Changes</button>
 					</p>
 				</form>
-			</div>
+				</div>
+			</details>
 
-			<div class="mtl-member-card">
-				<h3 style="margin-top:0;">Your loan history</h3>
+			<details class="mtl-member-card">
+				<summary class="mtl-member-summary">Your loan history</summary>
+				<div class="mtl-member-collapsible-body">
 				<?php if ( empty( $loans ) ) : ?>
 					<p class="mtl-member-empty">You don&rsquo;t have any loans on record yet.</p>
 				<?php else : ?>
@@ -1890,7 +1957,8 @@ function mtl_render_account_page() {
 						</tbody>
 					</table>
 				<?php endif; ?>
-			</div>
+				</div>
+			</details>
 
 			<div class="mtl-member-card">
 				<h3 style="margin-top:0;">Danger Zone</h3>
