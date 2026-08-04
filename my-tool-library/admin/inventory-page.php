@@ -1045,6 +1045,8 @@ function mtl_render_inventory_page() {
 						array( '%d', '%d', '%s', '%s' )
 					);
 					if ( $ql_inserted ) {
+						// Tool is out, so nobody queued for it is collectable.
+						mtl_sync_reservation_readiness( $ql_tool_id );
 						echo '<div class="notice notice-success is-dismissible"><p><strong>Loan created.</strong> ' . esc_html( stripslashes( (string) $ql_tool_name ) ) . ' is now on loan, due ' . mtl_format_date( $ql_due ) . '.</p></div>';
 					} else {
 						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The loan could not be recorded. Please try again.</p></div>';
@@ -1110,6 +1112,10 @@ function mtl_render_inventory_page() {
 						array( '%d', '%d', '%s' )
 					);
 					if ( $qr_inserted ) {
+						// If the tool is on the shelf and this is the only
+						// reservation, it is collectable right away and the
+						// hold period starts now.
+						mtl_sync_reservation_readiness( $qr_tool_id );
 						echo '<div class="notice notice-success is-dismissible"><p><strong>Reservation created.</strong> ' . esc_html( stripslashes( (string) $qr_tool_name ) ) . ' has been reserved for this member.</p></div>';
 					} else {
 						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The reservation could not be recorded. Please try again.</p></div>';
@@ -1131,7 +1137,14 @@ function mtl_render_inventory_page() {
 		if ( isset( $_POST['mtl_mark_returned_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_mark_returned_nonce'] ) ), 'mtl_mark_returned_action' ) ) {
 
 			$mr_loan_id = isset( $_POST['loan_id'] ) ? intval( $_POST['loan_id'] ) : 0;
-			$mr_done    = $wpdb->query(
+			$mr_tool_id = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+					"SELECT tool_id FROM {$tbl_loans} WHERE loan_id = %d",
+					$mr_loan_id
+				)
+			);
+			$mr_done = $wpdb->query(
 				$wpdb->prepare(
 					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 					"UPDATE {$tbl_loans} SET return_date = %s WHERE loan_id = %d AND return_date IS NULL",
@@ -1141,6 +1154,9 @@ function mtl_render_inventory_page() {
 			);
 
 			if ( $mr_done ) {
+				// Back on the shelf: the front of the queue is now collectable
+				// and their hold period starts from this moment.
+				mtl_sync_reservation_readiness( $mr_tool_id );
 				echo '<div class="notice notice-success is-dismissible"><p><strong>Marked returned.</strong> The tool is back in inventory.</p></div>';
 			} else {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That loan could not be found, or was already marked returned.</p></div>';

@@ -1170,6 +1170,9 @@ function mtl_render_membership_page() {
 	if ( isset( $_POST['mtl_member_mark_returned'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_member_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_loan_nonce'] ) ), 'mtl_member_loan_action' ) ) {
 			$mr_loan_id = isset( $_POST['loan_id'] ) ? intval( $_POST['loan_id'] ) : 0;
+			$mr_tool_id = (int) $wpdb->get_var(
+				$wpdb->prepare( "SELECT tool_id FROM {$tbl_loans} WHERE loan_id = %d", $mr_loan_id )
+			);
 			$mr_done    = $wpdb->query(
 				$wpdb->prepare(
 					"UPDATE {$tbl_loans} SET return_date = %s WHERE loan_id = %d AND return_date IS NULL",
@@ -1178,6 +1181,8 @@ function mtl_render_membership_page() {
 				)
 			);
 			if ( $mr_done ) {
+				// Back on the shelf: start the front of the queue's hold period.
+				mtl_sync_reservation_readiness( $mr_tool_id );
 				$reopen_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
 				echo '<div class="notice notice-success is-dismissible"><p><strong>Marked returned.</strong> The tool is back in inventory.</p></div>';
 			} else {
@@ -1233,6 +1238,9 @@ function mtl_render_membership_page() {
 	if ( isset( $_POST['mtl_member_cancel_reservation'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_member_cancel_reservation_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_cancel_reservation_nonce'] ) ), 'mtl_member_cancel_reservation_action' ) ) {
 			$cr_reservation_id = isset( $_POST['reservation_id'] ) ? intval( $_POST['reservation_id'] ) : 0;
+			$cr_tool_id        = (int) $wpdb->get_var(
+				$wpdb->prepare( "SELECT tool_id FROM {$tbl_reservations} WHERE reservation_id = %d AND expiry_date IS NULL", $cr_reservation_id )
+			);
 			$cr_done           = $wpdb->query(
 				$wpdb->prepare(
 					"UPDATE {$tbl_reservations} SET expiry_date = %s WHERE reservation_id = %d AND expiry_date IS NULL",
@@ -1241,6 +1249,8 @@ function mtl_render_membership_page() {
 				)
 			);
 			if ( $cr_done ) {
+				// Whoever was behind them may now be at the front.
+				mtl_sync_reservation_readiness( $cr_tool_id );
 				$reopen_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
 				echo '<div class="notice notice-success is-dismissible"><p><strong>Reservation cancelled.</strong></p></div>';
 			} else {
@@ -1337,6 +1347,8 @@ function mtl_render_membership_page() {
 									$sl_reservation_id
 								)
 							);
+							// Tool is out, so nobody left in the queue is collectable.
+							mtl_sync_reservation_readiness( (int) $sl_res->tool_id );
 							$reopen_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : (int) $sl_res->member_id;
 							echo '<div class="notice notice-success is-dismissible"><p><strong>Checked out.</strong> The tool is on loan, due ' . mtl_format_date( $sl_due ) . ', and the reservation has been closed.</p></div>';
 						}

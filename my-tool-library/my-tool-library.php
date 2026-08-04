@@ -560,6 +560,227 @@ function mtl_sync_member_email_from_wp_user( $user_id, $old_user_data ) {
 	);
 }
 
+// ==========================================================================
+// RESERVATION HOLD PERIOD
+//
+// A reservation is collectable once the member reaches the front of the
+// queue AND the tool is back on the shelf. tool_reservations.ready_since
+// records the moment that became true; the hold period runs from there, NOT
+// from when the reservation was placed, so somebody queued behind a six-week
+// loan is never timed out for a tool they could not have collected.
+//
+// Two moving parts:
+// mtl_sync_reservation_readiness() keeps ready_since correct after any
+// event that changes a tool's queue.
+// mtl_expire_stale_reservations() closes out anything left uncollected
+// past the hold period.
+// ==========================================================================
+
+/**
+ * The reservation hold period, in days, from the Setup page.
+ *
+ * @return int Days a ready reservation is held, or 0 for "never expires".
+ */
+function mtl_reservation_hold_days() {
+	$days = (int) get_option( 'mtl_reservation_hold_days', 14 );
+	if ( $days <= 0 ) {
+		return 0;
+	}
+	return min( 365, $days );
+}
+
+/**
+ * The date a ready reservation must be collected by, as a Y-m-d string.
+ *
+ * @param string $ready_since The reservation's ready_since value; blank/NULL
+ *                            means the member is still queued and no deadline
+ *                            applies yet.
+ * @return string Y-m-d date, or '' when there is no deadline (still waiting,
+ *                or the library holds reservations indefinitely).
+ */
+function mtl_reservation_collect_by( $ready_since ) {
+	$days        = mtl_reservation_hold_days();
+	$ready_since = trim( (string) $ready_since );
+	if ( 0 === $days || '' === $ready_since ) {
+		return '';
+	}
+	$ts = strtotime( $ready_since );
+	if ( ! $ts ) {
+		return '';
+	}
+	return gmdate( 'Y-m-d', $ts + ( $days * DAY_IN_SECONDS ) );
+}
+
+/**
+ * Recomputes ready_since for one tool's active reservations.
+ *
+ * Only the front of the queue can be ready, and only while the tool is not
+ * out on loan. This clears ready_since on everyone else and stamps the front
+ * reservation the first time it becomes collectable -- an already-stamped
+ * reservation keeps its original timestamp, so the member's hold period is
+ * never quietly restarted by unrelated activity on the same tool.
+ *
+ * Safe to call after any queue change, and cheap enough to call
+ * unconditionally: it is two small indexed queries plus at most two writes.
+ *
+ * @param int $tool_id Tool row ID.
+ * @return void
+ */
+function mtl_sync_reservation_readiness( $tool_id ) {
+	global $wpdb;
+	$tool_id = (int) $tool_id;
+	if ( $tool_id <= 0 ) {
+		return;
+	}
+
+	$tbl_res   = $wpdb->prefix . 'tool_reservations';
+	$tbl_loans = $wpdb->prefix . 'loans';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	$on_loan = (bool) $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT loan_id FROM {$tbl_loans} WHERE tool_id = %d AND return_date IS NULL LIMIT 1",
+			$tool_id
+		)
+	);
+
+	// Front of the queue: earliest reservation, ties broken by id -- the same
+	// ordering the Loans & Reservations page uses to show queue position.
+	$front_id = (int) $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT reservation_id FROM {$tbl_res}
+             WHERE tool_id = %d AND expiry_date IS NULL
+             ORDER BY reservation_date ASC, reservation_id ASC
+             LIMIT 1",
+			$tool_id
+		)
+	);
+
+	// Anyone who is not collectable right now has no clock running. Passing
+	// 0 as the exception id when the tool is on loan clears the whole queue,
+	// since reservation_id is AUTO_INCREMENT and never 0.
+	$keep_id = ( $on_loan || $front_id <= 0 ) ? 0 : $front_id;
+	$wpdb->query(
+		$wpdb->prepare(
+			"UPDATE {$tbl_res} SET ready_since = NULL
+             WHERE tool_id = %d AND expiry_date IS NULL
+               AND ready_since IS NOT NULL AND reservation_id != %d",
+			$tool_id,
+			$keep_id
+		)
+	);
+
+	if ( $keep_id > 0 ) {
+		// Only stamps when it is still NULL, so an existing hold period keeps
+		// running rather than restarting.
+		$wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$tbl_res} SET ready_since = %s
+                 WHERE reservation_id = %d AND expiry_date IS NULL AND ready_since IS NULL",
+				current_time( 'mysql' ),
+				$keep_id
+			)
+		);
+	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+}
+
+add_action( 'init', 'mtl_expire_stale_reservations' );
+
+/**
+ * Closes out reservations that sat collectable for longer than the hold
+ * period, stamping today's date as their expiry_date.
+ *
+ * Runs on init -- i.e. whenever anyone loads any page, admin or public --
+ * rather than relying on WP-Cron alone. WP-Cron is triggered by traffic, not
+ * by the clock, so on a quiet library site a nightly job would not actually
+ * fire overnight; this way the data is correct the moment anybody looks at
+ * it, on any host, with no server configuration. The daily cron event
+ * registered below is a supplement that keeps the timestamps tidy on sites
+ * that do get overnight traffic.
+ *
+ * Guarded to run at most once per request. It is a single UPDATE against an
+ * indexed column, plus a readiness re-sync for each tool it touched -- when
+ * the person at the front times out, the next member in line becomes
+ * collectable and their own clock has to start.
+ *
+ * @return void
+ */
+function mtl_expire_stale_reservations() {
+	static $done = false;
+	if ( $done ) {
+		return;
+	}
+	$done = true;
+
+	$days = mtl_reservation_hold_days();
+	if ( 0 === $days ) {
+		// "Never expires" -- the library holds reservations indefinitely.
+		return;
+	}
+
+	global $wpdb;
+	$tbl_res = $wpdb->prefix . 'tool_reservations';
+	$cutoff  = gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) . ' -' . $days . ' days' ) );
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	// Collected first: once these rows are expired their tool_ids can no
+	// longer be found by this condition, and each of those queues needs its
+	// next member promoting.
+	$tool_ids = $wpdb->get_col(
+		$wpdb->prepare(
+			"SELECT DISTINCT tool_id FROM {$tbl_res}
+             WHERE expiry_date IS NULL AND ready_since IS NOT NULL AND ready_since <= %s",
+			$cutoff
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	if ( empty( $tool_ids ) ) {
+		return;
+	}
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	$wpdb->query(
+		$wpdb->prepare(
+			"UPDATE {$tbl_res} SET expiry_date = %s
+             WHERE expiry_date IS NULL AND ready_since IS NOT NULL AND ready_since <= %s",
+			current_time( 'mysql' ),
+			$cutoff
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	foreach ( $tool_ids as $expired_tool_id ) {
+		mtl_sync_reservation_readiness( (int) $expired_tool_id );
+	}
+}
+
+add_action( 'init', 'mtl_schedule_reservation_sweep' );
+add_action( 'mtl_daily_reservation_sweep', 'mtl_expire_stale_reservations' );
+
+/**
+ * Registers the daily reservation sweep, if it isn't already scheduled.
+ *
+ * Strictly a convenience: the sweep on init is what actually guarantees
+ * correctness (see mtl_expire_stale_reservations()). WordPress's scheduler is
+ * driven by incoming traffic rather than by the clock, so this event fires
+ * "daily" only on a site that gets visited -- and on such a site the init
+ * sweep would have caught everything anyway. Its real value is on sites whose
+ * host runs a genuine system cron against wp-cron.php, where it makes the
+ * expiry timestamps land overnight instead of at whatever hour the first
+ * visitor happens to arrive.
+ *
+ * Runs on init rather than only on activation so installs that were already
+ * active before this feature shipped pick it up too, matching how the member
+ * role and staff capabilities are registered.
+ */
+function mtl_schedule_reservation_sweep() {
+	if ( ! wp_next_scheduled( 'mtl_daily_reservation_sweep' ) ) {
+		wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'mtl_daily_reservation_sweep' );
+	}
+}
+
 /**
  * Honors a member delete request -- self-service (Account page) or
  * admin-initiated (Membership page).
@@ -627,6 +848,16 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 	$wp_user_id       = mtl_find_wp_user_id_by_member_id( $member_id, (string) $row->email );
 	$wp_user_orphaned = ( 0 === $wp_user_id && ! empty( mtl_find_wp_user_ids_claiming_member_id( $member_id ) ) );
 
+	// Captured before the cancel, since afterwards these rows no longer match
+	// -- each of those tools needs the next member in line promoting.
+	$freed_tool_ids = $wpdb->get_col(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+			"SELECT DISTINCT tool_id FROM {$tbl_res} WHERE member_id = %d AND expiry_date IS NULL",
+			$member_id
+		)
+	);
+
 	$cancelled_reservations = (int) $wpdb->query(
 		$wpdb->prepare(
 			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
@@ -635,6 +866,10 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 			$member_id
 		)
 	);
+
+	foreach ( $freed_tool_ids as $freed_tool_id ) {
+		mtl_sync_reservation_readiness( (int) $freed_tool_id );
+	}
 
 	$wpdb->update(
 		$tbl_members,
@@ -1042,6 +1277,9 @@ function mtl_plugin_deactivate() {
 	// Drops the custom rule from the cached rewrite rules on deactivation,
 	// so a deactivated plugin doesn't leave a dangling route behind.
 	flush_rewrite_rules();
+	// Likewise unschedule the reservation sweep, so WordPress isn't left
+	// trying to fire an event whose callback no longer exists.
+	wp_clear_scheduled_hook( 'mtl_daily_reservation_sweep' );
 }
 
 add_action( 'init', 'mtl_register_rewrite_rules' );

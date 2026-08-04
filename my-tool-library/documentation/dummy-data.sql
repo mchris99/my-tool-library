@@ -878,34 +878,42 @@ INSERT INTO wp_loans (loan_id, tool_id, member_id, loan_date, due_date, return_d
 --    No member ever reserves a tool they already have checked out. Every row
 --    here is an ACTIVE reservation, so expiry_date is NULL (it is only set when
 --    a reservation is cancelled or fulfilled by a loan -- see schema.sql).
+--
+--    ready_since is set ONLY on a reservation that is collectable right now:
+--    front of its queue with the tool on the shelf. Everything queued behind a
+--    loan, or behind another member, keeps NULL -- their hold period has not
+--    started, which is exactly the case that must never auto-expire. The dates
+--    used are recent enough to sit inside the default 14-day hold period, so
+--    loading this file does not immediately expire anything; see
+--    mtl_expire_stale_reservations().
 -- ==========================================
-INSERT INTO wp_tool_reservations (reservation_id, tool_id, member_id, reservation_date, expiry_date) VALUES
--- Tool 1 (on loan to member 6, overdue): 3-member waiting queue
-(1,  1,  8,  '2026-07-17 09:15:00', NULL),
-(2,  1,  21, '2026-07-19 14:30:00', NULL),
-(3,  1,  34, '2026-07-22 11:05:00', NULL),
+INSERT INTO wp_tool_reservations (reservation_id, tool_id, member_id, reservation_date, ready_since, expiry_date) VALUES
+-- Tool 1 (on loan to member 6, overdue): 3-member waiting queue, nobody ready
+(1,  1,  8,  '2026-07-17 09:15:00', NULL, NULL),
+(2,  1,  21, '2026-07-19 14:30:00', NULL, NULL),
+(3,  1,  34, '2026-07-22 11:05:00', NULL, NULL),
 -- Tool 13 (on loan to member 39, overdue): 2-member waiting queue
-(4,  13, 47, '2026-07-18 10:00:00', NULL),
-(5,  13, 52, '2026-07-21 16:20:00', NULL),
+(4,  13, 47, '2026-07-18 10:00:00', NULL, NULL),
+(5,  13, 52, '2026-07-21 16:20:00', NULL, NULL),
 -- Tool 45 (on loan to member 7): 2-member waiting queue
-(6,  45, 5,  '2026-07-20 08:45:00', NULL),
-(7,  45, 18, '2026-07-24 15:40:00', NULL),
+(6,  45, 5,  '2026-07-20 08:45:00', NULL, NULL),
+(7,  45, 18, '2026-07-24 15:40:00', NULL, NULL),
 -- Tool 97 (on loan to member 30): single wait-list entry
-(8,  97, 44, '2026-07-27 09:00:00', NULL),
+(8,  97, 44, '2026-07-27 09:00:00', NULL, NULL),
 -- Tool 11 (available): single reservation, ready for pickup
-(9,  11, 21, '2026-07-23 13:25:00', NULL),
+(9,  11, 21, '2026-07-23 13:25:00', '2026-08-01 09:00:00', NULL),
 -- Tool 35 (available): single reservation
-(10, 35, 5,  '2026-07-25 15:10:00', NULL),
+(10, 35, 5,  '2026-07-25 15:10:00', '2026-08-02 10:30:00', NULL),
 -- Tool 43 (available): single reservation
-(11, 43, 13, '2026-07-26 14:00:00', NULL),
--- Tool 51 (available): 2-member queue
-(12, 51, 26, '2026-07-22 11:00:00', NULL),
-(13, 51, 60, '2026-07-25 10:15:00', NULL),
--- Tool 59 (available): 2-member queue
-(14, 59, 39, '2026-07-23 08:30:00', NULL),
-(15, 59, 44, '2026-07-26 17:45:00', NULL),
+(11, 43, 13, '2026-07-26 14:00:00', '2026-07-30 16:45:00', NULL),
+-- Tool 51 (available): 2-member queue -- only the front of it is ready
+(12, 51, 26, '2026-07-22 11:00:00', '2026-08-03 08:15:00', NULL),
+(13, 51, 60, '2026-07-25 10:15:00', NULL, NULL),
+-- Tool 59 (available): 2-member queue -- only the front of it is ready
+(14, 59, 39, '2026-07-23 08:30:00', '2026-07-31 12:00:00', NULL),
+(15, 59, 44, '2026-07-26 17:45:00', NULL, NULL),
 -- Tool 75 (available): single reservation
-(16, 75, 30, '2026-07-28 12:00:00', NULL);
+(16, 75, 30, '2026-07-28 12:00:00', '2026-08-02 14:20:00', NULL);
 
 -- ==========================================
 -- 8. MEMBER <-> TRAINING MAPPINGS (41 records across 24 of 60 members)

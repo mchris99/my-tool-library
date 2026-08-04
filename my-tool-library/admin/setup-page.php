@@ -413,6 +413,22 @@ function mtl_render_setup_page() {
 			$posted_loan_days  = isset( $_POST['mtl_default_loan_days'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_default_loan_days'] ) ) : '';
 			update_option( 'mtl_default_loan_days', in_array( $posted_loan_days, $allowed_loan_days, true ) ? $posted_loan_days : '21' );
 
+			// Reservation hold period. Stored as a plain integer, with 0
+			// meaning "never expires" -- the "Never expires" checkbox wins over
+			// whatever number the stepper happens to be showing, since that
+			// input is disabled (and so not submitted) while it is ticked.
+			// Anything outside 1-365 falls back to the 14-day default rather
+			// than being clamped silently to a value nobody chose.
+			if ( isset( $_POST['mtl_reservation_hold_never'] ) ) {
+				update_option( 'mtl_reservation_hold_days', 0 );
+			} else {
+				$posted_hold_days = isset( $_POST['mtl_reservation_hold_days'] ) ? (int) $_POST['mtl_reservation_hold_days'] : 14;
+				if ( $posted_hold_days < 1 || $posted_hold_days > 365 ) {
+					$posted_hold_days = 14;
+				}
+				update_option( 'mtl_reservation_hold_days', $posted_hold_days );
+			}
+
 			// A saved blank value is meaningful, not "unset": get_option()'s
 			// default only applies before the option row exists, so an empty
 			// save sticks and intentionally hides the directions on the public pages.
@@ -760,7 +776,9 @@ function mtl_render_setup_page() {
 	$radius       = get_option( 'mtl_border_radius', '4px' );
 	$btn_scale    = get_option( 'mtl_button_scale', '1' );
 
-	$default_loan_days       = get_option( 'mtl_default_loan_days', '21' );
+	$default_loan_days = get_option( 'mtl_default_loan_days', '21' );
+	// 0 means "never expires"; see mtl_reservation_hold_days().
+	$reservation_hold_days   = (int) get_option( 'mtl_reservation_hold_days', 14 );
 	$pickup_directions       = get_option(
 		'mtl_pickup_directions',
 		'Placing a reservation holds your spot in line and speeds up the process of checking out tools. If no one is waiting in line to borrow a tool, no reservation is required. Come by our store and speak with a representative to take tools home.'
@@ -1109,6 +1127,19 @@ function mtl_render_setup_page() {
 								<option value="30" <?php selected( $default_loan_days, '30' ); ?>>30 days</option>
 							</select>
 							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Pre-fills the due date whenever an admin checks out or renews a loan (still adjustable per loan).</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mtl_reservation_hold_days">Reservation Hold Period</label></th>
+						<td>
+							<input type="number" name="mtl_reservation_hold_days" id="mtl_reservation_hold_days" min="1" max="365" step="1" value="<?php echo esc_attr( $reservation_hold_days > 0 ? $reservation_hold_days : 14 ); ?>" style="width: 90px;" <?php disabled( 0, $reservation_hold_days ); ?>>
+							<span style="margin-left: 4px;">days</span>
+							<label style="display: inline-block; margin-left: 16px;">
+								<input type="checkbox" name="mtl_reservation_hold_never" id="mtl_reservation_hold_never" value="1" <?php checked( 0, $reservation_hold_days ); ?>>
+								Never expires
+							</label>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">How long a tool is held once it&rsquo;s <strong>ready for that member to collect</strong>. If they don&rsquo;t come in within this many days, the reservation is cancelled automatically and the tool passes to the next person in line. 1&ndash;365 days; the default is 14.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">The countdown only starts once the member reaches the front of the queue <em>and</em> the tool is back on the shelf &mdash; so nobody waiting behind a long loan is ever timed out for a tool they couldn&rsquo;t have collected. Tick <strong>Never expires</strong> to hold reservations indefinitely, as the library did before this setting existed.</p>
 						</td>
 					</tr>
 					<tr>
@@ -1467,6 +1498,20 @@ function mtl_render_setup_page() {
 	</div>
 
 	<script>
+		// "Never expires" greys out the day stepper. Disabling it also stops it
+		// being submitted, which is what lets the save handler treat the
+		// checkbox as authoritative without having to reconcile the two.
+		( function () {
+			var never = document.getElementById( 'mtl_reservation_hold_never' );
+			var days  = document.getElementById( 'mtl_reservation_hold_days' );
+			if ( ! never || ! days ) {
+				return;
+			}
+			never.addEventListener( 'change', function () {
+				days.disabled = never.checked;
+			} );
+		}() );
+
 		// Fills in the color pickers from a "Quick Theme Presets" swatch; still requires clicking "Save Settings".
 		function mtlApplySwatch(headerColor, bodyColor, linkColor, accentColor) {
 			document.getElementById('mtl_header_color').value = headerColor;

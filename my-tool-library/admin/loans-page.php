@@ -88,6 +88,11 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 		} else {
 			$html .= mtl_lr_field( 'Tool status', 'Available &mdash; not currently on loan' );
 		}
+		// Only a collectable reservation has a hold period running; anyone
+		// still queued behind a loan has no deadline yet.
+		if ( '' !== $rec['collect_by'] ) {
+			$html .= mtl_lr_field( 'Collect by', mtl_lr_fmt( $rec['collect_by'] ) . ' <span style="color:#646970;">(auto-cancels after this)</span>' );
+		}
 	} elseif ( 'current' === $rec['type'] ) {
 		$html .= mtl_lr_field( 'On loan since', mtl_lr_fmt( $rec['loan_date'], 'm/d/Y H:i' ) );
 		$html .= mtl_lr_field( 'Due date', mtl_lr_fmt( $rec['due_date'] ) );
@@ -295,12 +300,23 @@ function mtl_lr_handle_actions() {
 			)
 		);
 
+		// The tool is now on loan, so nobody left in the queue is collectable.
+		mtl_sync_reservation_readiness( (int) $res->tool_id );
+
 		return '<div class="notice notice-success is-dismissible"><p><strong>Checked out.</strong> The tool is on loan, due ' . mtl_format_date( $due_date ) . ', and the member&rsquo;s reservation has been closed.</p></div>';
 	}
 
 	if ( 'cancel_reservation' === $action ) {
 		$reservation_id = isset( $_POST['reservation_id'] ) ? (int) $_POST['reservation_id'] : 0;
-		$done           = $wpdb->query(
+		// Read before the cancel, while the row still matches.
+		$cancel_tool_id = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+				"SELECT tool_id FROM {$tbl_reservations} WHERE reservation_id = %d AND expiry_date IS NULL",
+				$reservation_id
+			)
+		);
+		$done = $wpdb->query(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				"UPDATE {$tbl_reservations} SET expiry_date = %s WHERE reservation_id = %d AND expiry_date IS NULL",
@@ -309,6 +325,8 @@ function mtl_lr_handle_actions() {
 			)
 		);
 		if ( $done ) {
+			// Whoever was behind them may now be at the front.
+			mtl_sync_reservation_readiness( $cancel_tool_id );
 			return '<div class="notice notice-success is-dismissible"><p><strong>Reservation cancelled.</strong></p></div>';
 		}
 		return '<div class="notice notice-error is-dismissible"><p>That reservation could not be cancelled (it may already be closed).</p></div>';
@@ -339,8 +357,15 @@ function mtl_lr_handle_actions() {
 	}
 
 	if ( 'end_loan' === $action ) {
-		$loan_id = isset( $_POST['loan_id'] ) ? (int) $_POST['loan_id'] : 0;
-		$done    = $wpdb->query(
+		$loan_id     = isset( $_POST['loan_id'] ) ? (int) $_POST['loan_id'] : 0;
+		$end_tool_id = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+				"SELECT tool_id FROM {$tbl_loans} WHERE loan_id = %d",
+				$loan_id
+			)
+		);
+		$done = $wpdb->query(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				"UPDATE {$tbl_loans} SET return_date = %s WHERE loan_id = %d AND return_date IS NULL",
@@ -349,6 +374,9 @@ function mtl_lr_handle_actions() {
 			)
 		);
 		if ( $done ) {
+			// Tool is back on the shelf, so the front of its queue becomes
+			// collectable and their hold period starts now.
+			mtl_sync_reservation_readiness( $end_tool_id );
 			return '<div class="notice notice-success is-dismissible"><p><strong>Loan ended.</strong> The tool is now back in inventory.</p></div>';
 		}
 		return '<div class="notice notice-error is-dismissible"><p>That loan could not be ended (it may already be returned).</p></div>';
@@ -402,7 +430,7 @@ function mtl_render_loans_page() {
 	// due date of the tool's active loan, if any.
 	$res_rows = $wpdb->get_results(
 		"
-        SELECT r.reservation_id, r.tool_id, r.member_id, r.reservation_date,
+        SELECT r.reservation_id, r.tool_id, r.member_id, r.reservation_date, r.ready_since,
                t.tool_name, t.barcode, t.brand,
                m.first_name, m.last_name, m.email, m.phone_number,
                (SELECT COUNT(*) FROM {$tbl_verifications} v WHERE v.member_id = r.member_id AND v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS is_verified,
@@ -486,6 +514,7 @@ function mtl_render_loans_page() {
 			'member_email'     => $l->email,
 			'member_phone'     => stripslashes( (string) $l->phone_number ),
 			'reserved_at'      => '',
+			'collect_by'       => '',
 			'loan_date'        => $l->loan_date,
 			'due_date'         => $l->due_date,
 			'return_date'      => '',
@@ -518,6 +547,7 @@ function mtl_render_loans_page() {
 			'member_email'     => $r->email,
 			'member_phone'     => stripslashes( (string) $r->phone_number ),
 			'reserved_at'      => $r->reservation_date,
+			'collect_by'       => mtl_reservation_collect_by( $r->ready_since ),
 			'loan_date'        => '',
 			'due_date'         => '',
 			'return_date'      => '',
@@ -554,6 +584,7 @@ function mtl_render_loans_page() {
 			'member_email'     => $l->email,
 			'member_phone'     => stripslashes( (string) $l->phone_number ),
 			'reserved_at'      => '',
+			'collect_by'       => '',
 			'loan_date'        => $l->loan_date,
 			'due_date'         => $l->due_date,
 			'return_date'      => $l->return_date,

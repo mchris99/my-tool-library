@@ -216,11 +216,21 @@ CREATE TABLE {{prefix}}loans (
 -- only when the reservation ENDS -- cancelled (by the member or an admin) or
 -- fulfilled by a loan -- so "active reservation" everywhere means
 -- "expiry_date IS NULL", and a non-NULL expiry_date is when it closed.
+-- ready_since is when this reservation became collectable: the member reached
+-- the front of the queue AND the tool was back on the shelf. NULL means they
+-- are still waiting their turn. It exists so an unclaimed reservation can
+-- expire on its own after the hold period set on the Setup page
+-- (mtl_reservation_hold_days) without penalising anyone who is simply queued
+-- behind a long loan -- their clock has not started yet. Kept in step by
+-- mtl_sync_reservation_readiness(), which runs after every event that can
+-- change a tool's queue: a loan starting or ending, a reservation being
+-- placed, cancelled or fulfilled, and a tool being retired.
 CREATE TABLE {{prefix}}tool_reservations (
     reservation_id INT AUTO_INCREMENT PRIMARY KEY,
     tool_id INT NOT NULL,
     member_id INT NOT NULL,
     reservation_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ready_since TIMESTAMP NULL DEFAULT NULL,
     expiry_date TIMESTAMP NULL DEFAULT NULL,
     FOREIGN KEY (tool_id) REFERENCES {{prefix}}tool_inventory(tool_id),
     FOREIGN KEY (member_id) REFERENCES {{prefix}}members(member_id)

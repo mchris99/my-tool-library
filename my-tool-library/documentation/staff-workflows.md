@@ -66,7 +66,7 @@ Do this once, when the plugin is first installed on the site.
     - **Only do this once.** On a library that is already running this is not a repair tool: it always deletes every member, tool, loan and reservation and rebuilds the tables empty, with no undo. That is why it makes you type the phrase out. If you are troubleshooting a live library, use **Export Data** first.
 5. On the **Setup** page, fill in:
     - **General Details**: organization name, logo URL, brand colors/fonts, button style.
-    - **Reservations & Loans**: the default loan length (in days) used when checking a reservation out as a loan.
+    - **Reservations & Loans**: the default loan length (in days) used when checking a reservation out as a loan, and the **Reservation Hold Period** — how long a tool is held for a member once it's ready for them to collect (default 14 days; see [Reservations that expire on their own](#reservations-that-expire-on-their-own)).
     - **Categories & Tags**: add or remove the tool categories (e.g. Woodworking, Plumbing) and tags (e.g. Cordless, Requires PPE) you plan to use — these are the choices staff pick from when adding inventory.
 6. Copy the **Public Page Link** shown on the Setup page and add it to your site's navigation menu (or link to it from any page/post, or link it in a button). This is the one link your community needs to browse the catalog, reserve tools, and sign up.
 7. Once categories/tags exist, move on to [Adding Inventory Items](#3-adding-inventory-items) and [Adding a New Member](#4-adding-a-new-member-in-person--verifying-their-identity) — both support **bulk import**, which is the fastest way to load an existing spreadsheet of tools or members:
@@ -236,6 +236,23 @@ On **Membership**, expand a member's detail panel and click any tool listed unde
 - **Start Loan for This Member** only appears when the member is first in line for that tool. Pick a due date (7/14/21/30-day quick buttons or custom) and click it to check the tool out to them directly, closing the reservation in the same step. If they're not first in the queue, the pop-up shows a note instead and points you to Loans & Reservations if you need to override the queue order.
 
 You can also cancel a reservation from **Loans & Reservations** directly: open the reservation's detail panel and click **Cancel reservation**.
+
+### Reservations that expire on their own
+
+A tool isn't held forever. Once a reservation becomes **collectable** — the member is at the front of the queue *and* the tool is back on the shelf — a countdown starts. If they don't come in within the **Reservation Hold Period** (set on the Setup page, 14 days by default), the reservation is cancelled automatically with today's date, and the tool passes to the next person in line.
+
+**The countdown only runs while the tool is actually available to that member.** Someone sitting fourth in the queue for a popular tool that's out on a six-week loan is never timed out — their clock hasn't started. It begins the moment the tool comes back and they reach the front, whether that's next week or next year.
+
+Where you'll see it:
+
+- **Loans & Reservations** — open any reservation showing **Ready** and its detail panel shows a **Collect by** date.
+- **The member's own My Loans & Reservations page** — they see "Please collect by …" against anything waiting for them, so the deadline isn't a surprise.
+
+To change the period, go to **Setup > Reservations & Loans** and set **Reservation Hold Period**. Anything from 1 to 365 days, or tick **Never expires** to hold reservations indefinitely, which is how the library behaved before this setting existed.
+
+> **Note:** Changing the number applies to reservations already waiting, since the deadline is calculated from when each became collectable rather than being fixed at the time it was made. Shortening the period can therefore expire some reservations on the next page load. Lengthening it gives everyone currently waiting more time.
+
+Expiry is checked whenever anyone loads a page, so the list is correct whenever you look at it — you don't need to leave a browser open or configure anything on the server.
 
 ### Handling overdue tools
 

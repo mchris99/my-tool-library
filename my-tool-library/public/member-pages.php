@@ -753,6 +753,12 @@ function mtl_handle_reserve_action() {
 		array( '%d', '%d', '%s' )
 	);
 
+	if ( $inserted ) {
+		// If the tool is on the shelf and nobody is ahead of them, this
+		// reservation is collectable immediately and its hold period starts now.
+		mtl_sync_reservation_readiness( $tool_id );
+	}
+
 	$redirect( $inserted ? 'reserved' : 'reserve_failed' );
 }
 
@@ -1062,6 +1068,16 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 			<p style="margin:6px 0 0 0; color:#50575e; font-size:0.92em;">
 				Reserved on <?php echo mtl_format_date( $r->reservation_date ); ?>
 			</p>
+			<?php
+			// Only a reservation that is actually collectable has a deadline;
+			// anyone still queued behind a loan has no countdown running.
+			$mtl_collect_by = mtl_reservation_collect_by( $r->ready_since );
+			if ( '' !== $mtl_collect_by ) :
+				?>
+				<p style="margin:6px 0 0 0; color:#50575e; font-size:0.92em;">
+					Please collect by <strong><?php echo mtl_format_date( $mtl_collect_by ); ?></strong>, or the reservation is cancelled and the tool passes to the next person in line.
+				</p>
+			<?php endif; ?>
 		</div>
 
 		<?php if ( ! empty( $r->categories ) ) : ?>
@@ -1185,6 +1201,15 @@ function mtl_render_member_reservations_page() {
 
 		if ( $valid && 'cancel_reservation' === $action ) {
 			$rid = isset( $_POST['reservation_id'] ) ? (int) $_POST['reservation_id'] : 0;
+			// Read before the cancel, while the row still matches.
+			$cancel_tool_id = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+					"SELECT tool_id FROM {$tbl_res} WHERE reservation_id = %d AND member_id = %d AND expiry_date IS NULL",
+					$rid,
+					(int) $member->member_id
+				)
+			);
 			$wpdb->query(
 				$wpdb->prepare(
 					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
@@ -1195,11 +1220,20 @@ function mtl_render_member_reservations_page() {
 					(int) $member->member_id
 				)
 			);
+			// Giving up their place promotes whoever was behind them.
+			mtl_sync_reservation_readiness( $cancel_tool_id );
 			wp_safe_redirect( add_query_arg( 'mtl_msg', 'reservation_cancelled', $self ) );
 			exit;
 		}
 
 		if ( $valid && 'cancel_all' === $action ) {
+			$freed_tool_ids = $wpdb->get_col(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+					"SELECT DISTINCT tool_id FROM {$tbl_res} WHERE member_id = %d AND expiry_date IS NULL",
+					(int) $member->member_id
+				)
+			);
 			$wpdb->query(
 				$wpdb->prepare(
 					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
@@ -1209,6 +1243,9 @@ function mtl_render_member_reservations_page() {
 					(int) $member->member_id
 				)
 			);
+			foreach ( $freed_tool_ids as $freed_tool_id ) {
+				mtl_sync_reservation_readiness( (int) $freed_tool_id );
+			}
 			wp_safe_redirect( add_query_arg( 'mtl_msg', 'reservations_cancelled', $self ) );
 			exit;
 		}
@@ -1223,7 +1260,7 @@ function mtl_render_member_reservations_page() {
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$rows = $wpdb->get_results(
 		$wpdb->prepare(
-			"SELECT r.reservation_id, r.tool_id, r.reservation_date,
+			"SELECT r.reservation_id, r.tool_id, r.reservation_date, r.ready_since,
                 t.tool_name, t.brand, t.description, t.components, t.photo_url,
                 (SELECT COUNT(*) FROM {$tbl_res} r2
                     WHERE r2.tool_id = r.tool_id AND r2.expiry_date IS NULL
@@ -1403,6 +1440,12 @@ function mtl_render_member_reservations_page() {
 											<span style="color:#8c8f94;"> of <?php echo (int) $r->queue_size; ?></span>
 											<?php if ( $is_first && $available ) : ?>
 												<span class="mtl-pill mtl-pill-green" style="margin-left:6px;">Ready for pickup</span>
+												<?php
+												$mtl_collect_by = mtl_reservation_collect_by( $r->ready_since );
+												if ( '' !== $mtl_collect_by ) :
+													?>
+													<span style="color:#50575e; font-size:0.85em; margin-left:6px;">collect by <?php echo mtl_format_date( $mtl_collect_by ); ?></span>
+												<?php endif; ?>
 											<?php elseif ( $is_first ) : ?>
 												<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Out on loan</span>
 											<?php endif; ?>
