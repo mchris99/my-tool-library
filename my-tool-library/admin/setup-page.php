@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Setup admin page.
  *
@@ -6,7 +7,7 @@
  */
 
 // Prevent direct file access.
-if ( ! defined( 'ABSPATH' ) ) {
+if (! defined('ABSPATH')) {
 	exit;
 }
 
@@ -21,9 +22,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @param string $value Raw posted value.
  * @return string Sanitized value safe to echo into CSS.
  */
-function mtl_sanitize_css_value( $value ) {
-	$value = sanitize_text_field( wp_unslash( $value ) );
-	return preg_replace( '/[^a-zA-Z0-9 ,.\-\%\'"]/', '', $value );
+function mtl_sanitize_css_value($value)
+{
+	$value = sanitize_text_field(wp_unslash($value));
+	return preg_replace('/[^a-zA-Z0-9 ,.\-\%\'"]/', '', $value);
 }
 
 /**
@@ -35,7 +37,8 @@ function mtl_sanitize_css_value( $value ) {
  *
  * @return array<string,string> CSS font-family value => display label.
  */
-function mtl_font_preset_options() {
+function mtl_font_preset_options()
+{
 	return array(
 		''                                       => 'Quick pick a font…',
 		'inherit'                                => 'Inherit (WordPress Default)',
@@ -56,7 +59,8 @@ function mtl_font_preset_options() {
  *
  * @return string[] Bare table names.
  */
-function mtl_export_table_names() {
+function mtl_export_table_names()
+{
 	return array(
 		'members',
 		'member_verifications',
@@ -74,42 +78,43 @@ function mtl_export_table_names() {
 
 /**
  * The exact phrase an admin must type to confirm the destructive database
- * reset. Defined in one place so the browser prompt, the server-side check
- * and the on-screen instructions can never drift apart.
+ * reset.
  *
  * @return string
  */
-function mtl_db_reset_confirmation_phrase() {
-	return 'delete all my data';
+function mtl_db_reset_confirmation_phrase()
+{
+	return 'Delete ALL my data';
 }
 
-add_action( 'admin_init', 'mtl_maybe_export_data' );
+add_action('admin_init', 'mtl_maybe_export_data');
 
 /**
  * Serve the Export Data downloads (.sql dump or .zip of CSVs). Must run on
  * admin_init -- before any admin HTML is sent -- so it can emit
  * file-download headers and a raw body.
  */
-function mtl_maybe_export_data() {
-	$want_sql = isset( $_POST['mtl_export_sql'] );
-	$want_zip = isset( $_POST['mtl_export_zip'] );
-	if ( ! $want_sql && ! $want_zip ) {
+function mtl_maybe_export_data()
+{
+	$want_sql = isset($_POST['mtl_export_sql']);
+	$want_zip = isset($_POST['mtl_export_zip']);
+	if (! $want_sql && ! $want_zip) {
 		return;
 	}
 
 	// Exporting exposes ALL member data (including sensitive verification
 	// document URLs), so gate it on the admin capability AND a valid nonce.
-	if ( ! mtl_can_manage_settings() ) {
+	if (! mtl_can_manage_settings()) {
 		return;
 	}
-	if ( ! isset( $_POST['mtl_export_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_export_nonce'] ) ), 'mtl_export_action' ) ) {
+	if (! isset($_POST['mtl_export_nonce']) || ! wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['mtl_export_nonce'])), 'mtl_export_action')) {
 		return;
 	}
 
-	if ( $want_sql ) {
-		mtl_export_as_sql( mtl_export_table_names() );
+	if ($want_sql) {
+		mtl_export_as_sql(mtl_export_table_names());
 	} else {
-		mtl_export_as_zip( mtl_export_table_names() );
+		mtl_export_as_zip(mtl_export_table_names());
 	}
 	// Both helpers stream a file and exit; execution never returns here.
 }
@@ -122,21 +127,22 @@ function mtl_maybe_export_data() {
  *
  * @param string[] $bare_tables Bare table names, see mtl_export_table_names().
  */
-function mtl_export_as_sql( $bare_tables ) {
+function mtl_export_as_sql($bare_tables)
+{
 	global $wpdb;
 	$prefix = $wpdb->prefix;
 
 	// Discard any buffered output so nothing corrupts the file body.
-	while ( ob_get_level() ) {
+	while (ob_get_level()) {
 		ob_end_clean();
 	}
 
 	nocache_headers();
-	header( 'Content-Type: application/sql; charset=utf-8' );
-	header( 'Content-Disposition: attachment; filename="my-tool-library-export-' . gmdate( 'Y-m-d' ) . '.sql"' );
+	header('Content-Type: application/sql; charset=utf-8');
+	header('Content-Disposition: attachment; filename="my-tool-library-export-' . gmdate('Y-m-d') . '.sql"');
 
 	$out  = "-- My Tool Library data export\n";
-	$out .= '-- Generated ' . gmdate( 'Y-m-d H:i:s' ) . " UTC\n";
+	$out .= '-- Generated ' . gmdate('Y-m-d H:i:s') . " UTC\n";
 	$out .= '-- Table names keep the WordPress "' . $prefix . "\" prefix, matching how the\n";
 	$out .= "-- plugin creates them in schema.sql.\n\n";
 	$out .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
@@ -145,11 +151,11 @@ function mtl_export_as_sql( $bare_tables ) {
 	// mtl_export_table_names() (no user input), so it's safe to interpolate
 	// into these backtick-quoted identifiers; phpcs can't verify that.
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-	foreach ( $bare_tables as $bare ) {
+	foreach ($bare_tables as $bare) {
 		$full = $prefix . $bare;
 
-		$exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $full ) );
-		if ( ! $exists ) {
+		$exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $full));
+		if (! $exists) {
 			$out .= "-- (table `$full` not found in the database; skipped)\n\n";
 			continue;
 		}
@@ -161,22 +167,22 @@ function mtl_export_as_sql( $bare_tables ) {
 
 		// Used verbatim: SHOW CREATE TABLE already emits the prefixed name
 		// and any prefixed FK references, keeping the dump aligned with the real tables.
-		$create_row = $wpdb->get_row( "SHOW CREATE TABLE `$full`", ARRAY_N );
-		$create_sql = isset( $create_row[1] ) ? $create_row[1] : '';
+		$create_row = $wpdb->get_row("SHOW CREATE TABLE `$full`", ARRAY_N);
+		$create_sql = isset($create_row[1]) ? $create_row[1] : '';
 		$out       .= $create_sql . ";\n\n";
 
-		$cols = $wpdb->get_col( "SHOW COLUMNS FROM `$full`" );
-		$rows = $wpdb->get_results( "SELECT * FROM `$full`", ARRAY_A );
+		$cols = $wpdb->get_col("SHOW COLUMNS FROM `$full`");
+		$rows = $wpdb->get_results("SELECT * FROM `$full`", ARRAY_A);
 
-		if ( $rows ) {
-			$col_list = '`' . implode( '`, `', $cols ) . '`';
-			foreach ( $rows as $row ) {
+		if ($rows) {
+			$col_list = '`' . implode('`, `', $cols) . '`';
+			foreach ($rows as $row) {
 				$vals = array();
-				foreach ( $cols as $col ) {
-					$v      = array_key_exists( $col, $row ) ? $row[ $col ] : null;
-					$vals[] = ( null === $v ) ? 'NULL' : "'" . esc_sql( $v ) . "'";
+				foreach ($cols as $col) {
+					$v      = array_key_exists($col, $row) ? $row[$col] : null;
+					$vals[] = (null === $v) ? 'NULL' : "'" . esc_sql($v) . "'";
 				}
-				$out .= "INSERT INTO `$full` ($col_list) VALUES (" . implode( ', ', $vals ) . ");\n";
+				$out .= "INSERT INTO `$full` ($col_list) VALUES (" . implode(', ', $vals) . ");\n";
 			}
 			$out .= "\n";
 		}
@@ -196,49 +202,50 @@ function mtl_export_as_sql( $bare_tables ) {
  *
  * @param string[] $bare_tables Bare table names, see mtl_export_table_names().
  */
-function mtl_export_as_zip( $bare_tables ) {
+function mtl_export_as_zip($bare_tables)
+{
 	global $wpdb;
 	$prefix = $wpdb->prefix;
 
 	$files = array();
-	foreach ( $bare_tables as $bare ) {
+	foreach ($bare_tables as $bare) {
 		$full   = $prefix . $bare;
-		$exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $full ) );
-		if ( ! $exists ) {
+		$exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $full));
+		if (! $exists) {
 			continue;
 		}
 
-		$cols = $wpdb->get_col( "SHOW COLUMNS FROM `$full`" );
-		$rows = $wpdb->get_results( "SELECT * FROM `$full`", ARRAY_A );
+		$cols = $wpdb->get_col("SHOW COLUMNS FROM `$full`");
+		$rows = $wpdb->get_results("SELECT * FROM `$full`", ARRAY_A);
 		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 		// fputcsv into a memory stream so quoting/escaping matches the inventory import's expectations.
-		$fp = fopen( 'php://temp', 'r+' );
-		fputcsv( $fp, $cols );
-		if ( $rows ) {
-			foreach ( $rows as $row ) {
+		$fp = fopen('php://temp', 'r+');
+		fputcsv($fp, $cols);
+		if ($rows) {
+			foreach ($rows as $row) {
 				$line = array();
-				foreach ( $cols as $col ) {
-					$line[] = array_key_exists( $col, $row ) ? $row[ $col ] : '';
+				foreach ($cols as $col) {
+					$line[] = array_key_exists($col, $row) ? $row[$col] : '';
 				}
-				fputcsv( $fp, $line );
+				fputcsv($fp, $line);
 			}
 		}
-		rewind( $fp );
-		$files[ $bare . '.csv' ] = stream_get_contents( $fp );
-		fclose( $fp );
+		rewind($fp);
+		$files[$bare . '.csv'] = stream_get_contents($fp);
+		fclose($fp);
 	}
 
-	$zip = mtl_build_zip( $files );
+	$zip = mtl_build_zip($files);
 
-	while ( ob_get_level() ) {
+	while (ob_get_level()) {
 		ob_end_clean();
 	}
 
 	nocache_headers();
-	header( 'Content-Type: application/zip' );
-	header( 'Content-Disposition: attachment; filename="my-tool-library-export-' . gmdate( 'Y-m-d' ) . '.zip"' );
-	header( 'Content-Length: ' . strlen( $zip ) );
+	header('Content-Type: application/zip');
+	header('Content-Disposition: attachment; filename="my-tool-library-export-' . gmdate('Y-m-d') . '.zip"');
+	header('Content-Length: ' . strlen($zip));
 
 	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- this *is* the file being downloaded (a raw .zip binary), not HTML; escaping would corrupt it.
 	echo $zip;
@@ -253,70 +260,71 @@ function mtl_export_as_zip( $bare_tables ) {
  * @param array<string,string> $files Filename => raw file contents.
  * @return string Raw .zip bytes.
  */
-function mtl_build_zip( $files ) {
+function mtl_build_zip($files)
+{
 	$local_data  = '';
 	$central_dir = '';
 	$offset      = 0;
 
 	// DOS-format modification date/time stamp (shared by all entries).
 	$now      = getdate();
-	$dos_time = ( $now['hours'] << 11 ) | ( $now['minutes'] << 5 ) | (int) ( $now['seconds'] / 2 );
-	$dos_date = ( ( $now['year'] - 1980 ) << 9 ) | ( $now['mon'] << 5 ) | $now['mday'];
+	$dos_time = ($now['hours'] << 11) | ($now['minutes'] << 5) | (int) ($now['seconds'] / 2);
+	$dos_date = (($now['year'] - 1980) << 9) | ($now['mon'] << 5) | $now['mday'];
 
-	foreach ( $files as $name => $data ) {
-		$crc      = crc32( $data );
-		$size     = strlen( $data );
-		$name_len = strlen( $name );
+	foreach ($files as $name => $data) {
+		$crc      = crc32($data);
+		$size     = strlen($data);
+		$name_len = strlen($name);
 
 		// --- Local file header + file data ---
-		$header  = pack( 'V', 0x04034b50 ); // Local file header signature.
-		$header .= pack( 'v', 20 );         // Version needed to extract.
-		$header .= pack( 'v', 0 );          // General purpose bit flag.
-		$header .= pack( 'v', 0 );          // Compression method: 0 = store.
-		$header .= pack( 'v', $dos_time );
-		$header .= pack( 'v', $dos_date );
-		$header .= pack( 'V', $crc );
-		$header .= pack( 'V', $size );      // Compressed size (= size, stored).
-		$header .= pack( 'V', $size );      // Uncompressed size.
-		$header .= pack( 'v', $name_len );
-		$header .= pack( 'v', 0 );          // Extra field length.
+		$header  = pack('V', 0x04034b50); // Local file header signature.
+		$header .= pack('v', 20);         // Version needed to extract.
+		$header .= pack('v', 0);          // General purpose bit flag.
+		$header .= pack('v', 0);          // Compression method: 0 = store.
+		$header .= pack('v', $dos_time);
+		$header .= pack('v', $dos_date);
+		$header .= pack('V', $crc);
+		$header .= pack('V', $size);      // Compressed size (= size, stored).
+		$header .= pack('V', $size);      // Uncompressed size.
+		$header .= pack('v', $name_len);
+		$header .= pack('v', 0);          // Extra field length.
 		$header .= $name;
 
 		$local_data .= $header . $data;
 
 		// --- Central directory record for this file ---
-		$record  = pack( 'V', 0x02014b50 ); // Central file header signature.
-		$record .= pack( 'v', 20 );         // Version made by.
-		$record .= pack( 'v', 20 );         // Version needed to extract.
-		$record .= pack( 'v', 0 );          // General purpose bit flag.
-		$record .= pack( 'v', 0 );          // Compression method.
-		$record .= pack( 'v', $dos_time );
-		$record .= pack( 'v', $dos_date );
-		$record .= pack( 'V', $crc );
-		$record .= pack( 'V', $size );
-		$record .= pack( 'V', $size );
-		$record .= pack( 'v', $name_len );
-		$record .= pack( 'v', 0 );          // Extra field length.
-		$record .= pack( 'v', 0 );          // File comment length.
-		$record .= pack( 'v', 0 );          // Disk number start.
-		$record .= pack( 'v', 0 );          // Internal file attributes.
-		$record .= pack( 'V', 0 );          // External file attributes.
-		$record .= pack( 'V', $offset );    // Relative offset of local header.
+		$record  = pack('V', 0x02014b50); // Central file header signature.
+		$record .= pack('v', 20);         // Version made by.
+		$record .= pack('v', 20);         // Version needed to extract.
+		$record .= pack('v', 0);          // General purpose bit flag.
+		$record .= pack('v', 0);          // Compression method.
+		$record .= pack('v', $dos_time);
+		$record .= pack('v', $dos_date);
+		$record .= pack('V', $crc);
+		$record .= pack('V', $size);
+		$record .= pack('V', $size);
+		$record .= pack('v', $name_len);
+		$record .= pack('v', 0);          // Extra field length.
+		$record .= pack('v', 0);          // File comment length.
+		$record .= pack('v', 0);          // Disk number start.
+		$record .= pack('v', 0);          // Internal file attributes.
+		$record .= pack('V', 0);          // External file attributes.
+		$record .= pack('V', $offset);    // Relative offset of local header.
 		$record .= $name;
 
 		$central_dir .= $record;
-		$offset      += strlen( $header ) + $size;
+		$offset      += strlen($header) + $size;
 	}
 
 	// --- End of central directory record ---
-	$eocd  = pack( 'V', 0x06054b50 );
-	$eocd .= pack( 'v', 0 );                 // Number of this disk.
-	$eocd .= pack( 'v', 0 );                 // Disk with central directory.
-	$eocd .= pack( 'v', count( $files ) );     // Entries on this disk.
-	$eocd .= pack( 'v', count( $files ) );     // Total entries.
-	$eocd .= pack( 'V', strlen( $central_dir ) );
-	$eocd .= pack( 'V', $offset );           // Offset of central directory.
-	$eocd .= pack( 'v', 0 );                 // Comment length.
+	$eocd  = pack('V', 0x06054b50);
+	$eocd .= pack('v', 0);                 // Number of this disk.
+	$eocd .= pack('v', 0);                 // Disk with central directory.
+	$eocd .= pack('v', count($files));     // Entries on this disk.
+	$eocd .= pack('v', count($files));     // Total entries.
+	$eocd .= pack('V', strlen($central_dir));
+	$eocd .= pack('V', $offset);           // Offset of central directory.
+	$eocd .= pack('v', 0);                 // Comment length.
 
 	return $local_data . $central_dir . $eocd;
 }
@@ -324,7 +332,8 @@ function mtl_build_zip( $files ) {
 /**
  * Renders the Setup & Settings admin page.
  */
-function mtl_render_setup_page() {
+function mtl_render_setup_page()
+{
 	global $wpdb;
 
 	// Administrators only. WordPress already refuses to route an Editor here
@@ -332,7 +341,7 @@ function mtl_render_setup_page() {
 	// mtl_register_admin_menus()), so this is defence in depth rather than the
 	// gate itself -- and it keeps the guarantee local to the file, where every
 	// handler below repeats it.
-	if ( ! mtl_can_manage_settings() ) {
+	if (! mtl_can_manage_settings()) {
 		return;
 	}
 
@@ -346,72 +355,72 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 1. HANDLE SETTINGS FORM SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_save_settings'] ) && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_settings_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_settings_nonce'] ) ), 'mtl_save_settings_action' ) ) {
+	if (isset($_POST['mtl_save_settings']) && mtl_can_manage_settings()) {
+		if (isset($_POST['mtl_settings_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['mtl_settings_nonce'])), 'mtl_save_settings_action')) {
 
 			// General.
-			update_option( 'mtl_org_name', isset( $_POST['mtl_org_name'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_org_name'] ) ) : '' );
-			update_option( 'mtl_contact_email', isset( $_POST['mtl_contact_email'] ) ? sanitize_email( wp_unslash( $_POST['mtl_contact_email'] ) ) : '' );
-			update_option( 'mtl_currency_symbol', isset( $_POST['mtl_currency_symbol'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_currency_symbol'] ) ) : '' );
-			update_option( 'mtl_logo_url', isset( $_POST['mtl_logo_url'] ) ? sanitize_url( wp_unslash( $_POST['mtl_logo_url'] ) ) : '' );
+			update_option('mtl_org_name', isset($_POST['mtl_org_name']) ? sanitize_text_field(wp_unslash($_POST['mtl_org_name'])) : '');
+			update_option('mtl_contact_email', isset($_POST['mtl_contact_email']) ? sanitize_email(wp_unslash($_POST['mtl_contact_email'])) : '');
+			update_option('mtl_currency_symbol', isset($_POST['mtl_currency_symbol']) ? sanitize_text_field(wp_unslash($_POST['mtl_currency_symbol'])) : '');
+			update_option('mtl_logo_url', isset($_POST['mtl_logo_url']) ? sanitize_url(wp_unslash($_POST['mtl_logo_url'])) : '');
 
 			// Header Options.
-			update_option( 'mtl_header_color', isset( $_POST['mtl_header_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['mtl_header_color'] ) ) : '' );
+			update_option('mtl_header_color', isset($_POST['mtl_header_color']) ? sanitize_hex_color(wp_unslash($_POST['mtl_header_color'])) : '');
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
-			update_option( 'mtl_header_font', isset( $_POST['mtl_header_font'] ) ? mtl_sanitize_css_value( $_POST['mtl_header_font'] ) : '' );
+			update_option('mtl_header_font', isset($_POST['mtl_header_font']) ? mtl_sanitize_css_value($_POST['mtl_header_font']) : '');
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
-			update_option( 'mtl_header_size', isset( $_POST['mtl_header_size'] ) ? mtl_sanitize_css_value( $_POST['mtl_header_size'] ) : '' );
+			update_option('mtl_header_size', isset($_POST['mtl_header_size']) ? mtl_sanitize_css_value($_POST['mtl_header_size']) : '');
 
 			// <select>-backed values are whitelisted server-side rather than trusted outright.
-			$allowed_h_weights = array( '400', '600', '700' );
-			$posted_h_weight   = isset( $_POST['mtl_header_weight'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_header_weight'] ) ) : '';
-			update_option( 'mtl_header_weight', in_array( $posted_h_weight, $allowed_h_weights, true ) ? $posted_h_weight : '700' );
+			$allowed_h_weights = array('400', '600', '700');
+			$posted_h_weight   = isset($_POST['mtl_header_weight']) ? sanitize_text_field(wp_unslash($_POST['mtl_header_weight'])) : '';
+			update_option('mtl_header_weight', in_array($posted_h_weight, $allowed_h_weights, true) ? $posted_h_weight : '700');
 
-			$allowed_transforms = array( 'none', 'uppercase', 'capitalize', 'lowercase' );
-			$posted_transform   = isset( $_POST['mtl_header_transform'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_header_transform'] ) ) : '';
-			update_option( 'mtl_header_transform', in_array( $posted_transform, $allowed_transforms, true ) ? $posted_transform : 'none' );
+			$allowed_transforms = array('none', 'uppercase', 'capitalize', 'lowercase');
+			$posted_transform   = isset($_POST['mtl_header_transform']) ? sanitize_text_field(wp_unslash($_POST['mtl_header_transform'])) : '';
+			update_option('mtl_header_transform', in_array($posted_transform, $allowed_transforms, true) ? $posted_transform : 'none');
 
 			// Body Options.
-			update_option( 'mtl_body_color', isset( $_POST['mtl_body_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['mtl_body_color'] ) ) : '' );
+			update_option('mtl_body_color', isset($_POST['mtl_body_color']) ? sanitize_hex_color(wp_unslash($_POST['mtl_body_color'])) : '');
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
-			update_option( 'mtl_body_font', isset( $_POST['mtl_body_font'] ) ? mtl_sanitize_css_value( $_POST['mtl_body_font'] ) : '' );
+			update_option('mtl_body_font', isset($_POST['mtl_body_font']) ? mtl_sanitize_css_value($_POST['mtl_body_font']) : '');
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
-			update_option( 'mtl_body_size', isset( $_POST['mtl_body_size'] ) ? mtl_sanitize_css_value( $_POST['mtl_body_size'] ) : '' );
+			update_option('mtl_body_size', isset($_POST['mtl_body_size']) ? mtl_sanitize_css_value($_POST['mtl_body_size']) : '');
 
-			$allowed_b_weights = array( '300', '400', '700' );
-			$posted_b_weight   = isset( $_POST['mtl_body_weight'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_body_weight'] ) ) : '';
-			update_option( 'mtl_body_weight', in_array( $posted_b_weight, $allowed_b_weights, true ) ? $posted_b_weight : '400' );
+			$allowed_b_weights = array('300', '400', '700');
+			$posted_b_weight   = isset($_POST['mtl_body_weight']) ? sanitize_text_field(wp_unslash($_POST['mtl_body_weight'])) : '';
+			update_option('mtl_body_weight', in_array($posted_b_weight, $allowed_b_weights, true) ? $posted_b_weight : '400');
 
 			// Link Options.
-			update_option( 'mtl_link_color', isset( $_POST['mtl_link_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['mtl_link_color'] ) ) : '' );
+			update_option('mtl_link_color', isset($_POST['mtl_link_color']) ? sanitize_hex_color(wp_unslash($_POST['mtl_link_color'])) : '');
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
-			update_option( 'mtl_link_font', isset( $_POST['mtl_link_font'] ) ? mtl_sanitize_css_value( $_POST['mtl_link_font'] ) : '' );
+			update_option('mtl_link_font', isset($_POST['mtl_link_font']) ? mtl_sanitize_css_value($_POST['mtl_link_font']) : '');
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
-			update_option( 'mtl_link_size', isset( $_POST['mtl_link_size'] ) ? mtl_sanitize_css_value( $_POST['mtl_link_size'] ) : '' );
+			update_option('mtl_link_size', isset($_POST['mtl_link_size']) ? mtl_sanitize_css_value($_POST['mtl_link_size']) : '');
 
-			$allowed_decorations = array( 'none', 'underline' );
-			$posted_decoration   = isset( $_POST['mtl_link_decoration'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_link_decoration'] ) ) : '';
-			update_option( 'mtl_link_decoration', in_array( $posted_decoration, $allowed_decorations, true ) ? $posted_decoration : 'none' );
+			$allowed_decorations = array('none', 'underline');
+			$posted_decoration   = isset($_POST['mtl_link_decoration']) ? sanitize_text_field(wp_unslash($_POST['mtl_link_decoration'])) : '';
+			update_option('mtl_link_decoration', in_array($posted_decoration, $allowed_decorations, true) ? $posted_decoration : 'none');
 
 			// Buttons & Page Accents.
-			update_option( 'mtl_accent_color', isset( $_POST['mtl_accent_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['mtl_accent_color'] ) ) : '' );
-			update_option( 'mtl_background_color', isset( $_POST['mtl_background_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['mtl_background_color'] ) ) : '' );
+			update_option('mtl_accent_color', isset($_POST['mtl_accent_color']) ? sanitize_hex_color(wp_unslash($_POST['mtl_accent_color'])) : '');
+			update_option('mtl_background_color', isset($_POST['mtl_background_color']) ? sanitize_hex_color(wp_unslash($_POST['mtl_background_color'])) : '');
 
-			$allowed_radii = array( '0px', '4px', '10px', '999px' );
-			$posted_radius = isset( $_POST['mtl_border_radius'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_border_radius'] ) ) : '';
-			update_option( 'mtl_border_radius', in_array( $posted_radius, $allowed_radii, true ) ? $posted_radius : '4px' );
+			$allowed_radii = array('0px', '4px', '10px', '999px');
+			$posted_radius = isset($_POST['mtl_border_radius']) ? sanitize_text_field(wp_unslash($_POST['mtl_border_radius'])) : '';
+			update_option('mtl_border_radius', in_array($posted_radius, $allowed_radii, true) ? $posted_radius : '4px');
 
 			// Stored as a plain multiplier for calc() when styles are injected; whitelisted since it lands directly in a CSS rule.
-			$allowed_btn_scales = array( '1.25', '1', '0.85', '0.7' );
-			$posted_btn_scale   = isset( $_POST['mtl_button_scale'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_button_scale'] ) ) : '';
-			update_option( 'mtl_button_scale', in_array( $posted_btn_scale, $allowed_btn_scales, true ) ? $posted_btn_scale : '1' );
+			$allowed_btn_scales = array('1.25', '1', '0.85', '0.7');
+			$posted_btn_scale   = isset($_POST['mtl_button_scale']) ? sanitize_text_field(wp_unslash($_POST['mtl_button_scale'])) : '';
+			update_option('mtl_button_scale', in_array($posted_btn_scale, $allowed_btn_scales, true) ? $posted_btn_scale : '1');
 
 			// Reservations & Loans.
 			// Lands directly in date math (strtotime("+{$n} days")) on the
 			// Loans & Reservations and Inventory pages, so it is whitelisted rather than trusted.
-			$allowed_loan_days = array( '7', '14', '21', '30' );
-			$posted_loan_days  = isset( $_POST['mtl_default_loan_days'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_default_loan_days'] ) ) : '';
-			update_option( 'mtl_default_loan_days', in_array( $posted_loan_days, $allowed_loan_days, true ) ? $posted_loan_days : '21' );
+			$allowed_loan_days = array('7', '14', '21', '30');
+			$posted_loan_days  = isset($_POST['mtl_default_loan_days']) ? sanitize_text_field(wp_unslash($_POST['mtl_default_loan_days'])) : '';
+			update_option('mtl_default_loan_days', in_array($posted_loan_days, $allowed_loan_days, true) ? $posted_loan_days : '21');
 
 			// Reservation hold period. Stored as a plain integer, with 0
 			// meaning "never expires" -- the "Never expires" checkbox wins over
@@ -419,21 +428,21 @@ function mtl_render_setup_page() {
 			// input is disabled (and so not submitted) while it is ticked.
 			// Anything outside 1-365 falls back to the 14-day default rather
 			// than being clamped silently to a value nobody chose.
-			if ( isset( $_POST['mtl_reservation_hold_never'] ) ) {
-				update_option( 'mtl_reservation_hold_days', 0 );
+			if (isset($_POST['mtl_reservation_hold_never'])) {
+				update_option('mtl_reservation_hold_days', 0);
 			} else {
-				$posted_hold_days = isset( $_POST['mtl_reservation_hold_days'] ) ? (int) $_POST['mtl_reservation_hold_days'] : 14;
-				if ( $posted_hold_days < 1 || $posted_hold_days > 365 ) {
+				$posted_hold_days = isset($_POST['mtl_reservation_hold_days']) ? (int) $_POST['mtl_reservation_hold_days'] : 14;
+				if ($posted_hold_days < 1 || $posted_hold_days > 365) {
 					$posted_hold_days = 14;
 				}
-				update_option( 'mtl_reservation_hold_days', $posted_hold_days );
+				update_option('mtl_reservation_hold_days', $posted_hold_days);
 			}
 
 			// A saved blank value is meaningful, not "unset": get_option()'s
 			// default only applies before the option row exists, so an empty
 			// save sticks and intentionally hides the directions on the public pages.
-			update_option( 'mtl_pickup_directions', isset( $_POST['mtl_pickup_directions'] ) ? sanitize_textarea_field( wp_unslash( $_POST['mtl_pickup_directions'] ) ) : '' );
-			update_option( 'mtl_verification_directions', isset( $_POST['mtl_verification_directions'] ) ? sanitize_textarea_field( wp_unslash( $_POST['mtl_verification_directions'] ) ) : '' );
+			update_option('mtl_pickup_directions', isset($_POST['mtl_pickup_directions']) ? sanitize_textarea_field(wp_unslash($_POST['mtl_pickup_directions'])) : '');
+			update_option('mtl_verification_directions', isset($_POST['mtl_verification_directions']) ? sanitize_textarea_field(wp_unslash($_POST['mtl_verification_directions'])) : '');
 
 			echo '<div class="notice notice-success is-dismissible"><p><strong>Success:</strong> Settings have been saved.</p></div>';
 		}
@@ -444,9 +453,9 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// Own form/nonce/option, separate from the General Details form above,
 	// so saving just this field can never blank out the other settings.
-	if ( isset( $_POST['mtl_save_home_url'] ) && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_home_url_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_home_url_nonce'] ) ), 'mtl_save_home_url_action' ) ) {
-			update_option( 'mtl_home_url', isset( $_POST['mtl_home_url'] ) ? sanitize_url( wp_unslash( $_POST['mtl_home_url'] ) ) : '' );
+	if (isset($_POST['mtl_save_home_url']) && mtl_can_manage_settings()) {
+		if (isset($_POST['mtl_home_url_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['mtl_home_url_nonce'])), 'mtl_save_home_url_action')) {
+			update_option('mtl_home_url', isset($_POST['mtl_home_url']) ? sanitize_url(wp_unslash($_POST['mtl_home_url'])) : '');
 			echo '<div class="notice notice-success is-dismissible"><p><strong>Success:</strong> Home page link has been saved.</p></div>';
 		} else {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
@@ -456,13 +465,13 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 2. HANDLE "ADD CATEGORY" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_add_category'] ) && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_add_category_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_category_nonce'] ) ), 'mtl_add_category_action' ) ) {
-			$new_category_name = isset( $_POST['new_category_name'] ) ? sanitize_text_field( wp_unslash( $_POST['new_category_name'] ) ) : '';
+	if (isset($_POST['mtl_add_category']) && mtl_can_manage_settings()) {
+		if (isset($_POST['mtl_add_category_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['mtl_add_category_nonce'])), 'mtl_add_category_action')) {
+			$new_category_name = isset($_POST['new_category_name']) ? sanitize_text_field(wp_unslash($_POST['new_category_name'])) : '';
 
-			if ( '' === $new_category_name ) {
+			if ('' === $new_category_name) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please enter a category name.</p></div>';
-			} elseif ( strlen( $new_category_name ) > 50 ) {
+			} elseif (strlen($new_category_name) > 50) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Category names must be 50 characters or fewer.</p></div>';
 			} else {
 				$existing = $wpdb->get_var(
@@ -473,18 +482,18 @@ function mtl_render_setup_page() {
 					)
 				);
 
-				if ( $existing ) {
+				if ($existing) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That category already exists.</p></div>';
 				} else {
 					// category_id is AUTO_INCREMENT -- MySQL assigns the next id.
 					$inserted = $wpdb->insert(
 						$tbl_categories,
-						array( 'category_name' => $new_category_name ),
-						array( '%s' )
+						array('category_name' => $new_category_name),
+						array('%s')
 					);
 
-					if ( $inserted ) {
-						echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> Category &ldquo;' . esc_html( $new_category_name ) . '&rdquo; has been added. It will now show up when adding or editing tools in the Inventory tab.</p></div>';
+					if ($inserted) {
+						echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> Category &ldquo;' . esc_html($new_category_name) . '&rdquo; has been added. It will now show up when adding or editing tools in the Inventory tab.</p></div>';
 					} else {
 						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Failed to add category. Please try again.</p></div>';
 					}
@@ -498,13 +507,13 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 3. HANDLE "ADD TAG" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_add_tag'] ) && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_add_tag_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_tag_nonce'] ) ), 'mtl_add_tag_action' ) ) {
-			$new_tag_name = isset( $_POST['new_tag_name'] ) ? sanitize_text_field( wp_unslash( $_POST['new_tag_name'] ) ) : '';
+	if (isset($_POST['mtl_add_tag']) && mtl_can_manage_settings()) {
+		if (isset($_POST['mtl_add_tag_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['mtl_add_tag_nonce'])), 'mtl_add_tag_action')) {
+			$new_tag_name = isset($_POST['new_tag_name']) ? sanitize_text_field(wp_unslash($_POST['new_tag_name'])) : '';
 
-			if ( '' === $new_tag_name ) {
+			if ('' === $new_tag_name) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please enter a tag name.</p></div>';
-			} elseif ( strlen( $new_tag_name ) > 50 ) {
+			} elseif (strlen($new_tag_name) > 50) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Tag names must be 50 characters or fewer.</p></div>';
 			} else {
 				$existing = $wpdb->get_var(
@@ -515,18 +524,18 @@ function mtl_render_setup_page() {
 					)
 				);
 
-				if ( $existing ) {
+				if ($existing) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That tag already exists.</p></div>';
 				} else {
 					// tag_id is AUTO_INCREMENT -- MySQL assigns the next id.
 					$inserted = $wpdb->insert(
 						$tbl_tags,
-						array( 'tag_name' => $new_tag_name ),
-						array( '%s' )
+						array('tag_name' => $new_tag_name),
+						array('%s')
 					);
 
-					if ( $inserted ) {
-						echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> Tag &ldquo;' . esc_html( $new_tag_name ) . '&rdquo; has been added. It will now show up when adding or editing tools in the Inventory tab.</p></div>';
+					if ($inserted) {
+						echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> Tag &ldquo;' . esc_html($new_tag_name) . '&rdquo; has been added. It will now show up when adding or editing tools in the Inventory tab.</p></div>';
 					} else {
 						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Failed to add tag. Please try again.</p></div>';
 					}
@@ -540,29 +549,29 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 2B. HANDLE "DELETE CATEGORIES" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_delete_categories'] ) && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_delete_categories_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_categories_nonce'] ) ), 'mtl_delete_categories_action' ) ) {
-			$delete_category_ids = isset( $_POST['delete_category_ids'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['delete_category_ids'] ) ) : array();
+	if (isset($_POST['mtl_delete_categories']) && mtl_can_manage_settings()) {
+		if (isset($_POST['mtl_delete_categories_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['mtl_delete_categories_nonce'])), 'mtl_delete_categories_action')) {
+			$delete_category_ids = isset($_POST['delete_category_ids']) ? array_map('intval', (array) wp_unslash($_POST['delete_category_ids'])) : array();
 			$delete_category_ids = array_filter(
 				$delete_category_ids,
-				function ( $id ) {
+				function ($id) {
 					return $id > 0;
 				}
 			);
 
-			if ( empty( $delete_category_ids ) ) {
+			if (empty($delete_category_ids)) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> No categories were selected.</p></div>';
 			} else {
 				// Deleting a category cascades to tool_category_mappings (see
 				// schema.sql), so any tool using it simply loses that category
 				// -- it does not fail or delete the tool itself.
 				$deleted_count = 0;
-				foreach ( $delete_category_ids as $id ) {
-					if ( $wpdb->delete( $tbl_categories, array( 'category_id' => $id ), array( '%d' ) ) ) {
+				foreach ($delete_category_ids as $id) {
+					if ($wpdb->delete($tbl_categories, array('category_id' => $id), array('%d'))) {
 						++$deleted_count;
 					}
 				}
-				echo '<div class="notice notice-success is-dismissible"><p><strong>Removed.</strong> ' . intval( $deleted_count ) . ' categor' . ( 1 === $deleted_count ? 'y' : 'ies' ) . ' deleted. Any tools that had it were automatically un-categorized from it.</p></div>';
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Removed.</strong> ' . intval($deleted_count) . ' categor' . (1 === $deleted_count ? 'y' : 'ies') . ' deleted. Any tools that had it were automatically un-categorized from it.</p></div>';
 			}
 		} else {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
@@ -572,29 +581,29 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 3B. HANDLE "DELETE TAGS" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_delete_tags'] ) && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_delete_tags_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_tags_nonce'] ) ), 'mtl_delete_tags_action' ) ) {
-			$delete_tag_ids = isset( $_POST['delete_tag_ids'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['delete_tag_ids'] ) ) : array();
+	if (isset($_POST['mtl_delete_tags']) && mtl_can_manage_settings()) {
+		if (isset($_POST['mtl_delete_tags_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['mtl_delete_tags_nonce'])), 'mtl_delete_tags_action')) {
+			$delete_tag_ids = isset($_POST['delete_tag_ids']) ? array_map('intval', (array) wp_unslash($_POST['delete_tag_ids'])) : array();
 			$delete_tag_ids = array_filter(
 				$delete_tag_ids,
-				function ( $id ) {
+				function ($id) {
 					return $id > 0;
 				}
 			);
 
-			if ( empty( $delete_tag_ids ) ) {
+			if (empty($delete_tag_ids)) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> No tags were selected.</p></div>';
 			} else {
 				// Deleting a tag cascades to tool_tag_mappings (see
 				// schema.sql), so any tool using it simply loses that tag --
 				// it does not fail or delete the tool itself.
 				$deleted_count = 0;
-				foreach ( $delete_tag_ids as $id ) {
-					if ( $wpdb->delete( $tbl_tags, array( 'tag_id' => $id ), array( '%d' ) ) ) {
+				foreach ($delete_tag_ids as $id) {
+					if ($wpdb->delete($tbl_tags, array('tag_id' => $id), array('%d'))) {
 						++$deleted_count;
 					}
 				}
-				echo '<div class="notice notice-success is-dismissible"><p><strong>Removed.</strong> ' . intval( $deleted_count ) . ' tag' . ( 1 === $deleted_count ? '' : 's' ) . ' deleted. Any tools that had it were automatically untagged.</p></div>';
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Removed.</strong> ' . intval($deleted_count) . ' tag' . (1 === $deleted_count ? '' : 's') . ' deleted. Any tools that had it were automatically untagged.</p></div>';
 			}
 		} else {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
@@ -604,13 +613,13 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 3C. HANDLE "ADD TRAINING" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_add_training'] ) && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_add_training_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_training_nonce'] ) ), 'mtl_add_training_action' ) ) {
-			$new_training_name = isset( $_POST['new_training_name'] ) ? sanitize_text_field( wp_unslash( $_POST['new_training_name'] ) ) : '';
+	if (isset($_POST['mtl_add_training']) && mtl_can_manage_settings()) {
+		if (isset($_POST['mtl_add_training_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['mtl_add_training_nonce'])), 'mtl_add_training_action')) {
+			$new_training_name = isset($_POST['new_training_name']) ? sanitize_text_field(wp_unslash($_POST['new_training_name'])) : '';
 
-			if ( '' === $new_training_name ) {
+			if ('' === $new_training_name) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please enter a training name.</p></div>';
-			} elseif ( strlen( $new_training_name ) > 50 ) {
+			} elseif (strlen($new_training_name) > 50) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Training names must be 50 characters or fewer.</p></div>';
 			} else {
 				$existing = $wpdb->get_var(
@@ -621,18 +630,18 @@ function mtl_render_setup_page() {
 					)
 				);
 
-				if ( $existing ) {
+				if ($existing) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That training already exists.</p></div>';
 				} else {
 					// training_id is AUTO_INCREMENT -- MySQL assigns the next id.
 					$inserted = $wpdb->insert(
 						$tbl_trainings,
-						array( 'training_name' => $new_training_name ),
-						array( '%s' )
+						array('training_name' => $new_training_name),
+						array('%s')
 					);
 
-					if ( $inserted ) {
-						echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> Training &ldquo;' . esc_html( $new_training_name ) . '&rdquo; has been added. It will now show up when adding or editing members in the Membership tab.</p></div>';
+					if ($inserted) {
+						echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> Training &ldquo;' . esc_html($new_training_name) . '&rdquo; has been added. It will now show up when adding or editing members in the Membership tab.</p></div>';
 					} else {
 						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Failed to add training. Please try again.</p></div>';
 					}
@@ -646,29 +655,29 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 3D. HANDLE "DELETE TRAININGS" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_delete_trainings'] ) && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_delete_trainings_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_trainings_nonce'] ) ), 'mtl_delete_trainings_action' ) ) {
-			$delete_training_ids = isset( $_POST['delete_training_ids'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['delete_training_ids'] ) ) : array();
+	if (isset($_POST['mtl_delete_trainings']) && mtl_can_manage_settings()) {
+		if (isset($_POST['mtl_delete_trainings_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['mtl_delete_trainings_nonce'])), 'mtl_delete_trainings_action')) {
+			$delete_training_ids = isset($_POST['delete_training_ids']) ? array_map('intval', (array) wp_unslash($_POST['delete_training_ids'])) : array();
 			$delete_training_ids = array_filter(
 				$delete_training_ids,
-				function ( $id ) {
+				function ($id) {
 					return $id > 0;
 				}
 			);
 
-			if ( empty( $delete_training_ids ) ) {
+			if (empty($delete_training_ids)) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> No trainings were selected.</p></div>';
 			} else {
 				// Deleting a training cascades to member_training_mappings (see
 				// schema.sql), so any member who had completed it simply loses
 				// that record; it does not fail or delete the member.
 				$deleted_count = 0;
-				foreach ( $delete_training_ids as $id ) {
-					if ( $wpdb->delete( $tbl_trainings, array( 'training_id' => $id ), array( '%d' ) ) ) {
+				foreach ($delete_training_ids as $id) {
+					if ($wpdb->delete($tbl_trainings, array('training_id' => $id), array('%d'))) {
 						++$deleted_count;
 					}
 				}
-				echo '<div class="notice notice-success is-dismissible"><p><strong>Removed.</strong> ' . intval( $deleted_count ) . ' training' . ( 1 === $deleted_count ? '' : 's' ) . ' deleted. Any members who had completed it no longer show it.</p></div>';
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Removed.</strong> ' . intval($deleted_count) . ' training' . (1 === $deleted_count ? '' : 's') . ' deleted. Any members who had completed it no longer show it.</p></div>';
 			}
 		} else {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
@@ -678,28 +687,28 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 4. HANDLE DATABASE SETUP SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_run_db_setup'] ) && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_db_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_db_nonce'] ) ), 'mtl_run_db_action' ) ) {
+	if (isset($_POST['mtl_run_db_setup']) && mtl_can_manage_settings()) {
+		if (isset($_POST['mtl_db_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['mtl_db_nonce'])), 'mtl_run_db_action')) {
 			// Typed-phrase confirmation. Checked here and not only in the
 			// browser prompt: this is the one irreversible action in the
 			// plugin, so a submission with JavaScript disabled (or a
 			// hand-crafted POST) must not be able to skip past it.
 			// Only surrounding whitespace is forgiven -- wording and case
 			// have to match exactly.
-			$mtl_typed_phrase = isset( $_POST['mtl_reset_confirmation'] )
-				? trim( sanitize_text_field( wp_unslash( $_POST['mtl_reset_confirmation'] ) ) )
+			$mtl_typed_phrase = isset($_POST['mtl_reset_confirmation'])
+				? trim(sanitize_text_field(wp_unslash($_POST['mtl_reset_confirmation'])))
 				: '';
 
 			$sql_file_path = MTL_PLUGIN_DIR . 'admin/schema.sql';
-			if ( mtl_db_reset_confirmation_phrase() !== $mtl_typed_phrase ) {
-				echo '<div class="notice notice-error is-dismissible"><p><strong>Nothing was deleted.</strong> A database reset only runs when the phrase &ldquo;<code>' . esc_html( mtl_db_reset_confirmation_phrase() ) . '</code>&rdquo; is typed exactly as shown. Your data is unchanged.</p></div>';
-			} elseif ( file_exists( $sql_file_path ) ) {
-				$sql_contents = file_get_contents( $sql_file_path );
+			if (mtl_db_reset_confirmation_phrase() !== $mtl_typed_phrase) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Nothing was deleted.</strong> A database reset only runs when the phrase &ldquo;<code>' . esc_html(mtl_db_reset_confirmation_phrase()) . '</code>&rdquo; is typed exactly as shown. Your data is unchanged.</p></div>';
+			} elseif (file_exists($sql_file_path)) {
+				$sql_contents = file_get_contents($sql_file_path);
 
 				// Swap the {{prefix}} placeholder for the site's real table
 				// prefix (e.g. "wp_", or "wp_2_" on multisite) so the tables
 				// follow WordPress naming conventions.
-				$sql_contents = str_replace( '{{prefix}}', $wpdb->prefix, $sql_contents );
+				$sql_contents = str_replace('{{prefix}}', $wpdb->prefix, $sql_contents);
 
 				// Strip full-line SQL comments before splitting on
 				// semicolons. A comment line sitting directly above a
@@ -708,41 +717,41 @@ function mtl_render_setup_page() {
 				// ";", and a naive "starts with --" filter would then skip
 				// the whole chunk -- including the real SQL. Inline trailing
 				// comments (e.g. "-- 'Y' or 'N'") are left alone since MySQL parses those natively.
-				$lines        = explode( "\n", $sql_contents );
+				$lines        = explode("\n", $sql_contents);
 				$lines        = array_filter(
 					$lines,
-					function ( $line ) {
-						return 0 !== strpos( trim( $line ), '--' );
+					function ($line) {
+						return 0 !== strpos(trim($line), '--');
 					}
 				);
-				$sql_contents = implode( "\n", $lines );
+				$sql_contents = implode("\n", $lines);
 
-				$queries = array_filter( array_map( 'trim', explode( ';', $sql_contents ) ) );
+				$queries = array_filter(array_map('trim', explode(';', $sql_contents)));
 
 				$success_count = 0;
 				$error_count   = 0;
 
-				foreach ( $queries as $query ) {
-					if ( empty( $query ) ) {
+				foreach ($queries as $query) {
+					if (empty($query)) {
 						continue;
 					}
 					// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- runs the plugin's own bundled admin/schema.sql, not user input.
-					$result = $wpdb->query( $query );
-					if ( false === $result ) {
+					$result = $wpdb->query($query);
+					if (false === $result) {
 						++$error_count;
 						echo '<div style="background: #ffebe8; border: 1px solid #cc0000; padding: 10px; margin: 5px 0;">';
-						echo '<strong>Failed Query:</strong> ' . esc_html( $query ) . '<br>';
-						echo '<strong>DB Error:</strong> ' . esc_html( $wpdb->last_error );
+						echo '<strong>Failed Query:</strong> ' . esc_html($query) . '<br>';
+						echo '<strong>DB Error:</strong> ' . esc_html($wpdb->last_error);
 						echo '</div>';
 					} else {
 						++$success_count;
 					}
 				}
 
-				if ( 0 === $error_count ) {
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Database Setup Complete:</strong> Successfully reset tables and executed ' . intval( $success_count ) . ' queries.</p></div>';
+				if (0 === $error_count) {
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Database Setup Complete:</strong> Successfully reset tables and executed ' . intval($success_count) . ' queries.</p></div>';
 				} else {
-					echo '<div class="notice notice-warning is-dismissible"><p><strong>Database Setup Finished with Errors:</strong> ' . intval( $success_count ) . ' queries succeeded, but ' . intval( $error_count ) . ' encountered errors.</p></div>';
+					echo '<div class="notice notice-warning is-dismissible"><p><strong>Database Setup Finished with Errors:</strong> ' . intval($success_count) . ' queries succeeded, but ' . intval($error_count) . ' encountered errors.</p></div>';
 				}
 			} else {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Could not find <code>schema.sql</code>.</p></div>';
@@ -750,35 +759,35 @@ function mtl_render_setup_page() {
 		}
 	}
 
-	$org_name      = get_option( 'mtl_org_name', '' );
-	$contact_email = get_option( 'mtl_contact_email', get_option( 'admin_email' ) );
-	$currency      = get_option( 'mtl_currency_symbol', '$' );
-	$logo_url      = get_option( 'mtl_logo_url', '' );
+	$org_name      = get_option('mtl_org_name', '');
+	$contact_email = get_option('mtl_contact_email', get_option('admin_email'));
+	$currency      = get_option('mtl_currency_symbol', '$');
+	$logo_url      = get_option('mtl_logo_url', '');
 
-	$h_color     = get_option( 'mtl_header_color', '#ff6600' );
-	$h_font      = get_option( 'mtl_header_font', 'inherit' );
-	$h_size      = get_option( 'mtl_header_size', '2em' );
-	$h_weight    = get_option( 'mtl_header_weight', '700' );
-	$h_transform = get_option( 'mtl_header_transform', 'none' );
+	$h_color     = get_option('mtl_header_color', '#ff6600');
+	$h_font      = get_option('mtl_header_font', 'inherit');
+	$h_size      = get_option('mtl_header_size', '2em');
+	$h_weight    = get_option('mtl_header_weight', '700');
+	$h_transform = get_option('mtl_header_transform', 'none');
 
-	$b_color  = get_option( 'mtl_body_color', '#096491' );
-	$b_font   = get_option( 'mtl_body_font', 'inherit' );
-	$b_size   = get_option( 'mtl_body_size', '14px' );
-	$b_weight = get_option( 'mtl_body_weight', '400' );
+	$b_color  = get_option('mtl_body_color', '#096491');
+	$b_font   = get_option('mtl_body_font', 'inherit');
+	$b_size   = get_option('mtl_body_size', '14px');
+	$b_weight = get_option('mtl_body_weight', '400');
 
-	$l_color = get_option( 'mtl_link_color', '#00b3ff' );
-	$l_font  = get_option( 'mtl_link_font', 'inherit' );
-	$l_size  = get_option( 'mtl_link_size', 'inherit' );
-	$l_dec   = get_option( 'mtl_link_decoration', 'none' );
+	$l_color = get_option('mtl_link_color', '#00b3ff');
+	$l_font  = get_option('mtl_link_font', 'inherit');
+	$l_size  = get_option('mtl_link_size', 'inherit');
+	$l_dec   = get_option('mtl_link_decoration', 'none');
 
-	$accent_color = get_option( 'mtl_accent_color', '#f7c600' );
-	$bg_color     = get_option( 'mtl_background_color', '#ffffff' );
-	$radius       = get_option( 'mtl_border_radius', '4px' );
-	$btn_scale    = get_option( 'mtl_button_scale', '1' );
+	$accent_color = get_option('mtl_accent_color', '#f7c600');
+	$bg_color     = get_option('mtl_background_color', '#ffffff');
+	$radius       = get_option('mtl_border_radius', '4px');
+	$btn_scale    = get_option('mtl_button_scale', '1');
 
-	$default_loan_days = get_option( 'mtl_default_loan_days', '21' );
+	$default_loan_days = get_option('mtl_default_loan_days', '21');
 	// 0 means "never expires"; see mtl_reservation_hold_days().
-	$reservation_hold_days   = (int) get_option( 'mtl_reservation_hold_days', 14 );
+	$reservation_hold_days   = (int) get_option('mtl_reservation_hold_days', 14);
 	$pickup_directions       = get_option(
 		'mtl_pickup_directions',
 		'Placing a reservation holds your spot in line and speeds up the process of checking out tools. If no one is waiting in line to borrow a tool, no reservation is required. Come by our store and speak with a representative to take tools home.'
@@ -790,18 +799,18 @@ function mtl_render_setup_page() {
 
 	// Shown as chips next to the "add new" mini-forms below.
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_categories} ORDER BY category_name ASC" );
+	$categories = $wpdb->get_results("SELECT category_id, category_name FROM {$tbl_categories} ORDER BY category_name ASC");
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-	$tags = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
+	$tags = $wpdb->get_results("SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC");
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-	$trainings = $wpdb->get_results( "SELECT training_id, training_name FROM {$tbl_trainings} ORDER BY training_name ASC" );
+	$trainings = $wpdb->get_results("SELECT training_id, training_name FROM {$tbl_trainings} ORDER BY training_name ASC");
 
 	$font_presets = mtl_font_preset_options();
 
 	// ==========================================
 	// 5. RENDER THE SETTINGS FORM
 	// ==========================================
-	?>
+?>
 	<style>
 		.mtl-chip-row {
 			display: flex;
@@ -997,7 +1006,7 @@ function mtl_render_setup_page() {
 			min-width: 240px;
 		}
 
-		.mtl-public-link-item > label {
+		.mtl-public-link-item>label {
 			display: block;
 			font-size: 0.72em;
 			font-weight: 600;
@@ -1054,19 +1063,19 @@ function mtl_render_setup_page() {
 	// Query-string form works with no setup; the pretty /tool-library/ form
 	// (registered near the top of my-tool-library.php) takes over automatically
 	// once permalinks are anything but Plain.
-	$public_page_url = mtl_front_page_url( 'main' );
+	$public_page_url = mtl_front_page_url('main');
 	// Defaults to the site's home page but is a real option so the admin can
 	// point the public page's "Return to Home" button elsewhere.
-	$home_url = get_option( 'mtl_home_url', home_url( '/' ) );
+	$home_url = get_option('mtl_home_url', home_url('/'));
 	?>
 	<div class="mtl-public-link-box">
 		<div class="mtl-public-link-item">
 			<label>Public Page Link</label>
 			<div class="mtl-public-link-row">
-				<input type="text" readonly class="mtl-public-link-input" value="<?php echo esc_attr( $public_page_url ); ?>" onclick="this.select();">
-				<a href="<?php echo esc_url( $public_page_url ); ?>" target="_blank" class="button">View</a>
+				<input type="text" readonly class="mtl-public-link-input" value="<?php echo esc_attr($public_page_url); ?>" onclick="this.select();">
+				<a href="<?php echo esc_url($public_page_url); ?>" target="_blank" class="button">View</a>
 			</div>
-			<?php if ( ! get_option( 'permalink_structure' ) ) : ?>
+			<?php if (! get_option('permalink_structure')) : ?>
 				<p class="mtl-public-link-hint">
 					Using Plain permalinks, so this link includes <code>?mtl_page=main</code>. Switch to pretty permalinks under <strong>Settings &rarr; Permalinks</strong> for a shorter one.
 				</p>
@@ -1075,10 +1084,10 @@ function mtl_render_setup_page() {
 
 		<div class="mtl-public-link-item">
 			<form method="post" action="">
-				<?php wp_nonce_field( 'mtl_save_home_url_action', 'mtl_home_url_nonce' ); ?>
+				<?php wp_nonce_field('mtl_save_home_url_action', 'mtl_home_url_nonce'); ?>
 				<label for="mtl_home_url">Home Page Link <span style="font-weight:400; text-transform:none; letter-spacing:normal;">(&ldquo;Return to Home&rdquo; target)</span></label>
 				<div class="mtl-public-link-row">
-					<input type="url" name="mtl_home_url" id="mtl_home_url" class="mtl-home-link-input" value="<?php echo esc_attr( $home_url ); ?>" placeholder="https://...">
+					<input type="url" name="mtl_home_url" id="mtl_home_url" class="mtl-home-link-input" value="<?php echo esc_attr($home_url); ?>" placeholder="https://...">
 					<button type="submit" name="mtl_save_home_url" class="button button-primary">Save</button>
 				</div>
 			</form>
@@ -1090,28 +1099,28 @@ function mtl_render_setup_page() {
 		<!-- General Customization Settings -->
 		<div style="flex: 1; min-width: 450px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
 			<form method="post" action="">
-				<?php wp_nonce_field( 'mtl_save_settings_action', 'mtl_settings_nonce' ); ?>
+				<?php wp_nonce_field('mtl_save_settings_action', 'mtl_settings_nonce'); ?>
 
 				<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">General Details</h3>
 				<table class="form-table" style="margin-top: 0;">
 					<tr>
 						<th scope="row"><label for="mtl_org_name">Organization Name</label></th>
-						<td><input type="text" name="mtl_org_name" id="mtl_org_name" class="regular-text" value="<?php echo esc_attr( $org_name ); ?>"></td>
+						<td><input type="text" name="mtl_org_name" id="mtl_org_name" class="regular-text" value="<?php echo esc_attr($org_name); ?>"></td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_logo_url">Logo URL</label></th>
 						<td>
-							<input type="url" name="mtl_logo_url" id="mtl_logo_url" class="regular-text" value="<?php echo esc_url( $logo_url ); ?>" placeholder="https://...">
+							<input type="url" name="mtl_logo_url" id="mtl_logo_url" class="regular-text" value="<?php echo esc_url($logo_url); ?>" placeholder="https://...">
 							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Upload your logo to the WordPress Media Library and paste the File URL here. Leave blank if unknown.</p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_contact_email">Public Contact Email</label></th>
-						<td><input type="email" name="mtl_contact_email" id="mtl_contact_email" class="regular-text" value="<?php echo esc_attr( $contact_email ); ?>"></td>
+						<td><input type="email" name="mtl_contact_email" id="mtl_contact_email" class="regular-text" value="<?php echo esc_attr($contact_email); ?>"></td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_currency_symbol">Currency Symbol</label></th>
-						<td><input type="text" name="mtl_currency_symbol" id="mtl_currency_symbol" style="width: 50px;" value="<?php echo esc_attr( $currency ); ?>"></td>
+						<td><input type="text" name="mtl_currency_symbol" id="mtl_currency_symbol" style="width: 50px;" value="<?php echo esc_attr($currency); ?>"></td>
 					</tr>
 				</table>
 
@@ -1121,10 +1130,10 @@ function mtl_render_setup_page() {
 						<th scope="row"><label for="mtl_default_loan_days">Default Loan Length</label></th>
 						<td>
 							<select name="mtl_default_loan_days" id="mtl_default_loan_days">
-								<option value="7" <?php selected( $default_loan_days, '7' ); ?>>7 days</option>
-								<option value="14" <?php selected( $default_loan_days, '14' ); ?>>14 days</option>
-								<option value="21" <?php selected( $default_loan_days, '21' ); ?>>21 days</option>
-								<option value="30" <?php selected( $default_loan_days, '30' ); ?>>30 days</option>
+								<option value="7" <?php selected($default_loan_days, '7'); ?>>7 days</option>
+								<option value="14" <?php selected($default_loan_days, '14'); ?>>14 days</option>
+								<option value="21" <?php selected($default_loan_days, '21'); ?>>21 days</option>
+								<option value="30" <?php selected($default_loan_days, '30'); ?>>30 days</option>
 							</select>
 							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Pre-fills the due date whenever an admin checks out or renews a loan (still adjustable per loan).</p>
 						</td>
@@ -1132,27 +1141,26 @@ function mtl_render_setup_page() {
 					<tr>
 						<th scope="row"><label for="mtl_reservation_hold_days">Reservation Hold Period</label></th>
 						<td>
-							<input type="number" name="mtl_reservation_hold_days" id="mtl_reservation_hold_days" min="1" max="365" step="1" value="<?php echo esc_attr( $reservation_hold_days > 0 ? $reservation_hold_days : 14 ); ?>" style="width: 90px;" <?php disabled( 0, $reservation_hold_days ); ?>>
+							<input type="number" name="mtl_reservation_hold_days" id="mtl_reservation_hold_days" min="1" max="365" step="1" value="<?php echo esc_attr($reservation_hold_days > 0 ? $reservation_hold_days : 14); ?>" style="width: 90px;" <?php disabled(0, $reservation_hold_days); ?>>
 							<span style="margin-left: 4px;">days</span>
 							<label style="display: inline-block; margin-left: 16px;">
-								<input type="checkbox" name="mtl_reservation_hold_never" id="mtl_reservation_hold_never" value="1" <?php checked( 0, $reservation_hold_days ); ?>>
+								<input type="checkbox" name="mtl_reservation_hold_never" id="mtl_reservation_hold_never" value="1" <?php checked(0, $reservation_hold_days); ?>>
 								Never expires
 							</label>
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">How long a tool is held once it&rsquo;s <strong>ready for that member to collect</strong>. If they don&rsquo;t come in within this many days, the reservation is cancelled automatically and the tool passes to the next person in line. 1&ndash;365 days; the default is 14.</p>
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">The countdown only starts once the member reaches the front of the queue <em>and</em> the tool is back on the shelf &mdash; so nobody waiting behind a long loan is ever timed out for a tool they couldn&rsquo;t have collected. Tick <strong>Never expires</strong> to hold reservations indefinitely, as the library did before this setting existed.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">How long a tool reservation is held once the member reaches the front of the queue <em>and</em> the tool is back on the shelf. Reservation auto-cancelled upon expiration.</p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_pickup_directions">Tool Pickup Directions</label></th>
 						<td>
-							<textarea name="mtl_pickup_directions" id="mtl_pickup_directions" class="large-text" rows="4"><?php echo esc_textarea( $pickup_directions ); ?></textarea>
+							<textarea name="mtl_pickup_directions" id="mtl_pickup_directions" class="large-text" rows="4"><?php echo esc_textarea($pickup_directions); ?></textarea>
 							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown to members on the My Reservations page. Leave blank to hide it there.</p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_verification_directions">Member Verification Directions</label></th>
 						<td>
-							<textarea name="mtl_verification_directions" id="mtl_verification_directions" class="large-text" rows="4"><?php echo esc_textarea( $verification_directions ); ?></textarea>
+							<textarea name="mtl_verification_directions" id="mtl_verification_directions" class="large-text" rows="4"><?php echo esc_textarea($verification_directions); ?></textarea>
 							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown to members on their Account page until they&rsquo;re verified. Leave blank to hide it there.</p>
 						</td>
 					</tr>
@@ -1184,30 +1192,30 @@ function mtl_render_setup_page() {
 						<h4 style="margin-bottom: 5px;">Headers</h4>
 						<table class="form-table mtl-appearance-table" style="margin-top: 0;">
 							<tr>
-								<td><label>Color:</label><br><input type="color" name="mtl_header_color" id="mtl_header_color" value="<?php echo esc_attr( $h_color ); ?>"></td>
+								<td><label>Color:</label><br><input type="color" name="mtl_header_color" id="mtl_header_color" value="<?php echo esc_attr($h_color); ?>"></td>
 								<td>
 									<label>Font Family:</label><br>
 									<select class="mtl-font-preset" onchange="if(this.value){document.getElementById('mtl_header_font').value=this.value;}">
-										<?php foreach ( $font_presets as $value => $label ) : ?>
-											<option value="<?php echo esc_attr( $value ); ?>"><?php echo esc_html( $label ); ?></option>
+										<?php foreach ($font_presets as $value => $label) : ?>
+											<option value="<?php echo esc_attr($value); ?>"><?php echo esc_html($label); ?></option>
 										<?php endforeach; ?>
 									</select>
-									<input type="text" name="mtl_header_font" id="mtl_header_font" value="<?php echo esc_attr( $h_font ); ?>" placeholder="e.g. Arial, sans-serif">
+									<input type="text" name="mtl_header_font" id="mtl_header_font" value="<?php echo esc_attr($h_font); ?>" placeholder="e.g. Arial, sans-serif">
 								</td>
-								<td><label>Font Size:</label><br><input type="text" name="mtl_header_size" value="<?php echo esc_attr( $h_size ); ?>" placeholder="e.g. 2em"></td>
+								<td><label>Font Size:</label><br><input type="text" name="mtl_header_size" value="<?php echo esc_attr($h_size); ?>" placeholder="e.g. 2em"></td>
 								<td><label>Font Weight:</label><br>
 									<select name="mtl_header_weight">
-										<option value="400" <?php selected( $h_weight, '400' ); ?>>Normal (400)</option>
-										<option value="600" <?php selected( $h_weight, '600' ); ?>>Semi-Bold (600)</option>
-										<option value="700" <?php selected( $h_weight, '700' ); ?>>Bold (700)</option>
+										<option value="400" <?php selected($h_weight, '400'); ?>>Normal (400)</option>
+										<option value="600" <?php selected($h_weight, '600'); ?>>Semi-Bold (600)</option>
+										<option value="700" <?php selected($h_weight, '700'); ?>>Bold (700)</option>
 									</select>
 								</td>
 								<td><label>Text Style:</label><br>
 									<select name="mtl_header_transform">
-										<option value="none" <?php selected( $h_transform, 'none' ); ?>>Normal</option>
-										<option value="uppercase" <?php selected( $h_transform, 'uppercase' ); ?>>UPPERCASE</option>
-										<option value="capitalize" <?php selected( $h_transform, 'capitalize' ); ?>>Capitalize Each Word</option>
-										<option value="lowercase" <?php selected( $h_transform, 'lowercase' ); ?>>lowercase</option>
+										<option value="none" <?php selected($h_transform, 'none'); ?>>Normal</option>
+										<option value="uppercase" <?php selected($h_transform, 'uppercase'); ?>>UPPERCASE</option>
+										<option value="capitalize" <?php selected($h_transform, 'capitalize'); ?>>Capitalize Each Word</option>
+										<option value="lowercase" <?php selected($h_transform, 'lowercase'); ?>>lowercase</option>
 									</select>
 								</td>
 							</tr>
@@ -1219,22 +1227,22 @@ function mtl_render_setup_page() {
 						<h4 style="margin-bottom: 5px;">Body Text</h4>
 						<table class="form-table mtl-appearance-table" style="margin-top: 0;">
 							<tr>
-								<td><label>Color:</label><br><input type="color" name="mtl_body_color" id="mtl_body_color" value="<?php echo esc_attr( $b_color ); ?>"></td>
+								<td><label>Color:</label><br><input type="color" name="mtl_body_color" id="mtl_body_color" value="<?php echo esc_attr($b_color); ?>"></td>
 								<td>
 									<label>Font Family:</label><br>
 									<select class="mtl-font-preset" onchange="if(this.value){document.getElementById('mtl_body_font').value=this.value;}">
-										<?php foreach ( $font_presets as $value => $label ) : ?>
-											<option value="<?php echo esc_attr( $value ); ?>"><?php echo esc_html( $label ); ?></option>
+										<?php foreach ($font_presets as $value => $label) : ?>
+											<option value="<?php echo esc_attr($value); ?>"><?php echo esc_html($label); ?></option>
 										<?php endforeach; ?>
 									</select>
-									<input type="text" name="mtl_body_font" id="mtl_body_font" value="<?php echo esc_attr( $b_font ); ?>" placeholder="e.g. inherit">
+									<input type="text" name="mtl_body_font" id="mtl_body_font" value="<?php echo esc_attr($b_font); ?>" placeholder="e.g. inherit">
 								</td>
-								<td><label>Font Size:</label><br><input type="text" name="mtl_body_size" value="<?php echo esc_attr( $b_size ); ?>" placeholder="e.g. 14px"></td>
+								<td><label>Font Size:</label><br><input type="text" name="mtl_body_size" value="<?php echo esc_attr($b_size); ?>" placeholder="e.g. 14px"></td>
 								<td><label>Font Weight:</label><br>
 									<select name="mtl_body_weight">
-										<option value="300" <?php selected( $b_weight, '300' ); ?>>Light (300)</option>
-										<option value="400" <?php selected( $b_weight, '400' ); ?>>Normal (400)</option>
-										<option value="700" <?php selected( $b_weight, '700' ); ?>>Bold (700)</option>
+										<option value="300" <?php selected($b_weight, '300'); ?>>Light (300)</option>
+										<option value="400" <?php selected($b_weight, '400'); ?>>Normal (400)</option>
+										<option value="700" <?php selected($b_weight, '700'); ?>>Bold (700)</option>
 									</select>
 								</td>
 							</tr>
@@ -1246,21 +1254,21 @@ function mtl_render_setup_page() {
 						<h4 style="margin-bottom: 5px;">Links</h4>
 						<table class="form-table mtl-appearance-table" style="margin-top: 0;">
 							<tr>
-								<td><label>Color:</label><br><input type="color" name="mtl_link_color" id="mtl_link_color" value="<?php echo esc_attr( $l_color ); ?>"></td>
+								<td><label>Color:</label><br><input type="color" name="mtl_link_color" id="mtl_link_color" value="<?php echo esc_attr($l_color); ?>"></td>
 								<td>
 									<label>Font Family:</label><br>
 									<select class="mtl-font-preset" onchange="if(this.value){document.getElementById('mtl_link_font').value=this.value;}">
-										<?php foreach ( $font_presets as $value => $label ) : ?>
-											<option value="<?php echo esc_attr( $value ); ?>"><?php echo esc_html( $label ); ?></option>
+										<?php foreach ($font_presets as $value => $label) : ?>
+											<option value="<?php echo esc_attr($value); ?>"><?php echo esc_html($label); ?></option>
 										<?php endforeach; ?>
 									</select>
-									<input type="text" name="mtl_link_font" id="mtl_link_font" value="<?php echo esc_attr( $l_font ); ?>" placeholder="e.g. inherit">
+									<input type="text" name="mtl_link_font" id="mtl_link_font" value="<?php echo esc_attr($l_font); ?>" placeholder="e.g. inherit">
 								</td>
-								<td><label>Font Size:</label><br><input type="text" name="mtl_link_size" value="<?php echo esc_attr( $l_size ); ?>" placeholder="e.g. inherit"></td>
+								<td><label>Font Size:</label><br><input type="text" name="mtl_link_size" value="<?php echo esc_attr($l_size); ?>" placeholder="e.g. inherit"></td>
 								<td><label>Text Decoration:</label><br>
 									<select name="mtl_link_decoration">
-										<option value="none" <?php selected( $l_dec, 'none' ); ?>>None</option>
-										<option value="underline" <?php selected( $l_dec, 'underline' ); ?>>Underline</option>
+										<option value="none" <?php selected($l_dec, 'none'); ?>>None</option>
+										<option value="underline" <?php selected($l_dec, 'underline'); ?>>Underline</option>
 									</select>
 								</td>
 							</tr>
@@ -1272,24 +1280,24 @@ function mtl_render_setup_page() {
 						<h4 style="margin-bottom: 5px;">Buttons & Page Accents</h4>
 						<table class="form-table mtl-appearance-table" style="margin-top: 0;">
 							<tr>
-								<td><label>Accent Color:</label><br><input type="color" name="mtl_accent_color" id="mtl_accent_color" value="<?php echo esc_attr( $accent_color ); ?>">
+								<td><label>Accent Color:</label><br><input type="color" name="mtl_accent_color" id="mtl_accent_color" value="<?php echo esc_attr($accent_color); ?>">
 									<p style="font-size: 0.8em; color: #666; margin: 4px 0 0 0;">Used for secondary buttons.</p>
 								</td>
-								<td><label>Page Background:</label><br><input type="color" name="mtl_background_color" value="<?php echo esc_attr( $bg_color ); ?>"></td>
+								<td><label>Page Background:</label><br><input type="color" name="mtl_background_color" value="<?php echo esc_attr($bg_color); ?>"></td>
 								<td><label>Corner Roundness:</label><br>
 									<select name="mtl_border_radius">
-										<option value="0px" <?php selected( $radius, '0px' ); ?>>Sharp</option>
-										<option value="4px" <?php selected( $radius, '4px' ); ?>>Soft (Default)</option>
-										<option value="10px" <?php selected( $radius, '10px' ); ?>>Rounded</option>
-										<option value="999px" <?php selected( $radius, '999px' ); ?>>Pill</option>
+										<option value="0px" <?php selected($radius, '0px'); ?>>Sharp</option>
+										<option value="4px" <?php selected($radius, '4px'); ?>>Soft (Default)</option>
+										<option value="10px" <?php selected($radius, '10px'); ?>>Rounded</option>
+										<option value="999px" <?php selected($radius, '999px'); ?>>Pill</option>
 									</select>
 								</td>
 								<td><label>Button Size:</label><br>
 									<select name="mtl_button_scale">
-										<option value="1.25" <?php selected( $btn_scale, '1.25' ); ?>>Big (125%)</option>
-										<option value="1" <?php selected( $btn_scale, '1' ); ?>>Default (100%)</option>
-										<option value="0.85" <?php selected( $btn_scale, '0.85' ); ?>>Small (85%)</option>
-										<option value="0.7" <?php selected( $btn_scale, '0.7' ); ?>>Tiny (70%)</option>
+										<option value="1.25" <?php selected($btn_scale, '1.25'); ?>>Big (125%)</option>
+										<option value="1" <?php selected($btn_scale, '1'); ?>>Default (100%)</option>
+										<option value="0.85" <?php selected($btn_scale, '0.85'); ?>>Small (85%)</option>
+										<option value="0.7" <?php selected($btn_scale, '0.7'); ?>>Tiny (70%)</option>
 									</select>
 									<p style="font-size: 0.8em; color: #666; margin: 4px 0 0 0;">Scales every button proportionally, so large and small buttons keep their relative sizes.</p>
 								</td>
@@ -1310,14 +1318,14 @@ function mtl_render_setup_page() {
 			<p style="font-size: 0.9em; color: #666;">Add new lookup values here so they're available to choose from when adding or editing tools in the Inventory tab.</p>
 
 			<h4 style="margin-bottom: 0;">Categories</h4>
-			<?php if ( $categories ) : ?>
+			<?php if ($categories) : ?>
 				<form method="post" action="" onsubmit="return confirm('Delete the selected categories? Any tools using them will simply lose that category. This cannot be undone.');">
-					<?php wp_nonce_field( 'mtl_delete_categories_action', 'mtl_delete_categories_nonce' ); ?>
+					<?php wp_nonce_field('mtl_delete_categories_action', 'mtl_delete_categories_nonce'); ?>
 					<div class="mtl-chip-row">
-						<?php foreach ( $categories as $cat ) : ?>
+						<?php foreach ($categories as $cat) : ?>
 							<label class="mtl-chip-checkbox">
-								<input type="checkbox" name="delete_category_ids[]" value="<?php echo esc_attr( $cat->category_id ); ?>">
-								<?php echo esc_html( $cat->category_name ); ?>
+								<input type="checkbox" name="delete_category_ids[]" value="<?php echo esc_attr($cat->category_id); ?>">
+								<?php echo esc_html($cat->category_name); ?>
 							</label>
 						<?php endforeach; ?>
 					</div>
@@ -1331,7 +1339,7 @@ function mtl_render_setup_page() {
 				</div>
 			<?php endif; ?>
 			<form method="post" action="" class="mtl-add-lookup-form">
-				<?php wp_nonce_field( 'mtl_add_category_action', 'mtl_add_category_nonce' ); ?>
+				<?php wp_nonce_field('mtl_add_category_action', 'mtl_add_category_nonce'); ?>
 				<input type="text" name="new_category_name" maxlength="50" placeholder="New category name" class="regular-text" required>
 				<button type="submit" name="mtl_add_category" class="button button-primary">Add Category</button>
 			</form>
@@ -1339,14 +1347,14 @@ function mtl_render_setup_page() {
 			<hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
 
 			<h4 style="margin-bottom: 0;">Tags</h4>
-			<?php if ( $tags ) : ?>
+			<?php if ($tags) : ?>
 				<form method="post" action="" onsubmit="return confirm('Delete the selected tags? Any tools using them will simply lose that tag. This cannot be undone.');">
-					<?php wp_nonce_field( 'mtl_delete_tags_action', 'mtl_delete_tags_nonce' ); ?>
+					<?php wp_nonce_field('mtl_delete_tags_action', 'mtl_delete_tags_nonce'); ?>
 					<div class="mtl-chip-row">
-						<?php foreach ( $tags as $tag ) : ?>
+						<?php foreach ($tags as $tag) : ?>
 							<label class="mtl-chip-checkbox">
-								<input type="checkbox" name="delete_tag_ids[]" value="<?php echo esc_attr( $tag->tag_id ); ?>">
-								<?php echo esc_html( $tag->tag_name ); ?>
+								<input type="checkbox" name="delete_tag_ids[]" value="<?php echo esc_attr($tag->tag_id); ?>">
+								<?php echo esc_html($tag->tag_name); ?>
 							</label>
 						<?php endforeach; ?>
 					</div>
@@ -1360,7 +1368,7 @@ function mtl_render_setup_page() {
 				</div>
 			<?php endif; ?>
 			<form method="post" action="" class="mtl-add-lookup-form">
-				<?php wp_nonce_field( 'mtl_add_tag_action', 'mtl_add_tag_nonce' ); ?>
+				<?php wp_nonce_field('mtl_add_tag_action', 'mtl_add_tag_nonce'); ?>
 				<input type="text" name="new_tag_name" maxlength="50" placeholder="New tag name" class="regular-text" required>
 				<button type="submit" name="mtl_add_tag" class="button button-primary">Add Tag</button>
 			</form>
@@ -1369,16 +1377,16 @@ function mtl_render_setup_page() {
 		<!-- Member Trainings Management -->
 		<div style="flex: 1; min-width: 400px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04); height: fit-content;">
 			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Member Trainings</h3>
-			<p style="font-size: 0.9em; color: #666;">Safety and skill trainings a member can complete. Add them here so they&rsquo;re available to check off when adding or editing members in the Membership tab &mdash; they show staff at a glance which tools a member is qualified to use, and each member can see their own on their account page.</p>
+			<p style="font-size: 0.9em; color: #666;">Safety and skill trainings a member can complete. Add them here so they&rsquo;re available to check off when adding or editing members in the Membership tab. Visible to members.</p>
 
-			<?php if ( $trainings ) : ?>
+			<?php if ($trainings) : ?>
 				<form method="post" action="" onsubmit="return confirm('Delete the selected trainings? Any members who completed them will lose that record. This cannot be undone.');">
-					<?php wp_nonce_field( 'mtl_delete_trainings_action', 'mtl_delete_trainings_nonce' ); ?>
+					<?php wp_nonce_field('mtl_delete_trainings_action', 'mtl_delete_trainings_nonce'); ?>
 					<div class="mtl-chip-row">
-						<?php foreach ( $trainings as $training ) : ?>
+						<?php foreach ($trainings as $training) : ?>
 							<label class="mtl-chip-checkbox">
-								<input type="checkbox" name="delete_training_ids[]" value="<?php echo esc_attr( $training->training_id ); ?>">
-								<?php echo esc_html( $training->training_name ); ?>
+								<input type="checkbox" name="delete_training_ids[]" value="<?php echo esc_attr($training->training_id); ?>">
+								<?php echo esc_html($training->training_name); ?>
 							</label>
 						<?php endforeach; ?>
 					</div>
@@ -1392,7 +1400,7 @@ function mtl_render_setup_page() {
 				</div>
 			<?php endif; ?>
 			<form method="post" action="" class="mtl-add-lookup-form">
-				<?php wp_nonce_field( 'mtl_add_training_action', 'mtl_add_training_nonce' ); ?>
+				<?php wp_nonce_field('mtl_add_training_action', 'mtl_add_training_nonce'); ?>
 				<input type="text" name="new_training_name" maxlength="50" placeholder="New training name" class="regular-text" required>
 				<button type="submit" name="mtl_add_training" class="button button-primary">Add Training</button>
 			</form>
@@ -1402,18 +1410,19 @@ function mtl_render_setup_page() {
 		<div style="flex: 1; min-width: 400px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04); height: fit-content;">
 			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; color: #d63638;">Database Configuration</h3>
 
-			<p>Builds the plugin's database tables from the bundled <code>schema.sql</code> file. Required once when you first install the plugin &mdash; but on a library that is already running, it is a full reset, not a repair.</p>
+			<p>Builds the plugin's database tables from the bundled <code>schema.sql</code> file. Required once when you first install the plugin; on a library that is already running, it is a full reset, not a repair.</p>
 
 			<div style="background: #fdf2f2; border-left: 4px solid #d63638; padding: 12px; margin-bottom: 20px;">
 				<p style="margin: 0 0 8px 0;"><strong>Warning: this permanently deletes all My Tool Library data.</strong></p>
-				<p style="margin: 0 0 8px 0;"><code>schema.sql</code> begins by dropping every one of the plugin's tables, so running it <em>always</em> erases what is currently stored &mdash; every member, verification document, training record, tool, category, tag, loan and reservation &mdash; and then recreates the tables empty. This is not a conditional risk and there is no undo.</p>
-				<p style="margin: 0 0 8px 0;">Members&rsquo; <strong>WordPress sign-ins are not touched</strong> &mdash; they keep their accounts and passwords &mdash; but the records those sign-ins point to are gone, so members will be told their account can&rsquo;t be matched until the data is restored. Re-importing members from CSV does <em>not</em> fix this: it assigns brand-new member IDs.</p>
-				<p style="margin: 0;">Use <strong>Export Data</strong> first if there is any chance you will need the current contents back, and restore from the <strong>.sql dump</strong> &mdash; it is the only export that preserves IDs and keeps every sign-in connected.</p>
+				<p style="margin: 0 0 8px 0;"><code>schema.sql</code> begins by dropping every one of the plugin's tables, so running it <em>always</em> erases what is currently stored &#40;every member, verification document, training record, tool, category, tag, loan and reservation&#41; and then recreates the tables empty. This is not a conditional risk and there is no undo.</p>
+				<p style="margin: 0 0 8px 0;">Members&rsquo; <strong>WordPress sign-ins are not touched</strong> but the records those sign-ins point to are gone, so members will be told their account can&rsquo;t be matched until the data is restored. Re-importing members from CSV does <em>not</em> fix this: it assigns brand-new member IDs.</p>
+				<p style="margin: 0;">Use <strong>Export Data</strong> first if there is any chance you will need the current contents back, and restore from the <strong>.sql dump</strong>.</p>
 			</div>
 
 			<form method="post" action="" id="mtl-db-reset-form">
-				<?php wp_nonce_field( 'mtl_run_db_action', 'mtl_db_nonce' ); ?>
-				<?php // Filled in by the confirmation prompt below; the server rejects the submission unless it matches exactly. ?>
+				<?php wp_nonce_field('mtl_run_db_action', 'mtl_db_nonce'); ?>
+				<?php // Filled in by the confirmation prompt below; the server rejects the submission unless it matches exactly. 
+				?>
 				<input type="hidden" name="mtl_reset_confirmation" id="mtl-db-reset-confirmation" value="">
 				<label class="mtl-lock-toggle">
 					<input type="checkbox" required>
@@ -1423,7 +1432,6 @@ function mtl_render_setup_page() {
 				<p class="submit">
 					<input type="submit" name="mtl_run_db_setup" class="button button-secondary mtl-danger-btn" value="Run Database Setup">
 				</p>
-				<p style="font-size: 0.85em; color: #666; margin: 0;">You will be asked to type <code><?php echo esc_html( mtl_db_reset_confirmation_phrase() ); ?></code> to confirm.</p>
 			</form>
 
 			<script>
@@ -1434,15 +1442,15 @@ function mtl_render_setup_page() {
 				 * re-checked server-side (see the mtl_run_db_setup handler), so this is
 				 * a usability layer rather than the security boundary.
 				 */
-				( function () {
-					var form = document.getElementById( 'mtl-db-reset-form' );
-					if ( ! form ) {
+				(function() {
+					var form = document.getElementById('mtl-db-reset-form');
+					if (!form) {
 						return;
 					}
-					var phrase = <?php echo wp_json_encode( mtl_db_reset_confirmation_phrase() ); ?>;
-					var field  = document.getElementById( 'mtl-db-reset-confirmation' );
+					var phrase = <?php echo wp_json_encode(mtl_db_reset_confirmation_phrase()); ?>;
+					var field = document.getElementById('mtl-db-reset-confirmation');
 
-					form.addEventListener( 'submit', function ( event ) {
+					form.addEventListener('submit', function(event) {
 						var typed = window.prompt(
 							'This permanently deletes ALL My Tool Library data — members, tools, ' +
 							'loans, reservations and everything else. It cannot be undone.\n\n' +
@@ -1450,21 +1458,21 @@ function mtl_render_setup_page() {
 						);
 
 						// Cancelled the prompt: leave the page untouched.
-						if ( null === typed ) {
+						if (null === typed) {
 							event.preventDefault();
 							return;
 						}
 
-						if ( typed.trim() !== phrase ) {
+						if (typed.trim() !== phrase) {
 							event.preventDefault();
 							field.value = '';
-							window.alert( 'That phrase did not match, so nothing was deleted.\n\nExpected: ' + phrase );
+							window.alert('That phrase did not match, so nothing was deleted.\n\nExpected: ' + phrase);
 							return;
 						}
 
 						field.value = typed.trim();
-					} );
-				}() );
+					});
+				}());
 			</script>
 		</div>
 
@@ -1475,7 +1483,7 @@ function mtl_render_setup_page() {
 			<p>Download a complete copy of all My Tool Library data &mdash; members, verifications, inventory, categories, tags, loans and reservations.</p>
 
 			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
-				<li><strong>.sql dump</strong> &mdash; a single SQL file (DROP + CREATE + INSERT) you can import into any MySQL/MariaDB database. Table names <strong>keep</strong> the <code><?php echo esc_html( $wpdb->prefix ); ?></code> prefix (e.g. <code><?php echo esc_html( $wpdb->prefix ); ?>members</code>), matching how the plugin creates them. <strong>This is the one to keep as a backup:</strong> it preserves every record&rsquo;s ID, so restoring it puts members, loans, reservations and members&rsquo; online sign-ins back exactly as they were.</li>
+				<li><strong>.sql dump</strong> &mdash; a single SQL file (DROP + CREATE + INSERT) you can import into any MySQL/MariaDB database. Table names <strong>keep</strong> the <code><?php echo esc_html($wpdb->prefix); ?></code> prefix (e.g. <code><?php echo esc_html($wpdb->prefix); ?>members</code>), matching how the plugin creates them. <strong>This is the one to keep as a backup:</strong> it preserves every record&rsquo;s ID, so restoring it puts members, loans, reservations and members&rsquo; online sign-ins back exactly as they were.</li>
 				<li><strong>.zip of CSVs</strong> &mdash; one <code>.csv</code> file per table, named after the table without the prefix (e.g. <code>members.csv</code>), handy for spreadsheets and for reading in Excel.</li>
 			</ul>
 
@@ -1488,7 +1496,7 @@ function mtl_render_setup_page() {
 			</div>
 
 			<form method="post" action="">
-				<?php wp_nonce_field( 'mtl_export_action', 'mtl_export_nonce' ); ?>
+				<?php wp_nonce_field('mtl_export_action', 'mtl_export_nonce'); ?>
 				<p class="submit" style="display: flex; gap: 8px; flex-wrap: wrap;">
 					<button type="submit" name="mtl_export_sql" class="button button-primary">Download .sql dump</button>
 					<button type="submit" name="mtl_export_zip" class="button button-secondary">Download .zip of CSVs</button>
@@ -1501,16 +1509,16 @@ function mtl_render_setup_page() {
 		// "Never expires" greys out the day stepper. Disabling it also stops it
 		// being submitted, which is what lets the save handler treat the
 		// checkbox as authoritative without having to reconcile the two.
-		( function () {
-			var never = document.getElementById( 'mtl_reservation_hold_never' );
-			var days  = document.getElementById( 'mtl_reservation_hold_days' );
-			if ( ! never || ! days ) {
+		(function() {
+			var never = document.getElementById('mtl_reservation_hold_never');
+			var days = document.getElementById('mtl_reservation_hold_days');
+			if (!never || !days) {
 				return;
 			}
-			never.addEventListener( 'change', function () {
+			never.addEventListener('change', function() {
 				days.disabled = never.checked;
-			} );
-		}() );
+			});
+		}());
 
 		// Fills in the color pickers from a "Quick Theme Presets" swatch; still requires clicking "Save Settings".
 		function mtlApplySwatch(headerColor, bodyColor, linkColor, accentColor) {
@@ -1550,6 +1558,6 @@ function mtl_render_setup_page() {
 			}
 		}
 	</script>
-	<?php
+<?php
 	echo '</div>';
 }
