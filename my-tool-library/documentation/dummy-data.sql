@@ -5,12 +5,12 @@
 --   1. Run the schema first (Setup page -> "Run Database Setup"). This file
 --      assumes the tables exist and the categories/tags/trainings lookup
 --      tables are already seeded by schema.sql (category ids 1-11 / tag ids
---      1-12 / training ids 1-6 are referenced below).
+--      1-12 / training ids 1-7 are referenced below).
 --
 -- CONTENTS: 60 members (45 verified / 15 unverified), 125 tools, their
 -- category/tag mappings, 81 loans (26 active, 10 currently overdue, 5
 -- returned late), 16 reservations (several tools carry multi-member
--- queues), and 38 member/training records across 24 members.
+-- queues), and 41 member/training records across 24 members.
 -- Machine-generated for volume testing (e.g. table pagination); repeated
 -- tool types carry different brands, values, barcodes, and acquisition
 -- dates so every row is distinct.
@@ -908,11 +908,12 @@ INSERT INTO wp_tool_reservations (reservation_id, tool_id, member_id, reservatio
 (16, 75, 30, '2026-07-28 12:00:00', NULL);
 
 -- ==========================================
--- 8. MEMBER <-> TRAINING MAPPINGS (38 records across 24 of 60 members)
---    training_ids 1-6 are seeded by schema.sql:
---      1 Ladder Safety         4 Chainsaw Safety
---      2 Table Saw Safety      5 Angle Grinder Safety
---      3 Miter Saw Safety      6 Welding Basics
+-- 8. MEMBER <-> TRAINING MAPPINGS (41 records across 24 of 60 members)
+--    training_ids 1-7 are seeded by schema.sql:
+--      1 Power Tool Basics     5 Angle Grinder Safety
+--      2 Table Saw Safety      6 Welding Basics
+--      3 Miter Saw Safety      7 Ladder Safety
+--      4 Chainsaw Safety
 --
 --    Kept consistent with the loan/reservation history above: ten tools are
 --    tagged "Requires Training" (tag 11) -- Table Saws 3, 31, 59, 87, 115 and
@@ -932,7 +933,7 @@ INSERT INTO wp_member_training_mappings (member_id, training_id) VALUES
 (3, 1),
 (5, 3),
 (6, 2), (6, 4), (6, 6),
-(9, 1), (9, 4),
+(9, 1), (9, 4), (9, 7),
 (12, 5),
 (13, 2), (13, 3),
 (17, 5), (17, 6),
@@ -943,7 +944,7 @@ INSERT INTO wp_member_training_mappings (member_id, training_id) VALUES
 (24, 1), (24, 2),
 (26, 1),
 (30, 6),
-(33, 1),
+(33, 1), (33, 7),
 (35, 2), (35, 5),
 -- Members 39 and 44 are both in the reservation queue for Table Saw 59.
 (39, 2), (39, 4),
@@ -952,5 +953,5 @@ INSERT INTO wp_member_training_mappings (member_id, training_id) VALUES
 (47, 3),
 (52, 1),
 (55, 4), (55, 6),
-(58, 1),
+(58, 1), (58, 7),
 (60, 2), (60, 4);
