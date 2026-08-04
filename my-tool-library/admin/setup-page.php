@@ -72,6 +72,17 @@ function mtl_export_table_names() {
 	);
 }
 
+/**
+ * The exact phrase an admin must type to confirm the destructive database
+ * reset. Defined in one place so the browser prompt, the server-side check
+ * and the on-screen instructions can never drift apart.
+ *
+ * @return string
+ */
+function mtl_db_reset_confirmation_phrase() {
+	return 'delete all my data';
+}
+
 add_action( 'admin_init', 'mtl_maybe_export_data' );
 
 /**
@@ -644,8 +655,20 @@ function mtl_render_setup_page() {
 	// ==========================================
 	if ( isset( $_POST['mtl_run_db_setup'] ) && current_user_can( 'manage_options' ) ) {
 		if ( isset( $_POST['mtl_db_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_db_nonce'] ) ), 'mtl_run_db_action' ) ) {
+			// Typed-phrase confirmation. Checked here and not only in the
+			// browser prompt: this is the one irreversible action in the
+			// plugin, so a submission with JavaScript disabled (or a
+			// hand-crafted POST) must not be able to skip past it.
+			// Only surrounding whitespace is forgiven -- wording and case
+			// have to match exactly.
+			$mtl_typed_phrase = isset( $_POST['mtl_reset_confirmation'] )
+				? trim( sanitize_text_field( wp_unslash( $_POST['mtl_reset_confirmation'] ) ) )
+				: '';
+
 			$sql_file_path = MTL_PLUGIN_DIR . 'admin/schema.sql';
-			if ( file_exists( $sql_file_path ) ) {
+			if ( mtl_db_reset_confirmation_phrase() !== $mtl_typed_phrase ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Nothing was deleted.</strong> A database reset only runs when the phrase &ldquo;<code>' . esc_html( mtl_db_reset_confirmation_phrase() ) . '</code>&rdquo; is typed exactly as shown. Your data is unchanged.</p></div>';
+			} elseif ( file_exists( $sql_file_path ) ) {
 				$sql_contents = file_get_contents( $sql_file_path );
 
 				// Swap the {{prefix}} placeholder for the site's real table
@@ -1339,14 +1362,18 @@ function mtl_render_setup_page() {
 		<div style="flex: 1; min-width: 400px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04); height: fit-content;">
 			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; color: #d63638;">Database Configuration</h3>
 
-			<p>Use this tool to initialize the required tables in your WordPress database. This process will read from the <code>schema.sql</code> file located in the plugin's <code>admin/</code> folder.</p>
+			<p>Builds the plugin's database tables from the bundled <code>schema.sql</code> file. Required once when you first install the plugin &mdash; but on a library that is already running, it is a full reset, not a repair.</p>
 
 			<div style="background: #fdf2f2; border-left: 4px solid #d63638; padding: 12px; margin-bottom: 20px;">
-				<strong>Warning:</strong> Running this will execute all queries in the SQL file. If your SQL file contains <code>DROP TABLE</code> commands, it will completely wipe existing inventory data.
+				<p style="margin: 0 0 8px 0;"><strong>Warning: this permanently deletes all My Tool Library data.</strong></p>
+				<p style="margin: 0 0 8px 0;"><code>schema.sql</code> begins by dropping every one of the plugin's tables, so running it <em>always</em> erases what is currently stored &mdash; every member, verification document, training record, tool, category, tag, loan and reservation &mdash; and then recreates the tables empty. This is not a conditional risk and there is no undo.</p>
+				<p style="margin: 0;">Use <strong>Export Data</strong> first if there is any chance you will need the current contents back.</p>
 			</div>
 
-			<form method="post" action="" onsubmit="return confirm('Are you sure you want to execute the database schema? This action cannot be undone.');">
+			<form method="post" action="" id="mtl-db-reset-form">
 				<?php wp_nonce_field( 'mtl_run_db_action', 'mtl_db_nonce' ); ?>
+				<?php // Filled in by the confirmation prompt below; the server rejects the submission unless it matches exactly. ?>
+				<input type="hidden" name="mtl_reset_confirmation" id="mtl-db-reset-confirmation" value="">
 				<label class="mtl-lock-toggle">
 					<input type="checkbox" required>
 					<span class="mtl-lock-slider"></span>
@@ -1355,7 +1382,49 @@ function mtl_render_setup_page() {
 				<p class="submit">
 					<input type="submit" name="mtl_run_db_setup" class="button button-secondary mtl-danger-btn" value="Run Database Setup">
 				</p>
+				<p style="font-size: 0.85em; color: #666; margin: 0;">You will be asked to type <code><?php echo esc_html( mtl_db_reset_confirmation_phrase() ); ?></code> to confirm.</p>
 			</form>
+
+			<script>
+				/*
+				 * Second gate on the database reset: the slide-to-unlock toggle stops
+				 * an accidental click, and this prompt stops a deliberate-but-unconsidered
+				 * one by making the admin type the phrase out. The same phrase is
+				 * re-checked server-side (see the mtl_run_db_setup handler), so this is
+				 * a usability layer rather than the security boundary.
+				 */
+				( function () {
+					var form = document.getElementById( 'mtl-db-reset-form' );
+					if ( ! form ) {
+						return;
+					}
+					var phrase = <?php echo wp_json_encode( mtl_db_reset_confirmation_phrase() ); ?>;
+					var field  = document.getElementById( 'mtl-db-reset-confirmation' );
+
+					form.addEventListener( 'submit', function ( event ) {
+						var typed = window.prompt(
+							'This permanently deletes ALL My Tool Library data — members, tools, ' +
+							'loans, reservations and everything else. It cannot be undone.\n\n' +
+							'To confirm, type this phrase exactly:\n\n' + phrase
+						);
+
+						// Cancelled the prompt: leave the page untouched.
+						if ( null === typed ) {
+							event.preventDefault();
+							return;
+						}
+
+						if ( typed.trim() !== phrase ) {
+							event.preventDefault();
+							field.value = '';
+							window.alert( 'That phrase did not match, so nothing was deleted.\n\nExpected: ' + phrase );
+							return;
+						}
+
+						field.value = typed.trim();
+					} );
+				}() );
+			</script>
 		</div>
 
 		<!-- Export Data -->

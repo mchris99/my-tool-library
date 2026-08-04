@@ -22,7 +22,8 @@ Do this once, when the plugin is first installed on the site.
 1. **Activate the plugin** from the WordPress **Plugins** screen.
 2. Go to **Settings > General** in WordPress and confirm the site **Timezone** is set correctly (a named city, not just a UTC offset, so Daylight Saving is handled automatically). Every reservation and loan timestamp in the plugin is based on this setting — if it's left at the default (UTC), your timestamps won't match local time, and past timestamps can't be corrected retroactively.
 3. Go to **My Tool Library > Setup**.
-4. Under **Database Configuration**, slide the confirmation toggle and click **Run Database Setup**. This creates all of the plugin's database tables and is required before any other page will work. Only do this once — re-running it wipes and rebuilds the plugin's tables.
+4. Under **Database Configuration**, slide the confirmation toggle, click **Run Database Setup**, and type `delete all my data` into the box that pops up. This creates all of the plugin's database tables and is required before any other page will work.
+    - **Only do this once.** On a library that is already running this is not a repair tool: it always deletes every member, tool, loan and reservation and rebuilds the tables empty, with no undo. That is why it makes you type the phrase out. If you are troubleshooting a live library, use **Export Data** first.
 5. On the **Setup** page, fill in:
     - **General Details**: organization name, logo URL, brand colors/fonts, button style.
     - **Reservations & Loans**: the default loan length (in days) used when checking a reservation out as a loan.
