@@ -129,7 +129,7 @@ function mtl_maybe_serve_csv_template() {
 	if (
 		! isset( $_GET['mtl_download_csv_template'] ) || '' === $page ||
 		'mtl-inventory' !== $page ||
-		! current_user_can( 'manage_options' )
+		! mtl_can_manage_library()
 	) {
 		return;
 	}
@@ -376,7 +376,7 @@ function mtl_render_inventory_page() {
 	$tags = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
 
 	// 1. HANDLE "ADD" FORM SUBMISSION (Insert Data)
-	if ( isset( $_POST['mtl_add_tool'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_add_tool'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_add_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_tool_nonce'] ) ), 'mtl_add_tool_action' ) ) {
 
 			// --- Gather + sanitize incoming data ---
@@ -533,7 +533,7 @@ function mtl_render_inventory_page() {
 	$bulk_warnings        = array();
 	$keep_bulk_panel_open = false;
 
-	if ( isset( $_POST['mtl_bulk_import'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_bulk_import'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_bulk_import_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_bulk_import_nonce'] ) ), 'mtl_bulk_import_action' ) ) {
 			$keep_bulk_panel_open = true;
 
@@ -817,7 +817,7 @@ function mtl_render_inventory_page() {
 	}
 
 	// 2. HANDLE "EDIT" FORM SUBMISSION (Update Data)
-	if ( isset( $_POST['mtl_update_tool'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_update_tool'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_edit_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_edit_tool_nonce'] ) ), 'mtl_edit_tool_action' ) ) {
 
 			$edit_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
@@ -966,7 +966,7 @@ function mtl_render_inventory_page() {
 	}
 
 	// 3. HANDLE "DELETE" FORM SUBMISSION
-	if ( isset( $_POST['mtl_delete_tool'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_delete_tool'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_delete_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_tool_nonce'] ) ), 'mtl_delete_tool_action' ) ) {
 
 			$delete_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
@@ -1003,7 +1003,7 @@ function mtl_render_inventory_page() {
 	// the Quick Reserve handler below is a table name only, built from
 	// $wpdb->prefix, never request data.
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-	if ( isset( $_POST['mtl_quick_loan'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_quick_loan'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_quick_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_quick_loan_nonce'] ) ), 'mtl_quick_loan_action' ) ) {
 
 			$ql_tool_id   = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
@@ -1061,7 +1061,7 @@ function mtl_render_inventory_page() {
 	// public/member-pages.php), for a member who wants to reserve in person
 	// rather than online. Uses the same shared Quick Loan modal/nonce, with
 	// the due-date field hidden -- reservations don't have one.
-	if ( isset( $_POST['mtl_quick_reserve'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_quick_reserve'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_quick_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_quick_loan_nonce'] ) ), 'mtl_quick_loan_action' ) ) {
 
 			$qr_tool_id   = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
@@ -1127,7 +1127,7 @@ function mtl_render_inventory_page() {
 	// moment as return_date on the tool's active loan, which is what puts it
 	// back "in inventory" everywhere else on this page (return_date IS NULL
 	// == on loan).
-	if ( isset( $_POST['mtl_mark_returned'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_mark_returned'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_mark_returned_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_mark_returned_nonce'] ) ), 'mtl_mark_returned_action' ) ) {
 
 			$mr_loan_id = isset( $_POST['loan_id'] ) ? intval( $_POST['loan_id'] ) : 0;
@@ -1156,7 +1156,7 @@ function mtl_render_inventory_page() {
 	// from the public catalog and blocks new loans/reservations, but keeps
 	// the row and its full history intact -- and is reversible via Reactivate,
 	// unlike a member delete/anonymize.
-	if ( isset( $_POST['mtl_retire_tool'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_retire_tool'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_retire_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_retire_tool_nonce'] ) ), 'mtl_retire_tool_action' ) ) {
 			$rt_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
 			$rt_done    = $wpdb->query(
@@ -1193,7 +1193,7 @@ function mtl_render_inventory_page() {
 
 	// 3E. HANDLE "REACTIVATE" SUBMISSION -- clears a Retire, unlike a member
 	// delete/anonymize this is fully and safely reversible.
-	if ( isset( $_POST['mtl_reactivate_tool'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_reactivate_tool'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_reactivate_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_reactivate_tool_nonce'] ) ), 'mtl_reactivate_tool_action' ) ) {
 			$ra_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
 			$ra_done    = $wpdb->query(
@@ -1217,7 +1217,7 @@ function mtl_render_inventory_page() {
 	// Skipped if a submitted edit above already failed validation, since that
 	// block already populated $editing/$edit_values with the admin's input.
 	$get_mtl_action = isset( $_GET['mtl_action'] ) ? sanitize_key( wp_unslash( $_GET['mtl_action'] ) ) : '';
-	if ( ! $editing && current_user_can( 'manage_options' ) && isset( $_GET['tool_id'] ) && 'edit' === $get_mtl_action ) {
+	if ( ! $editing && mtl_can_manage_library() && isset( $_GET['tool_id'] ) && 'edit' === $get_mtl_action ) {
 		$edit_tool_id = intval( $_GET['tool_id'] );
 
 		if ( $edit_tool_id > 0 ) {

@@ -22,7 +22,7 @@ function mtl_maybe_serve_member_csv_template() {
 	if (
 		! isset( $_GET['mtl_download_member_template'] ) || '' === $page ||
 		'mtl-membership' !== $page ||
-		! current_user_can( 'manage_options' )
+		! mtl_can_manage_library()
 	) {
 		return;
 	}
@@ -325,7 +325,7 @@ function mtl_render_membership_page() {
 	$edit_values    = null;
 
 	// 1. HANDLE "ADD" FORM SUBMISSION (Insert Data)
-	if ( isset( $_POST['mtl_add_member'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_add_member'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_add_member_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_member_nonce'] ) ), 'mtl_add_member_action' ) ) {
 
 			// --- Gather + sanitize incoming data ---
@@ -517,7 +517,7 @@ function mtl_render_membership_page() {
 	$bulk_warnings        = array();
 	$keep_bulk_panel_open = false;
 
-	if ( isset( $_POST['mtl_bulk_import_members'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_bulk_import_members'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_bulk_import_members_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_bulk_import_members_nonce'] ) ), 'mtl_bulk_import_members_action' ) ) {
 			$keep_bulk_panel_open = true;
 
@@ -851,7 +851,7 @@ function mtl_render_membership_page() {
 	}
 
 	// 2. HANDLE "EDIT" FORM SUBMISSION (Update Data)
-	if ( isset( $_POST['mtl_update_member'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_update_member'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_edit_member_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_edit_member_nonce'] ) ), 'mtl_edit_member_action' ) ) {
 
 			$edit_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
@@ -1128,7 +1128,7 @@ function mtl_render_membership_page() {
 	// outright when they have no loan/reservation history; when they do (that
 	// history has no ON DELETE CASCADE on member_id, by design), it
 	// anonymizes their personal data instead and leaves the history intact.
-	if ( isset( $_POST['mtl_delete_member'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_delete_member'] ) && mtl_can_delete_members() ) {
 		if ( isset( $_POST['mtl_delete_member_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_member_nonce'] ) ), 'mtl_delete_member_action' ) ) {
 
 			$delete_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
@@ -1170,7 +1170,7 @@ function mtl_render_membership_page() {
 	// this member-detail-panel quick-action section is a table name only,
 	// built from $wpdb->prefix, never request data.
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-	if ( isset( $_POST['mtl_member_mark_returned'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_member_mark_returned'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_member_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_loan_nonce'] ) ), 'mtl_member_loan_action' ) ) {
 			$mr_loan_id = isset( $_POST['loan_id'] ) ? intval( $_POST['loan_id'] ) : 0;
 			$mr_done    = $wpdb->query(
@@ -1193,7 +1193,7 @@ function mtl_render_membership_page() {
 
 	// 3C. HANDLE "EXTEND LOAN" FROM THE MEMBER DETAIL PANEL'S MANAGE-LOAN
 	// MODAL -- same effect as the Loans & Reservations "renew loan" action.
-	if ( isset( $_POST['mtl_member_extend_loan'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_member_extend_loan'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_member_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_loan_nonce'] ) ), 'mtl_member_loan_action' ) ) {
 			$ext_loan_id = isset( $_POST['loan_id'] ) ? intval( $_POST['loan_id'] ) : 0;
 			$ext_due     = isset( $_POST['due_date'] ) ? sanitize_text_field( wp_unslash( $_POST['due_date'] ) ) : '';
@@ -1233,7 +1233,7 @@ function mtl_render_membership_page() {
 
 	// 3D. HANDLE "CANCEL RESERVATION" FROM THE MEMBER DETAIL PANEL -- same
 	// effect as the Loans & Reservations "cancel reservation" action.
-	if ( isset( $_POST['mtl_member_cancel_reservation'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_member_cancel_reservation'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_member_cancel_reservation_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_cancel_reservation_nonce'] ) ), 'mtl_member_cancel_reservation_action' ) ) {
 			$cr_reservation_id = isset( $_POST['reservation_id'] ) ? intval( $_POST['reservation_id'] ) : 0;
 			$cr_done           = $wpdb->query(
@@ -1259,7 +1259,7 @@ function mtl_render_membership_page() {
 	// re-verified authoritatively here (queue order, and tool availability,
 	// can both change between page load and submit), same pattern as the
 	// Loans & Reservations checkout action.
-	if ( isset( $_POST['mtl_member_start_loan'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_member_start_loan'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_member_start_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_start_loan_nonce'] ) ), 'mtl_member_start_loan_action' ) ) {
 			$sl_reservation_id = isset( $_POST['reservation_id'] ) ? intval( $_POST['reservation_id'] ) : 0;
 			$sl_due            = isset( $_POST['due_date'] ) ? sanitize_text_field( wp_unslash( $_POST['due_date'] ) ) : '';
@@ -1356,7 +1356,7 @@ function mtl_render_membership_page() {
 	// panel. Skipped if a submitted edit above already failed validation, since
 	// that block already populated $editing/$edit_values with the admin's input.
 	$get_mtl_action = isset( $_GET['mtl_action'] ) ? sanitize_key( wp_unslash( $_GET['mtl_action'] ) ) : '';
-	if ( ! $editing && current_user_can( 'manage_options' ) && isset( $_GET['member_id'] ) && 'edit' === $get_mtl_action ) {
+	if ( ! $editing && mtl_can_manage_library() && isset( $_GET['member_id'] ) && 'edit' === $get_mtl_action ) {
 		$edit_member_id = intval( $_GET['member_id'] );
 
 		if ( $edit_member_id > 0 ) {
@@ -2259,11 +2259,20 @@ function mtl_render_membership_page() {
 									&mdash;
 								<?php else : ?>
 									<a href="<?php echo esc_url( $edit_url ); ?>" class="button button-small">Edit</a>
-									<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('<?php echo esc_js( $delete_confirm ); ?>');">
-										<?php wp_nonce_field( 'mtl_delete_member_action', 'mtl_delete_member_nonce' ); ?>
-										<input type="hidden" name="member_id" value="<?php echo esc_attr( $member->member_id ); ?>">
-										<button type="submit" name="mtl_delete_member" class="button button-small mtl-btn-danger">Delete</button>
-									</form>
+									<?php
+									// Deleting a member is administrators-only, so Editors
+									// get no Delete button. The handler checks the same
+									// thing, so hiding it here is presentation, not the
+									// enforcement. Members can always delete their own
+									// account themselves from the public Account page.
+									if ( mtl_can_delete_members() ) :
+										?>
+										<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('<?php echo esc_js( $delete_confirm ); ?>');">
+											<?php wp_nonce_field( 'mtl_delete_member_action', 'mtl_delete_member_nonce' ); ?>
+											<input type="hidden" name="member_id" value="<?php echo esc_attr( $member->member_id ); ?>">
+											<button type="submit" name="mtl_delete_member" class="button button-small mtl-btn-danger">Delete</button>
+										</form>
+									<?php endif; ?>
 								<?php endif; ?>
 							</td>
 						</tr>

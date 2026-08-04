@@ -71,14 +71,49 @@ function mtl_markdown_inline( $text ) {
 }
 
 /**
+ * Splits one Markdown table row ("| a | b |") into its cell strings.
+ *
+ * @param string $row Raw row text.
+ * @return string[] Trimmed cell contents.
+ */
+function mtl_markdown_table_cells( $row ) {
+	$row = trim( $row );
+	// Drop the optional leading and trailing pipes so an empty first/last
+	// cell isn't invented by the split.
+	$row = preg_replace( '/^\|/', '', $row );
+	$row = preg_replace( '/\|$/', '', $row );
+	return array_map( 'trim', explode( '|', $row ) );
+}
+
+/**
+ * Whether a line is a Markdown table's alignment row -- the "| --- | :---: |"
+ * separator that turns the line above it into a header.
+ *
+ * @param string $line Raw line.
+ * @return bool
+ */
+function mtl_markdown_is_table_delimiter( $line ) {
+	$line = trim( $line );
+	if ( '' === $line || false === strpos( $line, '-' ) || false === strpos( $line, '|' ) ) {
+		return false;
+	}
+	foreach ( mtl_markdown_table_cells( $line ) as $cell ) {
+		if ( ! preg_match( '/^:?-{1,}:?$/', $cell ) ) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
  * Converts a constrained subset of Markdown -- headings, horizontal rules,
  * blockquotes, ordered/unordered lists (with basic nesting by indentation),
- * paragraphs, and inline bold/italic/code/links -- to HTML. This is NOT a
- * general-purpose CommonMark parser; it's a small, dependency-free renderer
- * sized specifically for this plugin's own documentation/staff-workflows.md
- * (see mtl_render_workflows_page()), matching the plugin's no-3rd-party-
- * dependency rule (see the font presets in my-tool-library.php for the same
- * rule applied elsewhere).
+ * pipe tables, paragraphs, and inline bold/italic/code/links -- to HTML. This
+ * is NOT a general-purpose CommonMark parser; it's a small, dependency-free
+ * renderer sized specifically for this plugin's own
+ * documentation/staff-workflows.md (see mtl_render_workflows_page()),
+ * matching the plugin's no-3rd-party-dependency rule (see the font presets in
+ * my-tool-library.php for the same rule applied elsewhere).
  *
  * @param string $markdown Raw Markdown source.
  * @return string HTML. Every heading gets a slug id (see mtl_markdown_slug())
@@ -92,7 +127,11 @@ function mtl_markdown_to_html( $markdown ) {
 	$para_buffer  = array();
 	$quote_buffer = array();
 
-	foreach ( $lines as $line ) {
+	// Indexed rather than foreach: a table is only a table when the line AFTER
+	// the header is an alignment row, so this needs one line of lookahead.
+	$line_count = count( $lines );
+	for ( $i = 0; $i < $line_count; $i++ ) {
+		$line = $lines[ $i ];
 		// Blank line: ends whatever block is currently accumulating.
 		if ( '' === trim( $line ) ) {
 			if ( ! empty( $para_buffer ) ) {
@@ -132,6 +171,71 @@ function mtl_markdown_to_html( $markdown ) {
 		if ( ! empty( $quote_buffer ) ) {
 			$html        .= '<blockquote><p>' . mtl_markdown_inline( implode( ' ', $quote_buffer ) ) . '</p></blockquote>';
 			$quote_buffer = array();
+		}
+
+		// Pipe table: a header row, an alignment row, then body rows until the
+		// first line that isn't one. Rendered flat (no nesting, no inline
+		// block content beyond the usual bold/code/links per cell), which is
+		// all staff-workflows.md's permission matrices need.
+		if (
+			0 === strpos( trim( $line ), '|' )
+			&& isset( $lines[ $i + 1 ] )
+			&& mtl_markdown_is_table_delimiter( $lines[ $i + 1 ] )
+		) {
+			if ( ! empty( $para_buffer ) ) {
+				$html       .= '<p>' . mtl_markdown_inline( implode( ' ', $para_buffer ) ) . '</p>';
+				$para_buffer = array();
+			}
+			while ( ! empty( $list_stack ) ) {
+				$closing = array_pop( $list_stack );
+				$html   .= '</' . $closing['type'] . '>';
+			}
+
+			$headers = mtl_markdown_table_cells( $line );
+
+			// Column alignment, read from the ":" markers in the delimiter row.
+			$aligns = array();
+			foreach ( mtl_markdown_table_cells( $lines[ $i + 1 ] ) as $spec ) {
+				$left  = ( ':' === substr( $spec, 0, 1 ) );
+				$right = ( ':' === substr( $spec, -1 ) );
+				if ( $left && $right ) {
+					$aligns[] = 'center';
+				} elseif ( $right ) {
+					$aligns[] = 'right';
+				} else {
+					$aligns[] = '';
+				}
+			}
+
+			$cell_style = function ( $index ) use ( $aligns ) {
+				return isset( $aligns[ $index ] ) && '' !== $aligns[ $index ]
+					? ' style="text-align: ' . esc_attr( $aligns[ $index ] ) . ';"'
+					: '';
+			};
+
+			$html .= '<table><thead><tr>';
+			foreach ( $headers as $index => $cell ) {
+				$html .= '<th' . $cell_style( $index ) . '>' . mtl_markdown_inline( $cell ) . '</th>';
+			}
+			$html .= '</tr></thead><tbody>';
+
+			// Skip past the header and the delimiter, then take body rows until
+			// the first line that isn't one.
+			$i += 2;
+			while ( $i < $line_count && 0 === strpos( trim( $lines[ $i ] ), '|' ) ) {
+				$html .= '<tr>';
+				foreach ( mtl_markdown_table_cells( $lines[ $i ] ) as $index => $cell ) {
+					$html .= '<td' . $cell_style( $index ) . '>' . mtl_markdown_inline( $cell ) . '</td>';
+				}
+				$html .= '</tr>';
+				++$i;
+			}
+			// $i now sits on the line that ended the table; the outer loop's
+			// own increment would skip it, so step back one.
+			--$i;
+
+			$html .= '</tbody></table>';
+			continue;
 		}
 
 		// Ordered ("1. ") or unordered ("- "/"* "/"+ ") list item, with
@@ -194,7 +298,7 @@ function mtl_markdown_to_html( $markdown ) {
  * this page -- the rendered doc fills the whole admin content area.
  */
 function mtl_render_workflows_page() {
-	if ( ! current_user_can( 'manage_options' ) ) {
+	if ( ! mtl_can_manage_library() ) {
 		return;
 	}
 
@@ -245,6 +349,29 @@ function mtl_render_workflows_page() {
 			border: none;
 			border-top: 1px solid #ddd;
 			margin: 2em 0;
+		}
+		/* Permission matrices and similar reference tables. The wrapper keeps a
+			wide table scrollable instead of stretching the page. */
+		.mtl-workflows-doc table {
+			border-collapse: collapse;
+			margin: 1.2em 0;
+			display: block;
+			overflow-x: auto;
+			max-width: 100%;
+		}
+		.mtl-workflows-doc th,
+		.mtl-workflows-doc td {
+			border: 1px solid #ddd;
+			padding: 7px 12px;
+			text-align: left;
+		}
+		.mtl-workflows-doc thead th {
+			background: #f6f7f7;
+			font-weight: 600;
+			white-space: nowrap;
+		}
+		.mtl-workflows-doc tbody tr:nth-child(even) {
+			background: #fafbfc;
 		}
 		.mtl-workflows-doc ul,
 		.mtl-workflows-doc ol {

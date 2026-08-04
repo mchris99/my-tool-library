@@ -2,16 +2,56 @@
 
 Reference steps for the most common jobs staff will do in the plugin.
 
-All admin pages require signing in with a WordPress account that has the **Administrator** role (`manage_options` capability) — there is currently no separate "staff" or "volunteer" role with restricted access. Everyone who works the desk needs a full Administrator account (see [Creating a New Administrator Account](#2-creating-a-new-administrator-account)).
+Using the admin pages requires signing in with a WordPress account that has either the **Administrator** or the **Editor** role. Editor is the everyday desk role; Administrator is for whoever runs the library. See [Staff Roles and Permissions](#staff-roles-and-permissions) for exactly what each one can do.
 
 ## Contents
 
-1. [Initial Setup](#1-initial-setup)
-2. [Creating a New Administrator Account](#2-creating-a-new-administrator-account)
-3. [Adding Inventory Items](#3-adding-inventory-items)
-4. [Adding a New Member In-Person & Verifying Their Identity](#4-adding-a-new-member-in-person--verifying-their-identity)
-5. [Starting a Loan for a Member](#5-starting-a-loan-for-a-member)
-6. [Additional Workflows](#6-additional-workflows)
+1. [Staff Roles and Permissions](#staff-roles-and-permissions)
+2. [Initial Setup](#1-initial-setup)
+3. [Creating a New Staff Account](#2-creating-a-new-staff-account)
+4. [Adding Inventory Items](#3-adding-inventory-items)
+5. [Adding a New Member In-Person & Verifying Their Identity](#4-adding-a-new-member-in-person--verifying-their-identity)
+6. [Starting a Loan for a Member](#5-starting-a-loan-for-a-member)
+7. [Additional Workflows](#6-additional-workflows)
+
+---
+
+## Staff Roles and Permissions
+
+There are two staff roles, both of them standard WordPress roles — the plugin doesn't invent its own.
+
+**Editor** — the role for anyone working the desk. They can run the library day to day: add and edit members, add and edit tools, check tools in and out, manage reservations, and read this guide. This is the role to give volunteers and staff by default.
+
+**Administrator** — everything an Editor can do, plus the two things that are hard to undo: the **Setup** page and deleting a member's record. Give this only to the people who run the library.
+
+### What each role can do
+
+| Task | Editor | Administrator |
+| --- | :---: | :---: |
+| View the Dashboard | ✅ | ✅ |
+| Add, edit, and bulk-import members | ✅ | ✅ |
+| Record member trainings | ✅ | ✅ |
+| View verification documents, mark members verified | ✅ | ✅ |
+| Add, edit, retire and bulk-import tools | ✅ | ✅ |
+| Check tools out, renew, and mark returned | ✅ | ✅ |
+| Create, cancel and fulfil reservations | ✅ | ✅ |
+| Read the Workflows guide | ✅ | ✅ |
+| **Delete a member's record** | ❌ | ✅ |
+| **Open the Setup page** (and everything on it) | ❌ | ✅ |
+| — Branding, colors, fonts, logo | ❌ | ✅ |
+| — Categories, tags and trainings lists | ❌ | ✅ |
+| — Export data (`.sql` / CSV) | ❌ | ✅ |
+| — Run Database Setup | ❌ | ✅ |
+
+An Editor doesn't see a **Setup** tab at all, and doesn't see a **Delete** button on the Membership page. Those aren't just hidden — if an Editor reaches the Setup page by typing its address, WordPress refuses the request, and a delete submitted any other way is rejected too.
+
+> **Note:** Editor is a full WordPress role, so it also grants the ability to write and edit posts and pages elsewhere on your site. If that matters to you, restrict it with a role-management plugin — the tool library only ever checks whether the account is an Editor or an Administrator.
+
+### Members can always delete their own account
+
+None of the above stops a **member** removing themselves. Signed in on the public site, any member can go to **My Account > Danger Zone** and choose **Delete Account and Remove Personal Data**. That works regardless of which staff roles exist, and it produces exactly the same outcome as a staff deletion: if they have no loan or reservation history their record is fully removed; if they do, their personal details are erased and the history is kept (see [Deleting a member](#deleting-a-member)).
+
+Making member deletion Administrator-only is about protecting records from accidental staff action. It is not a way to stop someone leaving, and members do not need to ask staff to be removed.
 
 ---
 
@@ -35,22 +75,35 @@ Do this once, when the plugin is first installed on the site.
     - Fill in your data in rows (delete the example row before uploading), keeping one tool or member per row. Column order doesn't matter as long as the header names match.
     - Upload the completed CSV and submit. The plugin reports how many rows succeeded and lists the reason for any row that failed (e.g. a missing required field or an invalid category), so you can fix just those rows and re-upload.
 8. Use the **Export Data** section on the Setup page any time you want a full backup (a SQL dump or a ZIP of CSVs, one per table) — good practice before any bulk import or major change.
+9. **Set up accounts for the rest of your staff.** Everyone working the desk should get their own **Editor** account rather than sharing yours — see [Creating a New Staff Account](#2-creating-a-new-staff-account). Editors can do everything day to day; keep **Administrator** for whoever runs the library, since it's what unlocks this Setup page and deleting members.
 
 ---
 
-## 2. Creating a New Administrator Account
+## 2. Creating a New Staff Account
 
-Every staff member who needs access to the admin back office needs a full WordPress Administrator account. This plugin does not have its own staff login system — access is entirely controlled by WordPress's built-in user roles.
+Staff access is controlled entirely by WordPress's built-in user roles — this plugin has no separate staff login system. See [Staff Roles and Permissions](#staff-roles-and-permissions) for what each role can do.
 
-> **Note:** Because Administrator is a full WordPress role, it grants access to _all_ of WordPress, not just this plugin. Only give it to people you trust with full site access.
+### Adding an Editor (the usual choice)
+
+Give **Editor** to anyone working the desk: volunteers, front-of-house staff, anyone who checks tools in and out or signs members up. They get everything except the Setup page and deleting members.
 
 1. In the WordPress dashboard, go to **Users > Add New**.
 2. Enter the staff member's username and email address.
-3. Under **Role**, select **Administrator**.
+3. Under **Role**, select **Editor**.
 4. Click **Add New User**. WordPress emails them a link to set their own password (or set one yourself and share it securely).
-5. The new administrator can now sign in — either through the normal WordPress login (`/wp-login.php` or `/wp-admin/`) or through the plugin's own branded **Sign In** page (reachable from the public catalog's footer), which routes administrators straight into the **My Tool Library** admin portal.
+5. They can now sign in — through the normal WordPress login (`/wp-login.php` or `/wp-admin/`) or through the plugin's branded **Sign In** page (linked from the public catalog's footer), which routes staff straight into the **My Tool Library** admin portal.
 
-> **Note:** If administrators will also be customers of the tool library, make sure they create admin account with a username other than their personal email.
+To change someone who already has an account, go to **Users**, click their name, and set **Role** to **Editor**.
+
+### Adding an Administrator
+
+Give **Administrator** only to the people who run the library — it adds the Setup page and the ability to delete members, and grants full control of the entire WordPress site.
+
+Follow the same steps, choosing **Administrator** at step 3.
+
+> **Note:** Both of these are full WordPress roles, so they grant access beyond this plugin — Editor can write and edit posts and pages, and Administrator can do anything at all on the site. Give out Administrator sparingly.
+
+> **Note:** If a staff member will also borrow tools as a member, have them use a different username for their staff account than their personal email address, so the two accounts stay separate.
 
 ---
 
@@ -223,6 +276,8 @@ To put things right:
 
 ### Deleting a member
 
+**Administrators only.** Editors have no **Delete** button on the Membership page — if a member needs removing and you're an Editor, ask an administrator, or point the member at the self-service option below, which is always available to them.
+
 Click **Delete** next to a member on the **Membership** page. What actually happens depends on whether that member has ever borrowed or reserved a tool:
 
 - **No loan or reservation history** — the member is removed outright: their record and their WordPress account are both permanently gone.
@@ -234,7 +289,7 @@ Either way, any reservation the member currently has (for any tool) is **cancell
 
 Either outcome is **permanent and cannot be undone**, and the confirmation dialog explains which one a given member will get before you confirm.
 
-Members can also do this themselves: on their **Account** page, under **Danger Zone**, clicking **Delete Account and Remove Personal Data** walks them through the same two-step confirmation and produces the exact same outcome (full removal or anonymization, depending on their history, plus cancelling any active reservation).
+**Members can always do this themselves, without staff involvement.** Signed in on the public site, a member goes to their **Account** page and, under **Danger Zone**, clicks **Delete Account and Remove Personal Data**. That walks them through the same two-step confirmation and produces the exact same outcome (full removal or anonymization, depending on their history, plus cancelling any active reservation). This is always available to them no matter which staff roles exist, so a member never has to wait on an administrator to have their data removed.
 
 ### Retiring or deleting a tool
 

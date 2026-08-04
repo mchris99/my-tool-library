@@ -55,3 +55,17 @@ foreach ( $mtl_options as $mtl_option ) {
 // above. $delete_all = true removes this meta key for every user, not just
 // one, without needing to know their individual user IDs.
 delete_metadata( 'user', 0, 'mtl_dashboard_layout', '', true );
+
+// The staff capability this plugin grants to the Administrator and Editor
+// roles (see mtl_register_staff_capabilities()). It only ever means "may use
+// this plugin's admin portal", so with the plugin gone it is dead weight on
+// every role that holds it. Removed from all roles, not just the two granted
+// by default, in case a site administrator copied it onto a custom role.
+// Nobody's role assignment changes -- only this one capability is dropped.
+$mtl_roles = wp_roles();
+foreach ( array_keys( $mtl_roles->roles ) as $mtl_role_name ) {
+	$mtl_role = get_role( $mtl_role_name );
+	if ( $mtl_role && $mtl_role->has_cap( 'mtl_manage_library' ) ) {
+		$mtl_role->remove_cap( 'mtl_manage_library' );
+	}
+}

@@ -256,7 +256,7 @@ function mtl_member_nav_html() {
 		return $out . '</div>';
 	}
 
-	if ( current_user_can( 'manage_options' ) ) {
+	if ( mtl_can_manage_library() ) {
 		$out .= '<a class="mtl-shop-btn mtl-shop-btn-ghost" href="' . esc_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) . '">Admin Portal</a>';
 		$out .= '<a class="mtl-shop-btn mtl-shop-btn-ghost" href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
 		return $out . '</div>';

@@ -99,7 +99,7 @@ function mtl_maybe_export_data() {
 
 	// Exporting exposes ALL member data (including sensitive verification
 	// document URLs), so gate it on the admin capability AND a valid nonce.
-	if ( ! current_user_can( 'manage_options' ) ) {
+	if ( ! mtl_can_manage_settings() ) {
 		return;
 	}
 	if ( ! isset( $_POST['mtl_export_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_export_nonce'] ) ), 'mtl_export_action' ) ) {
@@ -327,6 +327,15 @@ function mtl_build_zip( $files ) {
 function mtl_render_setup_page() {
 	global $wpdb;
 
+	// Administrators only. WordPress already refuses to route an Editor here
+	// (the page is registered against manage_options in
+	// mtl_register_admin_menus()), so this is defence in depth rather than the
+	// gate itself -- and it keeps the guarantee local to the file, where every
+	// handler below repeats it.
+	if ( ! mtl_can_manage_settings() ) {
+		return;
+	}
+
 	$tbl_categories = $wpdb->prefix . 'tool_categories';
 	$tbl_tags       = $wpdb->prefix . 'tool_tags';
 	$tbl_trainings  = $wpdb->prefix . 'member_trainings';
@@ -337,7 +346,7 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 1. HANDLE SETTINGS FORM SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_save_settings'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_save_settings'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_settings_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_settings_nonce'] ) ), 'mtl_save_settings_action' ) ) {
 
 			// General.
@@ -419,7 +428,7 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// Own form/nonce/option, separate from the General Details form above,
 	// so saving just this field can never blank out the other settings.
-	if ( isset( $_POST['mtl_save_home_url'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_save_home_url'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_home_url_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_home_url_nonce'] ) ), 'mtl_save_home_url_action' ) ) {
 			update_option( 'mtl_home_url', isset( $_POST['mtl_home_url'] ) ? sanitize_url( wp_unslash( $_POST['mtl_home_url'] ) ) : '' );
 			echo '<div class="notice notice-success is-dismissible"><p><strong>Success:</strong> Home page link has been saved.</p></div>';
@@ -431,7 +440,7 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 2. HANDLE "ADD CATEGORY" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_add_category'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_add_category'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_add_category_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_category_nonce'] ) ), 'mtl_add_category_action' ) ) {
 			$new_category_name = isset( $_POST['new_category_name'] ) ? sanitize_text_field( wp_unslash( $_POST['new_category_name'] ) ) : '';
 
@@ -473,7 +482,7 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 3. HANDLE "ADD TAG" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_add_tag'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_add_tag'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_add_tag_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_tag_nonce'] ) ), 'mtl_add_tag_action' ) ) {
 			$new_tag_name = isset( $_POST['new_tag_name'] ) ? sanitize_text_field( wp_unslash( $_POST['new_tag_name'] ) ) : '';
 
@@ -515,7 +524,7 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 2B. HANDLE "DELETE CATEGORIES" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_delete_categories'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_delete_categories'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_delete_categories_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_categories_nonce'] ) ), 'mtl_delete_categories_action' ) ) {
 			$delete_category_ids = isset( $_POST['delete_category_ids'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['delete_category_ids'] ) ) : array();
 			$delete_category_ids = array_filter(
@@ -547,7 +556,7 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 3B. HANDLE "DELETE TAGS" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_delete_tags'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_delete_tags'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_delete_tags_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_tags_nonce'] ) ), 'mtl_delete_tags_action' ) ) {
 			$delete_tag_ids = isset( $_POST['delete_tag_ids'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['delete_tag_ids'] ) ) : array();
 			$delete_tag_ids = array_filter(
@@ -579,7 +588,7 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 3C. HANDLE "ADD TRAINING" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_add_training'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_add_training'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_add_training_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_training_nonce'] ) ), 'mtl_add_training_action' ) ) {
 			$new_training_name = isset( $_POST['new_training_name'] ) ? sanitize_text_field( wp_unslash( $_POST['new_training_name'] ) ) : '';
 
@@ -621,7 +630,7 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 3D. HANDLE "DELETE TRAININGS" SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_delete_trainings'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_delete_trainings'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_delete_trainings_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_trainings_nonce'] ) ), 'mtl_delete_trainings_action' ) ) {
 			$delete_training_ids = isset( $_POST['delete_training_ids'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['delete_training_ids'] ) ) : array();
 			$delete_training_ids = array_filter(
@@ -653,7 +662,7 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// 4. HANDLE DATABASE SETUP SUBMISSION
 	// ==========================================
-	if ( isset( $_POST['mtl_run_db_setup'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_run_db_setup'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_db_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_db_nonce'] ) ), 'mtl_run_db_action' ) ) {
 			// Typed-phrase confirmation. Checked here and not only in the
 			// browser prompt: this is the one irreversible action in the

@@ -199,7 +199,7 @@ function mtl_lr_handle_actions() {
 	if ( 'POST' !== $request_method || ! isset( $_POST['mtl_lr_action'] ) ) {
 		return '';
 	}
-	if ( ! current_user_can( 'manage_options' ) ) {
+	if ( ! mtl_can_manage_library() ) {
 		return '';
 	}
 	if ( ! isset( $_POST['mtl_lr_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_lr_nonce'] ) ), 'mtl_lr_action' ) ) {
@@ -363,7 +363,7 @@ function mtl_lr_handle_actions() {
 function mtl_render_loans_page() {
 	global $wpdb;
 
-	if ( ! current_user_can( 'manage_options' ) ) {
+	if ( ! mtl_can_manage_library() ) {
 		return;
 	}
 

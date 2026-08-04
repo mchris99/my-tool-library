@@ -208,7 +208,7 @@ function mtl_dash_bars( $items, $bar_color_var = '--mtl-header-color' ) {
 function mtl_render_dashboard_page() {
 	global $wpdb;
 
-	if ( ! current_user_can( 'manage_options' ) ) {
+	if ( ! mtl_can_manage_library() ) {
 		return;
 	}
 
@@ -233,7 +233,7 @@ function mtl_render_dashboard_page() {
 	// ==========================================
 	// 1. HANDLE "SAVE LAYOUT" / "RESET LAYOUT" SUBMISSIONS
 	// ==========================================
-	if ( isset( $_POST['mtl_save_dashboard_layout'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_save_dashboard_layout'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_dashboard_layout_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_dashboard_layout_nonce'] ) ), 'mtl_dashboard_layout_action' ) ) {
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- validated below: json_decode() must succeed, then every field is whitelist-checked against mtl_dashboard_panels() before use.
 			$raw     = isset( $_POST['mtl_dashboard_layout_json'] ) ? wp_unslash( $_POST['mtl_dashboard_layout_json'] ) : '';
@@ -264,7 +264,7 @@ function mtl_render_dashboard_page() {
 		}
 	}
 
-	if ( isset( $_POST['mtl_reset_dashboard_layout'] ) && current_user_can( 'manage_options' ) ) {
+	if ( isset( $_POST['mtl_reset_dashboard_layout'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_dashboard_layout_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_dashboard_layout_nonce'] ) ), 'mtl_dashboard_layout_action' ) ) {
 			delete_user_meta( get_current_user_id(), 'mtl_dashboard_layout' );
 			echo '<div class="notice notice-success is-dismissible"><p><strong>Reset.</strong> The dashboard layout is back to its defaults.</p></div>';

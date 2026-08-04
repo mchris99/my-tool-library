@@ -405,7 +405,7 @@ function mtl_render_shop_page() {
 	// mtl_shop_render_detail_panel). The lookups only run when signed in.
 	$member_ctx = array(
 		'is_member'           => false,
-		'is_admin'            => ( is_user_logged_in() && current_user_can( 'manage_options' ) ),
+		'is_admin'            => ( is_user_logged_in() && mtl_can_manage_library() ),
 		'reserved'            => array(), // Tool_id => true (active reservations).
 		'loaned'              => array(), // Tool_id => true (currently on loan).
 		'reserve_nonce_field' => '',

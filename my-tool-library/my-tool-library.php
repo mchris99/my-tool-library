@@ -806,6 +806,92 @@ function mtl_apply_custom_admin_styles() {
 	}
 }
 
+// ==========================================================================
+// STAFF PERMISSIONS
+//
+// Two levels of library staff:
+//
+// Administrator -- everything, including the Setup page (branding, database
+// setup, exports) and deleting a member's record.
+// Editor        -- the day-to-day desk role: members, inventory, loans and
+// reservations, dashboard and workflows. No Setup page and
+// no member deletion.
+//
+// Editor is WordPress's own built-in role, so no custom role is created here;
+// the plugin only adds one capability to it. Anything a member can do to
+// their OWN account (including deleting it) is unaffected by all of this --
+// that runs on the public site and is gated by mtl_current_member(), never by
+// these capabilities.
+// ==========================================================================
+
+// The capability that grants access to the plugin's admin portal. Held by
+// Administrator and Editor; checked through mtl_can_manage_library().
+const MTL_STAFF_CAP = 'mtl_manage_library';
+
+add_action( 'init', 'mtl_register_staff_capabilities' );
+
+/**
+ * Grants the library staff capability to the Administrator and Editor roles.
+ *
+ * Runs on init rather than only on activation so it also reaches installs
+ * that were already active before this feature shipped, matching how
+ * mtl_register_member_role() handles the member role. add_cap() writes to the
+ * roles option, so each role is checked first and only touched when the
+ * capability is genuinely missing.
+ */
+function mtl_register_staff_capabilities() {
+	foreach ( array( 'administrator', 'editor' ) as $role_name ) {
+		$role = get_role( $role_name );
+		if ( $role && ! $role->has_cap( MTL_STAFF_CAP ) ) {
+			$role->add_cap( MTL_STAFF_CAP );
+		}
+	}
+}
+
+/**
+ * Whether the current user may use the plugin's admin portal at all --
+ * Dashboard, Membership, Inventory, Loans & Reservations, and Workflows.
+ * True for Editors and Administrators.
+ *
+ * Administrators are accepted via manage_options as well as the capability
+ * itself, so an administrator can never be locked out of their own library
+ * even if the roles option is missing the capability (a partially restored
+ * database, a role editor plugin, or a Super Admin on multisite).
+ *
+ * @return bool
+ */
+function mtl_can_manage_library() {
+	return current_user_can( 'manage_options' ) || current_user_can( MTL_STAFF_CAP );
+}
+
+/**
+ * Whether the current user may open the Setup page and run the actions on it
+ * (branding and appearance, category/tag/training lists, database setup, and
+ * the data exports). Administrators only -- these change how the whole
+ * library behaves, or hand over a file containing every member's details.
+ *
+ * @return bool
+ */
+function mtl_can_manage_settings() {
+	return current_user_can( 'manage_options' );
+}
+
+/**
+ * Whether the current user may delete a member's record. Administrators only:
+ * it destroys personal data irreversibly, and where the member has loan
+ * history it rewrites that history's owner (see
+ * mtl_delete_or_anonymize_member()).
+ *
+ * Members deleting their OWN account from the public Account page do not go
+ * through this -- see mtl_render_account_page() in public/member-pages.php.
+ * That right is theirs regardless of who is on staff.
+ *
+ * @return bool
+ */
+function mtl_can_delete_members() {
+	return current_user_can( 'manage_options' );
+}
+
 // ADMIN MENUS: Register the portal pages.
 // add_submenu_page() both places a sidebar link AND registers the page's
 // routing/render callback/capability check -- so all six must stay
@@ -816,14 +902,20 @@ add_action( 'admin_menu', 'mtl_register_admin_menus' );
 
 /**
  * Registers the plugin's top-level admin page and its six portal pages.
+ *
+ * Every page except Setup is registered against MTL_STAFF_CAP, so Editors
+ * reach them and WordPress itself refuses anyone else. Setup keeps
+ * manage_options, which is what stops an Editor opening it by URL -- core
+ * returns "Sorry, you are not allowed to access this page" before the render
+ * callback ever runs (mtl_render_setup_page() re-checks anyway).
  */
 function mtl_register_admin_menus() {
-	add_menu_page( 'My Tool Library Dashboard', 'My Tool Library', 'manage_options', 'mtl-dashboard', 'mtl_render_dashboard_page', 'dashicons-hammer', 25 );
-	add_submenu_page( 'mtl-dashboard', 'My Tool Library Dashboard', 'Dashboard', 'manage_options', 'mtl-dashboard', 'mtl_render_dashboard_page' );
-	add_submenu_page( 'mtl-dashboard', 'Manage Membership', 'Membership', 'manage_options', 'mtl-membership', 'mtl_render_membership_page' );
-	add_submenu_page( 'mtl-dashboard', 'Tool Inventory', 'Inventory', 'manage_options', 'mtl-inventory', 'mtl_render_inventory_page' );
-	add_submenu_page( 'mtl-dashboard', 'Loans & Reservations', 'Loans & Reservations', 'manage_options', 'mtl-loans', 'mtl_render_loans_page' );
-	add_submenu_page( 'mtl-dashboard', 'Staff Workflows', 'Workflows', 'manage_options', 'mtl-workflows', 'mtl_render_workflows_page' );
+	add_menu_page( 'My Tool Library Dashboard', 'My Tool Library', MTL_STAFF_CAP, 'mtl-dashboard', 'mtl_render_dashboard_page', 'dashicons-hammer', 25 );
+	add_submenu_page( 'mtl-dashboard', 'My Tool Library Dashboard', 'Dashboard', MTL_STAFF_CAP, 'mtl-dashboard', 'mtl_render_dashboard_page' );
+	add_submenu_page( 'mtl-dashboard', 'Manage Membership', 'Membership', MTL_STAFF_CAP, 'mtl-membership', 'mtl_render_membership_page' );
+	add_submenu_page( 'mtl-dashboard', 'Tool Inventory', 'Inventory', MTL_STAFF_CAP, 'mtl-inventory', 'mtl_render_inventory_page' );
+	add_submenu_page( 'mtl-dashboard', 'Loans & Reservations', 'Loans & Reservations', MTL_STAFF_CAP, 'mtl-loans', 'mtl_render_loans_page' );
+	add_submenu_page( 'mtl-dashboard', 'Staff Workflows', 'Workflows', MTL_STAFF_CAP, 'mtl-workflows', 'mtl_render_workflows_page' );
 	add_submenu_page( 'mtl-dashboard', 'Plugin Setup', 'Setup', 'manage_options', 'mtl-setup', 'mtl_render_setup_page' );
 }
 
@@ -873,14 +965,18 @@ function mtl_render_admin_portal_tabs() {
 		return;
 	}
 
-	$tabs    = array(
+	$tabs = array(
 		'mtl-dashboard'  => 'Dashboard',
 		'mtl-membership' => 'Membership',
 		'mtl-inventory'  => 'Inventory',
 		'mtl-loans'      => 'Loans & Reservations',
 		'mtl-workflows'  => 'Workflows',
-		'mtl-setup'      => 'Setup',
 	);
+	// Setup is administrators-only, so Editors never see the tab. Hiding it is
+	// a courtesy; the capability on the page itself is what enforces it.
+	if ( mtl_can_manage_settings() ) {
+		$tabs['mtl-setup'] = 'Setup';
+	}
 	$current = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 	$h_color = get_option( 'mtl_header_color', '#ff6600' );
 
@@ -1235,7 +1331,7 @@ function mtl_render_front_main_page() {
 	// Discreet footer links, varying with login state. (The primary member
 	// sign-in / sign-up / account controls live in the catalog's own top-bar
 	// nav; these footer links are a quiet secondary path).
-	if ( is_user_logged_in() && current_user_can( 'manage_options' ) ) {
+	if ( is_user_logged_in() && mtl_can_manage_library() ) {
 		$footer  = '<a href="' . esc_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) . '">Open Admin Portal</a>';
 		$footer .= '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
 	} elseif ( is_user_logged_in() ) {
@@ -1287,11 +1383,11 @@ function mtl_render_front_login_page() {
 }
 
 /**
- * Post-login router. Administrators continue into the admin portal; any
- * other signed-in user (i.e. a member) is sent back to the public
- * catalog, where their reservation and account tools live. (This gate is
- * a courtesy router -- the real enforcement is WordPress's own
- * manage_options capability check on every admin page and form handler.)
+ * Post-login router. Library staff (Editors and Administrators) continue into
+ * the admin portal; any other signed-in user (i.e. a member) is sent back to
+ * the public catalog, where their reservation and account tools live. (This
+ * gate is a courtesy router -- the real enforcement is WordPress's own
+ * capability check on every admin page and form handler.)
  */
 function mtl_handle_admin_gate() {
 	if ( ! is_user_logged_in() ) {
@@ -1299,12 +1395,12 @@ function mtl_handle_admin_gate() {
 		exit;
 	}
 
-	if ( current_user_can( 'manage_options' ) ) {
+	if ( mtl_can_manage_library() ) {
 		wp_safe_redirect( admin_url( 'admin.php?page=mtl-dashboard' ) );
 		exit;
 	}
 
-	// Signed in, but not an administrator -- a member. Send them to the shop.
+	// Signed in, but not staff -- a member. Send them to the shop.
 	wp_safe_redirect( mtl_front_page_url( 'main' ) );
 	exit;
 }
