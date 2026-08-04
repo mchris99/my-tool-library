@@ -1367,7 +1367,8 @@ function mtl_render_setup_page() {
 			<div style="background: #fdf2f2; border-left: 4px solid #d63638; padding: 12px; margin-bottom: 20px;">
 				<p style="margin: 0 0 8px 0;"><strong>Warning: this permanently deletes all My Tool Library data.</strong></p>
 				<p style="margin: 0 0 8px 0;"><code>schema.sql</code> begins by dropping every one of the plugin's tables, so running it <em>always</em> erases what is currently stored &mdash; every member, verification document, training record, tool, category, tag, loan and reservation &mdash; and then recreates the tables empty. This is not a conditional risk and there is no undo.</p>
-				<p style="margin: 0;">Use <strong>Export Data</strong> first if there is any chance you will need the current contents back.</p>
+				<p style="margin: 0 0 8px 0;">Members&rsquo; <strong>WordPress sign-ins are not touched</strong> &mdash; they keep their accounts and passwords &mdash; but the records those sign-ins point to are gone, so members will be told their account can&rsquo;t be matched until the data is restored. Re-importing members from CSV does <em>not</em> fix this: it assigns brand-new member IDs.</p>
+				<p style="margin: 0;">Use <strong>Export Data</strong> first if there is any chance you will need the current contents back, and restore from the <strong>.sql dump</strong> &mdash; it is the only export that preserves IDs and keeps every sign-in connected.</p>
 			</div>
 
 			<form method="post" action="" id="mtl-db-reset-form">
@@ -1434,9 +1435,13 @@ function mtl_render_setup_page() {
 			<p>Download a complete copy of all My Tool Library data &mdash; members, verifications, inventory, categories, tags, loans and reservations.</p>
 
 			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
-				<li><strong>.sql dump</strong> &mdash; a single SQL file (DROP + CREATE + INSERT) you can import into any MySQL/MariaDB database. Table names <strong>keep</strong> the <code><?php echo esc_html( $wpdb->prefix ); ?></code> prefix (e.g. <code><?php echo esc_html( $wpdb->prefix ); ?>members</code>), matching how the plugin creates them.</li>
-				<li><strong>.zip of CSVs</strong> &mdash; one <code>.csv</code> file per table, named after the table without the prefix (e.g. <code>members.csv</code>), handy for spreadsheets.</li>
+				<li><strong>.sql dump</strong> &mdash; a single SQL file (DROP + CREATE + INSERT) you can import into any MySQL/MariaDB database. Table names <strong>keep</strong> the <code><?php echo esc_html( $wpdb->prefix ); ?></code> prefix (e.g. <code><?php echo esc_html( $wpdb->prefix ); ?>members</code>), matching how the plugin creates them. <strong>This is the one to keep as a backup:</strong> it preserves every record&rsquo;s ID, so restoring it puts members, loans, reservations and members&rsquo; online sign-ins back exactly as they were.</li>
+				<li><strong>.zip of CSVs</strong> &mdash; one <code>.csv</code> file per table, named after the table without the prefix (e.g. <code>members.csv</code>), handy for spreadsheets and for reading in Excel.</li>
 			</ul>
+
+			<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
+				<strong>A CSV export is not a backup.</strong> The Membership and Inventory bulk importers always assign new IDs, so re-importing <code>members.csv</code> after a reset creates fresh member records that no longer match members&rsquo; existing sign-ins &mdash; and there is no importer at all for loans or reservations. To restore a library, use the <strong>.sql dump</strong> with phpMyAdmin, the <code>mysql</code> command line, or <code>wp db import</code>.
+			</div>
 
 			<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
 				<strong>Note:</strong> The export includes members&rsquo; sensitive verification document links. Store the downloaded file securely.

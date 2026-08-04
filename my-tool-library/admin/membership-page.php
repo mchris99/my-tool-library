@@ -892,6 +892,11 @@ function mtl_render_membership_page() {
 			$error         = false;
 			$error_message = '';
 
+			// Set in the validation block below and reused after a successful
+			// save to keep the linked WordPress sign-in's email in step.
+			$old_email      = '';
+			$linked_user_id = 0;
+
 			if ( $edit_member_id <= 0 ) {
 				$error         = true;
 				$error_message = 'Could not determine which member to update. Please try again.';
@@ -914,6 +919,29 @@ function mtl_render_membership_page() {
 				if ( $email_in_use ) {
 					$error         = true;
 					$error_message = 'That email address already belongs to another member. Please enter a different email address.';
+				} else {
+					$old_email = (string) $wpdb->get_var(
+						$wpdb->prepare(
+							// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+							"SELECT email FROM {$tbl_members} WHERE member_id = %d",
+							$edit_member_id
+						)
+					);
+					$linked_user_id = mtl_find_wp_user_id_by_member_id( $edit_member_id, $old_email );
+
+					// A member's email is also their WordPress sign-in, so it
+					// has to be free on that side too. The members-table check
+					// above cannot see accounts that have no member row -- an
+					// administrator, or a leftover account from an earlier
+					// delete. Checked BEFORE anything is written, so a clash
+					// can never leave the record and the sign-in out of step.
+					if ( $linked_user_id > 0 && 0 !== strcasecmp( $old_email, $email ) ) {
+						$wp_email_owner = email_exists( $email );
+						if ( $wp_email_owner && (int) $wp_email_owner !== $linked_user_id ) {
+							$error         = true;
+							$error_message = 'That email address is already used by another WordPress account, so it cannot also be this member&rsquo;s sign-in. The member was not updated.';
+						}
+					}
 				}
 			}
 
@@ -950,6 +978,43 @@ function mtl_render_membership_page() {
 					$error         = true;
 					$error_message = 'Failed to update member. Please verify the database connection and try again.';
 				} else {
+					// A member's email doubles as their WordPress sign-in, and
+					// mtl_current_member() proves a record belongs to an account by
+					// comparing the two. Letting them drift apart here would lock
+					// the member out of their own account page, so the sign-in
+					// moves with the record or neither does.
+					$email_sync_note = '';
+					if ( 0 !== strcasecmp( $old_email, $email ) ) {
+						if ( $linked_user_id > 0 ) {
+							$synced = wp_update_user(
+								array(
+									'ID'         => $linked_user_id,
+									'user_email' => $email,
+								)
+							);
+							if ( is_wp_error( $synced ) ) {
+								// Put the members row back rather than leave the
+								// record and the sign-in pointing at different
+								// addresses. The pre-flight check above catches
+								// the common cause; this covers the race where
+								// the address was claimed a moment ago.
+								$wpdb->update(
+									$tbl_members,
+									array( 'email' => $old_email ),
+									array( 'member_id' => $edit_member_id ),
+									array( '%s' ),
+									array( '%d' )
+								);
+								$error         = true;
+								$error_message = 'Every other change was saved, but the email address was left as it was, because their WordPress sign-in could not be updated to match: ' . esc_html( $synced->get_error_message() );
+							} else {
+								$email_sync_note = ' Their WordPress sign-in email was updated to match &mdash; their original username still works for signing in, and WordPress has emailed them about the change.';
+							}
+						} elseif ( ! empty( mtl_find_wp_user_ids_claiming_member_id( $edit_member_id ) ) ) {
+							$email_sync_note = ' Note: this member has an online account, but its email no longer matches this record, so it was left alone. Set this member&rsquo;s email to the address shown on their WordPress user (under Users) to reconnect them.';
+						}
+					}
+
 					// Re-sync the training mappings by clearing and re-inserting the
 					// current selections -- simplest way to add AND remove mappings
 					// in one step without diffing old vs. new.
@@ -1018,7 +1083,12 @@ function mtl_render_membership_page() {
 						$verification_note = ' The member&rsquo;s verification documents were removed, so they are now marked as unverified.';
 					}
 
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> ' . esc_html( stripslashes( $first_name . ' ' . $last_name ) ) . ' has been updated.' . wp_kses_post( $verification_note ) . '</p></div>';
+					// $error can be set inside this branch by the email-sync
+					// rollback above, in which case the error notice below is
+					// the whole story and a "Success!" line would contradict it.
+					if ( ! $error ) {
+						echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> ' . esc_html( stripslashes( $first_name . ' ' . $last_name ) ) . ' has been updated.' . wp_kses_post( $verification_note ) . wp_kses_post( $email_sync_note ) . '</p></div>';
+					}
 				}
 			}
 
@@ -1069,13 +1139,20 @@ function mtl_render_membership_page() {
 				$res_note     = $result['cancelled_reservations'] > 0
 					? ( ' ' . (int) $result['cancelled_reservations'] . ' active reservation(s) of theirs were also cancelled.' )
 					: '';
+				// An account whose stored member id no longer matches this
+				// record can't be confirmed as theirs, so it is left in place
+				// rather than deleted on a guess -- staff need to know it is
+				// still there.
+				$orphan_note = ! empty( $result['wp_user_orphaned'] )
+					? ' Their online sign-in could not be matched to this record, so it was left in place &mdash; remove it under Users if it is no longer needed.'
+					: '';
 
 				if ( 'deleted' === $result['outcome'] ) {
 					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $display_name is esc_html()'d above.
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Deleted.</strong> ' . $display_name . ' and their verification documents have been permanently removed.' . esc_html( $res_note ) . '</p></div>';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Deleted.</strong> ' . $display_name . ' and their verification documents have been permanently removed.' . esc_html( $res_note ) . wp_kses_post( $orphan_note ) . '</p></div>';
 				} elseif ( 'anonymized' === $result['outcome'] ) {
 					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $display_name is esc_html()'d above.
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Personal data removed.</strong> ' . $display_name . ' had loan or reservation history on record, so it has been kept for accurate library statistics, but their personal information, verification documents, and online account have been removed.' . esc_html( $res_note ) . '</p></div>';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Personal data removed.</strong> ' . $display_name . ' had loan or reservation history on record, so it has been kept for accurate library statistics, but their personal information, verification documents, and online account have been removed.' . esc_html( $res_note ) . wp_kses_post( $orphan_note ) . '</p></div>';
 				} else {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member could not be found or was already deleted.</p></div>';
 				}

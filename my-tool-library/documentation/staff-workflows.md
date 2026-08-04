@@ -203,12 +203,32 @@ Tool History Lookup's search box includes retired tools, since the point is look
 
 Before any bulk import, plugin update, or major cleanup, go to **Setup > Export Data** and download either a full SQL dump or a ZIP of CSVs (one per table). Keep exports somewhere secure as they include full member contact details and verification links.
 
+**If you are keeping one as a real backup, keep the `.sql` dump.** It is the only export that can restore the library. The CSV export is for reading in a spreadsheet — the bulk importers always assign brand-new ID numbers, so re-importing `members.csv` creates fresh records rather than restoring the old ones, and there is no importer at all for loans or reservations.
+
+To restore a `.sql` dump you need database access (phpMyAdmin, the `mysql` command line, or `wp db import`) — there is no restore button in the plugin.
+
+### Members' online accounts and the database reset
+
+Running **Setup > Run Database Setup** on a library that already has data deletes every record, but it **does not touch members' WordPress sign-ins**. Their accounts and passwords keep working. What breaks is the connection between the two: each record's ID number restarts from 1, so the sign-ins point at records that are gone or, worse, at somebody else's.
+
+The plugin protects against the "somebody else's" case — it checks that a record's email matches the account signing in, and refuses to show a record it can't match. A member in that state sees "we couldn't match your sign-in to a membership record" rather than a stranger's details.
+
+To put things right:
+
+- **Restore the `.sql` dump.** IDs come back as they were and every sign-in reconnects on its own. This is the fix.
+- **Or re-add the member with the exact same email address** (Membership > Add a New Member, or a CSV import that includes their email). The next time they open the site their account reconnects itself automatically — no admin step needed.
+- If a member is stuck and their email in **Membership** does *not* match the email on their WordPress user (under **Users**), set the record's email to match theirs and save. That reconnects them, and from then on changing their email from either screen keeps both sides in step.
+
+> **Note:** Deleting a member now leaves their WordPress sign-in alone if it can't be confirmed as theirs, and tells you so. Remove it yourself under **Users** if it is no longer wanted — this is deliberate, because deleting the wrong person's sign-in cannot be undone.
+
 ### Deleting a member
 
 Click **Delete** next to a member on the **Membership** page. What actually happens depends on whether that member has ever borrowed or reserved a tool:
 
-- **No loan or reservation history** — the member is removed outright: their record and their WordPress account (if they had one) are both permanently gone.
+- **No loan or reservation history** — the member is removed outright: their record and their WordPress account are both permanently gone.
 - **Has loan or reservation history** — deleting their record outright would corrupt tool-level statistics (like a tool's total-loans count), so instead their personal data is **anonymized**: name, address, phone, and email are replaced with placeholders, their verification documents are deleted, and their WordPress account is deleted, but their loan/reservation rows are left untouched so the library's records stay accurate. The row then shows a **Removed** badge in place of Verified/Not Verified, and Edit/Delete disappear — there's nothing left to do with it.
+
+In both cases the WordPress account is only deleted when it can be confirmed as that member's (its email still matches the record). If it can't — usually because a database reset renumbered the records — the account is left in place and the confirmation message says so, since deleting the wrong person's sign-in is not reversible. Remove it under **Users** if it is no longer needed.
 
 Either way, any reservation the member currently has (for any tool) is **cancelled** as part of the delete. A currently open loan is left alone, since deleting the account doesn't return the tool.
 

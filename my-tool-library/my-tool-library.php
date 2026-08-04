@@ -417,22 +417,147 @@ function mtl_verification_urls_complete( $photo_id_scan_url, $address_proof_scan
 }
 
 /**
- * Finds the WordPress user account linked to a member row, if any (a member
- * added by staff with no online account has none).
+ * Finds the WordPress account linked to a member row -- but only when that
+ * account still proves the link: its email must match the member row AND its
+ * mtl_member_id must still point back at that row. A member added by staff
+ * with no online account has none, and returns 0.
+ *
+ * Resolving by email FIRST (rather than by the mtl_member_id meta value) is
+ * deliberate. member_id is AUTO_INCREMENT and restarts at 1 whenever the
+ * Setup page rebuilds the tables, so after a reset several surviving accounts
+ * can carry the same stale mtl_member_id -- one already repaired by
+ * mtl_current_member(), one not. A meta-first lookup would return an
+ * arbitrary one of them. Email is unique in wp_users and in the members
+ * table, so it identifies the person unambiguously.
+ *
+ * @param int    $member_id    Member row ID.
+ * @param string $member_email The member row's email address.
+ * @return int WP user ID, or 0 if no account proves the link.
+ */
+function mtl_find_wp_user_id_by_member_id( $member_id, $member_email = '' ) {
+	$member_id    = (int) $member_id;
+	$member_email = trim( (string) $member_email );
+	if ( $member_id <= 0 || '' === $member_email ) {
+		return 0;
+	}
+
+	$user = get_user_by( 'email', $member_email );
+	if ( ! $user ) {
+		return 0;
+	}
+	if ( (int) get_user_meta( $user->ID, 'mtl_member_id', true ) !== $member_id ) {
+		return 0;
+	}
+	return (int) $user->ID;
+}
+
+/**
+ * Every WordPress account still claiming a member id through usermeta,
+ * whether or not its email matches the member row.
+ *
+ * Diagnostics only -- this is how the plugin notices a link it can no longer
+ * vouch for (see the delete handler's "wp_user_orphaned" result). Never use
+ * it to pick an account to delete or sign in as; use
+ * mtl_find_wp_user_id_by_member_id() for that.
  *
  * @param int $member_id Member row ID.
- * @return int WP user ID, or 0 if unlinked.
+ * @return int[] WP user IDs.
  */
-function mtl_find_wp_user_id_by_member_id( $member_id ) {
-	$users = get_users(
-		array(
-			'meta_key'   => 'mtl_member_id',
-			'meta_value' => (int) $member_id,
-			'number'     => 1,
-			'fields'     => 'ID',
+function mtl_find_wp_user_ids_claiming_member_id( $member_id ) {
+	return array_map(
+		'intval',
+		get_users(
+			array(
+				'meta_key'   => 'mtl_member_id',
+				'meta_value' => (int) $member_id,
+				'fields'     => 'ID',
+			)
 		)
 	);
-	return $users ? (int) $users[0] : 0;
+}
+
+add_action( 'profile_update', 'mtl_sync_member_email_from_wp_user', 10, 2 );
+
+/**
+ * Keeps {prefix}members.email in step when a linked WordPress account's email
+ * changes anywhere outside the Membership page -- the member's own
+ * /wp-admin/profile.php screen (the mtl_member role has the "read"
+ * capability, so members can reach it), Users > Edit User, or WP-CLI.
+ *
+ * This matters because mtl_current_member() proves a member row belongs to
+ * the signed-in account by comparing the two email addresses. Without this
+ * hook the two would drift apart on any of those paths and the member would
+ * be locked out of their own account page.
+ *
+ * The row is only rewritten when the OLD address still matched it -- i.e.
+ * when the link was provably good before the change. A row we cannot vouch
+ * for is left alone rather than stamped with someone else's address.
+ *
+ * @param int     $user_id       Updated user ID.
+ * @param WP_User $old_user_data User object as it was before the update.
+ */
+function mtl_sync_member_email_from_wp_user( $user_id, $old_user_data ) {
+	$user = get_userdata( $user_id );
+	if ( ! $user ) {
+		return;
+	}
+
+	$new_email = trim( (string) $user->user_email );
+	$old_email = trim( (string) $old_user_data->user_email );
+	if ( '' === $new_email || 0 === strcasecmp( $new_email, $old_email ) ) {
+		// Email didn't change; nothing to sync.
+		return;
+	}
+
+	$member_id = (int) get_user_meta( $user_id, 'mtl_member_id', true );
+	if ( $member_id <= 0 ) {
+		return;
+	}
+
+	global $wpdb;
+	$tbl = $wpdb->prefix . 'members';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	$row_email = (string) $wpdb->get_var(
+		$wpdb->prepare( "SELECT email FROM {$tbl} WHERE member_id = %d", $member_id )
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	if ( '' === $row_email || 0 === strcasecmp( $row_email, $new_email ) ) {
+		// No such row, or the Membership page already moved both sides --
+		// this is the guard that stops that handler's own wp_update_user()
+		// call from bouncing straight back through here.
+		return;
+	}
+	if ( 0 !== strcasecmp( $row_email, $old_email ) ) {
+		// The link didn't prove identity before this change either, so there
+		// is nothing here we can safely rewrite.
+		return;
+	}
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	$taken = $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT member_id FROM {$tbl} WHERE email = %s AND member_id != %d LIMIT 1",
+			$new_email,
+			$member_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	if ( $taken ) {
+		// email is UNIQUE in the members table; another member already owns
+		// this address, so staff have to resolve the clash by hand.
+		return;
+	}
+
+	$wpdb->update(
+		$tbl,
+		array( 'email' => $new_email ),
+		array( 'member_id' => $member_id ),
+		array( '%s' ),
+		array( '%d' )
+	);
 }
 
 /**
@@ -442,17 +567,22 @@ function mtl_find_wp_user_id_by_member_id( $member_id ) {
  * reference member_id with no ON DELETE CASCADE, by design), so their
  * personal fields are overwritten with placeholders instead, leaving their
  * loan/reservation rows untouched so historical counts stay accurate.
- * Either way, their member_verifications row and linked WordPress account
- * (if any) are deleted, and any of their still-active reservations are
- * cancelled first -- otherwise a deleted/anonymized member would keep
- * occupying a spot in a tool's queue indefinitely. This mirrors how retiring
- * a tool auto-cancels its own active reservations (see the Retire handler in
- * admin/inventory-page.php). A currently open loan is deliberately left
- * alone, same as a retired tool's loan -- the member still physically has
- * the item, so it can still be ended normally whenever it's returned.
+ * Either way, their member_verifications row is deleted and any still-active
+ * reservations are cancelled first -- otherwise a deleted/anonymized member
+ * would keep occupying a spot in a tool's queue indefinitely. This mirrors
+ * how retiring a tool auto-cancels its own active reservations (see the
+ * Retire handler in admin/inventory-page.php). A currently open loan is
+ * deliberately left alone, same as a retired tool's loan -- the member still
+ * physically has the item, so it can still be ended normally when returned.
+ *
+ * Their linked WordPress account is deleted too, but only when it still
+ * proves the link (see mtl_find_wp_user_id_by_member_id()). An account whose
+ * mtl_member_id is stale is left in place and reported via wp_user_orphaned,
+ * since deleting a sign-in cannot be undone and the id alone no longer shows
+ * whose it is.
  *
  * @param int $member_id Member row ID.
- * @return array{outcome:string,name:string,cancelled_reservations:int} outcome is 'deleted', 'anonymized', or 'not_found'; name is the display name captured before any changes.
+ * @return array{outcome:string,name:string,cancelled_reservations:int,wp_user_orphaned:bool} outcome is 'deleted', 'anonymized', or 'not_found'; name is the display name captured before any changes; wp_user_orphaned is true when an account still claims this member id but could not be verified, so it was left alone.
  */
 function mtl_delete_or_anonymize_member( $member_id ) {
 	global $wpdb;
@@ -462,24 +592,30 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 	$tbl_res          = $wpdb->prefix . 'tool_reservations';
 	$tbl_training_map = $wpdb->prefix . 'member_training_mappings';
 
-	$name = trim(
-		(string) $wpdb->get_var(
-			$wpdb->prepare(
-				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-				"SELECT CONCAT(first_name, ' ', last_name) FROM {$tbl_members} WHERE member_id = %d",
-				$member_id
-			)
+	$row = $wpdb->get_row(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+			"SELECT first_name, last_name, email FROM {$tbl_members} WHERE member_id = %d",
+			$member_id
 		)
 	);
-	if ( '' === $name ) {
+	if ( ! $row ) {
 		// Already gone (double-submit, stale page) -- nothing to do.
 		return array(
 			'outcome'                => 'not_found',
 			'name'                   => '',
 			'cancelled_reservations' => 0,
+			'wp_user_orphaned'       => false,
 		);
 	}
-	$wp_user_id = mtl_find_wp_user_id_by_member_id( $member_id );
+	$name = trim( $row->first_name . ' ' . $row->last_name );
+
+	// Only an account that still proves the link is deleted. If the link is
+	// stale -- e.g. a database reset renumbered member ids out from under the
+	// surviving sign-ins -- the account is left alone rather than risk
+	// deleting an unrelated person's WordPress login, which is irreversible.
+	$wp_user_id       = mtl_find_wp_user_id_by_member_id( $member_id, (string) $row->email );
+	$wp_user_orphaned = ( 0 === $wp_user_id && ! empty( mtl_find_wp_user_ids_claiming_member_id( $member_id ) ) );
 
 	$cancelled_reservations = (int) $wpdb->query(
 		$wpdb->prepare(
@@ -535,6 +671,7 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 		'outcome'                => $outcome,
 		'name'                   => $name,
 		'cancelled_reservations' => $cancelled_reservations,
+		'wp_user_orphaned'       => $wp_user_orphaned,
 	);
 }
 

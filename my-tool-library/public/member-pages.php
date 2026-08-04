@@ -15,9 +15,14 @@
  * my-tool-library.php); this plugin never handles a password directly.
  *
  * The link between a WordPress user and their row in the {prefix}members
- * table is the mtl_member_id stored in that user's meta at signup --
- * authoritative, so it survives even if the member later edits their email.
- * No password or other credential is ever stored in the plugin's own tables.
+ * table is the mtl_member_id stored in that user's meta at signup. That id is
+ * a cache, not proof: member_id is AUTO_INCREMENT and restarts at 1 whenever
+ * the Setup page rebuilds the tables, while WordPress accounts survive
+ * untouched, so a stored id can end up pointing at a completely different
+ * person. The account's own email address is what actually identifies the
+ * member; mtl_current_member() checks the two agree before trusting the id,
+ * and repairs the id when it can. No password or other credential is ever
+ * stored in the plugin's own tables.
  *
  * @package My_Tool_Library
  */
@@ -55,13 +60,35 @@ function mtl_register_member_role() {
 // --------------------------------------------------------------------------
 
 /**
- * Get the {prefix}members row for the logged-in user.
+ * Get the {prefix}members row for the logged-in user, but only when that row
+ * can be shown to belong to them.
+ *
+ * The stored mtl_member_id is treated as a cache rather than proof. It is an
+ * AUTO_INCREMENT value that restarts at 1 every time the Setup page rebuilds
+ * the tables, while WordPress accounts survive that reset untouched -- so a
+ * surviving sign-in can be left pointing at a row that now belongs to someone
+ * else entirely. Returning it would hand a stranger another member's name,
+ * address, phone number and loan history, with edit and delete over the
+ * record. So the row's email must match the signed-in account's before it is
+ * trusted; if it doesn't, the account's own email is used to find the right
+ * row and the stored id is repaired. If nothing matches, this returns null
+ * and the caller shows the "we couldn't match your record" notice --
+ * deliberately failing closed, since being locked out is recoverable and
+ * disclosure isn't. See mtl_current_member_link_broken().
  *
  * Cached per-request since several places (shop nav, reserve handling) ask
- * for it on a single page load; safe because every write to the member row
- * is followed by a redirect, so the cache can never go stale mid-request.
+ * for it on a single page load; safe because every write to the member row is
+ * followed by a redirect, so the cache can never go stale mid-request -- and
+ * for the same reason, nothing may switch the current user after this has
+ * run without also redirecting.
  *
- * @return object|null Member row, or null if the current user isn't a member.
+ * Note for multisite: wp_usermeta is network-global but {prefix}members is
+ * per-site, so a member of one site carries their id onto another site's
+ * tables. The email check makes that fail closed instead of disclosing; a
+ * per-site meta key would be the real fix, and is a migration.
+ *
+ * @return object|null Member row, or null if the current user isn't a member
+ *                     or their record could not be matched.
  */
 function mtl_current_member() {
 	static $resolved = false;
@@ -75,15 +102,80 @@ function mtl_current_member() {
 	if ( ! is_user_logged_in() ) {
 		return $member;
 	}
-	$member_id = (int) get_user_meta( get_current_user_id(), 'mtl_member_id', true );
+
+	$user_id   = get_current_user_id();
+	$member_id = (int) get_user_meta( $user_id, 'mtl_member_id', true );
 	if ( $member_id <= 0 ) {
+		// Never was a member account (e.g. an administrator). Deliberately not
+		// recovered by email: staff accounts should not be auto-linked to a
+		// member row that happens to share an address.
 		return $member;
 	}
+
+	// The account's own email is the identity proof; with none there is
+	// nothing to check the stored link against.
+	$user       = wp_get_current_user();
+	$user_email = $user ? trim( (string) $user->user_email ) : '';
+	if ( '' === $user_email ) {
+		return $member;
+	}
+
 	global $wpdb;
 	$tbl = $wpdb->prefix . 'members';
-	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-	$member = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$tbl} WHERE member_id = %d", $member_id ) );
+
+	// anonymized_at IS NULL on both lookups: an anonymized row is a deleted
+	// person whose personal fields are placeholders, never a record to serve.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	$candidate = $wpdb->get_row(
+		$wpdb->prepare( "SELECT * FROM {$tbl} WHERE member_id = %d AND anonymized_at IS NULL", $member_id )
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	if ( $candidate && 0 === strcasecmp( trim( (string) $candidate->email ), $user_email ) ) {
+		// Normal case, and the only path on a healthy install: no extra query,
+		// no write. The email came from the already-loaded WP_User.
+		$member = $candidate;
+		return $member;
+	}
+
+	// Stale or mismatched link. Re-resolve on the account's own address --
+	// members.email is UNIQUE, so this matches at most one row. Anonymized
+	// rows carry a reserved .invalid address and can never match a real one.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	$recovered = $wpdb->get_row(
+		$wpdb->prepare( "SELECT * FROM {$tbl} WHERE email = %s AND anonymized_at IS NULL LIMIT 1", $user_email )
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	if ( $recovered ) {
+		// Assigned BEFORE the meta write: update_user_meta() fires actions, and
+		// a hook that called back in here would otherwise find $resolved
+		// already true with $member still null.
+		$member = $recovered;
+		update_user_meta( $user_id, 'mtl_member_id', (int) $recovered->member_id );
+		return $member;
+	}
+
+	// Nothing proved this row belongs to this account -- fail closed.
 	return $member;
+}
+
+/**
+ * Whether the signed-in user looks like a member whose record could not be
+ * matched, rather than simply not a member at all.
+ *
+ * Lets the member-only notice tell a locked-out member ("we couldn't match
+ * your record, contact staff") apart from an administrator who was never a
+ * member ("this area is for member accounts"), which are the same null from
+ * mtl_current_member() but very different messages to read.
+ *
+ * @return bool
+ */
+function mtl_current_member_link_broken() {
+	if ( ! is_user_logged_in() || mtl_current_member() ) {
+		return false;
+	}
+	return (int) get_user_meta( get_current_user_id(), 'mtl_member_id', true ) > 0;
 }
 
 /**
@@ -1026,7 +1118,7 @@ function mtl_render_member_reservations_page() {
 
 	$member = mtl_current_member();
 	if ( ! $member ) {
-		mtl_render_member_only_notice( 'My Loans & Reservations' );
+		mtl_render_member_only_notice( 'My Loans & Reservations', mtl_current_member_link_broken() );
 		return; // (mtl_render_member_only_notice exits, but be explicit.)
 	}
 
@@ -1378,7 +1470,7 @@ function mtl_render_account_page() {
 
 	$member = mtl_current_member();
 	if ( ! $member ) {
-		mtl_render_member_only_notice( 'Account' );
+		mtl_render_member_only_notice( 'Account', mtl_current_member_link_broken() );
 		return;
 	}
 
@@ -1772,17 +1864,29 @@ function mtl_render_account_page() {
  * Shown when someone logged in but not a member (e.g. an admin) opens a
  * member-only page.
  *
- * @param string $page_title Page title to display.
+ * A member whose record could not be matched to their sign-in gets different
+ * wording: telling them their account "isn't a member account" would be
+ * plainly wrong, and sends them to support describing it as a bug rather than
+ * as something staff can fix in a minute (see mtl_current_member()).
+ *
+ * @param string $page_title  Page title to display.
+ * @param bool   $link_broken True when the visitor is a member whose record
+ *                            could not be matched, rather than a non-member.
  * @return void Outputs the page directly (via mtl_render_front_shell()) and exits.
  */
-function mtl_render_member_only_notice( $page_title ) {
+function mtl_render_member_only_notice( $page_title, $link_broken = false ) {
 	ob_start();
 	echo mtl_member_page_styles();
 	?>
 	<div class="mtl-member-wrap">
 		<div class="mtl-member-card">
 			<h2><?php echo esc_html( $page_title ); ?></h2>
-			<p>This area is for tool-library member accounts. You&rsquo;re signed in, but your account isn&rsquo;t a member account, so there&rsquo;s nothing to show here.</p>
+			<?php if ( $link_broken ) : ?>
+				<p>You&rsquo;re signed in, but we couldn&rsquo;t match your sign-in to a membership record, so there&rsquo;s nothing to show here yet.</p>
+				<p>This usually means the library&rsquo;s records were rebuilt recently. Please contact library staff &mdash; they can reconnect your account, and nothing about your membership has been lost.</p>
+			<?php else : ?>
+				<p>This area is for tool-library member accounts. You&rsquo;re signed in, but your account isn&rsquo;t a member account, so there&rsquo;s nothing to show here.</p>
+			<?php endif; ?>
 			<p style="margin-bottom:0;"><a href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a></p>
 		</div>
 	</div>

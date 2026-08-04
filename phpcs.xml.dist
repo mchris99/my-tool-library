@@ -34,11 +34,14 @@
              manage_options plus a nonce, not an accidental schema change. -->
         <exclude name="WordPress.DB.DirectDatabaseQuery.SchemaChange"/>
 
-        <!-- mtl_find_wp_user_id_by_member_id() (my-tool-library.php) looks up
-             a WP user by the mtl_member_id usermeta value via get_users().
-             There is no non-meta way to do this reverse lookup through core
-             APIs; moving mtl_member_id into a first-class column is a schema
-             change outside the scope of a lint pass. -->
+        <!-- mtl_find_wp_user_ids_claiming_member_id() (my-tool-library.php)
+             looks up WP users by the mtl_member_id usermeta value via
+             get_users(). There is no non-meta way to do this reverse lookup
+             through core APIs; moving mtl_member_id into a first-class column
+             is a schema change outside the scope of a lint pass. It runs only
+             on the admin delete path, to report an account whose link could
+             not be verified; the hot path (mtl_current_member()) resolves by
+             email against an indexed column instead. -->
         <exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_key"/>
         <exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_value"/>
 
