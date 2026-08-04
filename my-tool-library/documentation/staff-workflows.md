@@ -18,40 +18,38 @@ Using the admin pages requires signing in with a WordPress account that has eith
 
 ## Staff Roles and Permissions
 
-There are two staff roles, both of them standard WordPress roles — the plugin doesn't invent its own.
+There are two staff roles, both of them standard WordPress roles.
 
-**Editor** — the role for anyone working the desk. They can run the library day to day: add and edit members, add and edit tools, check tools in and out, manage reservations, and read this guide. This is the role to give volunteers and staff by default.
+**Editor**: the role for anyone working the desk. They can run the library day to day: add and edit members, add and edit tools, check tools in and out, manage reservations, and read this guide. This is the role to give volunteers and staff by default.
 
-**Administrator** — everything an Editor can do, plus the two things that are hard to undo: the **Setup** page and deleting a member's record. Give this only to the people who run the library.
+**Administrator**: everything an Editor can do, plus the access to the **Setup** page and the ability to delete a member's record.
 
 ### What each role can do
 
-| Task | Editor | Administrator |
-| --- | :---: | :---: |
-| View the Dashboard | ✅ | ✅ |
-| Add, edit, and bulk-import members | ✅ | ✅ |
-| Record member trainings | ✅ | ✅ |
-| View verification documents, mark members verified | ✅ | ✅ |
-| Add, edit, retire and bulk-import tools | ✅ | ✅ |
-| Check tools out, renew, and mark returned | ✅ | ✅ |
-| Create, cancel and fulfil reservations | ✅ | ✅ |
-| Read the Workflows guide | ✅ | ✅ |
-| **Delete a member's record** | ❌ | ✅ |
-| **Open the Setup page** (and everything on it) | ❌ | ✅ |
-| — Branding, colors, fonts, logo | ❌ | ✅ |
-| — Categories, tags and trainings lists | ❌ | ✅ |
-| — Export data (`.sql` / CSV) | ❌ | ✅ |
-| — Run Database Setup | ❌ | ✅ |
+| Task                                               | Editor | Administrator |
+| -------------------------------------------------- | :----: | :-----------: |
+| View the Dashboard                                 |   ✅   |      ✅       |
+| Add, edit, and bulk-import members                 |   ✅   |      ✅       |
+| Record member trainings                            |   ✅   |      ✅       |
+| View verification documents, mark members verified |   ✅   |      ✅       |
+| Add, edit, retire and bulk-import tools            |   ✅   |      ✅       |
+| Check tools out, renew, and mark returned          |   ✅   |      ✅       |
+| Create, cancel and fulfil reservations             |   ✅   |      ✅       |
+| Read the Workflows guide                           |   ✅   |      ✅       |
+| **Delete a member's record**                       |   ❌   |      ✅       |
+| **Open the Setup page** (and everything on it)     |   ❌   |      ✅       |
+| — Branding, colors, fonts, logo                    |   ❌   |      ✅       |
+| — Categories, tags and trainings lists             |   ❌   |      ✅       |
+| — Export data (`.sql` / CSV)                       |   ❌   |      ✅       |
+| — Run Database Setup                               |   ❌   |      ✅       |
 
-An Editor doesn't see a **Setup** tab at all, and doesn't see a **Delete** button on the Membership page. Those aren't just hidden — if an Editor reaches the Setup page by typing its address, WordPress refuses the request, and a delete submitted any other way is rejected too.
+An Editor doesn't see a **Setup** tab at all, and doesn't see a **Delete** button on the Membership page.
 
-> **Note:** Editor is a full WordPress role, so it also grants the ability to write and edit posts and pages elsewhere on your site. If that matters to you, restrict it with a role-management plugin — the tool library only ever checks whether the account is an Editor or an Administrator.
+> **Note:** Editor is a full WordPress role, so it also grants the ability to write and edit posts and pages elsewhere on your site. If that matters to you, restrict it with a role-management plugin; the tool library only ever checks whether the account is an Editor or an Administrator.
 
 ### Members can always delete their own account
 
-None of the above stops a **member** removing themselves. Signed in on the public site, any member can go to **My Account > Danger Zone** and choose **Delete Account and Remove Personal Data**. That works regardless of which staff roles exist, and it produces exactly the same outcome as a staff deletion: if they have no loan or reservation history their record is fully removed; if they do, their personal details are erased and the history is kept (see [Deleting a member](#deleting-a-member)).
-
-Making member deletion Administrator-only is about protecting records from accidental staff action. It is not a way to stop someone leaving, and members do not need to ask staff to be removed.
+None of the above stops a **member** removing themselves, which they can do without staff permission. That works regardless of which staff roles exist, and it produces exactly the same outcome as a staff deletion (see [Deleting a member](#deleting-a-member)).
 
 ---
 
@@ -81,7 +79,7 @@ Do this once, when the plugin is first installed on the site.
 
 ## 2. Creating a New Staff Account
 
-Staff access is controlled entirely by WordPress's built-in user roles — this plugin has no separate staff login system. See [Staff Roles and Permissions](#staff-roles-and-permissions) for what each role can do.
+Staff access is controlled entirely by WordPress's built-in user roles. This plugin has no separate staff login system. See [Staff Roles and Permissions](#staff-roles-and-permissions) for what each role can do.
 
 ### Adding an Editor (the usual choice)
 
@@ -91,19 +89,19 @@ Give **Editor** to anyone working the desk: volunteers, front-of-house staff, an
 2. Enter the staff member's username and email address.
 3. Under **Role**, select **Editor**.
 4. Click **Add New User**. WordPress emails them a link to set their own password (or set one yourself and share it securely).
-5. They can now sign in — through the normal WordPress login (`/wp-login.php` or `/wp-admin/`) or through the plugin's branded **Sign In** page (linked from the public catalog's footer), which routes staff straight into the **My Tool Library** admin portal.
+5. They can now sign in, either through the normal WordPress login (`/wp-login.php` or `/wp-admin/`) or through the plugin's branded **Sign In** page (linked from the public catalog's footer), which routes staff straight into the **My Tool Library** admin portal.
 
 To change someone who already has an account, go to **Users**, click their name, and set **Role** to **Editor**.
 
 ### Adding an Administrator
 
-Give **Administrator** only to the people who run the library — it adds the Setup page and the ability to delete members, and grants full control of the entire WordPress site.
+Give **Administrator** only to the people who run the library as it grants full control of the entire WordPress site.
 
 Follow the same steps, choosing **Administrator** at step 3.
 
-> **Note:** Both of these are full WordPress roles, so they grant access beyond this plugin — Editor can write and edit posts and pages, and Administrator can do anything at all on the site. Give out Administrator sparingly.
+> **Note:** Both of these are full WordPress roles, so they grant access beyond this plugin. Editor can write and edit posts and pages, and Administrator can do anything at all on the site. Give out Administrator sparingly.
 
-> **Note:** If a staff member will also borrow tools as a member, have them use a different username for their staff account than their personal email address, so the two accounts stay separate.
+> **Note:** If a staff member will also borrow tools as a member, have them use a different username (email) for their staff account than their personal email address, so the two accounts stay separate. Otherwise, they will not be able to borrow as a member.
 
 ---
 
@@ -129,7 +127,7 @@ Use the **Bulk Import from CSV** panel described in [Initial Setup](#1-initial-s
 
 ### Private Notes (staff-only)
 
-The **Private Notes** field is for anything staff need on record about a tool that members should never see. This is a good way to make notes on maintenance needs or conditional donation. Unlike Description and Components, it's never shown on the public catalog. It only appears in the admin Inventory page's detail view (click a tool's row to expand it), in a highlighted "Private Notes" box. Leave it blank if there's nothing to record. Use the **Has Private Notes?** filter under Advanced Search to find every tool that has one on file.
+The **Private Notes** field is for anything staff need on record about a tool that members should never see. This is a good way to make notes on maintenance needs or conditional donation. Unlike Description and Components, it's never shown on the public catalog. It only appears in the Inventory page's detail view (click a tool's row to expand it), in a highlighted "Private Notes" box. Leave it blank if there's nothing to record. Use the **Has Private Notes?** filter under Advanced Search to find every tool that has one on file.
 
 ---
 
@@ -155,7 +153,7 @@ Verification means recording proof that staff have checked the member's photo ID
 3. Hand the member your tablet/kiosk (or a QR code to the form) to fill out and upload their ID and proof of address. Alternatively, staff can photograph the documents directly and upload them through the same form on the member's behalf.
 4. Once submitted, open the folder, locate the member's two uploaded files, and get a shareable link to each (set link sharing to your organization/domain only, or to the specific staff group — not "Anyone with the link").
 5. Go back to **Membership**, find the member, click **Edit**, and paste the two links into **Photo ID Scan URL** and **Proof of Address Scan URL**. Save.
-6. The member now shows as **Verified** throughout the admin pages (including on the Loans & Reservations detail panel, so staff can see verification status at pickup). The member will also see that they are verified on their account page.
+6. The member now shows as **Verified** throughout the staff pages (including on the Loans & Reservations detail panel, so staff can see verification status at pickup). The member will also see that they are verified on their account page.
 
 A member can also have just **one** of the two documents on file, but the member stays unverified until both are present.
 
@@ -239,28 +237,26 @@ You can also cancel a reservation from **Loans & Reservations** directly: open t
 
 ### Reservations that expire on their own
 
-A tool isn't held forever. Once a reservation becomes **collectable** — the member is at the front of the queue *and* the tool is back on the shelf — a countdown starts. If they don't come in within the **Reservation Hold Period** (set on the Setup page, 14 days by default), the reservation is cancelled automatically with today's date, and the tool passes to the next person in line.
-
-**The countdown only runs while the tool is actually available to that member.** Someone sitting fourth in the queue for a popular tool that's out on a six-week loan is never timed out — their clock hasn't started. It begins the moment the tool comes back and they reach the front, whether that's next week or next year.
+A tool isn't held forever. Once a reservation becomes **collectable**, meaning the member is at the front of the queue _and_ the tool is back on the shelf, a countdown starts. If they don't come in within the **Reservation Hold Period** (set on the Setup page), the reservation is cancelled automatically with today's date, and the tool passes to the next person in line.
 
 Where you'll see it:
 
 - **Loans & Reservations** — open any reservation showing **Ready** and its detail panel shows a **Collect by** date.
-- **The member's own My Loans & Reservations page** — they see "Please collect by …" against anything waiting for them, so the deadline isn't a surprise.
+- **The member's own My Loans & Reservations page** — they see "Please collect by …" against anything waiting for them.
 
-To change the period, go to **Setup > Reservations & Loans** and set **Reservation Hold Period**. Anything from 1 to 365 days, or tick **Never expires** to hold reservations indefinitely, which is how the library behaved before this setting existed.
+To change the period, go to **Setup > Reservations & Loans** and set **Reservation Hold Period**. Anything from 1 to 365 days, or tick **Never expires** to hold reservations indefinitely.
 
 > **Note:** Changing the number applies to reservations already waiting, since the deadline is calculated from when each became collectable rather than being fixed at the time it was made. Shortening the period can therefore expire some reservations on the next page load. Lengthening it gives everyone currently waiting more time.
 
-Expiry is checked whenever anyone loads a page, so the list is correct whenever you look at it — you don't need to leave a browser open or configure anything on the server.
+Expiry is checked whenever anyone loads a page, so the list is correct whenever you look at it.
 
 ### Handling overdue tools
 
-The **Dashboard**'s "Overdue Tools" panel lists every loan past its due date at a glance. Follow up with the member directly (there is no built-in email/SMS notification system). Once the tool is back, mark it returned as described above.
+The **Dashboard**'s "Overdue Tools" panel lists every loan past its due date at a glance. Follow up with the member directly (there is not yet a built-in email/SMS notification system). Once the tool is back, mark it returned as described above.
 
 ### Reviewing library activity
 
-The **Dashboard** offers configurable, resizable stat panels. Drag panels to reorder or resize them; your layout is saved per-admin-user.
+The **Dashboard** offers configurable, resizable stat panels. Drag panels to reorder or resize them; your layout is saved per-user.
 
 Two panels are search-driven rather than always-on: **Tool History Lookup** and **Member History Lookup**. Type a tool or member's name into the search box, pick it from the dropdown, and click **View History** to see more than the Inventory/Membership pages show on their own:
 
@@ -287,9 +283,9 @@ To put things right:
 
 - **Restore the `.sql` dump.** IDs come back as they were and every sign-in reconnects on its own. This is the fix.
 - **Or re-add the member with the exact same email address** (Membership > Add a New Member, or a CSV import that includes their email). The next time they open the site their account reconnects itself automatically — no admin step needed.
-- If a member is stuck and their email in **Membership** does *not* match the email on their WordPress user (under **Users**), set the record's email to match theirs and save. That reconnects them, and from then on changing their email from either screen keeps both sides in step.
+- If a member is stuck and their email in **Membership** does _not_ match the email on their WordPress user (under **Users**), set the record's email to match theirs and save. That reconnects them, and from then on changing their email from either screen keeps both sides in step.
 
-> **Note:** Deleting a member now leaves their WordPress sign-in alone if it can't be confirmed as theirs, and tells you so. Remove it yourself under **Users** if it is no longer wanted — this is deliberate, because deleting the wrong person's sign-in cannot be undone.
+> **Note:** Deleting a member now leaves their WordPress sign-in alone if it can't be confirmed as theirs, and tells you so. Remove it yourself under **Users** if it is no longer wanted. This is deliberate, because deleting the wrong person's sign-in cannot be undone.
 
 ### Deleting a member
 
