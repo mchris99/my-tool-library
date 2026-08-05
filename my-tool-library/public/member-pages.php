@@ -227,6 +227,15 @@ function mtl_front_notice( $key ) {
 		// given email address has an account here.
 		'login_failed'           => array( 'error', 'That email address and password don&rsquo;t match an account. Please check them and try again.' ),
 		'login_empty'            => array( 'error', 'Please enter both your email address and your password.' ),
+		// Password reset. reset_sent is deliberately non-committal about
+		// whether the address matched an account -- see
+		// mtl_render_lost_password_page().
+		'reset_sent'             => array( 'success', 'If an account exists for that email address, a link to choose a new password is on its way. It can take a few minutes to arrive &mdash; do check your spam folder.' ),
+		'reset_empty'            => array( 'error', 'Please enter the email address you signed up with.' ),
+		'reset_done'             => array( 'success', 'Your password has been changed. You can sign in with it now.' ),
+		'reset_expired'          => array( 'error', 'That reset link has expired. Links are only good for a day &mdash; please request a new one.' ),
+		'reset_invalid'          => array( 'error', 'That reset link is no longer valid. It may already have been used. Please request a new one.' ),
+		'reset_expired_form'     => array( 'error', 'That page had been open too long to submit safely. Please try again.' ),
 	);
 	return isset( $map[ $key ] ) ? $map[ $key ] : null;
 }

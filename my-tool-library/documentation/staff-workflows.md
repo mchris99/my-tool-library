@@ -314,6 +314,23 @@ Before any bulk import, plugin update, or major cleanup, go to **Setup > Export 
 
 To restore a `.sql` dump you need database access (phpMyAdmin, the `mysql` command line, or `wp db import`) — there is no restore button in the plugin.
 
+### When a member forgets their password
+
+Members reset their own password without staff involvement, and without ever leaving the branded pages:
+
+1. On the **Sign In** page they click **Lost your password?** in the footer.
+2. They enter their email address and we send them a link.
+3. The link opens a **Choose a New Password** page on your site. Once saved, they're returned to Sign In and can use the new password straight away.
+
+Two things worth knowing when a member asks for help:
+
+- **The page always says the same thing**, whether or not the address matched an account. That stops the form being used to check whether a particular person is a member here — but it also means a typo'd address looks like success. If a member says no email arrived, have them check spam first, then confirm the address on their record matches what they typed.
+- **Links expire after 24 hours**, and stop working once used. An expired or already-used link sends them back to the reset page with an explanation, so they can request a fresh one.
+
+If the email never arrives for anyone, that's a mail problem on the site rather than a plugin one — WordPress sends it through whatever mail setup your host provides, and many hosts need an SMTP plugin before `wp_mail()` reliably reaches inboxes.
+
+Staff can also reset a password directly: **Users** in the WordPress sidebar, edit the account, **Set New Password**. Members needing that route are usually ones whose email address has changed, since they can no longer receive the link.
+
 ### Members' online accounts and the database reset
 
 Running **Setup > Run Database Setup** on a library that already has data deletes every record, but it **does not touch members' WordPress sign-ins**. Their accounts and passwords keep working. What breaks is the connection between the two: each record's ID number restarts from 1, so the sign-ins point at records that are gone or, worse, at somebody else's.

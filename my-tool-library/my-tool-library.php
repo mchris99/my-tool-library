@@ -2809,7 +2809,8 @@ function mtl_register_query_vars( $vars ) {
  * the login/gate pages, which are only ever reached through this plugin's
  * own links rather than being hand-typed or embedded by a site owner.
  *
- * @param string $page One of 'main', 'login', 'signup', 'reservations', 'account', 'admin'.
+ * @param string $page One of 'main', 'login', 'signup', 'reservations', 'account',
+ *                     'admin', 'lostpassword', 'resetpass'.
  * @return string Escaped URL.
  */
 function mtl_front_page_url( $page ) {
@@ -2855,6 +2856,10 @@ function mtl_handle_front_pages() {
 		mtl_render_member_reservations_page();
 	} elseif ( 'account' === $page ) {
 		mtl_render_account_page();
+	} elseif ( 'lostpassword' === $page ) {
+		mtl_render_lost_password_page();
+	} elseif ( 'resetpass' === $page ) {
+		mtl_render_reset_password_page();
 	}
 	// Unknown values fall through to the theme's normal 404/home handling.
 }
@@ -3139,8 +3144,304 @@ function mtl_render_front_login_page() {
 
 	$footer  = '<a href="' . esc_url( mtl_front_page_url( 'main' ) ) . '">&larr; Back to the catalog</a>';
 	$footer .= '<a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Create an Account</a>';
+	$footer .= '<a href="' . esc_url( mtl_front_page_url( 'lostpassword' ) ) . '">Lost your password?</a>';
 
 	mtl_render_front_shell( 'Sign In', $body, $footer );
+}
+
+// ==========================================================================
+// PASSWORD RESET
+//
+// Branded equivalents of wp-login.php?action=lostpassword and ?action=rp, so
+// a member who forgets their password never leaves the plugin's own pages.
+//
+// The security-relevant work is all core's: get_password_reset_key() and the
+// email are produced by retrieve_password(), the key is verified by
+// check_password_reset_key(), and the new password is written by
+// reset_password(). Nothing here re-implements any of that -- these two pages
+// supply the branding and the copy, and hand off.
+// ==========================================================================
+
+/**
+ * Name of the cookie holding "login:key" during a reset.
+ *
+ * Mirrors core's wp-resetpass-COOKIEHASH, under a plugin-specific name so the
+ * two flows cannot interfere with each other if both are used on one site.
+ *
+ * @return string
+ */
+function mtl_reset_cookie_name() {
+	return 'mtl-resetpass-' . COOKIEHASH;
+}
+
+/**
+ * The path the reset cookie is scoped to.
+ *
+ * These pages live at the site root (?mtl_page=resetpass), so the cookie is
+ * root-scoped too. Kept in one function so the set and the clear can never
+ * disagree -- a mismatched path silently fails to delete the cookie.
+ *
+ * @return string
+ */
+function mtl_reset_cookie_path() {
+	$path = wp_parse_url( home_url( '/' ), PHP_URL_PATH );
+	return is_string( $path ) && '' !== $path ? $path : '/';
+}
+
+add_filter( 'lostpassword_url', 'mtl_lost_password_url', 10, 0 );
+
+/**
+ * Points every "Lost your password?" link at the branded page.
+ *
+ * @return string
+ */
+function mtl_lost_password_url() {
+	return mtl_front_page_url( 'lostpassword' );
+}
+
+add_filter( 'retrieve_password_message', 'mtl_reset_email_message', 10, 3 );
+
+/**
+ * Rewrites the reset link in the email to the branded page.
+ *
+ * Core's retrieve_password() hardcodes a wp-login.php?action=rp URL into the
+ * message body, so the only way to redirect members to this plugin's page is
+ * to rewrite the message here. Only the URL is swapped -- core's surrounding
+ * copy, including its "if this was a mistake, ignore this email" line, is left
+ * exactly as it is.
+ *
+ * @param string $message    Default email body.
+ * @param string $key        Password reset key.
+ * @param string $user_login Username for the user.
+ * @return string
+ */
+function mtl_reset_email_message( $message, $key, $user_login ) {
+	$branded = add_query_arg(
+		array(
+			'login' => rawurlencode( $user_login ),
+			'key'   => $key,
+		),
+		mtl_front_page_url( 'resetpass' )
+	);
+
+	// Replace the whole wp-login.php line, including core's appended &wp_lang.
+	return preg_replace(
+		'#^.*wp-login\.php\?login=.*$#m',
+		$branded,
+		$message
+	);
+}
+
+/**
+ * "Forgot your password?" request page.
+ *
+ * Always reports the same thing whether or not the address matched an account.
+ * Core's own screen distinguishes the two, which turns the form into a way to
+ * test whether a given person is a member here; for a library holding home
+ * addresses that is worth avoiding, at the cost of a typo'd address looking
+ * like success until no email arrives.
+ */
+function mtl_render_lost_password_page() {
+	if ( is_user_logged_in() ) {
+		wp_safe_redirect( mtl_front_page_url( 'account' ) );
+		exit;
+	}
+
+	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
+	if ( 'POST' === $request_method && isset( $_POST['mtl_lostpassword_nonce'] ) ) {
+		if ( wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_lostpassword_nonce'] ) ), 'mtl_lostpassword_action' ) ) {
+			$submitted = isset( $_POST['user_login'] ) ? sanitize_text_field( wp_unslash( $_POST['user_login'] ) ) : '';
+
+			if ( '' === trim( $submitted ) ) {
+				wp_safe_redirect( add_query_arg( 'mtl_msg', 'reset_empty', mtl_front_page_url( 'lostpassword' ) ) );
+				exit;
+			}
+
+			// Return value deliberately ignored: a WP_Error here is usually
+			// "no such account", and acting on it differently is exactly the
+			// disclosure this page avoids.
+			retrieve_password( $submitted );
+
+			wp_safe_redirect( add_query_arg( 'mtl_msg', 'reset_sent', mtl_front_page_url( 'login' ) ) );
+			exit;
+		}
+
+		wp_safe_redirect( add_query_arg( 'mtl_msg', 'reset_expired_form', mtl_front_page_url( 'lostpassword' ) ) );
+		exit;
+	}
+
+	$body  = '<div class="mtl-front-card">';
+	$body .= '<h2 style="margin-top: 0;">Reset Your Password</h2>';
+	$body .= mtl_front_notice_html();
+	$body .= '<p style="font-size: 0.9em; color: #666;">Enter the email address you signed up with and we&rsquo;ll send you a link to choose a new password.</p>';
+	$body .= '<form method="post" action="' . esc_url( mtl_front_page_url( 'lostpassword' ) ) . '">';
+	$body .= wp_nonce_field( 'mtl_lostpassword_action', 'mtl_lostpassword_nonce', true, false );
+	$body .= '<p><label for="mtl_user_login">Email Address</label>';
+	$body .= '<input type="email" name="user_login" id="mtl_user_login" class="input" autocomplete="username" required></p>';
+	$body .= '<p><input type="submit" value="Email me a reset link"></p>';
+	$body .= '</form>';
+	$body .= '</div>';
+
+	$footer  = '<a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">&larr; Back to sign in</a>';
+	$footer .= '<a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Create an Account</a>';
+
+	mtl_render_front_shell( 'Reset Your Password', $body, $footer );
+}
+
+/**
+ * Checks a submitted new password, returning '' when it is acceptable.
+ *
+ * Split out from the page so the rules can be exercised directly: this is the
+ * one place a wrong answer would let somebody else's password be changed.
+ *
+ * @param string $expected_key Reset key from the cookie, already verified
+ *                             against the account by check_password_reset_key().
+ * @param string $posted_key   Reset key echoed back by the form.
+ * @param string $pass1        New password.
+ * @param string $pass2        Confirmation of the new password.
+ * @return string Error message for display, or '' if the password is fine.
+ */
+function mtl_validate_new_password( $expected_key, $posted_key, $pass1, $pass2 ) {
+	// The submitted key must match the cookie's, so a form left open in
+	// another tab cannot be used to reset against a newer key.
+	// hash_equals(), not ===, to keep the comparison constant-time.
+	if ( ! hash_equals( (string) $expected_key, (string) $posted_key ) ) {
+		return 'That reset link is no longer valid. Please request a new one.';
+	}
+
+	// Only-spaces is rejected, but a password containing spaces is fine, so
+	// the value itself is never trimmed before being stored.
+	if ( '' === trim( $pass1 ) ) {
+		return 'Please enter a new password.';
+	}
+
+	if ( $pass1 !== $pass2 ) {
+		return 'Those two passwords don&rsquo;t match. Please retype them.';
+	}
+
+	// Length is counted in bytes, matching how the password is stored, so a
+	// short passphrase of multi-byte characters is not over-credited.
+	if ( strlen( $pass1 ) < 8 ) {
+		return 'Please choose a password of at least 8 characters.';
+	}
+
+	return '';
+}
+
+/**
+ * "Choose a new password" page, reached from the emailed link.
+ *
+ * Follows core's cookie handoff: the key and login arrive as query args, are
+ * moved into an HttpOnly cookie, and the URL is then reloaded without them.
+ * That keeps the reset key out of browser history, out of bookmarks, and out
+ * of the Referer header sent to anything the page later loads.
+ */
+function mtl_render_reset_password_page() {
+	if ( is_user_logged_in() ) {
+		wp_safe_redirect( mtl_front_page_url( 'account' ) );
+		exit;
+	}
+
+	$cookie = mtl_reset_cookie_name();
+	$path   = mtl_reset_cookie_path();
+	$self   = mtl_front_page_url( 'resetpass' );
+
+	// Step 1: arriving from the email. Stash the credentials and drop them
+	// from the address bar.
+	// phpcs:disable WordPress.Security.NonceVerification.Recommended -- a GET arriving from an emailed link cannot carry a nonce; the reset key itself is the credential and is verified below by check_password_reset_key().
+	if ( isset( $_GET['key'] ) && isset( $_GET['login'] ) ) {
+		$value = sprintf(
+			'%s:%s',
+			sanitize_text_field( wp_unslash( $_GET['login'] ) ),
+			sanitize_text_field( wp_unslash( $_GET['key'] ) )
+		);
+		setcookie( $cookie, $value, 0, $path, COOKIE_DOMAIN, is_ssl(), true );
+		wp_safe_redirect( $self );
+		exit;
+	}
+	// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+	// Step 2: read them back and let core decide whether they are still valid.
+	// $rp_key is initialised here as well as assigned below: every path that
+	// leaves it blank also leaves $user falsy and redirects away, but an empty
+	// default means a future edit to that guard cannot turn into an undefined
+	// variable feeding hash_equals().
+	$user   = false;
+	$rp_key = '';
+	if ( isset( $_COOKIE[ $cookie ] ) && is_string( $_COOKIE[ $cookie ] ) ) {
+		$raw = sanitize_text_field( wp_unslash( $_COOKIE[ $cookie ] ) );
+		if ( 0 < strpos( $raw, ':' ) ) {
+			list( $rp_login, $rp_key ) = explode( ':', $raw, 2 );
+			$user                      = check_password_reset_key( $rp_key, $rp_login );
+		}
+	}
+
+	if ( ! $user || is_wp_error( $user ) ) {
+		$expired = ( $user instanceof WP_Error && 'expired_key' === $user->get_error_code() );
+		setcookie( $cookie, ' ', time() - YEAR_IN_SECONDS, $path, COOKIE_DOMAIN, is_ssl(), true );
+		wp_safe_redirect(
+			add_query_arg(
+				'mtl_msg',
+				$expired ? 'reset_expired' : 'reset_invalid',
+				mtl_front_page_url( 'lostpassword' )
+			)
+		);
+		exit;
+	}
+
+	// Step 3: handle the new password.
+	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
+	$error          = '';
+
+	if ( 'POST' === $request_method && isset( $_POST['mtl_resetpass_nonce'] ) ) {
+		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_resetpass_nonce'] ) ), 'mtl_resetpass_action' ) ) {
+			$error = 'This page had been open too long to be safe to use. Please try again.';
+		} else {
+			$posted_key = isset( $_POST['rp_key'] ) ? sanitize_text_field( wp_unslash( $_POST['rp_key'] ) ) : '';
+
+			// Passwords are read RAW, on purpose. sanitize_text_field() strips
+			// tags and collapses whitespace, so it would silently mangle a
+			// perfectly good password -- the member would set one thing and be
+			// unable to sign in with it. wp_unslash() undoes WordPress's magic
+			// quotes and nothing else; the value is never echoed, and
+			// reset_password() hashes it rather than storing it. Core reads
+			// $_POST['pass1'] the same way in wp-login.php.
+			// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- see above; sanitizing a password would corrupt it.
+			$pass1 = isset( $_POST['pass1'] ) ? (string) wp_unslash( $_POST['pass1'] ) : '';
+			$pass2 = isset( $_POST['pass2'] ) ? (string) wp_unslash( $_POST['pass2'] ) : '';
+			// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+			$error = mtl_validate_new_password( (string) $rp_key, $posted_key, $pass1, $pass2 );
+
+			if ( '' === $error ) {
+				reset_password( $user, $pass1 );
+				setcookie( $cookie, ' ', time() - YEAR_IN_SECONDS, $path, COOKIE_DOMAIN, is_ssl(), true );
+				wp_safe_redirect( add_query_arg( 'mtl_msg', 'reset_done', mtl_front_page_url( 'login' ) ) );
+				exit;
+			}
+		}
+	}
+
+	$body  = '<div class="mtl-front-card">';
+	$body .= '<h2 style="margin-top: 0;">Choose a New Password</h2>';
+	if ( '' !== $error ) {
+		$body .= '<div class="mtl-front-notice mtl-front-notice-error">' . $error . '</div>';
+	}
+	$body .= '<p style="font-size: 0.9em; color: #666;">Setting a new password for <strong>' . esc_html( $user->user_email ) . '</strong>.</p>';
+	$body .= '<form method="post" action="' . esc_url( $self ) . '">';
+	$body .= wp_nonce_field( 'mtl_resetpass_action', 'mtl_resetpass_nonce', true, false );
+	$body .= '<input type="hidden" name="rp_key" value="' . esc_attr( $rp_key ) . '">';
+	$body .= '<p><label for="mtl_pass1">New Password</label>';
+	$body .= '<input type="password" name="pass1" id="mtl_pass1" class="input" autocomplete="new-password" minlength="8" required></p>';
+	$body .= '<p><label for="mtl_pass2">Confirm New Password</label>';
+	$body .= '<input type="password" name="pass2" id="mtl_pass2" class="input" autocomplete="new-password" minlength="8" required></p>';
+	$body .= '<p><input type="submit" value="Save my new password"></p>';
+	$body .= '</form>';
+	$body .= '</div>';
+
+	$footer = '<a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">&larr; Back to sign in</a>';
+
+	mtl_render_front_shell( 'Choose a New Password', $body, $footer );
 }
 
 /**
