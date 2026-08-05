@@ -3288,6 +3288,72 @@ function mtl_render_lost_password_page() {
 	mtl_render_front_shell( 'Reset Your Password', $body, $footer );
 }
 
+add_action( 'after_password_reset', 'mtl_send_password_changed_email', 10, 1 );
+
+/**
+ * Emails the member to confirm their password was changed.
+ *
+ * WordPress does not send this. reset_password() writes the password with
+ * wp_set_password() rather than wp_update_user(), so core's own
+ * "Notice of Password Change" email never fires on the reset path, and the
+ * only thing core does send here -- wp_password_change_notification() on this
+ * same action -- goes to the site administrator, not the member.
+ *
+ * Its real job is the sentence at the end: if the member did not do this, the
+ * email is how they find out someone else did, while there is still time to
+ * tell staff.
+ *
+ * Hooked to after_password_reset rather than to the branded page, so a reset
+ * completed any other way still produces the confirmation.
+ *
+ * @param WP_User $user The user whose password was just reset.
+ * @return void
+ */
+function mtl_send_password_changed_email( $user ) {
+	if ( ! $user instanceof WP_User || empty( $user->user_email ) ) {
+		return;
+	}
+
+	$org_name = trim( (string) get_option( 'mtl_org_name', '' ) );
+	if ( '' === $org_name ) {
+		$org_name = get_bloginfo( 'name' );
+	}
+	if ( '' === trim( (string) $org_name ) ) {
+		$org_name = 'My Tool Library';
+	}
+
+	// A name if we have one, otherwise the sign-in address -- never a bare
+	// "Hi," which reads like the spam this email needs to be trusted over.
+	$greeting_name = trim( (string) $user->display_name );
+	if ( '' === $greeting_name ) {
+		$greeting_name = $user->user_login;
+	}
+
+	// wp_date(), not gmdate(), so the timestamp is in the library's own
+	// timezone -- "at 3:14 pm" is only useful if it matches the member's clock.
+	$changed_at = wp_date( 'F j, Y \a\t g:i a' );
+
+	$subject = sprintf( '[%s] Your password has been changed', $org_name );
+
+	$lines = array(
+		sprintf( 'Hi %s,', $greeting_name ),
+		'',
+		sprintf( 'This is a confirmation that the password for your %s account was changed on %s.', $org_name, $changed_at ),
+		'',
+		'You can sign in with your new password here:',
+		mtl_front_page_url( 'login' ),
+		'',
+		'If you did not make this change, please contact library staff as soon as you can -- somebody else may have access to your account.',
+		'',
+		sprintf( '-- %s', $org_name ),
+	);
+
+	// Return value ignored on purpose: the password has already been changed
+	// by this point, and a mail failure must not be reported to the member as
+	// though the reset itself had failed.
+	wp_mail( $user->user_email, $subject, implode( "\r\n", $lines ) );
+}
+
 /**
  * Checks a submitted new password, returning '' when it is acceptable.
  *

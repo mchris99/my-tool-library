@@ -321,6 +321,9 @@ Members reset their own password without staff involvement, and without ever lea
 1. On the **Sign In** page they click **Lost your password?** in the footer.
 2. They enter their email address and we send them a link.
 3. The link opens a **Choose a New Password** page on your site. Once saved, they're returned to Sign In and can use the new password straight away.
+4. A second email confirms the change went through.
+
+That confirmation email matters more than it looks. If a member tells you they received one they weren't expecting, treat it seriously — it means somebody completed a password reset on their account, and they no longer control it. Reset it again yourself from **Users**, and check the email address on the account hasn't been altered too.
 
 Two things worth knowing when a member asks for help:
 
