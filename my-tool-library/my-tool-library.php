@@ -2454,6 +2454,25 @@ function mtl_can_delete_members() {
 	return current_user_can( 'manage_options' );
 }
 
+/**
+ * Whether the current user may delete a tool from inventory. Administrators
+ * only, matching mtl_can_delete_members(): it is irreversible and drops the
+ * record of an asset the library owns.
+ *
+ * Editors keep every other tool action, including Retire -- which is the
+ * reversible way to take something out of circulation, and the right answer
+ * for almost every case Delete used to be reached for.
+ *
+ * Deleting a tool that has loan or reservation history is separately blocked
+ * by a foreign key, and that is unchanged by this check (see the delete
+ * handler in admin/inventory-page.php).
+ *
+ * @return bool
+ */
+function mtl_can_delete_tools() {
+	return current_user_can( 'manage_options' );
+}
+
 // ADMIN MENUS: Register the portal pages.
 // add_submenu_page() both places a sidebar link AND registers the page's
 // routing/render callback/capability check -- so all six must stay

@@ -22,7 +22,7 @@ There are two staff roles, both of them standard WordPress roles.
 
 **Editor**: the role for anyone working the desk. They can run the library day to day: add and edit members, add and edit tools, check tools in and out, manage reservations, and read this guide. This is the role to give volunteers and staff by default.
 
-**Administrator**: everything an Editor can do, plus the access to the **Setup** page and the ability to delete a member's record.
+**Administrator**: everything an Editor can do, plus access to the **Setup** page and the ability to delete a member's record or a tool.
 
 ### What each role can do
 
@@ -37,13 +37,14 @@ There are two staff roles, both of them standard WordPress roles.
 | Create, cancel and fulfil reservations             |   ✅   |      ✅       |
 | Read the Workflows guide                           |   ✅   |      ✅       |
 | **Delete a member's record**                       |   ❌   |      ✅       |
+| **Delete a tool from inventory**                   |   ❌   |      ✅       |
 | **Open the Setup page** (and everything on it)     |   ❌   |      ✅       |
 | — Branding, colors, fonts, logo                    |   ❌   |      ✅       |
 | — Categories, tags and trainings lists             |   ❌   |      ✅       |
 | — Export data (`.sql` / CSV)                       |   ❌   |      ✅       |
 | — Run Database Setup                               |   ❌   |      ✅       |
 
-An Editor doesn't see a **Setup** tab at all, and doesn't see a **Delete** button on the Membership page.
+An Editor doesn't see a **Setup** tab at all, and doesn't see a **Delete** button on the Membership or Inventory page. **Retire** is still theirs on Inventory, and it's the better tool for almost everything Delete gets reached for — it pulls the item from the public catalog and blocks new loans while keeping its history, and it can be undone.
 
 > **Note:** Editor is a full WordPress role, so it also grants the ability to write and edit posts and pages elsewhere on your site. If that matters to you, restrict it with a role-management plugin; the tool library only ever checks whether the account is an Editor or an Administrator.
 
@@ -344,7 +345,7 @@ This is **permanent and cannot be undone.**
 
 Tools work the same way in spirit, without the personal-data issue:
 
-- **No loan or reservation history** — you may click **Delete** on the **Inventory** page to remove it outright.
+- **No loan or reservation history** — an administrator may click **Delete** on the **Inventory** page to remove it outright. Editors don't see this button; if you're working the desk and need a tool gone, either use **Retire** or ask an administrator.
 - **Has loan or reservation history** — click **Retire** instead. This hides the tool from the public catalog and blocks any new loan or reservation for it (any reservations already queued for it are automatically cancelled, with a note on-screen telling you how many), while keeping the tool's row and its full history intact. A currently open loan is left alone and can still be ended normally whenever it's resolved.
 
 Unlike a member or tool delete, retiring is fully reversible — click **Reactivate** on a retired tool to bring it back into service. Retired tools drop out of the Inventory page's default list; use the **Retired?** filter under Advanced Search (set to "Active + retired" or "Retired only") to find them.

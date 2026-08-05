@@ -966,7 +966,11 @@ function mtl_render_inventory_page() {
 	}
 
 	// 3. HANDLE "DELETE" FORM SUBMISSION
-	if ( isset( $_POST['mtl_delete_tool'] ) && mtl_can_manage_library() ) {
+	// Administrators only (mtl_can_delete_tools), unlike every other action on
+	// this page. Hiding the button is presentation; this is the enforcement --
+	// without it an Editor could still post the form. Nothing about what a
+	// delete DOES changes below: same FK guard, same messages.
+	if ( isset( $_POST['mtl_delete_tool'] ) && mtl_can_delete_tools() ) {
 		if ( isset( $_POST['mtl_delete_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_tool_nonce'] ) ), 'mtl_delete_tool_action' ) ) {
 
 			$delete_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
@@ -2303,11 +2307,20 @@ function mtl_render_inventory_page() {
 										<button type="submit" name="mtl_retire_tool" class="button button-small">Retire</button>
 									</form>
 								<?php endif; ?>
-								<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('<?php echo esc_js( $delete_confirm ); ?>');">
+								<?php
+									// Deleting a tool is administrators-only, so Editors get no
+									// Delete button. The handler checks the same thing, so hiding
+									// it here is presentation, not the enforcement. Retire stays
+									// available to Editors above -- it is the reversible way to
+									// take a tool out of circulation.
+								if ( mtl_can_delete_tools() ) :
+									?>
+									<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('<?php echo esc_js( $delete_confirm ); ?>');">
 									<?php wp_nonce_field( 'mtl_delete_tool_action', 'mtl_delete_tool_nonce' ); ?>
-									<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
-									<button type="submit" name="mtl_delete_tool" class="button button-small mtl-btn-danger">Delete</button>
-								</form>
+										<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
+										<button type="submit" name="mtl_delete_tool" class="button button-small mtl-btn-danger">Delete</button>
+									</form>
+								<?php endif; ?>
 							</td>
 						</tr>
 						<!--
