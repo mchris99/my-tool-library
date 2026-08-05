@@ -1180,6 +1180,59 @@ function mtl_render_setup_page() {
 			font-size: 0.75em;
 			color: #8a6d00;
 		}
+
+		/* SETUP PAGE TILES
+			Three bands down the page, in the order an admin actually works
+			through them: settings first, then the lists they populate, then
+			the data operations at the bottom where they are out of the way.
+
+			.mtl-setup-row is the shared card look. A full-width band is just a
+			row holding one tile; the middle band holds several and reflows on
+			narrow screens. Keeping one card style means a tile can be moved
+			between bands without restyling it. */
+		.mtl-setup-row {
+			display: flex;
+			gap: 20px;
+			margin-top: 20px;
+			flex-wrap: wrap;
+		}
+
+		.mtl-setup-tile {
+			background: #fff;
+			padding: 20px;
+			border: 1px solid #ccd0d4;
+			border-radius: 4px;
+			box-shadow: 0 1px 1px rgba(0, 0, 0, .04);
+			/* Tiles sharing a row size themselves to their content rather than
+				stretching to match the tallest one. */
+			height: fit-content;
+		}
+
+		/* Sole occupant of its band: fills the width at every screen size.
+			flex-basis 100% rather than width so the row's gap and padding are
+			accounted for automatically. */
+		.mtl-setup-tile-full {
+			flex: 1 1 100%;
+			min-width: 0;
+		}
+
+		/* Shares its band, and drops to one-per-row once there is no longer
+			space for two. min-width is what triggers that wrap; it must stay
+			small enough that the tile still fits inside the admin content area
+			on a narrow window, or the row would overflow horizontally. */
+		.mtl-setup-tile-half {
+			flex: 1 1 400px;
+			min-width: 320px;
+		}
+
+		/* Below this the two-up band cannot hold two readable columns, so let
+			every tile take the full width rather than squeezing. */
+		@media screen and (max-width: 782px) {
+			.mtl-setup-tile-half {
+				flex-basis: 100%;
+				min-width: 0;
+			}
+		}
 	</style>
 
 	<?php
@@ -1217,10 +1270,13 @@ function mtl_render_setup_page() {
 		</div>
 	</div>
 
-	<div style="display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap;">
+	<!-- Band 1: General Details, full width. It holds the widest content on
+		the page (the form-table plus the Appearance Settings panel), so it
+		gets a row to itself rather than competing for space with the lists. -->
+	<div class="mtl-setup-row">
 
 		<!-- General Customization Settings -->
-		<div style="flex: 1; min-width: 450px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
+		<div class="mtl-setup-tile mtl-setup-tile-full">
 			<form method="post" action="">
 				<?php wp_nonce_field( 'mtl_save_settings_action', 'mtl_settings_nonce' ); ?>
 
@@ -1460,9 +1516,14 @@ function mtl_render_setup_page() {
 				</p>
 			</form>
 		</div>
+	</div>
+
+	<!-- Band 2: the lookup lists. Two up on a wide screen, stacking on a
+		narrow one -- the responsive behaviour the page already had. -->
+	<div class="mtl-setup-row">
 
 		<!-- Categories & Tags Management -->
-		<div style="flex: 1; min-width: 400px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04); height: fit-content;">
+		<div class="mtl-setup-tile mtl-setup-tile-half">
 			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Categories & Tags</h3>
 			<p style="font-size: 0.9em; color: #666;">Add new lookup values here so they're available to choose from when adding or editing tools in the Inventory tab.</p>
 
@@ -1524,7 +1585,7 @@ function mtl_render_setup_page() {
 		</div>
 
 		<!-- Member Trainings Management -->
-		<div style="flex: 1; min-width: 400px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04); height: fit-content;">
+		<div class="mtl-setup-tile mtl-setup-tile-half">
 			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Member Trainings</h3>
 			<p style="font-size: 0.9em; color: #666;">Safety and skill trainings a member can complete. Staff record who has completed what (with the date) on the Membership page; members see their own on their account page.</p>
 
@@ -1594,8 +1655,50 @@ function mtl_render_setup_page() {
 			</form>
 		</div>
 
+	</div>
+
+	<!-- Band 3: Export Data, full width. Directly above Database
+		Configuration on purpose -- taking a backup is the step that makes
+		a reset recoverable, so an admin heading for the reset button has
+		to pass it first. -->
+	<div class="mtl-setup-row">
+
+		<!-- Export Data -->
+		<div class="mtl-setup-tile mtl-setup-tile-full">
+			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Export Data</h3>
+
+			<p>Download a complete copy of all My Tool Library data &mdash; members, verifications, inventory, categories, tags, loans and reservations.</p>
+
+			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
+				<li><strong>.sql dump</strong> &mdash; a single SQL file (DROP + CREATE + INSERT) you can import into any MySQL/MariaDB database. Table names <strong>keep</strong> the <code><?php echo esc_html( $wpdb->prefix ); ?></code> prefix (e.g. <code><?php echo esc_html( $wpdb->prefix ); ?>members</code>), matching how the plugin creates them. <strong>This is the one to keep as a backup:</strong> it preserves every record&rsquo;s ID, so restoring it puts members, loans, reservations and members&rsquo; online sign-ins back exactly as they were.</li>
+				<li><strong>.zip of CSVs</strong> &mdash; one <code>.csv</code> file per table, named after the table without the prefix (e.g. <code>members.csv</code>), handy for spreadsheets and for reading in Excel.</li>
+			</ul>
+
+			<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
+				<strong>A CSV export is not a backup.</strong> The Membership and Inventory bulk importers always assign new IDs, so re-importing <code>members.csv</code> after a reset creates fresh member records that no longer match members&rsquo; existing sign-ins &mdash; and there is no importer at all for loans or reservations. To restore a library, use the <strong>.sql dump</strong> with phpMyAdmin, the <code>mysql</code> command line, or <code>wp db import</code>.
+			</div>
+
+			<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
+				<strong>Note:</strong> The export includes members&rsquo; sensitive verification document links. Store the downloaded file securely.
+			</div>
+
+			<form method="post" action="">
+				<?php wp_nonce_field( 'mtl_export_action', 'mtl_export_nonce' ); ?>
+				<p class="submit" style="display: flex; gap: 8px; flex-wrap: wrap;">
+					<button type="submit" name="mtl_export_sql" class="button button-primary">Download .sql dump</button>
+					<button type="submit" name="mtl_export_zip" class="button button-secondary">Download .zip of CSVs</button>
+				</p>
+			</form>
+		</div>
+	</div>
+
+	<!-- Band 4: Database Configuration, full width and last on the page.
+		It is the one destructive control here, so it sits furthest from the
+		settings an admin edits day to day. -->
+	<div class="mtl-setup-row">
+
 		<!-- Database Setup Tool -->
-		<div style="flex: 1; min-width: 400px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04); height: fit-content;">
+		<div class="mtl-setup-tile mtl-setup-tile-full">
 			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; color: #d63638;">Database Configuration</h3>
 
 			<p>Builds the plugin's database tables from the bundled <code>schema.sql</code> file. Required once when you first install the plugin; on a library that is already running, it is a full reset, not a repair.</p>
@@ -1663,34 +1766,6 @@ function mtl_render_setup_page() {
 					});
 				}());
 			</script>
-		</div>
-
-		<!-- Export Data -->
-		<div style="flex: 1; min-width: 400px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04); height: fit-content;">
-			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Export Data</h3>
-
-			<p>Download a complete copy of all My Tool Library data &mdash; members, verifications, inventory, categories, tags, loans and reservations.</p>
-
-			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
-				<li><strong>.sql dump</strong> &mdash; a single SQL file (DROP + CREATE + INSERT) you can import into any MySQL/MariaDB database. Table names <strong>keep</strong> the <code><?php echo esc_html( $wpdb->prefix ); ?></code> prefix (e.g. <code><?php echo esc_html( $wpdb->prefix ); ?>members</code>), matching how the plugin creates them. <strong>This is the one to keep as a backup:</strong> it preserves every record&rsquo;s ID, so restoring it puts members, loans, reservations and members&rsquo; online sign-ins back exactly as they were.</li>
-				<li><strong>.zip of CSVs</strong> &mdash; one <code>.csv</code> file per table, named after the table without the prefix (e.g. <code>members.csv</code>), handy for spreadsheets and for reading in Excel.</li>
-			</ul>
-
-			<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
-				<strong>A CSV export is not a backup.</strong> The Membership and Inventory bulk importers always assign new IDs, so re-importing <code>members.csv</code> after a reset creates fresh member records that no longer match members&rsquo; existing sign-ins &mdash; and there is no importer at all for loans or reservations. To restore a library, use the <strong>.sql dump</strong> with phpMyAdmin, the <code>mysql</code> command line, or <code>wp db import</code>.
-			</div>
-
-			<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
-				<strong>Note:</strong> The export includes members&rsquo; sensitive verification document links. Store the downloaded file securely.
-			</div>
-
-			<form method="post" action="">
-				<?php wp_nonce_field( 'mtl_export_action', 'mtl_export_nonce' ); ?>
-				<p class="submit" style="display: flex; gap: 8px; flex-wrap: wrap;">
-					<button type="submit" name="mtl_export_sql" class="button button-primary">Download .sql dump</button>
-					<button type="submit" name="mtl_export_zip" class="button button-secondary">Download .zip of CSVs</button>
-				</p>
-			</form>
 		</div>
 	</div>
 
