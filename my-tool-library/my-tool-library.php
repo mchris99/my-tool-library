@@ -3126,6 +3126,10 @@ function mtl_render_front_login_page() {
 	);
 	remove_filter( 'login_form_bottom', 'mtl_front_login_marker' );
 
+	// Stops an empty submit from ever leaving the page. The server-side guard
+	// in mtl_block_empty_front_login() still covers a browser that ignores it.
+	$login_form = mtl_require_login_fields( $login_form );
+
 	$body  = '<div class="mtl-front-card">';
 	$body .= '<h2 style="margin-top: 0;">Sign In</h2>';
 	$body .= mtl_front_notice_html();
@@ -3154,10 +3158,72 @@ function mtl_front_login_marker( $content ) {
 	return $content . '<input type="hidden" name="mtl_front_login" value="1" />';
 }
 
+/**
+ * Adds the required attribute to core's sign-in inputs.
+ *
+ * First line of defence for an empty submit: the browser refuses to send the
+ * form at all, so nothing reaches /wp-login.php and there is no round trip.
+ * wp_login_form() has no argument for this, hence patching its returned markup.
+ *
+ * Purely an enhancement. If core ever changes these attributes the replacement
+ * simply does not match and the form still works -- mtl_block_empty_front_login()
+ * is what actually guarantees the behaviour.
+ *
+ * @param string $form Markup returned by wp_login_form().
+ * @return string
+ */
+function mtl_require_login_fields( $form ) {
+	return str_replace(
+		array( 'name="log"', 'name="pwd"' ),
+		array( 'name="log" required', 'name="pwd" required' ),
+		$form
+	);
+}
+
 // Priority 100, deliberately late: security plugins commonly count failed
 // attempts on this same hook, and this handler ends the request. Running last
 // means their counters still see the event before the redirect happens.
 add_action( 'wp_login_failed', 'mtl_handle_failed_front_login', 100, 2 );
+
+// Empty credentials never reach the action above. wp_authenticate() keeps an
+// $ignore_codes list -- empty_username and empty_password -- and skips firing
+// wp_login_failed for them (wp-includes/pluggable.php), on the reasoning that a
+// blank form is not a real login attempt worth logging. The result is that
+// clicking Sign In with both boxes empty fell straight through to wp-login.php.
+// The authenticate filter runs earlier and does see them.
+//
+// Priority 50: after core's own authenticators (20-30) have had their say, so
+// $user is already resolved, and before wp_authenticate_spam_check at 99.
+add_filter( 'authenticate', 'mtl_block_empty_front_login', 50 );
+
+/**
+ * Catches the empty-credentials case that never reaches wp_login_failed.
+ *
+ * Deliberately narrow: it handles only the two error codes core excludes from
+ * that action and returns everything else untouched, so genuine failures still
+ * travel the normal path and remain visible to any plugin counting them.
+ *
+ * @param null|WP_User|WP_Error $user Result so far from the authenticate chain.
+ * @return null|WP_User|WP_Error
+ */
+function mtl_block_empty_front_login( $user ) {
+	if ( ! is_wp_error( $user ) ) {
+		return $user;
+	}
+
+	// phpcs:ignore WordPress.Security.NonceVerification.Missing -- the sign-in POST carries no nonce by design; this flag only selects a redirect target and changes no state.
+	if ( empty( $_POST['mtl_front_login'] ) ) {
+		return $user;
+	}
+
+	$code = $user->get_error_code();
+	if ( 'empty_username' !== $code && 'empty_password' !== $code ) {
+		return $user;
+	}
+
+	wp_safe_redirect( add_query_arg( 'mtl_msg', 'login_empty', mtl_front_page_url( 'login' ) ) );
+	exit;
+}
 
 /**
  * Keeps a failed sign-in on the branded page instead of dumping the member on
@@ -3189,6 +3255,11 @@ function mtl_handle_failed_front_login( $username, $error = null ) {
 
 	// A blank box is a different problem from a wrong password, and saying so
 	// gives nothing away. Everything else collapses into one generic message.
+	//
+	// In practice the empty codes never arrive here -- core excludes them from
+	// this action, which is why mtl_block_empty_front_login() exists and is
+	// what actually handles them. Kept as a fallback so this stays correct if
+	// core's $ignore_codes list ever changes.
 	$msg = ( 'empty_username' === $code || 'empty_password' === $code )
 		? 'login_empty'
 		: 'login_failed';
