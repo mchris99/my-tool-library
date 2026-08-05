@@ -2972,6 +2972,29 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 				text-decoration: underline;
 			}
 
+			/* Status banner (e.g. a failed sign-in). Same colors as the member
+				pages' .mtl-front-notice, but sized for the narrower card:
+				full width, no auto-centering. */
+			.mtl-front-card .mtl-front-notice {
+				margin: 0 0 16px 0;
+				padding: 12px 16px;
+				border-radius: 6px;
+				font-size: 0.95em;
+				text-align: left;
+			}
+
+			.mtl-front-card .mtl-front-notice-success {
+				background: #edf7ed;
+				border: 1px solid #b6dcb6;
+				color: #1e5b25;
+			}
+
+			.mtl-front-card .mtl-front-notice-error {
+				background: #fcf0f1;
+				border: 1px solid #f0c0c4;
+				color: #8a1f28;
+			}
+
 			/* Make the core wp_login_form() output match the card. */
 			.mtl-front-card form p {
 				text-align: left;
@@ -3086,6 +3109,11 @@ function mtl_render_front_login_page() {
 		exit;
 	}
 
+	// Tag this form so a failed attempt can be told apart from one made at
+	// /wp-login.php directly -- see mtl_handle_failed_front_login(). Added and
+	// removed around the one call so the filter never affects another plugin's
+	// login form elsewhere on the site.
+	add_filter( 'login_form_bottom', 'mtl_front_login_marker' );
 	$login_form = wp_login_form(
 		array(
 			'echo'           => false,
@@ -3096,9 +3124,11 @@ function mtl_render_front_login_page() {
 			'remember'       => true,
 		)
 	);
+	remove_filter( 'login_form_bottom', 'mtl_front_login_marker' );
 
 	$body  = '<div class="mtl-front-card">';
 	$body .= '<h2 style="margin-top: 0;">Sign In</h2>';
+	$body .= mtl_front_notice_html();
 	$body .= '<p style="font-size: 0.9em; color: #666;">New members can <a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">create an account</a>.</p>';
 	$body .= $login_form;
 	$body .= '</div>';
@@ -3107,6 +3137,64 @@ function mtl_render_front_login_page() {
 	$footer .= '<a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Create an Account</a>';
 
 	mtl_render_front_shell( 'Sign In', $body, $footer );
+}
+
+/**
+ * Marks the branded sign-in form so a failed attempt can be traced back to it.
+ *
+ * Core's wp_login_form() posts to /wp-login.php, and on failure WordPress
+ * renders its own unbranded page there. The hidden field below is what tells
+ * mtl_handle_failed_front_login() that the attempt started on the plugin's
+ * page and should be sent back to it.
+ *
+ * @param string $content Existing markup appended to the end of the form.
+ * @return string
+ */
+function mtl_front_login_marker( $content ) {
+	return $content . '<input type="hidden" name="mtl_front_login" value="1" />';
+}
+
+// Priority 100, deliberately late: security plugins commonly count failed
+// attempts on this same hook, and this handler ends the request. Running last
+// means their counters still see the event before the redirect happens.
+add_action( 'wp_login_failed', 'mtl_handle_failed_front_login', 100, 2 );
+
+/**
+ * Keeps a failed sign-in on the branded page instead of dumping the member on
+ * /wp-login.php, where there is no catalog, no styling and no way to create an
+ * account.
+ *
+ * Only acts on attempts that came from this plugin's own form: a failed login
+ * at /wp-login.php (an admin signing in the usual way, or another plugin's
+ * form) is left completely alone.
+ *
+ * @param string        $username Submitted username. Unused -- deliberately
+ *                                not echoed back through the URL, which would
+ *                                put a member's email address into browser
+ *                                history, server logs and referer headers.
+ * @param WP_Error|null $error    The authentication failure, when core passes
+ *                                one (WordPress 5.4+).
+ */
+function mtl_handle_failed_front_login( $username, $error = null ) {
+	// No nonce here by design. wp-login.php's sign-in POST does not carry one
+	// -- knowing the password IS the proof -- so there is nothing to verify.
+	// This flag is read only to decide which page to redirect to, and is never
+	// trusted for anything else.
+	// phpcs:ignore WordPress.Security.NonceVerification.Missing -- see above; no state is changed here.
+	if ( empty( $_POST['mtl_front_login'] ) ) {
+		return;
+	}
+
+	$code = ( $error instanceof WP_Error ) ? $error->get_error_code() : '';
+
+	// A blank box is a different problem from a wrong password, and saying so
+	// gives nothing away. Everything else collapses into one generic message.
+	$msg = ( 'empty_username' === $code || 'empty_password' === $code )
+		? 'login_empty'
+		: 'login_failed';
+
+	wp_safe_redirect( add_query_arg( 'mtl_msg', $msg, mtl_front_page_url( 'login' ) ) );
+	exit;
 }
 
 /**

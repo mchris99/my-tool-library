@@ -221,6 +221,12 @@ function mtl_front_notice( $key ) {
 		'account_updated'        => array( 'success', 'Your account details have been updated.' ),
 		'account_verif_removed'  => array( 'success', 'Your details were updated. Because your address changed, your verified status has been reset &mdash; an administrator will need to re-verify your account.' ),
 		'account_deleted'        => array( 'success', 'Your account and personal data have been deleted. You&rsquo;re welcome to browse the catalog, but you&rsquo;ll need to sign up again if you&rsquo;d like to reserve a tool.' ),
+		// Sign-in failures, carried back from wp-login.php by
+		// mtl_handle_failed_front_login(). Deliberately does not say WHICH of
+		// the two was wrong: that would confirm to anyone guessing whether a
+		// given email address has an account here.
+		'login_failed'           => array( 'error', 'That email address and password don&rsquo;t match an account. Please check them and try again.' ),
+		'login_empty'            => array( 'error', 'Please enter both your email address and your password.' ),
 	);
 	return isset( $map[ $key ] ) ? $map[ $key ] : null;
 }
