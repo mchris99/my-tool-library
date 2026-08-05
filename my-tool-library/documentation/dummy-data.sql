@@ -917,49 +917,68 @@ INSERT INTO wp_tool_reservations (reservation_id, tool_id, member_id, reservatio
 
 -- ==========================================
 -- 8. MEMBER <-> TRAINING MAPPINGS (41 records across 24 of 60 members)
---    training_ids 1-7 are seeded by schema.sql:
---      1 Power Tool Basics     5 Angle Grinder Safety
---      2 Table Saw Safety      6 Welding Basics
---      3 Miter Saw Safety      7 Ladder Safety
---      4 Chainsaw Safety
+--    training_ids 1-7 and their renewal periods are seeded by schema.sql:
+--      1 Power Tool Basics     never expires   5 Angle Grinder Safety  12 mo
+--      2 Table Saw Safety      24 mo           6 Welding Basics        36 mo
+--      3 Miter Saw Safety      24 mo           7 Ladder Safety         12 mo
+--      4 Chainsaw Safety       12 mo
+--
+--    start_date is when that member completed the training; the certification
+--    lapses that many months later (mtl_training_expiry_date()). Dates here
+--    are chosen so BOTH states are represented without editing anything:
+--    6 of the 41 records are deliberately expired as of mid-2026 --
+--    (12,5) (30,6) (39,4) (47,3) (55,4) (58,7) -- and members 39, 55 and 58
+--    each hold a mix of current and expired, which is what exercises the
+--    "badges show current only, the table shows everything" split on the My
+--    Account page.
 --
 --    Kept consistent with the loan/reservation history above: ten tools are
 --    tagged "Requires Training" (tag 11) -- Table Saws 3, 31, 59, 87, 115 and
 --    Chainsaws 8, 36, 64, 92, 120. Every member who has borrowed or reserved
 --    one of those Table Saws (21, 22, 23, 24, 39, 44) holds Table Saw Safety
---    below, so no row in this file shows a member using a tool they aren't
---    qualified for. No member has borrowed a Chainsaw, so Chainsaw Safety is
---    assigned freely.
+--    below AND it is still current, so no row in this file shows a member
+--    using a tool they aren't qualified for. No member has borrowed a
+--    Chainsaw, so Chainsaw Safety expiries are assigned freely.
 --
 --    Most members have no trainings at all, so the "None on record" empty
 --    state is reachable without editing anything. These are all independent
 --    tool-specific trainings with no prerequisite between them, so members
 --    hold them in any combination.
 -- ==========================================
-INSERT INTO wp_member_training_mappings (member_id, training_id) VALUES
-(1, 2), (1, 3),
-(3, 1),
-(5, 3),
-(6, 2), (6, 4), (6, 6),
-(9, 1), (9, 4), (9, 7),
-(12, 5),
-(13, 2), (13, 3),
-(17, 5), (17, 6),
--- Members 21-24 have each borrowed a Table Saw (tools 115, 87, 59, 31).
-(21, 2),
-(22, 2), (22, 3),
-(23, 2),
-(24, 1), (24, 2),
-(26, 1),
-(30, 6),
-(33, 1), (33, 7),
-(35, 2), (35, 5),
--- Members 39 and 44 are both in the reservation queue for Table Saw 59.
-(39, 2), (39, 4),
-(41, 1),
-(44, 2), (44, 5), (44, 6),
-(47, 3),
-(52, 1),
-(55, 4), (55, 6),
-(58, 1), (58, 7),
-(60, 2), (60, 4);
+INSERT INTO wp_member_training_mappings (member_id, training_id, start_date) VALUES
+(1, 2, '2025-03-12'), (1, 3, '2025-03-12'),
+(3, 1, '2024-05-20'),
+(5, 3, '2025-06-02'),
+(6, 2, '2025-10-14'), (6, 4, '2026-02-11'), (6, 6, '2024-04-08'),
+(9, 1, '2023-11-30'), (9, 4, '2026-01-22'), (9, 7, '2026-03-03'),
+-- EXPIRED: Angle Grinder (12 mo) completed in early 2024.
+(12, 5, '2024-03-10'),
+(13, 2, '2025-08-19'), (13, 3, '2025-08-19'),
+(17, 5, '2026-05-27'), (17, 6, '2024-09-16'),
+-- Members 21-24 have each borrowed a Table Saw (tools 115, 87, 59, 31), so
+-- their Table Saw Safety is dated recently enough to still be current.
+(21, 2, '2025-09-05'),
+(22, 2, '2026-01-15'), (22, 3, '2026-01-15'),
+(23, 2, '2025-11-21'),
+(24, 1, '2024-02-14'), (24, 2, '2025-12-03'),
+(26, 1, '2025-04-09'),
+-- EXPIRED: Welding (36 mo) completed back in 2022.
+(30, 6, '2022-01-15'),
+(33, 1, '2026-06-18'), (33, 7, '2026-06-18'),
+(35, 2, '2026-02-25'), (35, 5, '2026-04-30'),
+-- Members 39 and 44 are both in the reservation queue for Table Saw 59 --
+-- Table Saw Safety current for both. Member 39's Chainsaw ticket has lapsed,
+-- giving one member a deliberate current/expired mix.
+(39, 2, '2025-07-07'), (39, 4, '2025-05-13'),
+(41, 1, '2025-02-28'),
+-- (44, 6) expires 2026-08-22: an almost-lapsed certification, to check the
+-- boundary reads as current rather than expired.
+(44, 2, '2026-03-19'), (44, 5, '2026-06-01'), (44, 6, '2023-08-22'),
+-- EXPIRED: Miter Saw (24 mo) completed in 2023.
+(47, 3, '2023-06-01'),
+(52, 1, '2026-07-10'),
+-- EXPIRED: Chainsaw (12 mo) completed in early 2024.
+(55, 4, '2024-01-20'), (55, 6, '2025-10-02'),
+-- EXPIRED: Ladder (12 mo) completed at the start of 2025.
+(58, 1, '2024-12-05'), (58, 7, '2025-01-05'),
+(60, 2, '2026-04-14'), (60, 4, '2026-07-01');

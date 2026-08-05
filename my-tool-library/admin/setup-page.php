@@ -676,23 +676,31 @@ function mtl_render_setup_page() {
 	}
 
 	// ==========================================
-	// 3E. HANDLE "SAVE TRAINING BADGE IMAGES" SUBMISSION
-	// One bulk save for every training at once (there is no per-row edit
-	// action anywhere else in this plugin either -- Categories/Tags are the
-	// same add-or-delete-only pattern), rather than a URL per training add
-	// form, since these are set on trainings that already exist.
+	// 3E. HANDLE "SAVE TRAININGS" SUBMISSION
+	// One bulk save covering every training's name, badge image and
+	// certification length at once. Unlike Categories/Tags (add-or-delete
+	// only), trainings are editable in place: a badge image or a renewal
+	// period can reasonably change long after the training was created, and
+	// re-creating the training to change one would orphan every member's
+	// completion record via the ON DELETE CASCADE.
 	// ==========================================
-	if ( isset( $_POST['mtl_save_training_badges'] ) && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_save_training_badges_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_save_training_badges_nonce'] ) ), 'mtl_save_training_badges_action' ) ) {
-			// training_badge_url[training_id] => url, posted as one field per
-			// row in the table below. sanitize_url() runs on every value right
-			// here, before anything else touches it -- (string) first in case a
-			// malformed request nests an array under one of the training ids:
-			// sanitize_url() calls ltrim() internally, which throws a TypeError
-			// on a non-string argument in PHP 8, so the plain
-			// array_map( 'sanitize_url', ... ) form the sniff below normally
-			// looks for is not safe to use here.
-			// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- every value is run through sanitize_url() in the closure directly below; the sniff cannot see through the closure.
+	if ( isset( $_POST['mtl_save_trainings'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_save_trainings_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_save_trainings_nonce'] ) ), 'mtl_save_trainings_action' ) ) {
+			// Three parallel arrays keyed by training_id, one per table row
+			// below. Each is sanitized as it is read -- (string) first in case
+			// a malformed request nests an array under one of the ids, since
+			// both sanitize_url() and sanitize_text_field() would misbehave on
+			// a non-string.
+			// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- every value is sanitized inside the closures immediately below; the sniff cannot see through a closure.
+			$posted_names = isset( $_POST['training_name'] ) && is_array( $_POST['training_name'] )
+				? array_map(
+					function ( $mtl_raw ) {
+						return sanitize_text_field( (string) $mtl_raw );
+					},
+					wp_unslash( $_POST['training_name'] )
+				)
+				: array();
+
 			$posted_badges = isset( $_POST['training_badge_url'] ) && is_array( $_POST['training_badge_url'] )
 				? array_map(
 					function ( $mtl_raw_url ) {
@@ -701,23 +709,76 @@ function mtl_render_setup_page() {
 					wp_unslash( $_POST['training_badge_url'] )
 				)
 				: array();
+
+			$posted_lengths = isset( $_POST['training_cert_months'] ) && is_array( $_POST['training_cert_months'] )
+				? array_map(
+					function ( $mtl_raw ) {
+						return sanitize_text_field( (string) $mtl_raw );
+					},
+					wp_unslash( $_POST['training_cert_months'] )
+				)
+				: array();
 			// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
-			foreach ( $posted_badges as $posted_training_id => $clean_url ) {
-				$posted_training_id = (int) $posted_training_id;
-				if ( $posted_training_id <= 0 ) {
+			// Names are UNIQUE in the schema, so a rename that collides has to
+			// be caught before any write -- otherwise the first few rows save
+			// and the clashing one silently doesn't, leaving the admin looking
+			// at a half-applied form.
+			$seen_names   = array();
+			$name_error   = '';
+			$rows_to_save = array();
+			foreach ( $posted_names as $posted_id => $posted_name ) {
+				$posted_id   = (int) $posted_id;
+				$posted_name = trim( $posted_name );
+				if ( $posted_id <= 0 ) {
 					continue;
 				}
-				$wpdb->update(
-					$tbl_trainings,
-					array( 'badge_image_url' => ( '' !== $clean_url ? $clean_url : null ) ),
-					array( 'training_id' => $posted_training_id ),
-					array( '%s' ),
-					array( '%d' )
+				if ( '' === $posted_name ) {
+					$name_error = 'Training names cannot be blank. Nothing was saved.';
+					break;
+				}
+				if ( strlen( $posted_name ) > 50 ) {
+					$name_error = 'Training names must be 50 characters or fewer. Nothing was saved.';
+					break;
+				}
+				$name_key = strtolower( $posted_name );
+				if ( isset( $seen_names[ $name_key ] ) ) {
+					$name_error = 'Two trainings cannot share the name "' . $posted_name . '". Nothing was saved.';
+					break;
+				}
+				$seen_names[ $name_key ] = true;
+
+				// Blank / 0 / negative all mean "never expires" (NULL).
+				$raw_len = isset( $posted_lengths[ $posted_id ] ) ? trim( $posted_lengths[ $posted_id ] ) : '';
+				$months  = ( '' === $raw_len ) ? 0 : (int) $raw_len;
+				if ( $months > 600 ) {
+					$name_error = 'A certification length of ' . $months . ' months is not realistic (max 600). Nothing was saved.';
+					break;
+				}
+
+				$url = isset( $posted_badges[ $posted_id ] ) ? $posted_badges[ $posted_id ] : '';
+
+				$rows_to_save[ $posted_id ] = array(
+					'training_name'               => $posted_name,
+					'badge_image_url'             => ( '' !== $url ? $url : null ),
+					'certification_length_months' => ( $months > 0 ? $months : null ),
 				);
 			}
 
-			echo '<div class="notice notice-success is-dismissible"><p><strong>Saved.</strong> Training badge images have been updated. Any training left blank falls back to the plain green pill on a member&rsquo;s account page.</p></div>';
+			if ( '' !== $name_error ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> ' . esc_html( $name_error ) . '</p></div>';
+			} else {
+				foreach ( $rows_to_save as $save_id => $save_data ) {
+					$wpdb->update(
+						$tbl_trainings,
+						$save_data,
+						array( 'training_id' => $save_id ),
+						array( '%s', '%s', '%d' ),
+						array( '%d' )
+					);
+				}
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Saved.</strong> Trainings have been updated. Changing a certification length immediately re-dates every member who holds that training.</p></div>';
+			}
 		} else {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
 		}
@@ -843,7 +904,7 @@ function mtl_render_setup_page() {
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$tags = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-	$trainings = $wpdb->get_results( "SELECT training_id, training_name, badge_image_url FROM {$tbl_trainings} ORDER BY training_name ASC" );
+	$trainings = $wpdb->get_results( "SELECT training_id, training_name, badge_image_url, certification_length_months FROM {$tbl_trainings} ORDER BY training_name ASC" );
 
 	$font_presets = mtl_font_preset_options();
 
@@ -1424,10 +1485,48 @@ function mtl_render_setup_page() {
 		<!-- Member Trainings Management -->
 		<div style="flex: 1; min-width: 400px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04); height: fit-content;">
 			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Member Trainings</h3>
-			<p style="font-size: 0.9em; color: #666;">Safety and skill trainings a member can complete. Add them here so they&rsquo;re available to check off when adding or editing members in the Membership tab. Visible to members.</p>
+			<p style="font-size: 0.9em; color: #666;">Safety and skill trainings a member can complete. Staff record who has completed what (with the date) on the Membership page; members see their own on their account page.</p>
 
 			<?php if ( $trainings ) : ?>
-				<form method="post" action="" onsubmit="return confirm('Delete the selected trainings? Any members who completed them will lose that record. This cannot be undone.');">
+				<form method="post" action="">
+					<?php wp_nonce_field( 'mtl_save_trainings_action', 'mtl_save_trainings_nonce' ); ?>
+					<table class="widefat striped" style="margin: 0 0 10px 0;">
+						<thead>
+							<tr>
+								<th style="width: 32%;">Name</th>
+								<th>Badge Image URL</th>
+								<th style="width: 22%;">Valid For</th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php foreach ( $trainings as $training ) : ?>
+								<tr>
+									<td>
+										<input type="text" name="training_name[<?php echo esc_attr( $training->training_id ); ?>]" maxlength="50" style="width: 100%;" value="<?php echo esc_attr( $training->training_name ); ?>" required>
+									</td>
+									<td>
+										<input type="url" name="training_badge_url[<?php echo esc_attr( $training->training_id ); ?>]" style="width: 100%;" value="<?php echo esc_url( (string) $training->badge_image_url ); ?>" placeholder="https://...">
+									</td>
+									<td>
+										<input type="number" name="training_cert_months[<?php echo esc_attr( $training->training_id ); ?>]" min="1" max="600" step="1" style="width: 70px;" value="<?php echo esc_attr( $training->certification_length_months > 0 ? $training->certification_length_months : '' ); ?>" placeholder="&mdash;">
+										<span style="font-size: 0.85em; color: #666;">months</span>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+					<p style="font-size: 0.85em; color: #666; margin: 0 0 10px 0;">
+						<strong>Badge Image URL</strong> is optional &mdash; upload the badge to the WordPress Media Library and paste its File URL. It replaces the plain green pill on a member&rsquo;s own account page, and only shows while their certification is still current.<br>
+						<strong>Valid For</strong> is how many months a completed training stays current, counted from the date that member completed it. Leave it blank for a training that never expires. Changing it re-dates every member who holds that training straight away.
+					</p>
+					<p class="submit" style="margin: 0;">
+						<button type="submit" name="mtl_save_trainings" class="button button-primary">Save Trainings</button>
+					</p>
+				</form>
+
+				<hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
+
+				<form method="post" action="" onsubmit="return confirm('Delete the selected trainings? Any members who completed them will lose that record, including the date. This cannot be undone.');">
 					<?php wp_nonce_field( 'mtl_delete_trainings_action', 'mtl_delete_trainings_nonce' ); ?>
 					<div class="mtl-chip-row">
 						<?php foreach ( $trainings as $training ) : ?>
@@ -1446,33 +1545,12 @@ function mtl_render_setup_page() {
 					<span style="color: #999; font-size: 0.85em;">None yet.</span>
 				</div>
 			<?php endif; ?>
+
 			<form method="post" action="" class="mtl-add-lookup-form">
 				<?php wp_nonce_field( 'mtl_add_training_action', 'mtl_add_training_nonce' ); ?>
 				<input type="text" name="new_training_name" maxlength="50" placeholder="New training name" class="regular-text" required>
 				<button type="submit" name="mtl_add_training" class="button button-primary">Add Training</button>
 			</form>
-
-			<?php if ( $trainings ) : ?>
-				<hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
-				<h4 style="margin-bottom: 4px;">Badge Images</h4>
-				<p style="font-size: 0.85em; color: #666; margin: 0 0 10px 0;">Optional. Upload each badge to the WordPress Media Library and paste its File URL below &mdash; it replaces the plain green pill on a member&rsquo;s own account page for that training. Leave any of these blank to keep using the pill.</p>
-				<form method="post" action="">
-					<?php wp_nonce_field( 'mtl_save_training_badges_action', 'mtl_save_training_badges_nonce' ); ?>
-					<table class="form-table" style="margin: 0;">
-						<?php foreach ( $trainings as $training ) : ?>
-							<tr>
-								<th scope="row" style="padding: 6px 10px 6px 0; font-weight: 600;"><?php echo esc_html( $training->training_name ); ?></th>
-								<td style="padding: 6px 0;">
-									<input type="url" name="training_badge_url[<?php echo esc_attr( $training->training_id ); ?>]" class="regular-text" value="<?php echo esc_url( (string) $training->badge_image_url ); ?>" placeholder="https://...">
-								</td>
-							</tr>
-						<?php endforeach; ?>
-					</table>
-					<p class="submit" style="margin: 8px 0 0 0;">
-						<button type="submit" name="mtl_save_training_badges" class="button button-primary">Save Badge Images</button>
-					</p>
-				</form>
-			<?php endif; ?>
 		</div>
 
 		<!-- Database Setup Tool -->

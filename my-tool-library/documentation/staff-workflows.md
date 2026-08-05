@@ -66,13 +66,14 @@ Do this once, when the plugin is first installed on the site.
     - **General Details**: organization name, logo URL, brand colors/fonts, button style, and an optional **Verified Badge Image URL** — when set, a verified member sees this image on their own account page instead of the plain green "Verified" pill.
     - **Reservations & Loans**: the default loan length (in days) used when checking a reservation out as a loan, and the **Reservation Hold Period** — how long a tool is held for a member once it's ready for them to collect (default 14 days; see [Reservations that expire on their own](#reservations-that-expire-on-their-own)).
     - **Categories & Tags**: add or remove the tool categories (e.g. Woodworking, Plumbing) and tags (e.g. Cordless, Requires PPE) you plan to use — these are the choices staff pick from when adding inventory.
-    - **Member Trainings**: add the trainings you offer, and optionally a **Badge Image** for each one (upload the image to the WordPress Media Library and paste its File URL). A training with a badge image shows that image on a member's own account page, instead of the plain green pill, once staff mark them as having completed it. Badge images are member-facing only — the admin Membership page always shows trainings as plain names, never images.
+    - **Member Trainings**: add the trainings you offer. Each one has three editable fields, all changeable later: the **name**, an optional **Badge Image URL** (upload the image to the WordPress Media Library and paste its File URL), and **Valid For** — how many months the training stays current once someone completes it, or blank if it never expires. See [Trainings and certifications](#trainings-and-certifications).
 6. Copy the **Public Page Link** shown on the Setup page and add it to your site's navigation menu (or link to it from any page/post, or link it in a button). This is the one link your community needs to browse the catalog, reserve tools, and sign up.
 7. Once categories/tags exist, move on to [Adding Inventory Items](#3-adding-inventory-items) and [Adding a New Member](#4-adding-a-new-member-in-person--verifying-their-identity) — both support **bulk import**, which is the fastest way to load an existing spreadsheet of tools or members:
     - On the **Inventory** or **Membership** page, find the **Bulk Import from CSV** panel.
     - Click **Download the CSV template** — it has the exact column headers and one example row.
     - Fill in your data in rows (delete the example row before uploading), keeping one tool or member per row. Column order doesn't matter as long as the header names match.
     - Upload the completed CSV and submit. The plugin reports how many rows succeeded and lists the reason for any row that failed (e.g. a missing required field or an invalid category), so you can fix just those rows and re-upload.
+    - On the members template, the **`trainings`** column takes a training name, a colon, and the date it was completed. Separate several with semicolons: `Ladder Safety: 8/4/2026; Welding Basics: 8/3/2026`. Names must match the ones on your Setup page, though capitalization doesn't matter. If one entry is malformed or names a training that doesn't exist, the member is still imported — just without that training — and the reason is listed in the results, so you can fix it on their record rather than re-running the whole file.
 8. Use the **Export Data** section on the Setup page any time you want a full backup (a SQL dump or a ZIP of CSVs, one per table) — good practice before any bulk import or major change.
 9. **Set up accounts for the rest of your staff.** Everyone working the desk should get their own **Editor** account rather than sharing yours — see [Creating a New Staff Account](#2-creating-a-new-staff-account). Editors can do everything day to day; keep **Administrator** for whoever runs the library, since it's what unlocks this Setup page and deleting members.
 
@@ -142,7 +143,8 @@ Go to **My Tool Library > Membership**.
 2. Fill in their name, address (Address Line 1, optional Line 2, City, State/Province, ZIP/Postal Code, Country), phone number, and email address. Email doubles as their sign-in username if they later create an online account, so it must be unique.
     - **Phone number** is two fields: a country dropdown (defaults to United States) and the number itself. Pick the country first, then just type the digits — it's formatted for you as you go, and staff, members signing themselves up, and CSV imports all end up with phone numbers in the exact same format on file.
 3. Leave the two verification fields (below) blank for now if you haven't yet checked their ID, or fill in just one if that's all the member has provided so far. Either way the member is added as **unverified** until both are on file, which does not block them from browsing or reserving tools online.
-4. Save.
+4. Under **Trainings**, tick anything they've already completed. Ticking one opens a date box next to it — enter the date they completed it, since that's what the certification runs from. Leave it as today's date for a training they just did. See [Trainings and certifications](#trainings-and-certifications).
+5. Save.
 
 ### Verifying a member's identity
 
@@ -236,6 +238,26 @@ On **Membership**, expand a member's detail panel and click any tool listed unde
 - **Start Loan for This Member** only appears when the member is first in line for that tool. Pick a due date (7/14/21/30-day quick buttons or custom) and click it to check the tool out to them directly, closing the reservation in the same step. If they're not first in the queue, the pop-up shows a note instead and points you to Loans & Reservations if you need to override the queue order.
 
 You can also cancel a reservation from **Loans & Reservations** directly: open the reservation's detail panel and click **Cancel reservation**.
+
+### Trainings and certifications
+
+A training records that a member has been shown how to use something safely. Each one is set up under **Setup > Member Trainings**, where all three fields stay editable:
+
+| Field | What it does |
+| --- | --- |
+| **Name** | What the training is called. Renaming it keeps every member's completion record attached. |
+| **Badge Image URL** | Optional. Shown on the member's own account page instead of a plain green pill. |
+| **Valid For** | How many months it stays current, counted from the day each member completed it. Blank means it never expires. |
+
+**Recording a training.** On the **Membership** page, add or edit a member, tick each training they've completed and set the date they completed it. That date is what the certification runs from, so it matters — backdating a training the member took last year will correctly show it as closer to expiring, or already expired.
+
+**When a certification lapses.** Nothing is deleted. The record stays on the member forever; it just stops counting as current. In their detail panel on the Membership page you'll see every training they've ever completed, each marked **Current** or **Expired** with its completion and expiry dates. To renew one, edit the member and set the completion date to the day they retook it.
+
+**Changing "Valid For" applies immediately and retroactively.** It isn't stored per member — each member's expiry is worked out from their own completion date and the training's current setting. Shortening a period can therefore expire people straight away, and lengthening it can bring lapsed certifications back. That's deliberate (it means you never have to re-enter anything), but it's worth knowing before you shorten one.
+
+**Finding qualified members.** On the **Membership** page, open **Advanced Search** and use the **Trainings** dropdown. Tick one or more trainings to show only members who hold *all* of them, or use **Select all** to find members who've completed everything. This matches on **current** certifications only — someone whose Table Saw Safety has lapsed won't appear, which is the point: it answers "who can use this today". Their expired record is still visible in their detail panel.
+
+**What members see.** On their own account page, the badges near the top show only what they're currently certified in. A collapsible **Trainings** section below lists everything they've ever completed, expired included, with dates and status — so a lapsed certification is visible to them rather than silently disappearing.
 
 ### Reservations that expire on their own
 

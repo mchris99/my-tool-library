@@ -82,13 +82,104 @@ function mtl_maybe_serve_member_csv_template() {
 			'https://example.com/scans/photo-id.jpg',
 			'https://example.com/scans/proof-of-address.pdf',
 			'',
-			// Semicolon-separated, matched by name against the trainings set up
-			// on the Setup page (see the importer's lookup below).
-			'General Shop Safety;Table Saw Safety',
+			// "Name: completion date" pairs, semicolon-separated. Names are
+			// matched against the trainings set up on the Setup page (see the
+			// importer's lookup below); the date is when that member completed
+			// it, which is what their certification length runs from.
+			'Ladder Safety: ' . gmdate( 'n/j/Y' ) . '; Welding Basics: ' . gmdate( 'n/j/Y' ),
 		)
 	);
 	fclose( $out );
 	exit;
+}
+
+/**
+ * Reads the trainings picker's posted fields into a training_id => start_date
+ * map. Shared by the Add and Edit handlers so the two can't drift.
+ *
+ * The picker posts training_id[] (ticked ids) alongside training_start[<id>]
+ * (one date per row, including rows that were never ticked). Only a ticked
+ * id's date is read, so a date left over from un-ticking a box is ignored
+ * rather than silently recording a training the member doesn't hold.
+ *
+ * A ticked training with a missing or unparseable date falls back to today
+ * rather than failing the whole save -- start_date is NOT NULL, and a
+ * best-guess date the admin can correct beats rejecting an otherwise good
+ * member record over one blank field.
+ *
+ * @return array<int,string> training_id => start_date (Y-m-d).
+ */
+function mtl_read_posted_training_starts() {
+	// Both sniffs in ONE directive, comma-separated. Two phpcs:disable lines
+	// stacked on consecutive lines silently breaks phpcs's ignore tracking for
+	// the remainder of the file -- unrelated phpcs:ignore comments hundreds of
+	// lines below stop being honored.
+	// phpcs:disable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- callers verify their own form nonce before calling this; every date is sanitized in the closure below and then re-validated against a strict Y-m-d pattern, which the sniff cannot see through.
+	$ids = isset( $_POST['training_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['training_id'] ) ) : array();
+	$raw = isset( $_POST['training_start'] ) && is_array( $_POST['training_start'] )
+		? array_map(
+			function ( $mtl_raw_date ) {
+				// (string) first: a malformed request could nest an array
+				// under one of the training ids, which sanitize_text_field()
+				// is not guaranteed to survive.
+				return sanitize_text_field( (string) $mtl_raw_date );
+			},
+			wp_unslash( $_POST['training_start'] )
+		)
+		: array();
+	// phpcs:enable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+	$today = current_time( 'Y-m-d' );
+	$out   = array();
+	foreach ( $ids as $tid ) {
+		$tid = (int) $tid;
+		if ( $tid <= 0 ) {
+			continue;
+		}
+		$date = isset( $raw[ $tid ] ) ? trim( $raw[ $tid ] ) : '';
+		if ( '' === $date || ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) || ! strtotime( $date ) ) {
+			$date = $today;
+		}
+		$out[ $tid ] = $date;
+	}
+	return $out;
+}
+
+/**
+ * Writes a member's training mappings, replacing whatever was there.
+ *
+ * Clear-and-reinsert rather than diffing old against new: it is the same
+ * approach the tool category/tag mappings use, and it correctly handles a
+ * date changing on a training the member already held (which a pure
+ * add/remove diff would miss entirely).
+ *
+ * @param int               $member_id       Member row ID.
+ * @param array<int,string> $training_starts training_id => start_date (Y-m-d).
+ */
+function mtl_sync_member_trainings( $member_id, $training_starts ) {
+	global $wpdb;
+	$member_id = (int) $member_id;
+	if ( $member_id <= 0 ) {
+		return;
+	}
+	$tbl_training_map = $wpdb->prefix . 'member_training_mappings';
+
+	$wpdb->delete( $tbl_training_map, array( 'member_id' => $member_id ), array( '%d' ) );
+	foreach ( $training_starts as $tid => $start_date ) {
+		$tid = (int) $tid;
+		if ( $tid <= 0 ) {
+			continue;
+		}
+		$wpdb->insert(
+			$tbl_training_map,
+			array(
+				'member_id'   => $member_id,
+				'training_id' => $tid,
+				'start_date'  => $start_date,
+			),
+			array( '%d', '%d', '%s' )
+		);
+	}
 }
 
 /**
@@ -208,17 +299,11 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '' ) {
 		</td>
 	</tr>
 	<tr>
-		<th scope="row"><label for="<?php echo $field_id( 'training_id' ); ?>">Trainings Completed</label></th>
+		<th scope="row">Trainings Completed</th>
 		<td>
+			<?php mtl_render_trainings_picker( $trainings, $values['training_starts'], $id_prefix ); ?>
 			<?php if ( $trainings ) : ?>
-				<select name="training_id[]" id="<?php echo $field_id( 'training_id' ); ?>" multiple size="6" class="mtl-resizable-select">
-					<?php foreach ( $trainings as $mtl_training ) : ?>
-						<option value="<?php echo esc_attr( $mtl_training->training_id ); ?>" <?php echo in_array( (int) $mtl_training->training_id, $values['training_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $mtl_training->training_name ); ?></option>
-					<?php endforeach; ?>
-				</select>
-				<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every training this member has completed &mdash; it shows staff which tools they&rsquo;re qualified to use, and the member can see the list on their own account page. Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to select or unselect multiple. Drag the bottom-right corner to resize the box. Leave blank if none apply.</p>
-			<?php else : ?>
-				<p style="font-size: 0.85em; color: #666; margin: 0;">No trainings have been set up yet. Add them under <strong>Setup &rarr; Member Trainings</strong>, then they&rsquo;ll be selectable here.</p>
+				<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Tick every training this member has completed and set the date they completed it &mdash; that date is what the certification length runs from. It shows staff which tools they&rsquo;re qualified to use, and the member sees their own on their account page.</p>
 			<?php endif; ?>
 		</td>
 	</tr>
@@ -264,10 +349,12 @@ function mtl_render_membership_page() {
 	$tbl_trainings     = $wpdb->prefix . 'member_trainings';
 	$tbl_training_map  = $wpdb->prefix . 'member_training_mappings';
 
-	// Available trainings, shown as a multi-select on the Add/Edit forms and
-	// matched by name during CSV bulk import. Managed on the Setup page.
+	// Available trainings, shown as the tick-and-date picker on the Add/Edit
+	// forms, as the Trainings filter's options, and matched by name during CSV
+	// bulk import. certification_length_months comes along so the picker can
+	// show each training's renewal period inline. Managed on the Setup page.
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-	$trainings = $wpdb->get_results( "SELECT training_id, training_name FROM {$tbl_trainings} ORDER BY training_name ASC" );
+	$trainings = $wpdb->get_results( "SELECT training_id, training_name, certification_length_months FROM {$tbl_trainings} ORDER BY training_name ASC" );
 
 	// Every form on this page posts back to this exact (query-string-free)
 	// URL rather than action="". That keeps an in-progress "?mtl_action=edit"
@@ -313,7 +400,9 @@ function mtl_render_membership_page() {
 		'photo_id_scan_url'         => '',
 		'address_proof_scan_url'    => '',
 		'private_notes'             => '',
-		'training_ids'              => array(),
+		// training_id => start_date (Y-m-d) for every training this member
+		// holds; empty on a fresh Add form.
+		'training_starts'           => array(),
 	);
 	$keep_form_open = false;
 
@@ -344,14 +433,14 @@ function mtl_render_membership_page() {
 			// outside their whitelist (a tampered request) to '' so the
 			// existing required-field / blank-defaults-to-US logic below
 			// handles an invalid value exactly the same as a missing one.
-			$state          = mtl_valid_state( sanitize_text_field( wp_unslash( $_POST['state'] ?? '' ) ) );
-			$zip_code       = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
-			$country        = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
-			$signup_date    = sanitize_text_field( wp_unslash( $_POST['signup_date'] ?? '' ) );
-			$photo_id_url   = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
-			$addr_proof_url = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
-			$private_notes  = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
-			$training_ids   = isset( $_POST['training_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['training_id'] ) ) : array();
+			$state           = mtl_valid_state( sanitize_text_field( wp_unslash( $_POST['state'] ?? '' ) ) );
+			$zip_code        = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
+			$country         = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
+			$signup_date     = sanitize_text_field( wp_unslash( $_POST['signup_date'] ?? '' ) );
+			$photo_id_url    = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
+			$addr_proof_url  = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
+			$private_notes   = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
+			$training_starts = mtl_read_posted_training_starts();
 
 			// Numeric field: keep the raw typed string for redisplay (so a blank
 			// field stays blank instead of turning into "0"), but store a float.
@@ -436,19 +525,9 @@ function mtl_render_membership_page() {
 					// member_id is AUTO_INCREMENT, so read back the ID MySQL assigned.
 					$new_member_id = $wpdb->insert_id;
 
-					// MANY-TO-MANY: one row per completed training in the mapping table.
-					foreach ( $training_ids as $tid ) {
-						if ( $tid > 0 ) {
-							$wpdb->insert(
-								$tbl_training_map,
-								array(
-									'member_id'   => $new_member_id,
-									'training_id' => $tid,
-								),
-								array( '%d', '%d' )
-							);
-						}
-					}
+					// MANY-TO-MANY: one row per completed training, each carrying
+					// the date that member completed it.
+					mtl_sync_member_trainings( $new_member_id, $training_starts );
 
 					// Verification documents live in their own table, separated
 					// for security compliance. Insert a row as soon as at least
@@ -503,7 +582,7 @@ function mtl_render_membership_page() {
 				$form_values['photo_id_scan_url']         = $photo_id_url;
 				$form_values['address_proof_scan_url']    = $addr_proof_url;
 				$form_values['private_notes']             = $private_notes;
-				$form_values['training_ids']              = $training_ids;
+				$form_values['training_starts']           = $training_starts;
 				// On a duplicate-email error the email is intentionally
 				// cleared -- it is the field that must change.
 			}
@@ -744,20 +823,37 @@ function mtl_render_membership_page() {
 									continue;
 								}
 
-								// Unknown training names don't fail the row -- they're just
-								// skipped and reported as notes, since trainings are optional.
-								// Parsed here, after the validation continues above, so a row
-								// that gets skipped entirely never emits a training warning.
-								// sanitize_text_field() runs here (not just at output) as
-								// defense in depth alongside the esc_html() applied when
-								// warnings render.
-								$row_training_ids = array();
-								foreach ( array_filter( array_map( 'sanitize_text_field', explode( ';', $get_col( $row, 'trainings' ) ) ) ) as $name ) {
-									if ( isset( $training_lookup[ strtolower( $name ) ] ) ) {
-										$row_training_ids[] = $training_lookup[ strtolower( $name ) ];
-									} else {
-										$bulk_warnings[] = 'Row ' . $row_number . ': unknown training "' . $name . '" was skipped.';
+								// "Name: date" pairs, semicolon-separated, e.g.
+								// "Ladder Safety: 8/4/2026; Welding Basics: 8/3/2026".
+								// Unknown training names and unreadable dates don't fail
+								// the row -- they're skipped and reported as notes, since
+								// trainings are optional. Parsed here, after the validation
+								// continues above, so a row that gets skipped entirely never
+								// emits a training warning. sanitize_text_field() runs here
+								// (not just at output) as defense in depth alongside the
+								// esc_html() applied when warnings render.
+								$row_training_starts = array();
+								foreach ( array_filter( array_map( 'trim', explode( ';', $get_col( $row, 'trainings' ) ) ) ) as $pair ) {
+									// Split on the FIRST colon only: a training name can't
+									// contain one, but a date conceivably could.
+									$colon_at = strpos( $pair, ':' );
+									if ( false === $colon_at ) {
+										$bulk_warnings[] = 'Row ' . $row_number . ': training "' . sanitize_text_field( $pair ) . '" has no completion date (expected "Name: date") and was skipped.';
+										continue;
 									}
+									$pair_name = sanitize_text_field( trim( substr( $pair, 0, $colon_at ) ) );
+									$pair_date = sanitize_text_field( trim( substr( $pair, $colon_at + 1 ) ) );
+
+									if ( ! isset( $training_lookup[ strtolower( $pair_name ) ] ) ) {
+										$bulk_warnings[] = 'Row ' . $row_number . ': unknown training "' . $pair_name . '" was skipped.';
+										continue;
+									}
+									$pair_ts = ( '' !== $pair_date ) ? strtotime( $pair_date ) : false;
+									if ( ! $pair_ts ) {
+										$bulk_warnings[] = 'Row ' . $row_number . ': training "' . $pair_name . '" has an unreadable date "' . $pair_date . '" and was skipped.';
+										continue;
+									}
+									$row_training_starts[ $training_lookup[ strtolower( $pair_name ) ] ] = gmdate( 'Y-m-d', $pair_ts );
 								}
 
 								// --- Insert into members ---
@@ -794,16 +890,7 @@ function mtl_render_membership_page() {
 								$new_member_id = $wpdb->insert_id;
 
 								// --- Insert into member_training_mappings ---
-								foreach ( $row_training_ids as $tid ) {
-									$wpdb->insert(
-										$tbl_training_map,
-										array(
-											'member_id'   => $new_member_id,
-											'training_id' => $tid,
-										),
-										array( '%d', '%d' )
-									);
-								}
+								mtl_sync_member_trainings( $new_member_id, $row_training_starts );
 
 								// --- Insert into member_verifications (either or both URLs) ---
 								if ( '' !== $row_photo || '' !== $row_proof ) {
@@ -891,14 +978,14 @@ function mtl_render_membership_page() {
 			// outside their whitelist (a tampered request) to '' so the
 			// existing required-field / blank-defaults-to-US logic below
 			// handles an invalid value exactly the same as a missing one.
-			$state          = mtl_valid_state( sanitize_text_field( wp_unslash( $_POST['state'] ?? '' ) ) );
-			$zip_code       = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
-			$country        = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
-			$signup_date    = sanitize_text_field( wp_unslash( $_POST['signup_date'] ?? '' ) );
-			$photo_id_url   = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
-			$addr_proof_url = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
-			$private_notes  = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
-			$training_ids   = isset( $_POST['training_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['training_id'] ) ) : array();
+			$state           = mtl_valid_state( sanitize_text_field( wp_unslash( $_POST['state'] ?? '' ) ) );
+			$zip_code        = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
+			$country         = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
+			$signup_date     = sanitize_text_field( wp_unslash( $_POST['signup_date'] ?? '' ) );
+			$photo_id_url    = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
+			$addr_proof_url  = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
+			$private_notes   = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
+			$training_starts = mtl_read_posted_training_starts();
 
 			$donation_display = isset( $_POST['recurring_donation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['recurring_donation_amount'] ) ) ) : '';
 			$donation         = floatval( $donation_display );
@@ -1042,22 +1129,9 @@ function mtl_render_membership_page() {
 						}
 					}
 
-					// Re-sync the training mappings by clearing and re-inserting the
-					// current selections -- simplest way to add AND remove mappings
-					// in one step without diffing old vs. new.
-					$wpdb->delete( $tbl_training_map, array( 'member_id' => $edit_member_id ), array( '%d' ) );
-					foreach ( $training_ids as $tid ) {
-						if ( $tid > 0 ) {
-							$wpdb->insert(
-								$tbl_training_map,
-								array(
-									'member_id'   => $edit_member_id,
-									'training_id' => $tid,
-								),
-								array( '%d', '%d' )
-							);
-						}
-					}
+					// Re-sync the training mappings, including any changed
+					// completion date on a training the member already held.
+					mtl_sync_member_trainings( $edit_member_id, $training_starts );
 
 					// Sync the verification row with the submitted scan URLs.
 					// Either field can be blank -- a member may have only one
@@ -1143,7 +1217,7 @@ function mtl_render_membership_page() {
 					'photo_id_scan_url'         => $photo_id_url,
 					'address_proof_scan_url'    => $addr_proof_url,
 					'private_notes'             => $private_notes,
-					'training_ids'              => $training_ids,
+					'training_starts'           => $training_starts,
 				);
 			}
 		} else {
@@ -1410,8 +1484,13 @@ function mtl_render_membership_page() {
 			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 			if ( $member_row ) {
+				// training_id => start_date, exactly the shape the picker wants.
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-				$existing_training_ids = $wpdb->get_col( $wpdb->prepare( "SELECT training_id FROM {$tbl_training_map} WHERE member_id = %d", $edit_member_id ) );
+				$existing_training_rows   = $wpdb->get_results( $wpdb->prepare( "SELECT training_id, start_date FROM {$tbl_training_map} WHERE member_id = %d", $edit_member_id ) );
+				$existing_training_starts = array();
+				foreach ( $existing_training_rows as $mtl_row ) {
+					$existing_training_starts[ (int) $mtl_row->training_id ] = (string) $mtl_row->start_date;
+				}
 				// Splits the stored "+<code> <national number>" value back
 				// into the two pieces the phone widget needs to prefill.
 				$edit_phone_parsed = mtl_parse_stored_phone_number( $member_row->phone_number );
@@ -1435,7 +1514,7 @@ function mtl_render_membership_page() {
 					'photo_id_scan_url'         => (string) $member_row->photo_id_scan_url,
 					'address_proof_scan_url'    => (string) $member_row->address_proof_scan_url,
 					'private_notes'             => stripslashes( (string) $member_row->private_notes ),
-					'training_ids'              => array_map( 'intval', $existing_training_ids ),
+					'training_starts'           => $existing_training_starts,
 				);
 			} else {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Not found.</strong> That member no longer exists.</p></div>';
@@ -1586,6 +1665,108 @@ function mtl_render_membership_page() {
 			width: 100%;
 			min-height: 28px;
 			font-size: 0.85em;
+		}
+
+		/* Trainings filter: a checkbox list in a popover, rather than a native
+			<select multiple>. Ctrl/Cmd-clicking to build a multi-selection is
+			the kind of thing that is obvious only if you already know it, and
+			this filter is meant to be reached for casually. */
+		.mtl-ms {
+			position: relative;
+		}
+
+		.mtl-ms-toggle {
+			width: 100%;
+			min-height: 28px;
+			font-size: 0.85em;
+			text-align: left;
+			background: #fff;
+			border: 1px solid #8c8f94;
+			border-radius: 4px;
+			padding: 3px 22px 3px 8px;
+			cursor: pointer;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		/* Caret, drawn in CSS so no image or icon font is needed. */
+		.mtl-ms-toggle::after {
+			content: '';
+			position: absolute;
+			right: 8px;
+			top: 50%;
+			margin-top: -2px;
+			border-left: 4px solid transparent;
+			border-right: 4px solid transparent;
+			border-top: 5px solid #50575e;
+		}
+
+		.mtl-ms-panel {
+			position: absolute;
+			z-index: 20;
+			top: calc(100% + 2px);
+			left: 0;
+			min-width: 100%;
+			width: max-content;
+			max-width: 280px;
+			max-height: 230px;
+			overflow-y: auto;
+			background: #fff;
+			border: 1px solid #8c8f94;
+			border-radius: 4px;
+			box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+			padding: 4px 0;
+		}
+
+		.mtl-ms-panel label {
+			display: flex;
+			align-items: center;
+			gap: 7px;
+			padding: 4px 10px;
+			font-size: 0.85em;
+			font-weight: 400;
+			cursor: pointer;
+			margin: 0;
+		}
+
+		.mtl-ms-panel label:hover {
+			background: #f0f6fc;
+		}
+
+		.mtl-ms-panel input[type="checkbox"] {
+			width: auto;
+			min-height: 0;
+			margin: 0;
+		}
+
+		/* "Select all" sits above a divider so it reads as an action on the
+			list rather than as another training in it. */
+		.mtl-ms-all {
+			border-bottom: 1px solid #dcdcde;
+			font-weight: 600 !important;
+		}
+
+		/* Per-member training table in the detail panel. */
+		.mtl-training-table {
+			border-collapse: collapse;
+			margin: 4px 0 14px 0;
+			font-size: 0.85em;
+		}
+
+		.mtl-training-table th,
+		.mtl-training-table td {
+			text-align: left;
+			padding: 4px 14px 4px 0;
+			border-bottom: 1px solid #f0f0f1;
+			white-space: nowrap;
+		}
+
+		.mtl-training-table th {
+			font-size: 0.9em;
+			text-transform: uppercase;
+			letter-spacing: 0.03em;
+			color: #787c82;
 		}
 
 		/* Expandable rows */
@@ -1902,7 +2083,7 @@ function mtl_render_membership_page() {
 				<li>To mark a member <strong>verified</strong>, provide <em>both</em> <code>photo_id_scan_url</code> and <code>address_proof_scan_url</code>. Either can be left blank if the member only has one form of ID on file so far &mdash; the row still imports, just unverified until the other is added later via Edit.</li>
 				<li>Do not include a <code>member_id</code> column &mdash; it is assigned automatically.</li>
 				<li><strong>Optional:</strong> <code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form &mdash; but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
-				<li><strong>Optional:</strong> for <code>trainings</code>, separate multiple values with a semicolon (e.g. &ldquo;General Shop Safety;Table Saw Safety&rdquo;). Names must match existing trainings exactly &mdash; add new ones under <strong>Setup &rarr; Member Trainings</strong> first if needed. Unrecognized names are skipped and reported, and don&rsquo;t fail the row.</li>
+				<li><strong>Optional:</strong> <code>trainings</code> takes <code>Name: completion date</code> pairs separated by semicolons &mdash; e.g. &ldquo;Ladder Safety: 8/4/2026; Welding Basics: 8/3/2026&rdquo;. Names must match existing trainings exactly (add new ones under <strong>Setup &rarr; Member Trainings</strong> first), and the date is when that member completed it, which is what their certification length counts from. A pair with an unknown name, a missing date, or an unreadable date is skipped and reported &mdash; it doesn&rsquo;t fail the row.</li>
 				<li>If a row fails, the rest of the file is still processed &mdash; failed rows are listed after upload.</li>
 			</ul>
 			<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
@@ -1981,17 +2162,28 @@ function mtl_render_membership_page() {
 	// below, and the reason this isn't a GROUP_CONCAT joined onto the main
 	// member query above (which would need a GROUP BY across every selected
 	// column just to attach one list).
+	//
+	// Expiry is computed here in PHP rather than in SQL so there is exactly
+	// one implementation of "is this certification still current"
+	// (mtl_training_is_current()), shared with the member-facing pages.
 	$member_trainings     = array();
 	$member_training_rows = $wpdb->get_results(
 		"
-        SELECT mtm.member_id, t.training_name
+        SELECT mtm.member_id, mtm.training_id, mtm.start_date,
+               t.training_name, t.certification_length_months
         FROM {$tbl_training_map} mtm
         JOIN {$tbl_trainings} t ON t.training_id = mtm.training_id
         ORDER BY t.training_name ASC
     "
 	);
 	foreach ( $member_training_rows as $mt_row ) {
-		$member_trainings[ (int) $mt_row->member_id ][] = $mt_row->training_name;
+		$member_trainings[ (int) $mt_row->member_id ][] = array(
+			'training_id' => (int) $mt_row->training_id,
+			'name'        => $mt_row->training_name,
+			'start_date'  => (string) $mt_row->start_date,
+			'expiry_date' => mtl_training_expiry_date( $mt_row->start_date, $mt_row->certification_length_months ),
+			'is_current'  => mtl_training_is_current( $mt_row->start_date, $mt_row->certification_length_months ),
+		);
 	}
 
 	// 5B. PER-MEMBER BORROWING ACTIVITY
@@ -2190,6 +2382,40 @@ function mtl_render_membership_page() {
 				</div>
 			</fieldset>
 
+			<?php if ( $trainings ) : ?>
+				<fieldset class="mtl-adv-group">
+					<legend>Trainings</legend>
+					<div class="mtl-adv-fields">
+						<div>
+							<label for="adv-m-trainings-toggle">Has Completed</label>
+							<?php
+							// Matches on CURRENT certifications only: the question
+							// staff ask here is "who is qualified to use this today",
+							// so an expired training deliberately doesn't count. The
+							// expired ones are still visible in each member's detail
+							// panel.
+							?>
+							<div class="mtl-ms" id="adv-m-trainings">
+								<button type="button" class="mtl-ms-toggle" id="adv-m-trainings-toggle" aria-expanded="false">Any</button>
+								<div class="mtl-ms-panel" id="adv-m-trainings-panel" style="display: none;">
+									<label class="mtl-ms-all">
+										<input type="checkbox" id="adv-m-trainings-all">
+										<span>Select all</span>
+									</label>
+									<?php foreach ( $trainings as $mtl_filter_training ) : ?>
+										<label>
+											<input type="checkbox" class="mtl-ms-opt" value="<?php echo esc_attr( $mtl_filter_training->training_id ); ?>">
+											<span><?php echo esc_html( $mtl_filter_training->training_name ); ?></span>
+										</label>
+									<?php endforeach; ?>
+								</div>
+							</div>
+							<p style="font-size: 0.75em; color: #787c82; margin: 3px 0 0 0;">Shows members holding <em>every</em> training ticked, and still current.</p>
+						</div>
+					</div>
+				</fieldset>
+			<?php endif; ?>
+
 		</div>
 	</div>
 
@@ -2278,7 +2504,23 @@ function mtl_render_membership_page() {
 							data-has-prior="<?php echo $prior_count > 0 ? '1' : '0'; ?>"
 							data-has-res="<?php echo $res_count > 0 ? '1' : '0'; ?>"
 							data-has-pastdue="<?php echo $past_due > 0 ? '1' : '0'; ?>"
-							data-overdue-now="<?php echo $overdue_now > 0 ? '1' : '0'; ?>">
+							data-overdue-now="<?php echo $overdue_now > 0 ? '1' : '0'; ?>"
+							<?php
+							// Comma-wrapped list of the training ids this member holds
+							// with a CURRENT certification, e.g. ",2,7,". The wrapping
+							// commas let the filter test ",7," and never match id 7
+							// inside id 17. Expired certifications are deliberately
+							// left out -- see the Trainings filter's comment above.
+							$mtl_current_ids = array();
+							if ( ! empty( $member_trainings[ $mid ] ) ) {
+								foreach ( $member_trainings[ $mid ] as $mtl_t ) {
+									if ( $mtl_t['is_current'] ) {
+										$mtl_current_ids[] = (int) $mtl_t['training_id'];
+									}
+								}
+							}
+							?>
+							data-trainings="<?php echo esc_attr( $mtl_current_ids ? ',' . implode( ',', $mtl_current_ids ) . ',' : '' ); ?>">
 							<td><?php echo esc_html( $member->member_id ); ?></td>
 							<td><strong><?php echo esc_html( $full_name ); ?></strong></td>
 							<td class="mtl-truncate" title="<?php echo esc_attr( $member->email ); ?>"><?php echo esc_html( $member->email ); ?></td>
@@ -2359,11 +2601,32 @@ function mtl_render_membership_page() {
 
 										<strong>Trainings Completed</strong>
 										<?php if ( ! empty( $member_trainings[ $mid ] ) ) : ?>
-											<p>
-												<?php foreach ( $member_trainings[ $mid ] as $mtl_training_name ) : ?>
-													<span class="mtl-badge"><?php echo esc_html( $mtl_training_name ); ?></span>
-												<?php endforeach; ?>
-											</p>
+											<table class="mtl-training-table">
+												<thead>
+													<tr>
+														<th>Training</th>
+														<th>Completed</th>
+														<th>Expires</th>
+														<th>Status</th>
+													</tr>
+												</thead>
+												<tbody>
+													<?php foreach ( $member_trainings[ $mid ] as $mtl_t ) : ?>
+														<tr>
+															<td><?php echo esc_html( $mtl_t['name'] ); ?></td>
+															<td><?php echo mtl_format_date( $mtl_t['start_date'] ); ?></td>
+															<td><?php echo '' !== $mtl_t['expiry_date'] ? mtl_format_date( $mtl_t['expiry_date'] ) : '<span style="color:#8c8f94;">Never</span>'; ?></td>
+															<td>
+																<?php if ( $mtl_t['is_current'] ) : ?>
+																	<span class="mtl-verified-badge">Current</span>
+																<?php else : ?>
+																	<span class="mtl-unverified-badge">Expired</span>
+																<?php endif; ?>
+															</td>
+														</tr>
+													<?php endforeach; ?>
+												</tbody>
+											</table>
 										<?php else : ?>
 											<p style="color: #999;">None on record. Use Edit to record a training this member has completed.</p>
 										<?php endif; ?>
@@ -2629,6 +2892,82 @@ function mtl_render_membership_page() {
 				overdueNow: document.getElementById('adv-m-overdue-now'),
 			};
 
+			// --- Trainings multi-select ---
+			// Deliberately NOT part of advFields: everything in there is a
+			// plain input the "Clear Filters" button blanks with .value = '',
+			// and this is a checkbox list behind a popover instead. It gets
+			// reset explicitly further down.
+			const msRoot   = document.getElementById('adv-m-trainings');
+			const msToggle = document.getElementById('adv-m-trainings-toggle');
+			const msPanel  = document.getElementById('adv-m-trainings-panel');
+			const msAll    = document.getElementById('adv-m-trainings-all');
+			const msOpts   = msRoot ? Array.prototype.slice.call(msRoot.querySelectorAll('.mtl-ms-opt')) : [];
+
+			// Ids of every ticked training. The filter requires a member to
+			// hold ALL of them, so "Select all" naturally means "has completed
+			// every training".
+			function selectedTrainingIds() {
+				return msOpts.filter(function(cb) { return cb.checked; })
+					.map(function(cb) { return cb.value; });
+			}
+
+			// The button label doubles as the collapsed summary of the selection.
+			function refreshMsLabel() {
+				if (!msToggle) { return; }
+				const picked = msOpts.filter(function(cb) { return cb.checked; });
+				if (picked.length === 0) {
+					msToggle.textContent = 'Any';
+				} else if (picked.length === msOpts.length) {
+					msToggle.textContent = 'All trainings';
+				} else if (picked.length === 1) {
+					msToggle.textContent = picked[0].parentNode.querySelector('span').textContent;
+				} else {
+					msToggle.textContent = picked.length + ' selected';
+				}
+			}
+
+			function closeMsPanel() {
+				if (!msPanel) { return; }
+				msPanel.style.display = 'none';
+				msToggle.setAttribute('aria-expanded', 'false');
+			}
+
+			if (msRoot) {
+				msToggle.addEventListener('click', function(e) {
+					e.stopPropagation();
+					const isOpen = msPanel.style.display !== 'none';
+					msPanel.style.display = isOpen ? 'none' : 'block';
+					msToggle.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+				});
+
+				// Clicks inside the panel must not reach the close-on-outside
+				// handler below, or ticking a box would shut the panel.
+				msPanel.addEventListener('click', function(e) {
+					e.stopPropagation();
+				});
+
+				msAll.addEventListener('change', function() {
+					msOpts.forEach(function(cb) { cb.checked = msAll.checked; });
+					refreshMsLabel();
+					applyFilters();
+				});
+
+				msOpts.forEach(function(cb) {
+					cb.addEventListener('change', function() {
+						// Keep "Select all" honest: ticked only while genuinely
+						// everything below it is.
+						msAll.checked = msOpts.every(function(o) { return o.checked; });
+						refreshMsLabel();
+						applyFilters();
+					});
+				});
+
+				document.addEventListener('click', closeMsPanel);
+				document.addEventListener('keydown', function(e) {
+					if (e.key === 'Escape') { closeMsPanel(); }
+				});
+			}
+
 			advToggle.addEventListener('click', function() {
 				const isOpen = advPanel.style.display !== 'none';
 				advPanel.style.display = isOpen ? 'none' : 'block';
@@ -2657,6 +2996,7 @@ function mtl_render_membership_page() {
 					hasRes: advFields.hasRes.value,
 					hasPastDue: advFields.hasPastDue.value,
 					overdueNow: advFields.overdueNow.value,
+					trainings: selectedTrainingIds(),
 				};
 
 				// Only real member rows are filtered -- detail rows follow
@@ -2686,6 +3026,19 @@ function mtl_render_membership_page() {
 					if (visible && f.hasRes && d.hasRes !== f.hasRes) visible = false;
 					if (visible && f.hasPastDue && d.hasPastdue !== f.hasPastDue) visible = false;
 					if (visible && f.overdueNow && d.overdueNow !== f.overdueNow) visible = false;
+
+					// Trainings: the member must hold EVERY ticked one, and
+					// hold it currently. data-trainings is comma-wrapped
+					// (",2,7,") so testing ",7," can't match id 7 inside 17.
+					if (visible && f.trainings.length) {
+						const held = d.trainings || '';
+						for (let i = 0; i < f.trainings.length; i++) {
+							if (held.indexOf(',' + f.trainings[i] + ',') === -1) {
+								visible = false;
+								break;
+							}
+						}
+					}
 
 					if (visible && (f.donationMin !== null || f.donationMax !== null)) {
 						const donation = parseFloat(d.donation);
@@ -2769,6 +3122,14 @@ function mtl_render_membership_page() {
 				Object.values(advFields).forEach(function(el) {
 					el.value = '';
 				});
+				// The trainings picker is checkboxes, not a value-bearing
+				// input, so it needs clearing on its own terms.
+				if (msRoot) {
+					msOpts.forEach(function(cb) { cb.checked = false; });
+					msAll.checked = false;
+					refreshMsLabel();
+					closeMsPanel();
+				}
 				applyFilters();
 			});
 
@@ -3053,5 +3414,8 @@ function mtl_render_membership_page() {
 	// Covers both the Add and Edit forms' phone widgets in one call --
 	// mtl_phone_formatter_script() queries every .mtl-phone-widget on the page.
 	mtl_phone_formatter_script();
+	// Same one-call-covers-every-instance deal: the Add and Edit forms each
+	// render their own trainings picker.
+	mtl_trainings_picker_script();
 	echo '</div>';
 }

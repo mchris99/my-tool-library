@@ -1736,11 +1736,9 @@ function mtl_render_account_page() {
 	// Trainings this member has completed. Read-only here -- only staff can
 	// record a training (see the admin Membership page); this is purely so the
 	// member can see which tools they're already qualified to use.
-	// badge_image_url is admin-set on the Setup page; a training with none set
-	// falls back to the plain green pill (see the render loop below).
-	$my_trainings = $wpdb->get_results(
+	$my_training_rows = $wpdb->get_results(
 		$wpdb->prepare(
-			"SELECT t.training_name, t.badge_image_url
+			"SELECT t.training_name, t.badge_image_url, t.certification_length_months, mtm.start_date
          FROM {$tbl_training_map} mtm
          JOIN {$tbl_trainings} t ON t.training_id = mtm.training_id
          WHERE mtm.member_id = %d
@@ -1749,6 +1747,28 @@ function mtl_render_account_page() {
 		)
 	);
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	// Split once, used twice: the badges near the top of the page show only
+	// what this member is CURRENTLY certified in, while the collapsible table
+	// further down lists everything they have ever completed, expired
+	// included. badge_image_url is admin-set on the Setup page; a current
+	// training with none set falls back to the plain green pill.
+	$my_trainings         = array();
+	$my_current_trainings = array();
+	foreach ( $my_training_rows as $mtl_tr ) {
+		$mtl_entry      = array(
+			'name'        => $mtl_tr->training_name,
+			'badge'       => (string) $mtl_tr->badge_image_url,
+			'start_date'  => (string) $mtl_tr->start_date,
+			'months'      => (int) $mtl_tr->certification_length_months,
+			'expiry_date' => mtl_training_expiry_date( $mtl_tr->start_date, $mtl_tr->certification_length_months ),
+			'is_current'  => mtl_training_is_current( $mtl_tr->start_date, $mtl_tr->certification_length_months ),
+		);
+		$my_trainings[] = $mtl_entry;
+		if ( $mtl_entry['is_current'] ) {
+			$my_current_trainings[] = $mtl_entry;
+		}
+	}
 
 	// Whether deleting this account will anonymize (history on record) or
 	// fully remove it -- shown on the delete-confirmation view below.
@@ -1833,20 +1853,68 @@ function mtl_render_account_page() {
 
 				<p style="margin-top:0;">
 					Trainings completed:
-					<?php if ( ! empty( $my_trainings ) ) : ?>
-						<?php foreach ( $my_trainings as $mtl_training ) : ?>
-							<?php if ( '' !== (string) $mtl_training->badge_image_url ) : ?>
-								<img class="mtl-badge-img mtl-training-badge-img" src="<?php echo esc_url( $mtl_training->badge_image_url ); ?>" alt="<?php echo esc_attr( $mtl_training->training_name ); ?>" title="<?php echo esc_attr( $mtl_training->training_name ); ?>">
+					<?php if ( ! empty( $my_current_trainings ) ) : ?>
+						<?php foreach ( $my_current_trainings as $mtl_training ) : ?>
+							<?php if ( '' !== $mtl_training['badge'] ) : ?>
+								<img class="mtl-badge-img mtl-training-badge-img" src="<?php echo esc_url( $mtl_training['badge'] ); ?>" alt="<?php echo esc_attr( $mtl_training['name'] ); ?>" title="<?php echo esc_attr( $mtl_training['name'] ); ?>">
 							<?php else : ?>
-								<span class="mtl-pill mtl-pill-green" style="margin-left:6px;"><?php echo esc_html( $mtl_training->training_name ); ?></span>
+								<span class="mtl-pill mtl-pill-green" style="margin-left:6px;"><?php echo esc_html( $mtl_training['name'] ); ?></span>
 							<?php endif; ?>
 						<?php endforeach; ?>
 					<?php else : ?>
 						<span class="mtl-pill mtl-pill-grey" style="margin-left:6px;">None yet</span>
 					<?php endif; ?>
 				</p>
-				<p class="mtl-member-hint" style="font-size:0.9em;">Trainings are recorded by library staff and show which tools you&rsquo;re qualified to use. Ask a staff member if you&rsquo;d like to take one.</p>
+				<p class="mtl-member-hint" style="font-size:0.9em;">
+					Trainings are recorded by library staff and show which tools you&rsquo;re qualified to use. Ask a staff member if you&rsquo;d like to take one.
+					<?php if ( count( $my_trainings ) > count( $my_current_trainings ) ) : ?>
+						Only trainings that are still current are shown here &mdash; see <strong>Trainings</strong> below for your full record.
+					<?php endif; ?>
+				</p>
 			</div>
+
+			<?php if ( ! empty( $my_trainings ) ) : ?>
+				<details class="mtl-member-card">
+					<summary class="mtl-member-summary">Trainings</summary>
+					<div class="mtl-member-collapsible-body">
+						<p class="mtl-member-hint" style="margin-top:0;">Every training you&rsquo;ve completed, including any that have since expired. Ask library staff if you&rsquo;d like to retake one.</p>
+						<table class="mtl-member-table">
+							<thead>
+								<tr>
+									<th>Training</th>
+									<th>Completed</th>
+									<th>Valid For</th>
+									<th>Expires</th>
+									<th>Status</th>
+								</tr>
+							</thead>
+							<tbody>
+								<?php foreach ( $my_trainings as $mtl_training ) : ?>
+									<tr>
+										<td><?php echo esc_html( $mtl_training['name'] ); ?></td>
+										<td><?php echo mtl_format_date( $mtl_training['start_date'] ); ?></td>
+										<td>
+											<?php
+											echo $mtl_training['months'] > 0
+												? esc_html( $mtl_training['months'] . ' month' . ( 1 === $mtl_training['months'] ? '' : 's' ) )
+												: '<span style="color:#8c8f94;">&mdash;</span>';
+											?>
+										</td>
+										<td><?php echo '' !== $mtl_training['expiry_date'] ? mtl_format_date( $mtl_training['expiry_date'] ) : '<span style="color:#8c8f94;">Never</span>'; ?></td>
+										<td>
+											<?php if ( $mtl_training['is_current'] ) : ?>
+												<span class="mtl-pill mtl-pill-green">Current</span>
+											<?php else : ?>
+												<span class="mtl-pill mtl-pill-grey">Expired</span>
+											<?php endif; ?>
+										</td>
+									</tr>
+								<?php endforeach; ?>
+							</tbody>
+						</table>
+					</div>
+				</details>
+			<?php endif; ?>
 
 			<?php
 			// Collapsed by default, but forced open when a submitted edit

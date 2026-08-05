@@ -1507,6 +1507,219 @@ function mtl_phone_formatter_script() {
 	<?php
 }
 
+// ==========================================================================
+// MEMBER TRAININGS
+//
+// A training (member_trainings) has a name, an optional badge image, and an
+// optional certification_length_months. A member holds a training via
+// member_training_mappings, which records the start_date they completed it.
+//
+// Expiry is always DERIVED from those two, never stored -- see
+// mtl_training_expiry_date(). That means an admin editing a training's
+// certification length on the Setup page instantly re-dates every member who
+// holds it, with no backfill step and no stale copies to go wrong.
+//
+// "Current" vs "expired" matters in three different places, and they
+// deliberately behave differently:
+// - My Account badge images: current trainings only.
+// - My Account trainings table: everything, current and expired, with the
+// status spelled out.
+// - Membership filter: current only, since the question staff are asking
+// is "who is qualified to use this tool today".
+// ==========================================================================
+
+/**
+ * The date a member's training certification lapses.
+ *
+ * @param string   $start_date Mapping start_date (Y-m-d).
+ * @param int|null $months     Training certification_length_months; null/0
+ *                             means the certification never expires.
+ * @return string Expiry date as Y-m-d, or '' when it never expires (or the
+ *                start date is unusable).
+ */
+function mtl_training_expiry_date( $start_date, $months ) {
+	$months     = (int) $months;
+	$start_date = trim( (string) $start_date );
+	if ( $months <= 0 || '' === $start_date ) {
+		return '';
+	}
+	$ts = strtotime( $start_date );
+	if ( ! $ts ) {
+		return '';
+	}
+	// PHP's relative month arithmetic OVERFLOWS a short month rather than
+	// clamping to its last day: 31 Jan + 1 month is 3 March (not 28 Feb),
+	// and a 29 Feb start + 12 months is 1 March (not 28 Feb). Left as-is
+	// deliberately -- the drift is at most a few days, it always lands in the
+	// member's favour (certification lasts slightly longer, never cut short),
+	// and hand-rolled clamping is more date arithmetic to get wrong than the
+	// problem is worth for a tool-library certification.
+	return gmdate( 'Y-m-d', strtotime( '+' . $months . ' months', $ts ) );
+}
+
+/**
+ * Whether a member's training certification is still current today.
+ *
+ * A training with no certification length never expires and is always
+ * current. Expiry day itself still counts as current -- the certification
+ * lapses at the END of that day, which is what "valid for 12 months" means
+ * to the person holding it.
+ *
+ * @param string   $start_date Mapping start_date (Y-m-d).
+ * @param int|null $months     Training certification_length_months.
+ * @return bool
+ */
+function mtl_training_is_current( $start_date, $months ) {
+	$expiry = mtl_training_expiry_date( $start_date, $months );
+	if ( '' === $expiry ) {
+		return true;
+	}
+	return current_time( 'Y-m-d' ) <= $expiry;
+}
+
+/**
+ * Renders the trainings picker used by the admin Add/Edit Member forms: one
+ * checkbox per training, each with its own start-date input that only
+ * matters when the box is ticked.
+ *
+ * This replaced a plain <select multiple>, which could record WHICH
+ * trainings a member held but had nowhere to put the date each was
+ * completed on -- and without a date there is nothing to expire.
+ *
+ * Posts two parallel fields: training_id[] (the ticked ids) and
+ * training_start[<id>] (that training's date). The handler only reads a
+ * start date for an id that was actually ticked, so a date left behind from
+ * un-ticking a box is harmless.
+ *
+ * @param array  $trainings  Training rows (training_id, training_name, ...).
+ * @param array  $selected   member_id-agnostic map of training_id => start_date
+ *                           (Y-m-d) for the trainings this member holds.
+ * @param string $id_prefix  Prefix for element ids, e.g. "edit_", so two
+ *                           instances on one page keep unique ids.
+ */
+function mtl_render_trainings_picker( $trainings, $selected, $id_prefix = '' ) {
+	if ( empty( $trainings ) ) {
+		?>
+		<p style="font-size: 0.85em; color: #666; margin: 0;">No trainings have been set up yet. Add them under <strong>Setup &rarr; Member Trainings</strong>, then they&rsquo;ll be selectable here.</p>
+		<?php
+		return;
+	}
+	$today = current_time( 'Y-m-d' );
+	?>
+	<div class="mtl-trainings-picker">
+		<?php foreach ( $trainings as $mtl_training ) : ?>
+			<?php
+			$mtl_tid     = (int) $mtl_training->training_id;
+			$mtl_checked = array_key_exists( $mtl_tid, $selected );
+			// An unticked row still needs a sensible date sitting ready for
+			// when it IS ticked, so default it to today rather than blank.
+			$mtl_start = $mtl_checked ? $selected[ $mtl_tid ] : $today;
+			$mtl_cid   = $id_prefix . 'training_' . $mtl_tid;
+			?>
+			<div class="mtl-training-row">
+				<label class="mtl-training-check" for="<?php echo esc_attr( $mtl_cid ); ?>">
+					<input type="checkbox" name="training_id[]" id="<?php echo esc_attr( $mtl_cid ); ?>" value="<?php echo esc_attr( $mtl_tid ); ?>" <?php checked( $mtl_checked ); ?>>
+					<span><?php echo esc_html( $mtl_training->training_name ); ?></span>
+				</label>
+				<label class="mtl-training-date">
+					<span>Completed</span>
+					<input type="date" name="training_start[<?php echo esc_attr( $mtl_tid ); ?>]" value="<?php echo esc_attr( $mtl_start ); ?>" <?php disabled( ! $mtl_checked ); ?>>
+				</label>
+				<?php
+				$mtl_len = (int) ( isset( $mtl_training->certification_length_months ) ? $mtl_training->certification_length_months : 0 );
+				?>
+				<span class="mtl-training-len">
+					<?php echo $mtl_len > 0 ? esc_html( 'valid ' . $mtl_len . ' month' . ( 1 === $mtl_len ? '' : 's' ) ) : 'never expires'; ?>
+				</span>
+			</div>
+		<?php endforeach; ?>
+	</div>
+	<?php
+}
+
+/**
+ * Styles + behavior for every .mtl-trainings-picker on the page. The date
+ * input next to an unticked training is disabled, so it neither submits nor
+ * invites the admin to fill in a date for a training the member doesn't
+ * hold; ticking the box enables it.
+ *
+ * Emitted once per page (the admin Membership page has two pickers -- Add
+ * and Edit -- in the DOM at once), same pairing as
+ * mtl_render_phone_input()/mtl_phone_formatter_script().
+ */
+function mtl_trainings_picker_script() {
+	?>
+	<style>
+		.mtl-trainings-picker {
+			border: 1px solid #dcdcde;
+			border-radius: 4px;
+			padding: 4px 10px;
+			max-width: 520px;
+			max-height: 240px;
+			overflow-y: auto;
+			background: #fff;
+		}
+		.mtl-training-row {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			padding: 5px 0;
+			border-bottom: 1px solid #f0f0f1;
+		}
+		.mtl-training-row:last-child {
+			border-bottom: 0;
+		}
+		.mtl-training-check {
+			flex: 1 1 auto;
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			cursor: pointer;
+			font-weight: 600;
+		}
+		.mtl-training-date {
+			display: flex;
+			align-items: center;
+			gap: 5px;
+			font-size: 0.85em;
+			color: #646970;
+		}
+		.mtl-training-date input[disabled] {
+			background: #f6f7f7;
+			color: #a7aaad;
+		}
+		.mtl-training-len {
+			flex: 0 0 auto;
+			font-size: 0.8em;
+			color: #787c82;
+			min-width: 96px;
+			text-align: right;
+		}
+	</style>
+	<script>
+	( function () {
+		document.querySelectorAll( '.mtl-trainings-picker' ).forEach( function ( picker ) {
+			picker.querySelectorAll( '.mtl-training-row' ).forEach( function ( row ) {
+				var box  = row.querySelector( 'input[type="checkbox"]' );
+				var date = row.querySelector( 'input[type="date"]' );
+				if ( ! box || ! date ) {
+					return;
+				}
+				box.addEventListener( 'change', function () {
+					date.disabled = ! box.checked;
+					// Never leave a ticked training without a date: if the
+					// admin cleared it while it was disabled, put today back.
+					if ( box.checked && ! date.value ) {
+						date.value = new Date().toISOString().slice( 0, 10 );
+					}
+				} );
+			} );
+		} );
+	}() );
+	</script>
+	<?php
+}
+
 /**
  * A member is verified only once BOTH scan URLs are on file. Either one alone
  * (a member with only one form of ID so far) is not enough. Used where the

@@ -168,22 +168,41 @@ CREATE TABLE {{prefix}}tool_tag_mappings (
 );
 
 -- Member Trainings (e.g., Table Saw Safety, Welding Basics)
--- Managed by admins on the Setup page, exactly like categories and tags.
+-- Managed by admins on the Setup page, exactly like categories and tags,
+-- except that all three columns are editable in place there (categories and
+-- tags are add-or-delete only) -- a badge image or certification length can
+-- reasonably change long after the training itself was created.
 -- These record which safety/skill trainings a member has completed, so staff
 -- can tell at a glance which tools that member is qualified to check out --
 -- the counterpart to the 'Requires Training' tool tag below.
--- badge_image_url is optional and admin-set (Setup page): when present, the
--- member's own My Account page shows this image (with the training name as
--- alt/hover text) instead of the plain green pill. Public-facing only -- the
--- staff-side admin pages always show trainings as plain names/pills, never
--- as images.
+--
+-- badge_image_url is optional and admin-set: when present, the member's own
+-- My Account page shows this image (with the training name as alt/hover
+-- text) instead of the plain green pill, and ONLY for trainings that are
+-- still current. Public-facing only -- the staff-side admin pages always
+-- show trainings as plain names, never as images.
+--
+-- certification_length_months is how long a completed training stays valid,
+-- counted from that member's start_date below. NULL means it never expires.
+-- Expiry is always DERIVED (start_date + certification_length_months, see
+-- mtl_training_expiry_date() in my-tool-library.php), never stored: editing
+-- the length here has to re-date every member who holds that training, and
+-- deriving it means that happens automatically instead of needing a
+-- backfill.
 CREATE TABLE {{prefix}}member_trainings (
     training_id INT AUTO_INCREMENT PRIMARY KEY,
     training_name VARCHAR(50) UNIQUE NOT NULL,
-    badge_image_url VARCHAR(255) DEFAULT NULL
+    badge_image_url VARCHAR(255) DEFAULT NULL,
+    certification_length_months INT DEFAULT NULL
 );
 
 -- Junction table for Member <-> Trainings (Many-to-Many)
+-- start_date is the day that member completed this training; combined with
+-- the training's certification_length_months it determines whether their
+-- certification is still current. A plain DATE, not a TIMESTAMP -- a
+-- certification is granted for a day, not a moment, and comparing whole
+-- days avoids an off-by-a-few-hours expiry.
+--
 -- ON DELETE CASCADE on member_id is a safety net for a row that is genuinely
 -- removed (a manual cleanup, or the whole table being rebuilt). It is NOT the
 -- path a member deletion takes: mtl_delete_or_anonymize_member() anonymizes
@@ -192,6 +211,7 @@ CREATE TABLE {{prefix}}member_trainings (
 CREATE TABLE {{prefix}}member_training_mappings (
     member_id INT,
     training_id INT,
+    start_date DATE NOT NULL,
     PRIMARY KEY (member_id, training_id),
     FOREIGN KEY (member_id) REFERENCES {{prefix}}members(member_id) ON DELETE CASCADE,
     FOREIGN KEY (training_id) REFERENCES {{prefix}}member_trainings(training_id) ON DELETE CASCADE
@@ -282,14 +302,19 @@ INSERT INTO {{prefix}}tool_tags (tag_id, tag_name) VALUES
 (11, 'Requires Training'),
 (12, 'Large/Bulky');
 
--- Starting set of trainings; admins add/remove their own on the Setup page.
-INSERT INTO {{prefix}}member_trainings (training_id, training_name) VALUES
-(1, 'Power Tool Basics'),
-(2, 'Table Saw Safety'),
-(3, 'Miter Saw Safety'),
-(4, 'Chainsaw Safety'),
-(5, 'Angle Grinder Safety'),
-(6, 'Welding Basics'),
-(7, 'Ladder Safety');
+-- Starting set of trainings; admins add, edit and remove their own on the
+-- Setup page, including changing any of these renewal periods.
+-- certification_length_months is a plausible starting point rather than a
+-- recommendation -- a general introduction that doesn't lapse, and shorter
+-- renewals on the higher-risk machines. Badge images are left unset; each
+-- library uploads its own.
+INSERT INTO {{prefix}}member_trainings (training_id, training_name, certification_length_months) VALUES
+(1, 'Power Tool Basics', NULL),
+(2, 'Table Saw Safety', 24),
+(3, 'Miter Saw Safety', 24),
+(4, 'Chainsaw Safety', 12),
+(5, 'Angle Grinder Safety', 12),
+(6, 'Welding Basics', 36),
+(7, 'Ladder Safety', 12);
 
 SET FOREIGN_KEY_CHECKS = 1;
