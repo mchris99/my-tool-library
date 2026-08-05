@@ -1923,7 +1923,7 @@ function mtl_render_inventory_page() {
 	$tool_res_by_tool = array();
 	$tool_res_rows    = $wpdb->get_results(
 		"
-        SELECT r.tool_id, r.reservation_date,
+        SELECT r.tool_id, r.reservation_date, r.ready_since,
                m.first_name, m.last_name,
                (SELECT COUNT(*) FROM {$tbl_reservations} r2
                   WHERE r2.tool_id = r.tool_id
@@ -2391,10 +2391,31 @@ function mtl_render_inventory_page() {
 										<?php if ( $t_queue ) : ?>
 											<ul class="mtl-tool-list">
 												<?php foreach ( $t_queue as $res ) : ?>
+													<?php
+													// ready_since is stamped only on a reservation that is
+													// collectable now (front of the queue, tool on the shelf),
+													// so its presence is what separates "waiting their turn"
+													// from "we are holding this for them". Keyed off the column
+													// itself rather than mtl_reservation_collect_by(), which
+													// returns blank when the hold period is set to 0 -- the tool
+													// is still being held in that case, just with no deadline.
+													$res_ready = trim( (string) $res->ready_since );
+													?>
 													<li>
 														#<?php echo esc_html( $res->queue_place ); ?>
 														<?php echo esc_html( trim( stripslashes( $res->first_name ) . ' ' . stripslashes( $res->last_name ) ) ); ?>
-														<span class="mtl-tool-list-meta">reserved <?php echo mtl_format_date( $res->reservation_date, 'm/d/Y H:i' ); ?></span>
+														<span class="mtl-tool-list-meta">
+															reserved <?php echo mtl_format_date( $res->reservation_date, 'm/d/Y H:i' ); ?>
+															<?php if ( '' !== $res_ready ) : ?>
+																&middot; ready since <?php echo mtl_format_date( $res_ready, 'm/d/Y H:i' ); ?>
+																<?php
+																$res_collect = mtl_reservation_collect_by( $res_ready );
+																if ( '' !== $res_collect ) :
+																	?>
+																	&middot; collect by <?php echo mtl_format_date( $res_collect ); ?>
+																<?php endif; ?>
+															<?php endif; ?>
+														</span>
 													</li>
 												<?php endforeach; ?>
 											</ul>

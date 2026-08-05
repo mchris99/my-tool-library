@@ -1129,9 +1129,18 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 			<?php
 			// Only a reservation that is actually collectable has a deadline;
 			// anyone still queued behind a loan has no countdown running.
-			$mtl_collect_by = mtl_reservation_collect_by( $r->ready_since );
-			if ( '' !== $mtl_collect_by ) :
+			// ready_since is checked separately from the deadline because a
+			// library can set the hold period to 0 (never expires) -- the tool
+			// is still being held from that date, there is just no cut-off.
+			$mtl_ready_since = trim( (string) $r->ready_since );
+			$mtl_collect_by  = mtl_reservation_collect_by( $mtl_ready_since );
+			if ( '' !== $mtl_ready_since ) :
 				?>
+				<p style="margin:6px 0 0 0; color:#50575e; font-size:0.92em;">
+					Ready for pickup since <strong><?php echo mtl_format_date( $mtl_ready_since ); ?></strong>
+				</p>
+			<?php endif; ?>
+			<?php if ( '' !== $mtl_collect_by ) : ?>
 				<p style="margin:6px 0 0 0; color:#50575e; font-size:0.92em;">
 					Please collect by <strong><?php echo mtl_format_date( $mtl_collect_by ); ?></strong>, or the reservation is cancelled and the tool passes to the next person in line.
 				</p>
@@ -1501,10 +1510,20 @@ function mtl_render_member_reservations_page() {
 											<?php if ( $is_first && $available ) : ?>
 												<span class="mtl-pill mtl-pill-green" style="margin-left:6px;">Ready for pickup</span>
 												<?php
-												$mtl_collect_by = mtl_reservation_collect_by( $r->ready_since );
-												if ( '' !== $mtl_collect_by ) :
+												// Show when the hold started, not just when it ends: a member
+												// coming back to this page wants to know how long the tool has
+												// been waiting for them. ready_since drives the deadline, so
+												// the two always agree.
+												$mtl_ready_since = trim( (string) $r->ready_since );
+												$mtl_collect_by  = mtl_reservation_collect_by( $mtl_ready_since );
+												if ( '' !== $mtl_ready_since ) :
 													?>
-													<span style="color:#50575e; font-size:0.85em; margin-left:6px;">collect by <?php echo mtl_format_date( $mtl_collect_by ); ?></span>
+													<span style="color:#50575e; font-size:0.85em; margin-left:6px;">
+														ready since <?php echo mtl_format_date( $mtl_ready_since ); ?>
+														<?php if ( '' !== $mtl_collect_by ) : ?>
+															&middot; collect by <?php echo mtl_format_date( $mtl_collect_by ); ?>
+														<?php endif; ?>
+													</span>
 												<?php endif; ?>
 											<?php elseif ( $is_first ) : ?>
 												<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Out on loan</span>
