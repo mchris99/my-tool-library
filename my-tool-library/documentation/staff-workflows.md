@@ -68,6 +68,7 @@ Do this once, when the plugin is first installed on the site.
     - **Reservations & Loans**: the default loan length (in days) used when checking a reservation out as a loan, and the **Reservation Hold Period** — how long a tool is held for a member once it's ready for them to collect (default 14 days; see [Reservations that expire on their own](#reservations-that-expire-on-their-own)).
     - **Categories & Tags**: add or remove the tool categories (e.g. Woodworking, Plumbing) and tags (e.g. Cordless, Requires PPE) you plan to use — these are the choices staff pick from when adding inventory.
     - **Member Trainings**: add the trainings you offer. Each one has three editable fields, all changeable later: the **name**, an optional **Badge Image URL** (upload the image to the WordPress Media Library and paste its File URL), and **Valid For** — how many months the training stays current once someone completes it, or blank if it never expires. See [Trainings and certifications](#trainings-and-certifications).
+    - **Consider Giving Message** and **Consider Giving Link**: an optional fundraising ask. See [Asking members to give](#asking-members-to-give).
 6. Copy the **Public Page Link** shown on the Setup page and add it to your site's navigation menu (or link to it from any page/post, or link it in a button). This is the one link your community needs to browse the catalog, reserve tools, and sign up.
 7. Once categories/tags exist, move on to [Adding Inventory Items](#3-adding-inventory-items) and [Adding a New Member](#4-adding-a-new-member-in-person--verifying-their-identity) — both support **bulk import**, which is the fastest way to load an existing spreadsheet of tools or members:
     - On the **Inventory** or **Membership** page, find the **Bulk Import from CSV** panel.
@@ -239,6 +240,21 @@ On **Membership**, expand a member's detail panel and click any tool listed unde
 - **Start Loan for This Member** only appears when the member is first in line for that tool. Pick a due date (7/14/21/30-day quick buttons or custom) and click it to check the tool out to them directly, closing the reservation in the same step. If they're not first in the queue, the pop-up shows a note instead and points you to Loans & Reservations if you need to override the queue order.
 
 You can also cancel a reservation from **Loans & Reservations** directly: open the reservation's detail panel and click **Cancel reservation**.
+
+### Asking members to give
+
+**Setup > General Details** has two optional fields that put a **Consider Giving** section in front of signed-in members — on their **Account** page, above Your details, and on **My Loans & Reservations**, below their reservations.
+
+| Field | What it does |
+| --- | --- |
+| **Consider Giving Message** | Your ask, in your own words. A starting message is filled in for you; rewrite it to match how your library talks about money. |
+| **Consider Giving Link** | Where the **Give Now** button sends people — your donation page, a fundraising platform, anywhere you collect gifts. |
+
+**The message controls whether the section appears at all.** Clear it and the section disappears from both pages; a link on its own won't bring it back, since a bare button with no explanation isn't an ask. **The link only controls the button** — leave it blank and members still see your message, just without a button. That's the setting to use if you'd rather people give in person at the desk.
+
+The button opens in a new tab so nobody loses a half-finished renewal or cancellation, and it only ever appears on member-facing pages — never on the staff side.
+
+A note on the link: only ordinary `http://` and `https://` web addresses are accepted. You can leave the `https://` off when typing (`example.org/donate` works). Anything else is discarded when you save, and the Setup page tells you it was rather than failing quietly.
 
 ### Trainings and certifications
 

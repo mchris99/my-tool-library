@@ -35,6 +35,8 @@ $mtl_options = array(
 	'mtl_header_size',
 	'mtl_header_transform',
 	'mtl_header_weight',
+	'mtl_giving_text',
+	'mtl_giving_url',
 	'mtl_home_url',
 	'mtl_link_color',
 	'mtl_link_decoration',

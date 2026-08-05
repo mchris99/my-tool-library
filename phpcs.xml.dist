@@ -91,6 +91,7 @@
                 <element value="mtl_render_reservation_detail_panel"/>
                 <element value="mtl_render_pill_list"/>
                 <element value="mtl_markdown_to_html"/>
+                <element value="mtl_giving_section_html"/>
             </property>
         </properties>
     </rule>

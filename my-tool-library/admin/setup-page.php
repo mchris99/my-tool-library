@@ -434,6 +434,18 @@ function mtl_render_setup_page() {
 			// save sticks and intentionally hides the directions on the public pages.
 			update_option( 'mtl_pickup_directions', isset( $_POST['mtl_pickup_directions'] ) ? sanitize_textarea_field( wp_unslash( $_POST['mtl_pickup_directions'] ) ) : '' );
 			update_option( 'mtl_verification_directions', isset( $_POST['mtl_verification_directions'] ) ? sanitize_textarea_field( wp_unslash( $_POST['mtl_verification_directions'] ) ) : '' );
+			update_option( 'mtl_giving_text', isset( $_POST['mtl_giving_text'] ) ? sanitize_textarea_field( wp_unslash( $_POST['mtl_giving_text'] ) ) : '' );
+
+			// The giving link is stored normalized so the member-facing button
+			// can never point somewhere unexpected. mtl_normalize_giving_url()
+			// drops anything that isn't http/https -- a pasted "javascript:" or
+			// "data:" URL saves as blank rather than becoming a button.
+			update_option(
+				'mtl_giving_url',
+				isset( $_POST['mtl_giving_url'] )
+					? mtl_normalize_giving_url( sanitize_text_field( wp_unslash( $_POST['mtl_giving_url'] ) ) )
+					: ''
+			);
 
 			echo '<div class="notice notice-success is-dismissible"><p><strong>Success:</strong> Settings have been saved.</p></div>';
 		}
@@ -898,6 +910,16 @@ function mtl_render_setup_page() {
 		'A government issued ID and proof of address are required to become a verified member and to check out tools. Stop by our office to verify membership.'
 	);
 
+	// Default lives in mtl_default_giving_text() so this box and the
+	// member-facing fallback can never show different words.
+	$giving_text = get_option( 'mtl_giving_text', mtl_default_giving_text() );
+
+	// Shown re-normalized rather than raw, so the field displays exactly what
+	// the member-facing button would use. Comparing the two makes a rejected
+	// link visible instead of it silently appearing blank on the next load.
+	$giving_url_raw = trim( (string) get_option( 'mtl_giving_url', '' ) );
+	$giving_url     = mtl_normalize_giving_url( $giving_url_raw );
+
 	// Shown as chips next to the "add new" mini-forms below.
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_categories} ORDER BY category_name ASC" );
@@ -1270,6 +1292,25 @@ function mtl_render_setup_page() {
 						<td>
 							<textarea name="mtl_verification_directions" id="mtl_verification_directions" class="large-text" rows="4"><?php echo esc_textarea( $verification_directions ); ?></textarea>
 							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown to members on their Account page until they&rsquo;re verified. Leave blank to hide it there.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mtl_giving_text">Consider Giving Message</label></th>
+						<td>
+							<textarea name="mtl_giving_text" id="mtl_giving_text" class="large-text" rows="4"><?php echo esc_textarea( $giving_text ); ?></textarea>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Fundraising ask, shown to signed-in members on their Account page and on My Reservations. <strong>Leave blank to hide the section entirely</strong>.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mtl_giving_url">Consider Giving Link</label></th>
+						<td>
+							<input type="url" name="mtl_giving_url" id="mtl_giving_url" class="large-text" value="<?php echo esc_attr( $giving_url ); ?>" placeholder="https://example.org/donate">
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">
+								Where the <strong>Give Now</strong> button sends members. Opens in a new tab. Leave blank to show the message without a button.
+								<?php if ( '' !== $giving_url_raw && '' === $giving_url ) : ?>
+									<br><span style="color: #b32d2e;"><strong>The link you last saved was discarded.</strong> Only ordinary web addresses starting with <code>http://</code> or <code>https://</code> can be used here.</span>
+								<?php endif; ?>
+							</p>
 						</td>
 					</tr>
 				</table>

@@ -407,6 +407,22 @@ function mtl_member_page_styles() {
 			padding: 0 24px 22px 24px;
 		}
 
+		/* Consider Giving: the optional fundraising ask, shown on the Account
+			page and My Reservations. Styled as an ordinary card rather than a
+			banner -- it is a standing invitation, not an alert, and members
+			see it on every visit. */
+		.mtl-member-giving-text {
+			margin: 6px 0 0 0;
+		}
+
+		.mtl-member-giving-action {
+			margin: 14px 0 0 0;
+		}
+
+		.mtl-member-btn-giving {
+			display: inline-block;
+		}
+
 		/* Admin-uploaded badge images (training/verified) -- small and inline,
 			same spot the plain green pill would otherwise occupy. The training
 			name/label lives in both alt (accessibility, and shown if the image
@@ -1624,6 +1640,16 @@ function mtl_render_member_reservations_page() {
 				</div>
 			</div>
 		<?php endif; ?>
+
+		<?php
+		// Fundraising ask, last on the page so it sits under My Reservations
+		// in every state -- the list, the empty state, and both cancel
+		// confirmations. Deliberately below a confirmation prompt rather than
+		// above it, so it never pushes a destructive choice down the page.
+		// Escaped inside mtl_giving_section_html(); returns '' when the admin
+		// has left the message blank on the Setup page.
+		echo mtl_giving_section_html();
+		?>
 	</div>
 	<?php
 	$body = ob_get_clean();
@@ -1986,6 +2012,13 @@ function mtl_render_account_page() {
 					</div>
 				</details>
 			<?php endif; ?>
+
+			<?php
+			// Fundraising ask, above Your details. Escaped inside
+			// mtl_giving_section_html(); returns '' when the admin has left
+			// both the message and the link blank on the Setup page.
+			echo mtl_giving_section_html();
+			?>
 
 			<?php
 			// Collapsed by default, but forced open when a submitted edit

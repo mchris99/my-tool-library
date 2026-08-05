@@ -1880,6 +1880,130 @@ function mtl_sync_member_email_from_wp_user( $user_id, $old_user_data ) {
 }
 
 // ==========================================================================
+// CONSIDER GIVING
+//
+// An optional fundraising ask, shown to signed-in members on their Account
+// page and on My Reservations. Both the message and the link are set on the
+// Setup page; either one blank simply omits that part, and both blank hides
+// the section everywhere.
+//
+// The link is normalized on save rather than only escaped on output, so what
+// is stored is already known to be an ordinary web address. That keeps the
+// two display sites from each having to re-litigate whether a stored value
+// is safe to put in an href.
+// ==========================================================================
+
+/**
+ * The default fundraising message, used until an admin saves their own.
+ *
+ * Kept in one function because it has to be identical in two places -- the
+ * Setup page textarea's starting value and the member-facing fallback -- and
+ * a copy-paste drift between them would show members different words than
+ * the admin sees in the box they think they are editing.
+ *
+ * @return string
+ */
+function mtl_default_giving_text() {
+	return 'Every tool on our shelves got here because someone chipped in. If borrowing from us has saved you a trip to the hardware store, please consider giving back so we can repair what we have, replace what wears out, and keep lending free for your neighbors.';
+}
+
+/**
+ * Cleans up an admin-entered giving link for storage.
+ *
+ * Returns '' for anything that is not an ordinary http/https web address, so
+ * a "javascript:" or "data:" URL pasted into the Setup field is discarded at
+ * the point of saving instead of being stored and later rendered into a
+ * button that every signed-in member sees.
+ *
+ * A bare host like "example.org/donate" is assumed to be https rather than
+ * rejected -- admins paste addresses without the scheme constantly, and
+ * silently saving nothing would look like the field was broken.
+ *
+ * @param string $url Raw value from the Setup form.
+ * @return string A normalized absolute http/https URL, or '' if unusable.
+ */
+function mtl_normalize_giving_url( $url ) {
+	$url = trim( (string) $url );
+	if ( '' === $url ) {
+		return '';
+	}
+
+	// Add a scheme before validating, but only when one is genuinely absent.
+	// Requiring the colon to come before the first slash stops a path like
+	// "example.org/pay:now" from being mistaken for a scheme.
+	$colon      = strpos( $url, ':' );
+	$slash      = strpos( $url, '/' );
+	$has_scheme = ( false !== $colon ) && ( false === $slash || $colon < $slash );
+
+	if ( ! $has_scheme ) {
+		// A protocol-relative "//example.org" has no page scheme to inherit
+		// once it is stored in a setting, so pin it to https rather than
+		// leaving it ambiguous; anything else is treated as a bare host.
+		$url = ( 0 === strpos( $url, '//' ) ) ? 'https:' . $url : 'https://' . $url;
+	}
+
+	// esc_url_raw() drops disallowed protocols entirely, so restricting the
+	// allowed list here is what rejects javascript:/data:/mailto: and friends.
+	$url = esc_url_raw( $url, array( 'http', 'https' ) );
+	if ( '' === $url ) {
+		return '';
+	}
+
+	// A scheme alone ("https://") parses as valid but points nowhere; require
+	// an actual host before treating this as a usable destination.
+	$host = wp_parse_url( $url, PHP_URL_HOST );
+	return ( is_string( $host ) && '' !== $host ) ? $url : '';
+}
+
+/**
+ * The Consider Giving section, or '' when there is nothing to show.
+ *
+ * Shared by the Account page and My Reservations so the two can never drift
+ * apart in wording or behaviour.
+ *
+ * @param string $extra_class Optional extra class on the wrapper, for callers
+ *                            that need to adjust spacing in their layout.
+ * @return string Ready-to-echo HTML, fully escaped.
+ */
+function mtl_giving_section_html( $extra_class = '' ) {
+	$text = trim( (string) get_option( 'mtl_giving_text', mtl_default_giving_text() ) );
+
+	// Re-normalized on read, not trusted from storage: an option can also be
+	// set by WP-CLI, an import, or another plugin, none of which go through
+	// the Setup form's save path.
+	$url = mtl_normalize_giving_url( get_option( 'mtl_giving_url', '' ) );
+
+	// The message is what carries the ask, so it decides whether the section
+	// exists at all -- a bare "Give Now" button with no explanation would be
+	// worse than showing nothing. The link is independent: without it the
+	// message still stands on its own, just without a button.
+	if ( '' === $text ) {
+		return '';
+	}
+
+	$classes = 'mtl-member-card mtl-member-giving';
+	if ( '' !== $extra_class ) {
+		$classes .= ' ' . $extra_class;
+	}
+
+	$html  = '<div class="' . esc_attr( $classes ) . '">';
+	$html .= '<strong>Consider Giving</strong>';
+	$html .= '<p class="mtl-member-giving-text">' . nl2br( esc_html( $text ) ) . '</p>';
+	if ( '' !== $url ) {
+		// Opens in a new tab so a member part-way through renewing a loan or
+		// cancelling a reservation does not lose that page. rel="noopener"
+		// stops the opened page from reaching back through window.opener.
+		$html .= '<p class="mtl-member-giving-action">';
+		$html .= '<a class="mtl-member-btn mtl-member-btn-giving" href="' . esc_url( $url ) . '"';
+		$html .= ' target="_blank" rel="noopener noreferrer nofollow">Give Now</a>';
+		$html .= '</p>';
+	}
+	$html .= '</div>';
+
+	return $html;
+}
+
+// ==========================================================================
 // RESERVATION HOLD PERIOD
 //
 // A reservation is collectable once the member reaches the front of the
