@@ -332,19 +332,71 @@ function mtl_member_page_styles() {
 			font-size: 1.05em;
 		}
 
-		/* <details>-based cards (Your details, Your loan history): collapsed by
-			default, no JavaScript required to open them. */
+		/* <details>-based cards (Trainings, Your details, Your loan history):
+			collapsed by default, no JavaScript required to open them. */
 		details.mtl-member-card {
 			padding: 0;
 		}
 
 		.mtl-member-summary {
-			display: block;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 12px;
 			cursor: pointer;
 			padding: 22px 24px;
 			font-weight: 600;
 			font-size: 1.05em;
 			outline: none;
+			/* Suppress the browser's own disclosure triangle so the chevron
+				below is the only marker; each engine needs its own opt-out. */
+			list-style: none;
+		}
+
+		.mtl-member-summary::-webkit-details-marker {
+			display: none;
+		}
+
+		/* Chevron telling members the row opens. Drawn from borders rather than
+			a glyph or an image so it renders identically everywhere, needs no
+			font support, and inherits the surrounding text color. Points down
+			when closed, up when open. */
+		.mtl-member-summary::after {
+			content: "";
+			flex: 0 0 auto;
+			width: 9px;
+			height: 9px;
+			margin-right: 2px;
+			border-right: 2px solid currentColor;
+			border-bottom: 2px solid currentColor;
+			transform: translateY(-2px) rotate(45deg);
+			transition: transform 0.2s ease;
+			opacity: 0.55;
+		}
+
+		details.mtl-member-card[open] .mtl-member-summary::after {
+			transform: translateY(2px) rotate(-135deg);
+		}
+
+		.mtl-member-summary:hover::after {
+			opacity: 1;
+		}
+
+		/* outline:none above removes the default focus ring, which would leave
+			keyboard users with no idea where they are. Put a visible one back,
+			only for keyboard focus so a mouse click does not leave a ring. */
+		.mtl-member-summary:focus-visible {
+			outline: 2px solid currentColor;
+			outline-offset: -4px;
+			border-radius: 4px;
+		}
+
+		/* Respect a reduced-motion preference: the chevron still flips, it just
+			does not animate. */
+		@media (prefers-reduced-motion: reduce) {
+			.mtl-member-summary::after {
+				transition: none;
+			}
 		}
 
 		details.mtl-member-card[open] .mtl-member-summary {
