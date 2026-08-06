@@ -36,6 +36,7 @@ My Tool Library turns a WordPress site into the online home of a physical tool-l
 * Every public-facing page is intentionally built with no JavaScript at all, using plain forms, links, and CSS (including the `:target` pseudo-class for instant, same-page tool detail views).
 * Admin pages use JavaScript freely where it improves the staff experience (sorting, filtering, resizing, drag-and-drop).
 * Member passwords are always handled by WordPress core (`wp_insert_user()`). The plugin's own database tables never store a password in any form.
+* Every member gets a WordPress account, whether they signed up themselves or were added by staff. An account created for them is given a random password nobody ever sees; the member chooses their real one through an emailed link, using WordPress's own password-reset machinery.
 
 = Who this is for =
 
@@ -94,6 +95,20 @@ The plugin has no way to check how a linked image is actually hosted or shared, 
 = Where are member passwords stored? =
 
 Entirely in WordPress's own user system (`wp_users`), using WordPress's normal password hashing via `wp_insert_user()`. The plugin's own database tables never contain a password in any form.
+
+When staff add a member, the account is created with a random password that is never displayed, logged, or emailed -- it exists only so the account has one. The member sets a real password through the link in their setup email, which is a standard WordPress password-reset key.
+
+= A member staff added can't sign in. What do I do? =
+
+They need a password. Open **Membership** and look at the **Sign-in** column:
+
+* **None** -- they have no WordPress account yet. Press **Send setup link** on their row; it creates the account and emails them.
+* **No password** -- the account exists but they have never set one. **Send setup link** re-sends the email. Note this cancels any earlier link.
+* **Active** -- they are set up, so this is an ordinary forgotten password. Point them at "Lost your password?" on the sign-in page.
+
+After a CSV import, use the **Member Logins** panel instead of going row by row: **Create logins** makes all the missing accounts, then **Send setup emails** invites everyone at once. Both work through the list a batch at a time, so press again if any remain.
+
+A member can also sort this out themselves without staff help -- "Lost your password?" creates the account if it is missing and emails them a link.
 
 = Why don't my reservation/loan timestamps match the time I actually took the action? =
 

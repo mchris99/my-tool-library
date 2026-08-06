@@ -1795,6 +1795,476 @@ function mtl_find_wp_user_ids_claiming_member_id( $member_id ) {
 	);
 }
 
+/**
+ * The account using this address, but only when it is a member's own rather
+ * than somebody else's.
+ *
+ * Only this plugin ever writes mtl_member_id, so its presence is what separates
+ * an account created for a member from an administrator's, an editor's, or an
+ * unrelated login that happens to share the address. The value is not checked:
+ * after a Setup > Set Up Database rebuild every surviving account points at a
+ * member id that no longer means anything, and those are exactly the accounts
+ * this is here to recognise.
+ *
+ * @param string $email Address to look up.
+ * @return int WP user ID, or 0 if there is no account or it is not a member's.
+ */
+function mtl_member_account_id_by_email( $email ) {
+	$user = get_user_by( 'email', trim( (string) $email ) );
+	if ( ! $user ) {
+		return 0;
+	}
+	if ( '' === (string) get_user_meta( $user->ID, 'mtl_member_id', true ) ) {
+		return 0;
+	}
+	return (int) $user->ID;
+}
+
+/**
+ * Whether a member record using this address could never be given a sign-in,
+ * because the address already belongs to a non-member account.
+ *
+ * The narrow question the Add and Import validators need. A plain
+ * email_exists() is the wrong test there: it also catches a member's own
+ * account surviving a database rebuild, and rejecting those would break the
+ * documented way of reconnecting members afterwards -- re-adding them with the
+ * same address (see the staff guide, "Members' online accounts and the database
+ * reset").
+ *
+ * @param string $email Address to check.
+ * @return bool
+ */
+function mtl_email_taken_by_non_member( $email ) {
+	$email = trim( (string) $email );
+	if ( ! email_exists( $email ) ) {
+		return false;
+	}
+	return 0 === mtl_member_account_id_by_email( $email );
+}
+
+/**
+ * Creates the WordPress sign-in for a member row that has none.
+ *
+ * Staff-added and CSV-imported members get a {prefix}members row but no
+ * account, which used to leave them unable to sign in, sign up, or reset a
+ * password. This is the one place that gap is closed, shared by the Add Member
+ * handler, the batch backfill, and the lost-password self-heal, so all three
+ * produce identical accounts.
+ *
+ * Takes only the member id and reads the rest from the row on purpose: a
+ * caller passing an email that no longer matches the record is exactly how an
+ * account ends up linked to the wrong person.
+ *
+ * No password is chosen here. The account gets an unguessable random one purely
+ * to occupy the hash field; the member sets a real password through the link
+ * mtl_send_member_setup_email() sends.
+ *
+ * @param int $member_id Member row ID.
+ * @return int|WP_Error New WP user ID, or WP_Error explaining why not.
+ */
+function mtl_create_member_login( $member_id ) {
+	global $wpdb;
+
+	$member_id = (int) $member_id;
+	if ( $member_id <= 0 ) {
+		return new WP_Error( 'mtl_bad_member_id', 'No member record was identified.' );
+	}
+
+	$tbl = $wpdb->prefix . 'members';
+	$row = $wpdb->get_row(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+			"SELECT member_id, first_name, last_name, email, anonymized_at FROM {$tbl} WHERE member_id = %d",
+			$member_id
+		)
+	);
+
+	if ( ! $row ) {
+		return new WP_Error( 'mtl_no_member', 'That member record no longer exists.' );
+	}
+
+	// An anonymized row is a deleted person. Their address has been rewritten to
+	// the reserved deleted-member-<id>@example.invalid form, which is_email()
+	// accepts quite happily because WordPress does not validate TLDs -- so
+	// without this guard a backfill would mint accounts for people who asked to
+	// be forgotten. See mtl_delete_or_anonymize_member().
+	if ( null !== $row->anonymized_at ) {
+		return new WP_Error( 'mtl_member_anonymized', 'That member record has been anonymized.' );
+	}
+
+	$email = trim( (string) $row->email );
+	if ( '' === $email || ! is_email( $email ) ) {
+		return new WP_Error( 'mtl_bad_member_email', 'That member has no usable email address.' );
+	}
+
+	// A member's own account already on this address -- almost always one that
+	// outlived a Setup > Set Up Database rebuild. Point it back at the new row
+	// rather than refusing: this is the documented way to reconnect members
+	// after a reset, and it is the same repair mtl_current_member() performs by
+	// email on their next sign-in, just done now instead of then.
+	//
+	// Deliberately does NOT mark it setup-pending. They already have a working
+	// password, and flagging them would put them on the outstanding list and
+	// email them a link they never asked for.
+	$existing_member_account = mtl_member_account_id_by_email( $email );
+	if ( $existing_member_account > 0 ) {
+		update_user_meta( $existing_member_account, 'mtl_member_id', $member_id );
+		return $existing_member_account;
+	}
+
+	// Anything else on this address belongs to somebody who is not this member.
+	// Never adopt it: claiming an administrator's account by address alone would
+	// hand it this member's name, address and loan history, the disclosure
+	// mtl_current_member() deliberately fails closed to avoid.
+	if ( email_exists( $email ) ) {
+		return new WP_Error(
+			'email_taken_by_other_account',
+			'A WordPress account that is not a member sign-in already uses that email address, so one could not be created for this member. Sort it out under Users, then try again.'
+		);
+	}
+
+	// Belt and braces. The role registers on init and every caller runs later,
+	// but were it ever missing, wp_insert_user() would still succeed and write
+	// the role name with no capabilities behind it -- a whole batch of accounts
+	// that cannot even read, and nothing in the output to say so.
+	mtl_register_member_role();
+
+	// user_login is capped at 60 characters by wp_insert_user() while
+	// members.email allows 100. Identity is matched on user_email everywhere
+	// (see mtl_current_member()), so the login is only a label and a longer
+	// address can safely fall back to something generated.
+	$login = ( mb_strlen( $email ) <= 60 ) ? $email : 'mtl_member_' . $member_id;
+
+	$first = trim( (string) $row->first_name );
+	$last  = trim( (string) $row->last_name );
+
+	$user_id = wp_insert_user(
+		array(
+			'user_login'   => $login,
+			'user_email'   => $email,
+			'user_pass'    => wp_generate_password( 24, true, true ),
+			'first_name'   => $first,
+			'last_name'    => $last,
+			'display_name' => trim( $first . ' ' . $last ),
+			// Hardcoded, and must stay that way: a role reaching this array from
+			// a caller or a request is the one mistake here that would turn
+			// member import into privilege escalation.
+			'role'         => 'mtl_member',
+		)
+	);
+
+	if ( is_wp_error( $user_id ) ) {
+		return $user_id;
+	}
+
+	update_user_meta( $user_id, 'mtl_member_id', $member_id );
+	// Marks an account whose owner has never chosen a password. Cleared by
+	// mtl_clear_setup_pending() once they do. Everything that counts or emails
+	// "members who still need to set a password" keys off this.
+	update_user_meta( $user_id, 'mtl_setup_pending', 1 );
+
+	return (int) $user_id;
+}
+
+// --------------------------------------------------------------------------
+// BULK ACCOUNT LOOKUPS
+//
+// mtl_find_wp_user_id_by_member_id() is the right answer for one member and the
+// wrong one for a list: it costs two queries each, and the Membership page
+// renders every member with no LIMIT, so asking it per row would add thousands
+// of queries to a single page load. Everything below answers the same question
+// in one query.
+//
+// All of it joins through to a live member row rather than trusting usermeta on
+// its own. The Setup page's "Set Up Database" drops every plugin table while
+// WordPress accounts survive untouched, so mtl_member_id and mtl_setup_pending
+// can easily outlive the member they described. Counting raw meta would report
+// people who no longer exist -- and, worse, email them.
+// --------------------------------------------------------------------------
+
+/**
+ * Every WordPress account linked to a member, keyed by lowercased email.
+ *
+ * Each entry is array( 'user_id' => int, 'member_id' => int, 'pending' => bool ).
+ * Callers must still check that member_id matches the row they are looking at:
+ * that is the same "email agrees AND the meta points back" rule
+ * mtl_find_wp_user_id_by_member_id() applies, and skipping it is what would let
+ * a stale link show one member another's account.
+ *
+ * @return array<string, array{user_id:int, member_id:int, pending:bool}>
+ */
+function mtl_member_login_map() {
+	global $wpdb;
+
+	$rows = $wpdb->get_results(
+		"SELECT u.ID, u.user_email, um.meta_value AS member_id, p.umeta_id AS pending
+		 FROM {$wpdb->users} u
+		 INNER JOIN {$wpdb->usermeta} um ON um.user_id = u.ID AND um.meta_key = 'mtl_member_id'
+		 LEFT JOIN {$wpdb->usermeta} p ON p.user_id = u.ID AND p.meta_key = 'mtl_setup_pending'"
+	);
+
+	$map = array();
+	foreach ( (array) $rows as $row ) {
+		$map[ strtolower( trim( (string) $row->user_email ) ) ] = array(
+			'user_id'   => (int) $row->ID,
+			'member_id' => (int) $row->member_id,
+			'pending'   => null !== $row->pending,
+		);
+	}
+
+	return $map;
+}
+
+/**
+ * The FROM/WHERE selecting live members whose sign-in needs sorting out, shared
+ * by the count and the batch so the button can never disagree with the number
+ * printed above it.
+ *
+ * Two kinds qualify, and mtl_create_member_login() handles both: members with
+ * no account at all (create one) and members whose own account survived a
+ * database rebuild pointing at a stale id (relink it).
+ *
+ * Members whose address belongs to a NON-member account are excluded, because
+ * no batch can fix those -- feeding them in would mean retrying the same
+ * guaranteed failure on every run and never reaching zero. They are counted by
+ * mtl_count_members_with_blocked_login() and need a person.
+ *
+ * @return string SQL fragment beginning "FROM".
+ */
+function mtl_members_needing_login_from_where() {
+	global $wpdb;
+	$tbl = $wpdb->prefix . 'members';
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	return "FROM {$tbl} m
+		 LEFT JOIN {$wpdb->users} u ON u.user_email = m.email
+		 LEFT JOIN {$wpdb->usermeta} link ON link.user_id = u.ID AND link.meta_key = 'mtl_member_id'
+		 WHERE m.anonymized_at IS NULL
+		   AND ( link.umeta_id IS NULL OR CAST(link.meta_value AS UNSIGNED) <> m.member_id )
+		   AND ( u.ID IS NULL OR link.umeta_id IS NOT NULL )";
+}
+
+/**
+ * How many live members still need a sign-in created or reconnected.
+ *
+ * @return int
+ */
+function mtl_count_members_without_login() {
+	global $wpdb;
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- fragment is table names only; see mtl_members_needing_login_from_where().
+	return (int) $wpdb->get_var( 'SELECT COUNT(*) ' . mtl_members_needing_login_from_where() );
+}
+
+/**
+ * Live members whose address belongs to an account that is not a member
+ * sign-in -- a staff login, or a leftover from a member deleted earlier.
+ *
+ * Reported separately because it cannot be resolved automatically: the address
+ * has to be freed, or the member given a different one, by hand under Users.
+ *
+ * @return int
+ */
+function mtl_count_members_with_blocked_login() {
+	global $wpdb;
+	$tbl = $wpdb->prefix . 'members';
+
+	return (int) $wpdb->get_var(
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+		"SELECT COUNT(*) FROM {$tbl} m
+		 INNER JOIN {$wpdb->users} u ON u.user_email = m.email
+		 LEFT JOIN {$wpdb->usermeta} link ON link.user_id = u.ID AND link.meta_key = 'mtl_member_id'
+		 WHERE m.anonymized_at IS NULL AND link.umeta_id IS NULL"
+	);
+}
+
+/**
+ * How many members have an account but have never chosen a password.
+ *
+ * @return int
+ */
+function mtl_count_members_setup_pending() {
+	global $wpdb;
+	$tbl = $wpdb->prefix . 'members';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	return (int) $wpdb->get_var(
+		"SELECT COUNT(*) FROM {$wpdb->users} u
+		 INNER JOIN {$wpdb->usermeta} p ON p.user_id = u.ID AND p.meta_key = 'mtl_setup_pending'
+		 INNER JOIN {$tbl} m ON m.email = u.user_email AND m.anonymized_at IS NULL"
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+}
+
+/**
+ * The next batch of member ids needing an account.
+ *
+ * Re-derived from scratch on every call rather than paged with an OFFSET. Each
+ * successful creation removes a member from this set, so starting from the top
+ * each time is self-correcting; an offset would step over rows as the set
+ * shrank underneath it and quietly leave members behind.
+ *
+ * @param int $limit Maximum ids to return.
+ * @return int[]
+ */
+function mtl_members_needing_login( $limit ) {
+	global $wpdb;
+
+	$sql = 'SELECT m.member_id ' . mtl_members_needing_login_from_where()
+		. $wpdb->prepare( ' ORDER BY m.member_id ASC LIMIT %d', (int) $limit );
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- fragment is table names only, plus a prepare()d LIMIT; see mtl_members_needing_login_from_where().
+	return array_map( 'intval', (array) $wpdb->get_col( $sql ) );
+}
+
+/**
+ * The FROM/WHERE shared by the setup-email queue's count and its fetch, so the
+ * two can never disagree about who is due an invitation.
+ *
+ * @param bool $resend_all Include people already emailed in the last day.
+ * @return string SQL fragment beginning "FROM".
+ */
+function mtl_setup_email_queue_from_where( $resend_all ) {
+	global $wpdb;
+	$tbl = $wpdb->prefix . 'members';
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	$sql = "FROM {$wpdb->users} u
+		 INNER JOIN {$wpdb->usermeta} p ON p.user_id = u.ID AND p.meta_key = 'mtl_setup_pending'
+		 INNER JOIN {$tbl} m ON m.email = u.user_email AND m.anonymized_at IS NULL
+		 LEFT JOIN {$wpdb->usermeta} i ON i.user_id = u.ID AND i.meta_key = 'mtl_setup_invited_at'";
+
+	if ( ! $resend_all ) {
+		// Parenthesised deliberately. It is the only WHERE condition today, so
+		// the brackets change nothing -- but an unbracketed OR is precisely what
+		// silently breaks the day somebody ANDs another condition onto this.
+		$sql .= $wpdb->prepare(
+			' WHERE ( i.umeta_id IS NULL OR CAST(i.meta_value AS UNSIGNED) < %d )',
+			time() - DAY_IN_SECONDS
+		);
+	}
+
+	return $sql;
+}
+
+/**
+ * How many members are due a setup email right now.
+ *
+ * @param bool $resend_all Include people already emailed in the last day.
+ * @return int
+ */
+function mtl_count_members_awaiting_setup_email( $resend_all = false ) {
+	global $wpdb;
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- fragment is table names plus a prepare()d timestamp; see mtl_setup_email_queue_from_where().
+	return (int) $wpdb->get_var( 'SELECT COUNT(*) ' . mtl_setup_email_queue_from_where( (bool) $resend_all ) );
+}
+
+/**
+ * The next batch of user ids to send a setup email to.
+ *
+ * Re-derived each call for the same reason as mtl_members_needing_login():
+ * sending stamps mtl_setup_invited_at, which drops that member out of the set,
+ * so repeated runs walk forward on their own without an offset to get wrong.
+ *
+ * @param int  $limit      Maximum ids to return.
+ * @param bool $resend_all When false, anyone emailed within the last day is
+ *                         skipped, so a second click cannot mail the roster
+ *                         twice. When true, everyone still pending is included.
+ * @return int[]
+ */
+function mtl_members_awaiting_setup_email( $limit, $resend_all = false ) {
+	global $wpdb;
+
+	$sql = 'SELECT u.ID ' . mtl_setup_email_queue_from_where( (bool) $resend_all )
+		. $wpdb->prepare( ' ORDER BY u.ID ASC LIMIT %d', (int) $limit );
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- fragment is table names plus prepare()d values; see mtl_setup_email_queue_from_where().
+	return array_map( 'intval', (array) $wpdb->get_col( $sql ) );
+}
+
+// --------------------------------------------------------------------------
+// BATCH RUNNERS
+//
+// Both run to a wall-clock budget rather than a fixed row count, because the
+// per-item cost varies by two orders of magnitude between environments and
+// between the two jobs. Creating a login is bcrypt-bound (~50-100ms); sending
+// mail is bound by the SMTP round trip (~0.3-2s), so the same "safe" row count
+// is either pointlessly small locally or a guaranteed timeout in production.
+//
+// The budget is checked BETWEEN items, so one pathological wp_mail() against a
+// misconfigured SMTP host can still overrun it by that call's socket timeout.
+// Nothing short of a real queue fixes that, and it is not worth one here.
+// --------------------------------------------------------------------------
+
+/**
+ * Creates accounts for as many login-less members as fit in the time budget.
+ *
+ * @param int $budget_seconds Wall-clock budget.
+ * @param int $max_items      Hard cap, as a second guard on the budget.
+ * @return array{created:int, failed:array<int, array{member_id:int, reason:string}>, remaining:int}
+ */
+function mtl_run_create_logins_batch( $budget_seconds = 20, $max_items = 500 ) {
+	$started = microtime( true );
+	$created = 0;
+	$failed  = array();
+
+	foreach ( mtl_members_needing_login( (int) $max_items ) as $member_id ) {
+		if ( microtime( true ) - $started > $budget_seconds ) {
+			break;
+		}
+
+		$result = mtl_create_member_login( $member_id );
+		if ( is_wp_error( $result ) ) {
+			$failed[] = array(
+				'member_id' => (int) $member_id,
+				'reason'    => $result->get_error_message(),
+			);
+			continue;
+		}
+		++$created;
+	}
+
+	return array(
+		'created'   => $created,
+		'failed'    => $failed,
+		'remaining' => mtl_count_members_without_login(),
+	);
+}
+
+/**
+ * Sends setup emails to as many pending members as fit in the time budget.
+ *
+ * @param bool $resend_all     Ignore the one-per-day guard.
+ * @param int  $budget_seconds Wall-clock budget.
+ * @param int  $max_items      Hard cap, as a second guard on the budget.
+ * @return array{sent:int, failed:int, remaining:int, pending:int}
+ */
+function mtl_run_setup_email_batch( $resend_all = false, $budget_seconds = 20, $max_items = 200 ) {
+	$started = microtime( true );
+	$sent    = 0;
+	$failed  = 0;
+
+	foreach ( mtl_members_awaiting_setup_email( (int) $max_items, $resend_all ) as $user_id ) {
+		if ( microtime( true ) - $started > $budget_seconds ) {
+			break;
+		}
+
+		if ( mtl_send_member_setup_email( $user_id ) ) {
+			++$sent;
+		} else {
+			++$failed;
+		}
+	}
+
+	return array(
+		'sent'      => $sent,
+		'failed'    => $failed,
+		'remaining' => mtl_count_members_awaiting_setup_email( $resend_all ),
+		'pending'   => mtl_count_members_setup_pending(),
+	);
+}
+
 add_action( 'profile_update', 'mtl_sync_member_email_from_wp_user', 10, 2 );
 
 /**
@@ -3275,20 +3745,153 @@ add_filter( 'retrieve_password_message', 'mtl_reset_email_message', 10, 3 );
  * @return string
  */
 function mtl_reset_email_message( $message, $key, $user_login ) {
-	$branded = add_query_arg(
+	// Replace the whole wp-login.php line, including core's appended &wp_lang.
+	return preg_replace(
+		'#^.*wp-login\.php\?login=.*$#m',
+		mtl_reset_link_url( $key, $user_login ),
+		$message
+	);
+}
+
+/**
+ * Builds the branded "choose a password" link for a reset key.
+ *
+ * Shared by the reset email above and the new-member setup email below so the
+ * two cannot drift into producing different URL shapes for the same page.
+ *
+ * @param string $key        Password reset key from get_password_reset_key().
+ * @param string $user_login The account's username.
+ * @return string
+ */
+function mtl_reset_link_url( $key, $user_login ) {
+	return add_query_arg(
 		array(
 			'login' => rawurlencode( $user_login ),
 			'key'   => $key,
 		),
 		mtl_front_page_url( 'resetpass' )
 	);
+}
 
-	// Replace the whole wp-login.php line, including core's appended &wp_lang.
-	return preg_replace(
-		'#^.*wp-login\.php\?login=.*$#m',
-		$branded,
-		$message
+/**
+ * Emails a member the link that lets them choose their first password.
+ *
+ * Sent for accounts created by staff rather than by the member, so the copy is
+ * its own rather than core's. Core's reset email opens "Someone has requested a
+ * password reset for the following account", which is both wrong and alarming
+ * for somebody who never asked for anything and may not know the library set an
+ * account up for them.
+ *
+ * @param int $user_id WP user ID to invite.
+ * @return bool True if the mail was handed off successfully.
+ */
+function mtl_send_member_setup_email( $user_id ) {
+	$user = get_userdata( (int) $user_id );
+	if ( ! $user || '' === trim( (string) $user->user_email ) ) {
+		return false;
+	}
+
+	// Note this invalidates any key already sent to this member -- a resend
+	// silently kills the link in the earlier email, which is why the Membership
+	// page says so before staff press the button.
+	$key = get_password_reset_key( $user );
+	if ( is_wp_error( $key ) ) {
+		return false;
+	}
+
+	$org_name = get_option( 'mtl_org_name', '' );
+	if ( '' === trim( (string) $org_name ) ) {
+		$org_name = 'My Tool Library';
+	}
+
+	$greeting_name = trim( (string) $user->first_name );
+	if ( '' === $greeting_name ) {
+		$greeting_name = trim( (string) $user->display_name );
+	}
+	if ( '' === $greeting_name ) {
+		$greeting_name = (string) $user->user_login;
+	}
+
+	$subject = sprintf( '[%s] Your account is ready -- choose a password', $org_name );
+
+	$lines = array(
+		sprintf( 'Hi %s,', $greeting_name ),
+		'',
+		sprintf( 'Library staff have set up a %s account for you, so you can browse the catalog, reserve tools and see your loans online.', $org_name ),
+		'',
+		'To finish, choose a password here:',
+		mtl_reset_link_url( $key, $user->user_login ),
+		'',
+		'That link is good for 24 hours. If it has expired by the time you use it, the page it opens will offer to send you a fresh one.',
+		'',
+		sprintf( 'Your sign-in address is %s.', $user->user_email ),
 	);
+
+	$contact_email = mtl_contact_email();
+	if ( '' !== $contact_email ) {
+		$lines[] = '';
+		$lines[] = sprintf( 'If you were not expecting this, or anything looks wrong, contact library staff at %s.', $contact_email );
+	}
+
+	$lines[] = '';
+	$lines[] = sprintf( '-- %s', $org_name );
+
+	$sent = wp_mail( $user->user_email, $subject, implode( "\r\n", $lines ) );
+
+	if ( $sent ) {
+		// Read by the batch sender to skip anyone contacted recently, so a
+		// second click cannot mail the whole roster twice.
+		update_user_meta( $user_id, 'mtl_setup_invited_at', time() );
+	}
+
+	return (bool) $sent;
+}
+
+/**
+ * Creates and invites the account for a member who has a library record but no
+ * WordPress sign-in, given whatever they typed into the lost-password form.
+ *
+ * Does nothing at all unless the submitted text is an email address matching a
+ * live member row that has no account -- so an unrecognised address, a
+ * username, an anonymized record, or a member who already has a sign-in all
+ * fall straight through and leave the page's response unchanged.
+ *
+ * @param string $submitted Raw "email or username" field from the form.
+ * @return void
+ */
+function mtl_setup_login_for_unclaimed_member( $submitted ) {
+	global $wpdb;
+
+	$email = sanitize_email( trim( (string) $submitted ) );
+	if ( '' === $email || ! is_email( $email ) ) {
+		return;
+	}
+
+	// If any account already owns this address there is nothing to repair --
+	// retrieve_password() failing for some other reason is not our business.
+	if ( email_exists( $email ) ) {
+		return;
+	}
+
+	$tbl       = $wpdb->prefix . 'members';
+	$member_id = (int) $wpdb->get_var(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+			"SELECT member_id FROM {$tbl} WHERE email = %s AND anonymized_at IS NULL LIMIT 1",
+			$email
+		)
+	);
+
+	if ( $member_id <= 0 ) {
+		return;
+	}
+
+	$user_id = mtl_create_member_login( $member_id );
+	if ( is_wp_error( $user_id ) ) {
+		return;
+	}
+
+	mtl_send_member_setup_email( $user_id );
 }
 
 /**
@@ -3319,7 +3922,22 @@ function mtl_render_lost_password_page() {
 			// Return value deliberately ignored: a WP_Error here is usually
 			// "no such account", and acting on it differently is exactly the
 			// disclosure this page avoids.
-			retrieve_password( $submitted );
+			$reset = retrieve_password( $submitted );
+
+			// A member staff added or imported has a library record but no
+			// WordPress account, so the call above found nothing to send. Make
+			// the account now and email them the same kind of link.
+			//
+			// This is what stops the whole feature depending on somebody
+			// remembering to press "Create logins" after an import: a member who
+			// gives up waiting and uses "Lost your password?" gets in anyway.
+			//
+			// It does mean an unauthenticated request can create an account, but
+			// only ever for an address staff have already entered, and the only
+			// thing it produces is mail to that member's own mailbox.
+			if ( is_wp_error( $reset ) ) {
+				mtl_setup_login_for_unclaimed_member( $submitted );
+			}
 
 			wp_safe_redirect( add_query_arg( 'mtl_msg', 'reset_sent', mtl_front_page_url( 'login' ) ) );
 			exit;
@@ -3347,6 +3965,134 @@ function mtl_render_lost_password_page() {
 	mtl_render_front_shell( 'Reset Your Password', $body, $footer );
 }
 
+// --------------------------------------------------------------------------
+// FIRST-PASSWORD SETUP vs. PASSWORD CHANGE
+//
+// Four things listen on after_password_reset and the order between them is
+// load-bearing. In the order they run:
+//
+// Priority 1, mtl_suppress_setup_notifications(): takes core's admin notice off
+// the hook when this is a first-time setup.
+// Priority 10, mtl_send_password_changed_email(): skips, for the same reason.
+// Priority 10, wp_password_change_notification(): core's own; already removed.
+// Priority 99, mtl_finish_password_setup(): clears the flag the other two read,
+// and puts core's notice back.
+//
+// The clear MUST stay last. Move it earlier and both suppressions silently stop
+// working, while the happy path still looks perfect: the member sets a password
+// and gets in, they are just also told their password "has been changed" and the
+// administrator is emailed about it. See the plan's verification step 2.
+// --------------------------------------------------------------------------
+
+/**
+ * Whether this account was created for a member who has never chosen a
+ * password -- i.e. the next reset is a first-time setup, not a change.
+ *
+ * @param int $user_id WP user ID.
+ * @return bool
+ */
+function mtl_is_setup_pending( $user_id ) {
+	return '' !== (string) get_user_meta( (int) $user_id, 'mtl_setup_pending', true );
+}
+
+add_action( 'after_password_reset', 'mtl_suppress_setup_notifications', 1, 1 );
+
+/**
+ * Silences core's "password changed" notice to the administrator when a member
+ * is setting their first password.
+ *
+ * Core hooks wp_password_change_notification() to this same action and mails
+ * the site administrator every time. That is reasonable for a real change, but
+ * inviting a 500-member roster would put 500 of them in the administrator's
+ * inbox in one afternoon. Removed here and restored at priority 99, so the
+ * behaviour is unchanged for every other reset.
+ *
+ * @param WP_User $user The user whose password was just reset.
+ * @return void
+ */
+function mtl_suppress_setup_notifications( $user ) {
+	if ( ! $user instanceof WP_User || ! mtl_is_setup_pending( $user->ID ) ) {
+		return;
+	}
+
+	// remove_action() reports whether anything was actually removed. Recording
+	// that is what stops the restore below from ADDING core's notification to a
+	// site where another plugin had deliberately taken it off -- putting it back
+	// would be us switching on behaviour the site owner turned off.
+	if ( remove_action( 'after_password_reset', 'wp_password_change_notification' ) ) {
+		mtl_password_notification_suppressed( true );
+	}
+}
+
+/**
+ * Tracks whether this request removed core's password-change notification, so
+ * only a removal we made is ever undone.
+ *
+ * @param bool|null $set New value, or null to just read.
+ * @return bool
+ */
+function mtl_password_notification_suppressed( $set = null ) {
+	static $suppressed = false;
+	if ( null !== $set ) {
+		$suppressed = (bool) $set;
+	}
+	return $suppressed;
+}
+
+add_action( 'after_password_reset', 'mtl_finish_password_setup', 99, 1 );
+
+/**
+ * Marks a first-time setup as done, and undoes the suppression above.
+ *
+ * Priority 99 so it runs after everything that reads mtl_setup_pending. The
+ * flag is what makes a member count as "still needs to set a password", so
+ * clearing it here is also what removes them from the Membership page's
+ * outstanding list.
+ *
+ * @param WP_User $user The user whose password was just reset.
+ * @return void
+ */
+function mtl_finish_password_setup( $user ) {
+	if ( ! $user instanceof WP_User ) {
+		return;
+	}
+
+	if ( mtl_is_setup_pending( $user->ID ) ) {
+		delete_user_meta( $user->ID, 'mtl_setup_pending' );
+		delete_user_meta( $user->ID, 'mtl_setup_invited_at' );
+	}
+
+	// Put core's notice back for anything else resetting later in this same
+	// request, so the removal above can never leak beyond the one user it was
+	// meant for. Only ever restores a removal we made ourselves.
+	if ( mtl_password_notification_suppressed() ) {
+		add_action( 'after_password_reset', 'wp_password_change_notification' );
+		mtl_password_notification_suppressed( false );
+	}
+}
+
+add_action( 'wp_login', 'mtl_clear_setup_pending_on_login', 10, 2 );
+
+/**
+ * Clears the pending flag for a member who got a password some other way --
+ * staff setting one from Users > Edit User, or WP-CLI. Neither fires
+ * after_password_reset, so without this they would sit on the outstanding list
+ * forever and collect invitations they do not need.
+ *
+ * Guarded by the meta check so a normal sign-in is a cached read, not a write.
+ *
+ * @param string  $user_login The username (unused).
+ * @param WP_User $user       The user signing in.
+ * @return void
+ */
+function mtl_clear_setup_pending_on_login( $user_login, $user ) {
+	if ( ! $user instanceof WP_User || ! mtl_is_setup_pending( $user->ID ) ) {
+		return;
+	}
+	delete_user_meta( $user->ID, 'mtl_setup_pending' );
+	delete_user_meta( $user->ID, 'mtl_setup_invited_at' );
+}
+
 add_action( 'after_password_reset', 'mtl_send_password_changed_email', 10, 1 );
 
 /**
@@ -3365,11 +4111,20 @@ add_action( 'after_password_reset', 'mtl_send_password_changed_email', 10, 1 );
  * Hooked to after_password_reset rather than to the branded page, so a reset
  * completed any other way still produces the confirmation.
  *
+ * Skipped entirely for a first-time setup: a member who has just chosen their
+ * opening password did not have one changed, and telling them it was -- for an
+ * account they may not have known existed until the invitation arrived -- reads
+ * as exactly the compromise this email exists to warn about.
+ *
  * @param WP_User $user The user whose password was just reset.
  * @return void
  */
 function mtl_send_password_changed_email( $user ) {
 	if ( ! $user instanceof WP_User || empty( $user->user_email ) ) {
+		return;
+	}
+
+	if ( mtl_is_setup_pending( $user->ID ) ) {
 		return;
 	}
 

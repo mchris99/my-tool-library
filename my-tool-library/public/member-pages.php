@@ -907,6 +907,10 @@ function mtl_render_signup_page() {
 
 	global $wpdb;
 	$errors = array();
+	// Set when the submitted address already has a membership but no website
+	// sign-in. Rendered as its own notice below rather than as an $errors entry,
+	// because it needs a real link and that loop escapes its messages.
+	$needs_password_setup = false;
 	// Sticky values so a validation error doesn't wipe the form (password
 	// fields are intentionally never repopulated).
 	$vals = array(
@@ -977,9 +981,19 @@ function mtl_render_signup_page() {
 			} else {
 				$tbl_members = $wpdb->prefix . 'members';
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-				$dupe = $wpdb->get_var( $wpdb->prepare( "SELECT member_id FROM {$tbl_members} WHERE email = %s", $vals['email'] ) );
+				$dupe = $wpdb->get_var( $wpdb->prepare( "SELECT member_id FROM {$tbl_members} WHERE email = %s AND anonymized_at IS NULL", $vals['email'] ) );
 				if ( $dupe ) {
-					$errors[] = 'An account with that email already exists. Try signing in instead.';
+					// The library already holds a membership for this address but
+					// there is no WordPress account behind it -- staff added or
+					// imported them and no password has ever been set.
+					//
+					// This used to say "try signing in instead", which was a dead
+					// end: there was nothing to sign in to, and the lost-password
+					// page could not help either, having no account to make a key
+					// for. Both work now, so point them at the one that does the
+					// job rather than the one that looks obvious.
+					$needs_password_setup = true;
+					$errors[]             = 'There is already a membership on file for that email address.';
 				}
 			}
 			if ( strlen( $password ) < MTL_MIN_PASSWORD_LENGTH ) {
@@ -1068,6 +1082,14 @@ function mtl_render_signup_page() {
 					<?php foreach ( $errors as $e ) : ?>
 						<div><?php echo esc_html( $e ); ?></div>
 					<?php endforeach; ?>
+					<?php if ( $needs_password_setup ) : ?>
+						<div style="margin-top: 8px;">
+							Library staff have already set you up, so there is no need to sign up again &mdash;
+							you just need a password.
+							<a href="<?php echo esc_url( mtl_front_page_url( 'lostpassword' ) ); ?>"><strong>Set your password here</strong></a>
+							and we will email you a link.
+						</div>
+					<?php endif; ?>
 				</div>
 			<?php endif; ?>
 

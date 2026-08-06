@@ -146,7 +146,39 @@ Go to **My Tool Library > Membership**.
     - **Phone number** is two fields: a country dropdown (defaults to United States) and the number itself. Pick the country first, then just type the digits — it's formatted for you as you go, and staff, members signing themselves up, and CSV imports all end up with phone numbers in the exact same format on file.
 3. Leave the two verification fields (below) blank for now if you haven't yet checked their ID, or fill in just one if that's all the member has provided so far. Either way the member is added as **unverified** until both are on file, which does not block them from browsing or reserving tools online.
 4. Under **Trainings**, tick anything they've already completed. Ticking one opens a date box next to it — enter the date they completed it, since that's what the certification runs from. Leave it as today's date for a training they just did. See [Trainings and certifications](#trainings-and-certifications).
-5. Save.
+5. Leave **Email them a link to choose their password** ticked unless you have a reason not to. See below.
+6. Save.
+
+### Giving a new member their online sign-in
+
+Adding a member creates their website sign-in automatically. It has no password to begin with — they choose one through a link you email them, which is the same mechanism as a normal password reset.
+
+Leaving the box ticked sends that email the moment you save, which is what you want for someone standing at the desk: they can set a password on their phone before they leave.
+
+Untick it if you would rather not email them yet — someone who gave an address they rarely check, or a member you are entering from a paper form and want to look over first. The sign-in still gets created; nobody is contacted. You can send the email later from the **Send setup link** button on their row.
+
+The **Sign-in** column in the members table tells you where anyone stands:
+
+| Shows | Means | What to do |
+| --- | --- | --- |
+| **Active** | They have set a password. | Nothing. A member who has forgotten it uses "Lost your password?" like anyone else. |
+| **No password** | The sign-in exists, they have never set one. | **Send setup link** re-sends the email. |
+| **None** | No sign-in yet — added before this feature, or creation failed. | **Send setup link** creates it and emails them in one go. |
+
+Members are not stuck if the email goes astray. Anyone with a membership on file can use **Lost your password?** on the sign-in page and get themselves set up, even if they have no account yet. If they try to sign up again instead, the site now tells them they already have a membership and points them at the same place, rather than turning them away.
+
+### After a CSV import: creating logins in bulk
+
+A CSV import deliberately does **not** create sign-ins or send any email. Two reasons: making hundreds of accounts in a single request would time out, and importing a legacy membership list should not email everybody on it the second the file is uploaded.
+
+Instead, once the import finishes, open the **Member Logins** panel below the import box (administrators only). It shows how many members have no sign-in and how many have never set a password, then gives you two buttons:
+
+1. **Create logins** — creates the missing accounts. Sends nothing. Safe to run whenever.
+2. **Send setup emails** — emails everyone who has not chosen a password.
+
+Both work through the list a batch at a time so they cannot tie up the request, so if the panel says some remain, just press the button again. Nobody is emailed twice within 24 hours unless you tick the box to include them, and it is safe to press either button more than once.
+
+If the panel warns that some members' addresses **belong to a different WordPress account**, those need a person. It usually means the address belongs to a staff account, or to a leftover sign-in from a member deleted earlier. Sort it out under **Users**, then run **Create logins** again.
 
 ### Verifying a member's identity
 
@@ -334,6 +366,10 @@ If the email never arrives for anyone, that's a mail problem on the site rather 
 
 Staff can also reset a password directly: **Users** in the WordPress sidebar, edit the account, **Set New Password**. Members needing that route are usually ones whose email address has changed, since they can no longer receive the link.
 
+A member who has **never** set a password is a different situation, not a forgotten one — see [Giving a new member their online sign-in](#giving-a-new-member-their-online-sign-in). They can still use **Lost your password?** and it will work, creating their sign-in first if they do not have one, so there is no harm in pointing them there. Note that a member setting their very first password does **not** get the "your password has been changed" confirmation described above: nothing was changed, and warning them about it would be alarming for an account they may only just have heard about.
+
+One thing to watch when changing an unclaimed member's email address: any setup link already sent to them keeps working but arrives at the old address. Send them a fresh one from **Send setup link** after saving the new address.
+
 ### Members' online accounts and the database reset
 
 Running **Setup > Run Database Setup** on a library that already has data deletes every record, but it **does not touch members' WordPress sign-ins**. Their accounts and passwords keep working. What breaks is the connection between the two: each record's ID number restarts from 1, so the sign-ins point at records that are gone or, worse, at somebody else's.
@@ -343,7 +379,7 @@ The plugin protects against the "somebody else's" case — it checks that a reco
 To put things right:
 
 - **Restore the `.sql` dump.** IDs come back as they were and every sign-in reconnects on its own. This is the fix.
-- **Or re-add the member with the exact same email address** (Membership > Add a New Member, or a CSV import that includes their email). The next time they open the site their account reconnects itself automatically — no admin step needed.
+- **Or re-add the member with the exact same email address** (Membership > Add a New Member, or a CSV import that includes their email). Their existing sign-in is found and reconnected to the new record on the spot, and they keep the password they already had. No setup email is sent, because there is nothing for them to set up. If you re-added them by CSV, press **Create logins** in the **Member Logins** panel afterwards to reconnect the whole batch at once.
 - If a member is stuck and their email in **Membership** does _not_ match the email on their WordPress user (under **Users**), set the record's email to match theirs and save. That reconnects them, and from then on changing their email from either screen keeps both sides in step.
 
 > **Note:** Deleting a member now leaves their WordPress sign-in alone if it can't be confirmed as theirs, and tells you so. Remove it yourself under **Users** if it is no longer wanted. This is deliberate, because deleting the wrong person's sign-in cannot be undone.

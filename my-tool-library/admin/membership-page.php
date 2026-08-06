@@ -187,13 +187,17 @@ function mtl_sync_member_trainings( $member_id, $training_starts ) {
  * Member" form and the "Edit Member" form, so the two stay in sync.
  * Mirrors mtl_render_tool_form_fields() on the Inventory page.
  *
- * @param array  $values    Field values keyed by field name.
- * @param array  $trainings Available trainings (from the Setup page).
- * @param string $id_prefix Prefix for element IDs (e.g. "edit_") so
- *                           <label for="..."> stays unique when both forms
- *                           are on the page at once.
+ * @param array  $values      Field values keyed by field name.
+ * @param array  $trainings   Available trainings (from the Setup page).
+ * @param string $id_prefix   Prefix for element IDs (e.g. "edit_") so
+ *                             <label for="..."> stays unique when both forms
+ *                             are on the page at once.
+ * @param bool   $offer_setup Show the "email them a setup link" tickbox. Only
+ *                             the Add form passes true: Edit never creates an
+ *                             account, so offering it there would promise
+ *                             something that handler does not do.
  */
-function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '' ) {
+function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $offer_setup = false ) {
 	$field_id = function ( $name ) use ( $id_prefix ) {
 		return esc_attr( $id_prefix . $name );
 	};
@@ -217,9 +221,21 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '' ) {
 		<th scope="row"><label for="<?php echo $field_id( 'email' ); ?>">Email *</label></th>
 		<td>
 			<input type="email" name="email" id="<?php echo $field_id( 'email' ); ?>" class="regular-text" maxlength="100" value="<?php echo esc_attr( $values['email'] ); ?>" required>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Each member must have a unique email address &mdash; no two members can share one.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Each member must have a unique email address &mdash; no two members can share one. It doubles as their sign-in for the website.</p>
 		</td>
 	</tr>
+	<?php if ( $offer_setup ) : ?>
+	<tr>
+		<th scope="row">Online Account</th>
+		<td>
+			<label for="<?php echo $field_id( 'mtl_send_setup_email' ); ?>">
+				<input type="checkbox" name="mtl_send_setup_email" id="<?php echo $field_id( 'mtl_send_setup_email' ); ?>" value="1" checked>
+				Email them a link to choose their password
+			</label>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">A website sign-in is created for every new member either way. Leave this ticked and they get an email straight away with a link to set a password; untick it and they will need one sending later from <em>Member Logins</em>, or they can request one themselves from the site&rsquo;s &ldquo;Lost your password?&rdquo; page.</p>
+		</td>
+	</tr>
+	<?php endif; ?>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'phone_national' ); ?>">Phone Number *</label></th>
 		<td>
@@ -450,6 +466,10 @@ function mtl_render_membership_page() {
 			// CHAR(1) 'Y'/'N' column -- whitelist rather than trust the posted value.
 			$has_donated = ( isset( $_POST['has_donated_tools'] ) && 'Y' === $_POST['has_donated_tools'] ) ? 'Y' : 'N';
 
+			// Ticked by default in the form. An unchecked box posts nothing at
+			// all, so absence is a deliberate "don't email them", not a default.
+			$send_setup_email = isset( $_POST['mtl_send_setup_email'] );
+
 			// signup_date is NOT NULL in the schema; fall back to today.
 			if ( '' === $signup_date || ! strtotime( $signup_date ) ) {
 				$signup_date = gmdate( 'Y-m-d' );
@@ -495,6 +515,21 @@ function mtl_render_membership_page() {
 					$error                = true;
 					$clear_email_on_error = true;
 					$error_message        = 'That email address already belongs to another member. The member was not added &mdash; please enter a different email address.';
+				} elseif ( mtl_email_taken_by_non_member( $email ) ) {
+					// A member's email doubles as their WordPress sign-in, so it
+					// has to be free on that side too. Checked here rather than
+					// after the INSERT so a clash cannot leave a member record
+					// behind that can never be given a login -- the same
+					// pre-flight the Edit handler does further down.
+					//
+					// Note this asks specifically about NON-member accounts. A
+					// plain email_exists() would also reject a member's own
+					// sign-in that outlived a database rebuild, and re-adding
+					// them with the same address is precisely how the staff guide
+					// says to reconnect those.
+					$error                = true;
+					$clear_email_on_error = true;
+					$error_message        = 'That email address is already used by another WordPress account, so it cannot also be this member&rsquo;s sign-in. The member was not added &mdash; please enter a different email address.';
 				}
 			}
 
@@ -545,13 +580,48 @@ function mtl_render_membership_page() {
 							array( '%d', '%s', '%s' )
 						);
 						if ( '' !== $photo_id_url && '' !== $addr_proof_url ) {
-							echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> ' . esc_html( stripslashes( $first_name . ' ' . $last_name ) ) . ' has been added as a verified member.</p></div>';
+							$success_message = esc_html( stripslashes( $first_name . ' ' . $last_name ) ) . ' has been added as a verified member.';
 						} else {
-							echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> ' . esc_html( stripslashes( $first_name . ' ' . $last_name ) ) . ' has been added with one verification document on file. Add the other via Edit to mark them verified.</p></div>';
+							$success_message = esc_html( stripslashes( $first_name . ' ' . $last_name ) ) . ' has been added with one verification document on file. Add the other via Edit to mark them verified.';
 						}
 					} else {
-						echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> ' . esc_html( stripslashes( $first_name . ' ' . $last_name ) ) . ' has been added as an unverified member. Add their verification documents later via Edit.</p></div>';
+						$success_message = esc_html( stripslashes( $first_name . ' ' . $last_name ) ) . ' has been added as an unverified member. Add their verification documents later via Edit.';
 					}
+
+					// Give them a way to actually get online. Without this the
+					// member exists in the library's records but has no WordPress
+					// account, which used to leave them unable to sign in, sign up
+					// or reset a password -- see mtl_create_member_login().
+					//
+					// A failure here does NOT undo the member row. That is a
+					// deliberate difference from the public signup flow, which
+					// rolls back: there, a record with no account is a dead end,
+					// but here it is a recoverable state with "Create logins"
+					// standing by, and throwing away hand-typed member details to
+					// tidy up a login problem is the worse outcome by far.
+					$new_login = mtl_create_member_login( $new_member_id );
+
+					if ( is_wp_error( $new_login ) ) {
+						$success_message .= ' <strong>Their online sign-in could not be created:</strong> '
+							. esc_html( $new_login->get_error_message() )
+							. ' Their record is saved &mdash; use <em>Create logins</em> under Member Logins below to try again once that is resolved.';
+					} elseif ( ! mtl_is_setup_pending( $new_login ) ) {
+						// Not a new account: mtl_create_member_login() found this
+						// member's own sign-in already on the address and pointed
+						// it at the new record. They kept their password, so there
+						// is nothing to invite them to.
+						$success_message .= ' They already had a website sign-in, which has been reconnected to this record &mdash; their existing password still works, and no email was sent.';
+					} elseif ( $send_setup_email ) {
+						if ( mtl_send_member_setup_email( $new_login ) ) {
+							$success_message .= ' They have been emailed a link to choose their password.';
+						} else {
+							$success_message .= ' Their online sign-in was created, but the setup email could not be sent &mdash; use <em>Send setup emails</em> under Member Logins below to retry.';
+						}
+					} else {
+						$success_message .= ' Their online sign-in was created. No setup email was sent, so they will need one before they can sign in.';
+					}
+
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> ' . wp_kses_post( $success_message ) . '</p></div>';
 					// On success the form is left blank (defaults) for the next entry.
 				} else {
 					$error         = true;
@@ -823,6 +893,27 @@ function mtl_render_membership_page() {
 									continue;
 								}
 
+								// The members-table check above cannot see a
+								// WordPress account that has no member row -- an
+								// administrator, or a leftover from an earlier
+								// delete. Importing over one would create a member
+								// who can never be given a sign-in, because their
+								// address is already spoken for.
+								//
+								// A member's OWN account surviving a database
+								// rebuild is fine and deliberately allowed
+								// through: re-importing those addresses is how the
+								// staff guide says to reconnect them, and
+								// mtl_create_member_login() relinks rather than
+								// duplicating.
+								if ( mtl_email_taken_by_non_member( $row_email ) ) {
+									$bulk_failed_rows[] = array(
+										'row'    => $row_number,
+										'reason' => 'Email "' . $row_email . '" is already used by a WordPress account, so it cannot also be a member sign-in.',
+									);
+									continue;
+								}
+
 								// "Name: date" pairs, semicolon-separated, e.g.
 								// "Ladder Safety: 8/4/2026; Welding Basics: 8/3/2026".
 								// Unknown training names and unreadable dates don't fail
@@ -924,10 +1015,21 @@ function mtl_render_membership_page() {
 			if ( $bulk_import_ran ) {
 				$bulk_fail_count = count( $bulk_failed_rows );
 
+				// Importing deliberately creates no sign-ins and sends no mail.
+				// wp_insert_user() hashes with bcrypt (~50-100ms a go), so doing
+				// it inline would add minutes to a large import and blow the
+				// request; and a legacy roster should not email hundreds of
+				// people the instant the file is uploaded. Both jobs are batched
+				// under Member Logins instead, which this points staff at.
+				$bulk_next_step = '';
+				if ( $bulk_success_count > 0 ) {
+					$bulk_next_step = ' They cannot sign in yet &mdash; use <strong>Member Logins</strong> below to create their sign-ins, then send everyone a link to set a password.';
+				}
+
 				if ( $bulk_success_count > 0 && 0 === $bulk_fail_count ) {
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Bulk Import Complete!</strong> ' . intval( $bulk_success_count ) . ' member(s) were added.</p></div>';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Bulk Import Complete!</strong> ' . intval( $bulk_success_count ) . ' member(s) were added.' . wp_kses_post( $bulk_next_step ) . '</p></div>';
 				} elseif ( $bulk_success_count > 0 && $bulk_fail_count > 0 ) {
-					echo '<div class="notice notice-warning is-dismissible"><p><strong>Bulk Import Finished with Errors:</strong> ' . intval( $bulk_success_count ) . ' member(s) added, but ' . intval( $bulk_fail_count ) . ' row(s) failed. See details below.</p></div>';
+					echo '<div class="notice notice-warning is-dismissible"><p><strong>Bulk Import Finished with Errors:</strong> ' . intval( $bulk_success_count ) . ' member(s) added, but ' . intval( $bulk_fail_count ) . ' row(s) failed. See details below.' . wp_kses_post( $bulk_next_step ) . '</p></div>';
 				} elseif ( 0 === $bulk_success_count && $bulk_fail_count > 0 ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Bulk Import Failed:</strong> None of the ' . intval( $bulk_fail_count ) . ' row(s) could be added. See details below.</p></div>';
 				} else {
@@ -957,6 +1059,123 @@ function mtl_render_membership_page() {
 		} else {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
 		}
+	}
+
+	// 1C. HANDLE THE MEMBER LOGIN BATCH ACTIONS
+	//
+	// Administrators only, not Editors. Adding one member and minting that
+	// member's low-privilege sign-in is ordinary staff work, but creating
+	// accounts en masse and emailing the entire roster is the kind of thing this
+	// plugin already keeps to administrators (see mtl_can_manage_settings() and
+	// every data export). The capability is checked here, in the handler, not
+	// just where the buttons are drawn.
+	//
+	// Note this page has no Post/Redirect/Get, so a browser refresh re-submits
+	// whatever ran last. Both actions are safe to repeat: creating logins skips
+	// anyone who already has one, and sending skips anyone contacted in the past
+	// day. Anything added here later must hold to that or add a redirect.
+	$login_batch_notice = '';
+
+	if ( isset( $_POST['mtl_create_member_logins'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_member_logins_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_logins_nonce'] ) ), 'mtl_member_logins_action' ) ) {
+			$batch = mtl_run_create_logins_batch();
+
+			$login_batch_notice = '<div class="notice notice-success is-dismissible"><p><strong>Member Logins:</strong> '
+				. intval( $batch['created'] ) . ' sign-in(s) created or reconnected.';
+
+			if ( $batch['remaining'] > 0 ) {
+				$login_batch_notice .= ' ' . intval( $batch['remaining'] ) . ' member(s) still need one &mdash; press the button again to continue.';
+			} else {
+				$login_batch_notice .= ' Every member now has one.';
+			}
+			$login_batch_notice .= '</p>';
+
+			if ( ! empty( $batch['failed'] ) ) {
+				$login_batch_notice .= '<p>' . count( $batch['failed'] ) . ' could not be created:</p><ul style="margin-left: 20px; list-style: disc;">';
+				foreach ( $batch['failed'] as $f ) {
+					$login_batch_notice .= '<li>Member #' . intval( $f['member_id'] ) . ': ' . esc_html( $f['reason'] ) . '</li>';
+				}
+				$login_batch_notice .= '</ul>';
+			}
+			$login_batch_notice .= '</div>';
+		} else {
+			$login_batch_notice = '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	if ( isset( $_POST['mtl_send_setup_emails'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_member_logins_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_logins_nonce'] ) ), 'mtl_member_logins_action' ) ) {
+			$resend_all = isset( $_POST['mtl_resend_all'] );
+			$batch      = mtl_run_setup_email_batch( $resend_all );
+
+			$login_batch_notice = '<div class="notice notice-success is-dismissible"><p><strong>Member Logins:</strong> '
+				. intval( $batch['sent'] ) . ' setup email(s) sent.';
+
+			if ( $batch['failed'] > 0 ) {
+				$login_batch_notice .= ' ' . intval( $batch['failed'] ) . ' could not be sent &mdash; they stay on the list, so try again once mail delivery is working.';
+			}
+			if ( $batch['remaining'] > 0 ) {
+				$login_batch_notice .= ' ' . intval( $batch['remaining'] ) . ' still to go &mdash; press the button again to continue.';
+			}
+			$login_batch_notice .= ' ' . intval( $batch['pending'] ) . ' member(s) have still not chosen a password.</p></div>';
+		} else {
+			$login_batch_notice = '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// Per-member "send them a link" from the members table. Editors may do this
+	// one at a time: it is the same act as ticking the box on Add Member.
+	if ( isset( $_POST['mtl_send_one_setup_email'] ) && mtl_can_manage_library() ) {
+		if ( isset( $_POST['mtl_send_one_setup_email_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_send_one_setup_email_nonce'] ) ), 'mtl_send_one_setup_email_action' ) ) {
+			$one_member_id = isset( $_POST['member_id'] ) ? (int) $_POST['member_id'] : 0;
+			$one_row       = $one_member_id > 0 ? $wpdb->get_row(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+					"SELECT member_id, email, anonymized_at FROM {$tbl_members} WHERE member_id = %d",
+					$one_member_id
+				)
+			) : null;
+
+			if ( ! $one_row || null !== $one_row->anonymized_at ) {
+				$login_batch_notice = '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member record could not be found.</p></div>';
+			} else {
+				$one_user_id = mtl_find_wp_user_id_by_member_id( $one_row->member_id, (string) $one_row->email );
+
+				// No proven sign-in yet -- a member added before this existed, one
+				// whose creation failed, or one whose own account outlived a
+				// database rebuild. Sort that out first, so the button does what
+				// it says rather than reporting a state staff cannot act on.
+				$was_reconnected = false;
+				if ( 0 === $one_user_id ) {
+					$made = mtl_create_member_login( $one_row->member_id );
+					if ( is_wp_error( $made ) ) {
+						$login_batch_notice = '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> ' . esc_html( $made->get_error_message() ) . '</p></div>';
+					} else {
+						$one_user_id     = (int) $made;
+						$was_reconnected = ! mtl_is_setup_pending( $one_user_id );
+					}
+				}
+
+				if ( $one_user_id > 0 && $was_reconnected ) {
+					// Their own account was found and relinked. They already have
+					// a working password, so emailing them a setup link would
+					// invite them to replace one they are happily using.
+					$login_batch_notice = '<div class="notice notice-success is-dismissible"><p><strong>Reconnected.</strong> ' . esc_html( $one_row->email ) . ' already had a website sign-in, now linked to this record. Their existing password still works, so no email was sent. If they have forgotten it, they can use &ldquo;Lost your password?&rdquo; on the sign-in page.</p></div>';
+				} elseif ( $one_user_id > 0 ) {
+					if ( mtl_send_member_setup_email( $one_user_id ) ) {
+						$login_batch_notice = '<div class="notice notice-success is-dismissible"><p><strong>Sent.</strong> ' . esc_html( $one_row->email ) . ' has been emailed a link to choose a password. Any link sent to them earlier no longer works.</p></div>';
+					} else {
+						$login_batch_notice = '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That email could not be sent. Check the site&rsquo;s mail delivery and try again.</p></div>';
+					}
+				}
+			}
+		} else {
+			$login_batch_notice = '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	if ( '' !== $login_batch_notice ) {
+		echo wp_kses_post( $login_batch_notice );
 	}
 
 	// 2. HANDLE "EDIT" FORM SUBMISSION (Update Data)
@@ -2053,7 +2272,7 @@ function mtl_render_membership_page() {
 				<?php wp_nonce_field( 'mtl_add_member_action', 'mtl_add_member_nonce' ); ?>
 
 				<table class="form-table" style="margin-top: 0;">
-					<?php mtl_render_member_form_fields( $form_values, $trainings ); ?>
+					<?php mtl_render_member_form_fields( $form_values, $trainings, '', true ); ?>
 				</table>
 				<p class="submit">
 					<input type="submit" name="mtl_add_member" id="mtl_add_member" class="button button-primary" value="Save to Database">
@@ -2095,6 +2314,67 @@ function mtl_render_membership_page() {
 			</form>
 		</div>
 	</details>
+
+	<?php
+	// --- Member Logins -------------------------------------------------------
+	// Administrators only. The counts come from mtl_count_*(), which all join
+	// through to a live member row rather than reading usermeta directly --
+	// otherwise a Setup > Set Up Database rebuild would leave this panel
+	// reporting, and offering to email, members who no longer exist.
+	if ( mtl_can_manage_settings() ) :
+		$logins_missing  = mtl_count_members_without_login();
+		$logins_pending  = mtl_count_members_setup_pending();
+		$logins_blocked  = mtl_count_members_with_blocked_login();
+		$logins_to_send  = mtl_count_members_awaiting_setup_email();
+		$logins_all_done = ( 0 === $logins_missing && 0 === $logins_pending && 0 === $logins_blocked );
+		?>
+		<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);" <?php echo ( $logins_missing > 0 || $logins_pending > 0 ) ? ' open' : ''; ?>>
+			<summary style="font-size: 1.1em; font-weight: 600; cursor: pointer; outline: none; color: var(--mtl-header-color);">
+				Member Logins
+				<?php if ( $logins_missing > 0 || $logins_pending > 0 ) : ?>
+					<span style="font-weight: 400; color: #8a6d00;">&mdash; <?php echo intval( $logins_missing + $logins_pending ); ?> need attention</span>
+				<?php endif; ?>
+			</summary>
+
+			<div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
+				<p style="margin-top: 0;">Members added by staff or imported from a CSV get a library record, but signing in to the website needs a WordPress account as well. This is where those are created and where members are invited to choose a password.</p>
+
+				<?php if ( $logins_all_done ) : ?>
+					<p style="color: #1e5b25;"><strong>Nothing outstanding.</strong> Every member has a sign-in and has chosen a password.</p>
+				<?php endif; ?>
+
+				<ul style="margin: 0 0 15px 20px; list-style: disc;">
+					<li><strong><?php echo intval( $logins_missing ); ?></strong> member(s) need a sign-in created or reconnected.</li>
+					<li><strong><?php echo intval( $logins_pending ); ?></strong> have a sign-in but have never chosen a password<?php echo $logins_to_send > 0 ? ' (' . intval( $logins_to_send ) . ' due an email now)' : ''; ?>.</li>
+					<?php if ( $logins_blocked > 0 ) : ?>
+						<li style="color: #b32d2e;"><strong><?php echo intval( $logins_blocked ); ?></strong> member(s) have an email address that belongs to a WordPress account which is not a member sign-in &mdash; usually a staff login, or one left behind by a member deleted earlier. These cannot be fixed automatically: free the address or give the member a different one under <em>Users</em>, then run <em>Create logins</em> again.</li>
+					<?php endif; ?>
+				</ul>
+
+				<form method="post" action="<?php echo esc_url( $base_url ); ?>">
+					<?php wp_nonce_field( 'mtl_member_logins_action', 'mtl_member_logins_nonce' ); ?>
+
+					<p>
+						<input type="submit" name="mtl_create_member_logins" class="button" value="Create logins"<?php echo 0 === $logins_missing ? ' disabled' : ''; ?>>
+						<span style="color: #666; font-size: 0.9em; margin-left: 8px;">Creates the missing sign-ins. Sends no email. Works through the list a batch at a time, so press it again if any remain.</span>
+					</p>
+
+					<p style="margin-bottom: 4px;">
+						<input type="submit" name="mtl_send_setup_emails" class="button button-primary" value="Send setup emails"<?php echo 0 === $logins_pending ? ' disabled' : ''; ?>>
+						<span style="color: #666; font-size: 0.9em; margin-left: 8px;">Emails everyone who has not chosen a password a link to set one.</span>
+					</p>
+					<p style="margin-top: 0;">
+						<label style="color: #666; font-size: 0.9em;">
+							<input type="checkbox" name="mtl_resend_all" value="1">
+							Include members emailed in the last 24 hours
+						</label>
+					</p>
+
+					<p style="color: #666; font-size: 0.85em; margin-bottom: 0;">Each member is emailed at most once a day unless you tick the box above. Sending a fresh link always cancels the previous one, so a member part-way through setting a password will need to use the newest email.</p>
+				</form>
+			</div>
+		</details>
+	<?php endif; ?>
 
 	<?php if ( $editing && $edit_values ) : ?>
 		<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);" open>
@@ -2190,6 +2470,12 @@ function mtl_render_membership_page() {
 	// Fetched as three whole-table queries and grouped into member_id-keyed
 	// maps, rather than querying inside the render loop -- with hundreds of
 	// members that would otherwise be hundreds of round trips per page load.
+
+	// Website sign-ins, keyed by lowercased email. One query for the whole
+	// table: this page has no LIMIT on $members, so calling
+	// mtl_find_wp_user_id_by_member_id() per row would be two more queries per
+	// member on every single page load.
+	$login_map = mtl_member_login_map();
 
 	// Lifetime loan counts. "past due" deliberately counts BOTH loans returned
 	// after their due date AND loans still out that are overdue right now, so
@@ -2451,6 +2737,7 @@ function mtl_render_membership_page() {
 					<th class="sortable" style="cursor: pointer; width: 90px;" title="Click to sort">Donation ↕</th>
 					<th style="width: 90px;">Donated Tools?</th>
 					<th style="width: 100px;">Verified</th>
+					<th style="width: 110px;">Sign-in</th>
 					<th style="width: 140px;">Actions</th>
 				</tr>
 			</thead>
@@ -2538,11 +2825,52 @@ function mtl_render_membership_page() {
 									<span class="mtl-unverified-badge">Not Verified</span>
 								<?php endif; ?>
 							</td>
+							<?php
+							// Sign-in state, read from the map built once above.
+							// A row only counts as linked when the account's
+							// mtl_member_id points back at it -- the same rule
+							// mtl_find_wp_user_id_by_member_id() applies, and
+							// skipping it is how a stale link would show one
+							// member another's account.
+							$member_login = null;
+							if ( ! $is_anonymized ) {
+								$login_key = strtolower( trim( (string) $member->email ) );
+								if ( isset( $login_map[ $login_key ] ) && $login_map[ $login_key ]['member_id'] === $mid ) {
+									$member_login = $login_map[ $login_key ];
+								}
+							}
+							?>
+							<td>
+								<?php if ( $is_anonymized ) : ?>
+									&mdash;
+								<?php elseif ( null === $member_login ) : ?>
+									<span style="color: #b32d2e;">None</span>
+								<?php elseif ( $member_login['pending'] ) : ?>
+									<span style="color: #8a6d00;">No password</span>
+								<?php else : ?>
+									<span style="color: #1e5b25;">Active</span>
+								<?php endif; ?>
+							</td>
 							<td class="mtl-actions">
 								<?php if ( $is_anonymized ) : ?>
 									&mdash;
 								<?php else : ?>
 									<a href="<?php echo esc_url( $edit_url ); ?>" class="button button-small">Edit</a>
+									<?php
+									// Offered whenever the member has not yet
+									// chosen a password -- including when they
+									// have no account at all, in which case the
+									// handler creates one first, so the button
+									// does what it says rather than reporting a
+									// state staff cannot act on from here.
+									if ( null === $member_login || $member_login['pending'] ) :
+										?>
+										<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('Email <?php echo esc_js( $member->email ); ?> a link to set their password? Any link sent to them earlier will stop working.');">
+											<?php wp_nonce_field( 'mtl_send_one_setup_email_action', 'mtl_send_one_setup_email_nonce' ); ?>
+											<input type="hidden" name="member_id" value="<?php echo esc_attr( $member->member_id ); ?>">
+											<button type="submit" name="mtl_send_one_setup_email" class="button button-small">Send&nbsp;setup&nbsp;link</button>
+										</form>
+									<?php endif; ?>
 									<?php
 									// Deleting a member is administrators-only, so Editors
 									// get no Delete button. The handler checks the same
@@ -2566,7 +2894,7 @@ function mtl_render_membership_page() {
 							open/closed by clicking anywhere on the row above.
 						-->
 						<tr class="mtl-detail-row" id="mtl-detail-<?php echo esc_attr( $member->member_id ); ?>" style="display: none;">
-							<td colspan="10">
+							<td colspan="11">
 								<div class="mtl-detail-panel">
 									<div class="mtl-detail-col">
 										<strong>Full Address</strong>
@@ -2703,7 +3031,7 @@ function mtl_render_membership_page() {
 					<?php endforeach; ?>
 				<?php else : ?>
 					<tr>
-						<td colspan="10" style="text-align: center; padding: 20px;">
+						<td colspan="11" style="text-align: center; padding: 20px;">
 							No members found in the database. Open the panel above to add one!
 						</td>
 					</tr>
