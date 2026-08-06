@@ -872,7 +872,10 @@ function mtl_render_setup_page() {
 	}
 
 	$org_name                 = get_option( 'mtl_org_name', '' );
-	$contact_email            = get_option( 'mtl_contact_email', get_option( 'admin_email' ) );
+	// No admin_email default: this address is printed on the public pages, and
+	// pre-filling the site administrator's own mailbox would publish it the
+	// first time somebody saved this form without touching the field.
+	$contact_email            = get_option( 'mtl_contact_email', '' );
 	$currency                 = get_option( 'mtl_currency_symbol', '$' );
 	$logo_url                 = get_option( 'mtl_logo_url', '' );
 	$verified_badge_image_url = get_option( 'mtl_verified_badge_image_url', '' );
@@ -1302,7 +1305,11 @@ function mtl_render_setup_page() {
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_contact_email">Public Contact Email</label></th>
-						<td><input type="email" name="mtl_contact_email" id="mtl_contact_email" class="regular-text" value="<?php echo esc_attr( $contact_email ); ?>"></td>
+						<td>
+							<input type="email" name="mtl_contact_email" id="mtl_contact_email" class="regular-text" value="<?php echo esc_attr( $contact_email ); ?>" placeholder="hello@example.org">
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown to the public in the footer of every member-facing page, and in the confirmation email sent after a password change, so members have a way to reach staff. Use a shared staff address rather than a personal one. Leave blank to show no contact details anywhere.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">This address is for members to write <em>to</em> &mdash; automated email is not sent from it. Outgoing mail uses whatever WordPress or your SMTP plugin is configured to send from.</p>
+						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_currency_symbol">Currency Symbol</label></th>

@@ -2865,6 +2865,42 @@ function mtl_handle_front_pages() {
 }
 
 /**
+ * The public contact address members are told to write to, or '' when the
+ * library has not set one.
+ *
+ * Deliberately has no admin_email fallback. This address is printed on pages
+ * anybody can read, and the site administrator's personal mailbox is not
+ * something to publish because a setting was left blank -- an unset value
+ * means "show no contact line", never "guess one".
+ *
+ * @return string Valid email address, or '' when unset or unusable.
+ */
+function mtl_contact_email() {
+	$email = sanitize_email( (string) get_option( 'mtl_contact_email', '' ) );
+
+	// sanitize_email() already returns '' for anything malformed; the is_email()
+	// check keeps a stored-but-broken value from reaching a mailto: link.
+	return is_email( $email ) ? $email : '';
+}
+
+/**
+ * The "contact staff" line for the front-end footer, or '' when no address is
+ * configured.
+ *
+ * @return string
+ */
+function mtl_contact_line_html() {
+	$email = mtl_contact_email();
+	if ( '' === $email ) {
+		return '';
+	}
+
+	return '<p class="mtl-front-contact">Questions? Email '
+		. '<a href="' . esc_url( 'mailto:' . $email ) . '">' . esc_html( $email ) . '</a>'
+		. '</p>';
+}
+
+/**
  * Shared standalone HTML shell for the front-end pages, themed from the same
  * appearance settings as the admin pages.
  *
@@ -2872,6 +2908,10 @@ function mtl_handle_front_pages() {
  * @param string $body_html   Fills the centered main area. Built internally
  *                             from escaped pieces -- never from raw user input.
  * @param string $footer_html Fills the discreet footer link row at the bottom.
+ *                             The public contact line is appended below it
+ *                             automatically, so callers never pass it in --
+ *                             that is what puts the address on every one of
+ *                             these pages from this single place.
  * @return void Outputs the page directly and exits.
  */
 function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
@@ -2880,6 +2920,9 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 		$org_name = 'My Tool Library';
 	}
 	$logo_url = get_option( 'mtl_logo_url', '' );
+
+	// Resolved once here so the footer markup below stays a plain echo.
+	$contact_html = mtl_contact_line_html();
 
 	$h_color = get_option( 'mtl_header_color', '#ff6600' );
 	$b_color = get_option( 'mtl_body_color', '#096491' );
@@ -2977,6 +3020,20 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 				text-decoration: underline;
 			}
 
+			/* Contact line: its own row under the footer links. Kept in the
+				footer's quiet grey, but underlined -- it is the one thing down
+				here a member may actively need, and it should not read as
+				body text. */
+			.mtl-front-contact {
+				margin: 10px 0 0 0;
+				color: #8c8f94;
+			}
+
+			.mtl-front-contact a {
+				margin: 0;
+				text-decoration: underline;
+			}
+
 			/* Status banner (e.g. a failed sign-in). Same colors as the member
 				pages' .mtl-front-notice, but sized for the narrower card:
 				full width, no auto-centering. */
@@ -3055,11 +3112,13 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 			echo $body_html;
 			?>
 		</main>
-		<?php if ( '' !== $footer_html ) : ?>
+		<?php if ( '' !== $footer_html || '' !== $contact_html ) : ?>
 			<footer class="mtl-front-footer">
 				<?php
 				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built internally from esc_*()-wrapped pieces, never from raw user input (see docblock).
 				echo $footer_html;
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url()/esc_html()-wrapped in mtl_contact_line_html().
+				echo $contact_html;
 				?>
 			</footer>
 		<?php endif; ?>
@@ -3335,6 +3394,14 @@ function mtl_send_password_changed_email( $user ) {
 
 	$subject = sprintf( '[%s] Your password has been changed', $org_name );
 
+	// This is the one email that asks the member to act urgently, so name the
+	// address to write to rather than leaving "contact staff" as a dead end.
+	// Falls back to the unaddressed wording when no contact email is set.
+	$contact_email = mtl_contact_email();
+	$alarm_line    = '' !== $contact_email
+		? sprintf( 'If you did not make this change, please contact library staff at %s as soon as you can -- somebody else may have access to your account.', $contact_email )
+		: 'If you did not make this change, please contact library staff as soon as you can -- somebody else may have access to your account.';
+
 	$lines = array(
 		sprintf( 'Hi %s,', $greeting_name ),
 		'',
@@ -3343,7 +3410,7 @@ function mtl_send_password_changed_email( $user ) {
 		'You can sign in with your new password here:',
 		mtl_front_page_url( 'login' ),
 		'',
-		'If you did not make this change, please contact library staff as soon as you can -- somebody else may have access to your account.',
+		$alarm_line,
 		'',
 		sprintf( '-- %s', $org_name ),
 	);
