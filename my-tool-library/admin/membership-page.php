@@ -22,7 +22,7 @@ function mtl_maybe_serve_member_csv_template() {
 	if (
 		! isset( $_GET['mtl_download_member_template'] ) || '' === $page ||
 		'mtl-membership' !== $page ||
-		! mtl_can_manage_library()
+		! mtl_can_bulk_import()
 	) {
 		return;
 	}
@@ -673,7 +673,7 @@ function mtl_render_membership_page() {
 	$bulk_warnings        = array();
 	$keep_bulk_panel_open = false;
 
-	if ( isset( $_POST['mtl_bulk_import_members'] ) && mtl_can_manage_library() ) {
+	if ( isset( $_POST['mtl_bulk_import_members'] ) && mtl_can_bulk_import() ) {
 		if ( isset( $_POST['mtl_bulk_import_members_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_bulk_import_members_nonce'] ) ), 'mtl_bulk_import_members_action' ) ) {
 			$keep_bulk_panel_open = true;
 
@@ -2281,6 +2281,12 @@ function mtl_render_membership_page() {
 		</div>
 	</details>
 
+	<?php
+	// Administrators only -- see mtl_can_bulk_import(). The upload handler and
+	// the template download check the same thing for themselves, so hiding the
+	// panel here is presentation, not the access control.
+	if ( mtl_can_bulk_import() ) :
+		?>
 	<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);" <?php echo $keep_bulk_panel_open ? ' open' : ''; ?>>
 		<summary style="font-size: 1.1em; font-weight: 600; cursor: pointer; outline: none; color: var(--mtl-header-color);">
 			Bulk Import Members from CSV
@@ -2314,6 +2320,7 @@ function mtl_render_membership_page() {
 			</form>
 		</div>
 	</details>
+	<?php endif; ?>
 
 	<?php
 	// --- Member Logins -------------------------------------------------------
