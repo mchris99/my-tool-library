@@ -22,20 +22,22 @@ There are two staff roles, both of them standard WordPress roles.
 
 **Editor**: the role for anyone working the desk. They can run the library day to day: add and edit members, add and edit tools, check tools in and out, manage reservations, and read this guide. This is the role to give volunteers and staff by default.
 
-**Administrator**: everything an Editor can do, plus access to the **Setup** page and the ability to delete a member's record or a tool.
+**Administrator**: everything an Editor can do, plus access to the **Setup** page, bulk-importing members or tools from a CSV file, and the ability to delete a member's record or a tool.
 
 ### What each role can do
 
 | Task                                               | Editor | Administrator |
 | -------------------------------------------------- | :----: | :-----------: |
 | View the Dashboard                                 |   ✅   |      ✅       |
-| Add, edit, and bulk-import members                 |   ✅   |      ✅       |
+| Add and edit members                               |   ✅   |      ✅       |
 | Record member trainings                            |   ✅   |      ✅       |
 | View verification documents, mark members verified |   ✅   |      ✅       |
-| Add, edit, retire and bulk-import tools            |   ✅   |      ✅       |
+| Add, edit and retire tools                         |   ✅   |      ✅       |
 | Check tools out, renew, and mark returned          |   ✅   |      ✅       |
 | Create, cancel and fulfil reservations             |   ✅   |      ✅       |
 | Read the Workflows guide                           |   ✅   |      ✅       |
+| **Bulk-import members or tools from CSV**          |   ❌   |      ✅       |
+| **Download the CSV import templates**              |   ❌   |      ✅       |
 | **Delete a member's record**                       |   ❌   |      ✅       |
 | **Delete a tool from inventory**                   |   ❌   |      ✅       |
 | **Open the Setup page** (and everything on it)     |   ❌   |      ✅       |
@@ -44,7 +46,7 @@ There are two staff roles, both of them standard WordPress roles.
 | — Export data (`.sql` / CSV)                       |   ❌   |      ✅       |
 | — Run Database Setup                               |   ❌   |      ✅       |
 
-An Editor doesn't see a **Setup** tab at all, and doesn't see a **Delete** button on the Membership or Inventory page. **Retire** is still theirs on Inventory, and it's the better tool for almost everything Delete gets reached for — it pulls the item from the public catalog and blocks new loans while keeping its history, and it can be undone.
+An Editor doesn't see a **Setup** tab at all, and doesn't see the **Bulk Import from CSV** panels or **Delete** button on the Membership or Inventory page. **Retire** is still theirs on Inventory, and it's the better tool for almost everything Delete gets reached for — it pulls the item from the public catalog and blocks new loans while keeping its history, and it can be undone.
 
 > **Note:** Editor is a full WordPress role, so it also grants the ability to write and edit posts and pages elsewhere on your site. If that matters to you, restrict it with a role-management plugin; the tool library only ever checks whether the account is an Editor or an Administrator.
 
