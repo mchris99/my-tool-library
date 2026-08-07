@@ -871,7 +871,7 @@ function mtl_render_setup_page() {
 		}
 	}
 
-	$org_name                 = get_option( 'mtl_org_name', '' );
+	$org_name = get_option( 'mtl_org_name', '' );
 	// No admin_email default: this address is printed on the public pages, and
 	// pre-filling the site administrator's own mailbox would publish it the
 	// first time somebody saved this form without touching the field.
