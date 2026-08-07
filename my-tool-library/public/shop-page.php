@@ -61,6 +61,66 @@ function mtl_shop_pills( $csv ) {
 }
 
 /**
+ * The CSS for the badges and pills the two helpers above render.
+ *
+ * Both the catalog (mtl_render_shop_page()) and the member pages
+ * (mtl_member_page_styles()) call those helpers, so both need these rules.
+ * Keeping one copy here means restyling a badge restyles it everywhere it
+ * appears, rather than in whichever of the two files got edited.
+ *
+ * @return string CSS, ready to drop inside a <style> block.
+ */
+function mtl_shop_badge_pill_css() {
+	ob_start();
+	?>
+		.mtl-shop-badges {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 5px;
+			margin-top: 2px;
+		}
+
+		.mtl-shop-badge {
+			display: inline-block;
+			border-radius: 999px;
+			padding: 1px 9px;
+			font-size: 0.74em;
+			font-weight: 600;
+			white-space: nowrap;
+		}
+
+		.mtl-shop-badge-avail {
+			background: #edf7ed;
+			color: #1e7e34;
+			border: 1px solid #bfe3c0;
+		}
+
+		.mtl-shop-badge-out {
+			background: #fff4e5;
+			color: #b45309;
+			border: 1px solid #f2cfa0;
+		}
+
+		.mtl-shop-badge-res {
+			background: #eaf3fb;
+			color: #135e96;
+			border: 1px solid #b9d7ef;
+		}
+
+		.mtl-shop-pill {
+			display: inline-block;
+			background: #f0f1f2;
+			color: #50575e;
+			border-radius: 12px;
+			padding: 1px 9px;
+			margin: 2px 3px 0 0;
+			font-size: 0.76em;
+		}
+	<?php
+	return ob_get_clean();
+}
+
+/**
  * Canonical DOM id for a tool's hidden detail panel and CSS :target anchor.
  * Used everywhere a fragment or panel id is needed so every call site stays
  * in sync with the same "tool-<id>" format.
@@ -230,16 +290,44 @@ function mtl_render_shop_page() {
 
 	$advanced_active = ( '' !== $a_name || '' !== $a_brand || $a_cat > 0 || $a_tag > 0 || '' !== $a_status );
 
-	// Whitelisted sort orders -> safe ORDER BY fragments (never user SQL).
-	$sort_orders = array(
-		''          => 't.tool_id DESC',
-		'newest'    => 't.tool_id DESC',
-		'oldest'    => 't.tool_id ASC',
-		'name'      => 't.tool_name ASC',
-		'name_desc' => 't.tool_name DESC',
-		'brand'     => 't.brand ASC',
+	// The catalog's sort modes, whitelisted: each accepted mtl_sort value
+	// mapped to its safe ORDER BY fragment (never user SQL) and to the label
+	// the sort menu shows for it. The query, the menu and the menu's
+	// active-item highlight all read this one list, so adding a sort option
+	// means editing here and nowhere else.
+	$sort_modes = array(
+		''          => array(
+			'order' => 't.tool_id DESC',
+			'label' => 'Newest',
+		),
+		'oldest'    => array(
+			'order' => 't.tool_id ASC',
+			'label' => 'Oldest',
+		),
+		'name'      => array(
+			'order' => 't.tool_name ASC',
+			'label' => 'Name A&ndash;Z',
+		),
+		'name_desc' => array(
+			'order' => 't.tool_name DESC',
+			'label' => 'Name Z&ndash;A',
+		),
+		'brand'     => array(
+			'order' => 't.brand ASC',
+			'label' => 'Brand',
+		),
 	);
-	$order_by    = isset( $sort_orders[ $sort ] ) ? $sort_orders[ $sort ] : $sort_orders[''];
+	// "newest" is an accepted alias for the default; anything else is a stale
+	// or tampered URL. Both fold to '' here so the rest of this function has
+	// exactly one spelling of "default sort" to handle. Normalizing up front
+	// also keeps an unrecognized value from being carried forward: the value
+	// is only whitelisted where ORDER BY is chosen, so a stale one used to
+	// survive into every link and the search form's hidden field, and left the
+	// sort menu with no entry marked active.
+	if ( ! isset( $sort_modes[ $sort ] ) ) {
+		$sort = '';
+	}
+	$order_by = $sort_modes[ $sort ]['order'];
 
 	$per_page = ( 'rows' === $view ) ? 20 : 12;
 
@@ -342,14 +430,12 @@ function mtl_render_shop_page() {
 	// page plus the deep-linked tool if not already among them. $tools rows
 	// already carry every column the detail view needs, so this adds no
 	// extra queries.
-	$panel_tools    = array();
-	$panel_tool_ids = array();
-	foreach ( $tools as $tool ) {
-		$panel_tools[]                          = $tool;
-		$panel_tool_ids[ (int) $tool->tool_id ] = true;
-	}
-	if ( $selected && ! isset( $panel_tool_ids[ (int) $selected->tool_id ] ) ) {
-		$panel_tools[] = $selected;
+	$panel_tools = $tools;
+	if ( $selected ) {
+		$page_tool_ids = array_map( 'intval', array_column( $tools, 'tool_id' ) );
+		if ( ! in_array( (int) $selected->tool_id, $page_tool_ids, true ) ) {
+			$panel_tools[] = $selected;
+		}
 	}
 
 	// Dropdown data for the advanced panel.
@@ -367,30 +453,22 @@ function mtl_render_shop_page() {
 		'mtl_cat'    => $a_cat > 0 ? $a_cat : '',
 		'mtl_tag'    => $a_tag > 0 ? $a_tag : '',
 		'mtl_status' => $a_status,
-		'mtl_sort'   => ( '' !== $sort && 'newest' !== $sort ) ? $sort : '',
+		'mtl_sort'   => $sort,
 		'mtl_view'   => 'rows' === $view ? 'rows' : '',
 		'mtl_tool'   => $sel_id > 0 ? $sel_id : '',
 	);
 	// Drop empty values so URLs stay tidy.
-	$clean_state = array_filter(
-		$state,
-		function ( $v ) {
-			return '' !== $v && null !== $v;
-		}
-	);
+	$not_empty   = function ( $v ) {
+		return '' !== $v && null !== $v;
+	};
+	$clean_state = array_filter( $state, $not_empty );
 
 	// Pagination, sort and view-toggle links change the query string, so they
 	// always trigger a full reload. Whenever the resulting URL carries
 	// mtl_tool, the matching #tool-<id> fragment is appended automatically so
 	// visibility (100% fragment/:target-driven) never gets left out of sync.
-	$make_url = function ( array $overrides ) use ( $base, $clean_state ) {
-		$args = array_merge( $clean_state, $overrides );
-		$args = array_filter(
-			$args,
-			function ( $v ) {
-				return '' !== $v && null !== $v;
-			}
-		);
+	$make_url = function ( array $overrides ) use ( $base, $clean_state, $not_empty ) {
+		$args = array_filter( array_merge( $clean_state, $overrides ), $not_empty );
 		$url  = add_query_arg( $args, $base );
 		if ( ! empty( $args['mtl_tool'] ) ) {
 			$url .= '#' . mtl_shop_panel_id( $args['mtl_tool'] );
@@ -842,49 +920,7 @@ function mtl_render_shop_page() {
 		}
 
 		/* Badges + pills */
-		.mtl-shop-badges {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 5px;
-			margin-top: 2px;
-		}
-
-		.mtl-shop-badge {
-			display: inline-block;
-			border-radius: 999px;
-			padding: 1px 9px;
-			font-size: 0.74em;
-			font-weight: 600;
-			white-space: nowrap;
-		}
-
-		.mtl-shop-badge-avail {
-			background: #edf7ed;
-			color: #1e7e34;
-			border: 1px solid #bfe3c0;
-		}
-
-		.mtl-shop-badge-out {
-			background: #fff4e5;
-			color: #b45309;
-			border: 1px solid #f2cfa0;
-		}
-
-		.mtl-shop-badge-res {
-			background: #eaf3fb;
-			color: #135e96;
-			border: 1px solid #b9d7ef;
-		}
-
-		.mtl-shop-pill {
-			display: inline-block;
-			background: #f0f1f2;
-			color: #50575e;
-			border-radius: 12px;
-			padding: 1px 9px;
-			margin: 2px 3px 0 0;
-			font-size: 0.76em;
-		}
+		<?php echo mtl_shop_badge_pill_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
 
 		/* Detail box */
 		.mtl-shop-detail {
@@ -1110,14 +1146,12 @@ function mtl_render_shop_page() {
 			<form class="mtl-shop-search" method="get" action="<?php echo esc_url( $base ); ?>">
 				<?php // Needed on Plain-permalink sites where the pretty route is unavailable. ?>
 				<input type="hidden" name="mtl_page" value="main">
-				<?php
-				if ( 'rows' === $view ) :
-					?>
-					<input type="hidden" name="mtl_view" value="rows"><?php endif; ?>
-				<?php
-				if ( '' !== $sort && 'newest' !== $sort ) :
-					?>
-					<input type="hidden" name="mtl_sort" value="<?php echo esc_attr( $sort ); ?>"><?php endif; ?>
+				<?php if ( 'rows' === $view ) : ?>
+					<input type="hidden" name="mtl_view" value="rows">
+				<?php endif; ?>
+				<?php if ( '' !== $sort ) : ?>
+					<input type="hidden" name="mtl_sort" value="<?php echo esc_attr( $sort ); ?>">
+				<?php endif; ?>
 
 				<div class="mtl-shop-search-row">
 					<input type="text" name="mtl_q" value="<?php echo esc_attr( $q ); ?>" placeholder="Search tools by name, brand, category or tag...">
@@ -1178,74 +1212,43 @@ function mtl_render_shop_page() {
 				<div class="mtl-shop-control-group">
 					<span class="mtl-shop-control-label">View</span>
 					<span class="mtl-shop-toggle">
-						<a href="
 						<?php
-						// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- $make_url() always returns esc_url()-escaped output.
-						echo $make_url(
-							array(
-								'mtl_view' => '',
-								'mtl_pg'   => '',
-							)
-						);
-						// phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
-						?>
-									" class="<?php echo 'tiles' === $view ? 'mtl-shop-active' : ''; ?>">Tiles</a>
-						<a href="
-						<?php
-						// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- $make_url() always returns esc_url()-escaped output.
-						echo $make_url(
-							array(
-								'mtl_view' => 'rows',
-								'mtl_pg'   => '',
-							)
-						);
-						// phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
-						?>
-						" class="<?php echo 'rows' === $view ? 'mtl-shop-active' : ''; ?>">Rows</a>
+						// Both toggles keep every other filter and land on page 1.
+						foreach ( array(
+							'tiles' => 'Tiles',
+							'rows'  => 'Rows',
+						) as $view_val => $view_label ) :
+							$view_url = $make_url(
+								array(
+									// Tiles is the default, so it stays out of the URL.
+									'mtl_view' => 'tiles' === $view_val ? '' : $view_val,
+									'mtl_pg'   => '',
+								)
+							);
+							?>
+							<a href="<?php echo $view_url; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $make_url() always returns esc_url()-escaped output. ?>" class="<?php echo $view === $view_val ? 'mtl-shop-active' : ''; ?>"><?php echo esc_html( $view_label ); ?></a>
+						<?php endforeach; ?>
 					</span>
 				</div>
 				<div class="mtl-shop-control-group">
-					<label class="mtl-shop-control-label" for="mtl-sort-jump">Sort</label>
+					<span class="mtl-shop-control-label">Sort</span>
 					<details style="display:inline-block; position:relative;">
 						<summary class="mtl-shop-btn mtl-shop-btn-ghost" style="list-style:none;">
-							<?php
-							$sort_labels = array(
-								''          => 'Newest',
-								'newest'    => 'Newest',
-								'oldest'    => 'Oldest',
-								'name'      => 'Name A&ndash;Z',
-								'name_desc' => 'Name Z&ndash;A',
-								'brand'     => 'Brand',
-							);
-							// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static developer-defined labels above (incl. HTML entities like &ndash;), never user input.
-							echo isset( $sort_labels[ $sort ] ) ? $sort_labels[ $sort ] : 'Newest';
-							?>
+							<?php echo $sort_modes[ $sort ]['label']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static developer-defined label from $sort_modes (incl. HTML entities like &ndash;), never user input. ?>
 							&#9662;
 						</summary>
 						<div style="position:absolute; right:0; z-index:20; background:#fff; border:1px solid #ccd0d4; border-radius:4px; box-shadow:0 3px 10px rgba(0,0,0,.12); min-width:150px; padding:4px 0;">
 							<?php
-							$sort_options = array(
-								''          => 'Newest',
-								'oldest'    => 'Oldest',
-								'name'      => 'Name A&ndash;Z',
-								'name_desc' => 'Name Z&ndash;A',
-								'brand'     => 'Brand',
-							);
-							foreach ( $sort_options as $val => $label ) :
-								$is_active = ( $sort === $val ) || ( '' === $val && ( '' === $sort || 'newest' === $sort ) );
-								?>
-								<a href="
-								<?php
-								// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- $make_url() always returns esc_url()-escaped output; $val is a fixed array key from $sort_options above, never user input.
-								echo $make_url(
+							foreach ( $sort_modes as $val => $mode ) :
+								$is_active = ( $sort === $val );
+								$sort_url  = $make_url(
 									array(
 										'mtl_sort' => $val,
 										'mtl_pg'   => '',
 									)
 								);
-								// phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
 								?>
-								" style="display:block; padding:6px 14px; text-decoration:none; color:<?php echo $is_active ? esc_attr( $accent ) : '#3c434a'; ?>; font-weight:<?php echo $is_active ? '600' : '400'; ?>;"><?php echo $label; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static developer-defined label above (incl. HTML entities like &ndash;), never user input. ?></a>
+								<a href="<?php echo $sort_url; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $make_url() always returns esc_url()-escaped output; $val is a fixed key of $sort_modes, never user input. ?>" style="display:block; padding:6px 14px; text-decoration:none; color:<?php echo $is_active ? esc_attr( $accent ) : '#3c434a'; ?>; font-weight:<?php echo $is_active ? '600' : '400'; ?>;"><?php echo $mode['label']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static developer-defined label from $sort_modes (incl. HTML entities like &ndash;), never user input. ?></a>
 							<?php endforeach; ?>
 						</div>
 					</details>

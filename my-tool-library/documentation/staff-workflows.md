@@ -411,7 +411,7 @@ Any reservation the member currently has is **cancelled** as part of the delete,
 
 This is **permanent and cannot be undone.**
 
-**Members can always do this themselves, without staff involvement.** Signed in on the public site, a member goes to their **Account** page and, under **Danger Zone**, clicks **Delete Account and Remove Personal Data**. That walks them through the same two-step confirmation and produces exactly the same outcome described above. It is always available to them no matter which staff roles exist, so a member never has to wait on an administrator to have their personal data removed.
+**Members can always do this themselves, without staff involvement.** Signed in on the public site, a member goes to their **Account** page and, under **Danger Zone**, clicks **Delete Account and Remove Personal Data**. That walks them through the same two-step confirmation and produces exactly the same outcome described above.
 
 ### Retiring or deleting a tool
 

@@ -60,6 +60,44 @@ function mtl_register_member_role() {
 // --------------------------------------------------------------------------
 
 /**
+ * Whether this request is a form submission.
+ *
+ * The pages below render on GET and handle their own POST, and the reserve
+ * handler runs on POST alone, so each opens by asking this. Wrapping the
+ * isset/unslash/sanitize dance $_SERVER['REQUEST_METHOD'] needs keeps that to
+ * one line per call site.
+ *
+ * @return bool
+ */
+function mtl_is_post_request() {
+	$method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
+	return 'POST' === $method;
+}
+
+/**
+ * Find a live membership record by email address.
+ *
+ * The members.email column is UNIQUE, so this matches at most one row, and
+ * anonymized_at IS NULL is part of the match rather than an afterthought: an
+ * anonymized row is a deleted person whose personal fields are placeholders
+ * and whose address has been replaced with a reserved .invalid one, so it is
+ * never a record to serve and can never collide with a real address. Both
+ * callers -- resolving a sign-in to its member row, and telling a would-be
+ * signup that the library already holds a membership for them -- depend on
+ * that same rule, so they share this one query rather than each restating it.
+ *
+ * @param string $email Email address to look up.
+ * @return object|null Member row, or null when no live record has that address.
+ */
+function mtl_find_member_by_email( $email ) {
+	global $wpdb;
+	$tbl = $wpdb->prefix . 'members';
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$tbl} WHERE email = %s AND anonymized_at IS NULL LIMIT 1", $email ) );
+}
+
+/**
  * Get the {prefix}members row for the logged-in user, but only when that row
  * can be shown to belong to them.
  *
@@ -138,14 +176,9 @@ function mtl_current_member() {
 		return $member;
 	}
 
-	// Stale or mismatched link. Re-resolve on the account's own address --
-	// members.email is UNIQUE, so this matches at most one row. Anonymized
-	// rows carry a reserved .invalid address and can never match a real one.
-	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-	$recovered = $wpdb->get_row(
-		$wpdb->prepare( "SELECT * FROM {$tbl} WHERE email = %s AND anonymized_at IS NULL LIMIT 1", $user_email )
-	);
-	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	// Stale or mismatched link. Re-resolve on the account's own address, which
+	// matches at most one live record -- see mtl_find_member_by_email().
+	$recovered = mtl_find_member_by_email( $user_email );
 
 	if ( $recovered ) {
 		// Assigned BEFORE the meta write: update_user_meta() fires actions, and
@@ -731,52 +764,10 @@ function mtl_member_page_styles() {
 			margin: 14px 0;
 		}
 
-		/* Availability badges + category/tag pills, mirrored from the shop's
-			detail box (mtl_shop_status_badges() / mtl_shop_pills(), reused here)
-			so this detail view matches the catalog. */
-		.mtl-shop-badges {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 5px;
-			margin-top: 2px;
-		}
-
-		.mtl-shop-badge {
-			display: inline-block;
-			border-radius: 999px;
-			padding: 1px 9px;
-			font-size: 0.74em;
-			font-weight: 600;
-			white-space: nowrap;
-		}
-
-		.mtl-shop-badge-avail {
-			background: #edf7ed;
-			color: #1e7e34;
-			border: 1px solid #bfe3c0;
-		}
-
-		.mtl-shop-badge-out {
-			background: #fff4e5;
-			color: #b45309;
-			border: 1px solid #f2cfa0;
-		}
-
-		.mtl-shop-badge-res {
-			background: #eaf3fb;
-			color: #135e96;
-			border: 1px solid #b9d7ef;
-		}
-
-		.mtl-shop-pill {
-			display: inline-block;
-			background: #f0f1f2;
-			color: #50575e;
-			border-radius: 12px;
-			padding: 1px 9px;
-			margin: 2px 3px 0 0;
-			font-size: 0.76em;
-		}
+		/* Availability badges + category/tag pills. These pages call the shop's
+			own mtl_shop_status_badges() / mtl_shop_pills() helpers, so they take
+			the shop's rules verbatim from public/shop-page.php. */
+		<?php echo mtl_shop_badge_pill_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
 	</style>
 	<?php
 	return ob_get_clean();
@@ -799,8 +790,7 @@ function mtl_member_page_footer() {
  * refresh). Does nothing unless this request is actually a reserve POST.
  */
 function mtl_handle_reserve_action() {
-	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
-	if ( 'POST' !== $request_method || ! isset( $_POST['mtl_action'] ) ) {
+	if ( ! mtl_is_post_request() || ! isset( $_POST['mtl_action'] ) ) {
 		return;
 	}
 	if ( 'reserve' !== sanitize_key( wp_unslash( $_POST['mtl_action'] ) ) ) {
@@ -927,8 +917,7 @@ function mtl_render_signup_page() {
 		'email'          => '',
 	);
 
-	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
-	if ( 'POST' === $request_method && isset( $_POST['mtl_signup'] ) ) {
+	if ( mtl_is_post_request() && isset( $_POST['mtl_signup'] ) ) {
 		if ( ! isset( $_POST['mtl_signup_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_signup_nonce'] ) ), 'mtl_signup_action' ) ) {
 			$errors[] = 'Your session expired. Please try submitting the form again.';
 		} else {
@@ -978,23 +967,18 @@ function mtl_render_signup_page() {
 				$errors[] = 'Please enter a valid email address.';
 			} elseif ( email_exists( $vals['email'] ) ) {
 				$errors[] = 'An account with that email already exists. Try signing in instead.';
-			} else {
-				$tbl_members = $wpdb->prefix . 'members';
-				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-				$dupe = $wpdb->get_var( $wpdb->prepare( "SELECT member_id FROM {$tbl_members} WHERE email = %s AND anonymized_at IS NULL", $vals['email'] ) );
-				if ( $dupe ) {
-					// The library already holds a membership for this address but
-					// there is no WordPress account behind it -- staff added or
-					// imported them and no password has ever been set.
-					//
-					// This used to say "try signing in instead", which was a dead
-					// end: there was nothing to sign in to, and the lost-password
-					// page could not help either, having no account to make a key
-					// for. Both work now, so point them at the one that does the
-					// job rather than the one that looks obvious.
-					$needs_password_setup = true;
-					$errors[]             = 'There is already a membership on file for that email address.';
-				}
+			} elseif ( mtl_find_member_by_email( $vals['email'] ) ) {
+				// The library already holds a membership for this address but
+				// there is no WordPress account behind it -- staff added or
+				// imported them and no password has ever been set.
+				//
+				// This used to say "try signing in instead", which was a dead
+				// end: there was nothing to sign in to, and the lost-password
+				// page could not help either, having no account to make a key
+				// for. Both work now, so point them at the one that does the
+				// job rather than the one that looks obvious.
+				$needs_password_setup = true;
+				$errors[]             = 'There is already a membership on file for that email address.';
 			}
 			if ( strlen( $password ) < MTL_MIN_PASSWORD_LENGTH ) {
 				$errors[] = 'Your password must be at least ' . (int) MTL_MIN_PASSWORD_LENGTH . ' characters long.';
@@ -1272,19 +1256,16 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 			<p><?php echo nl2br( esc_html( stripslashes( $r->components ) ) ); ?></p>
 		<?php endif; ?>
 
-		<a class="mtl-member-btn mtl-member-btn-danger" style="margin-top:16px;" href="
 		<?php
-		echo esc_url(
-			add_query_arg(
-				array(
-					'mtl_confirm' => 'one',
-					'rid'         => (int) $r->reservation_id,
-				),
-				$self_url
-			)
+		$mtl_cancel_url = add_query_arg(
+			array(
+				'mtl_confirm' => 'one',
+				'rid'         => (int) $r->reservation_id,
+			),
+			$self_url
 		);
 		?>
-																						">Cancel this reservation</a>
+		<a class="mtl-member-btn mtl-member-btn-danger" style="margin-top:16px;" href="<?php echo esc_url( $mtl_cancel_url ); ?>">Cancel this reservation</a>
 	</div>
 	<?php
 	return ob_get_clean();
@@ -1361,8 +1342,7 @@ function mtl_render_member_reservations_page() {
 	);
 
 	// --- Handle cancel actions (POST + nonce), then PRG-redirect. ---
-	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
-	if ( 'POST' === $request_method && isset( $_POST['mtl_action'] ) ) {
+	if ( mtl_is_post_request() && isset( $_POST['mtl_action'] ) ) {
 		$action = sanitize_key( wp_unslash( $_POST['mtl_action'] ) );
 		$valid  = isset( $_POST['mtl_res_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_res_nonce'] ) ), 'mtl_res_action' );
 
@@ -1637,20 +1617,15 @@ function mtl_render_member_reservations_page() {
 										<td>
 											<?php
 											// Plain link -> confirmation prompt (no delete yet).
-											?>
-											<a class="mtl-member-btn mtl-member-btn-danger" style="padding:5px 12px; font-size:0.85em;" href="
-											<?php
-											echo esc_url(
-												add_query_arg(
-													array(
-														'mtl_confirm' => 'one',
-														'rid' => (int) $r->reservation_id,
-													),
-													$self
-												)
+											$mtl_cancel_url = add_query_arg(
+												array(
+													'mtl_confirm' => 'one',
+													'rid' => (int) $r->reservation_id,
+												),
+												$self
 											);
 											?>
-																																				">Cancel</a>
+											<a class="mtl-member-btn mtl-member-btn-danger" style="padding:5px 12px; font-size:0.85em;" href="<?php echo esc_url( $mtl_cancel_url ); ?>">Cancel</a>
 										</td>
 									</tr>
 								<?php endforeach; ?>
@@ -1724,8 +1699,7 @@ function mtl_render_account_page() {
 	$errors = array();
 
 	// --- Handle profile update (POST + nonce), then PRG-redirect. ---
-	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
-	if ( 'POST' === $request_method && isset( $_POST['mtl_update_account'] ) ) {
+	if ( mtl_is_post_request() && isset( $_POST['mtl_update_account'] ) ) {
 		if ( ! isset( $_POST['mtl_account_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_account_nonce'] ) ), 'mtl_account_action' ) ) {
 			$errors[] = 'Your session expired. Please try again.';
 		} else {
@@ -1817,8 +1791,7 @@ function mtl_render_account_page() {
 	// The confirmation step is the GET link to ?mtl_confirm_delete=1 below
 	// (this page has no JavaScript, so there's no confirm() dialog) -- this
 	// handler only runs on the follow-up POST from that confirmation form.
-	$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '';
-	if ( 'POST' === $request_method && isset( $_POST['mtl_delete_account'] ) ) {
+	if ( mtl_is_post_request() && isset( $_POST['mtl_delete_account'] ) ) {
 		if ( ! isset( $_POST['mtl_delete_account_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_account_nonce'] ) ), 'mtl_delete_account_action' ) ) {
 			$errors[] = 'Your session expired. Please try again.';
 		} else {
@@ -1904,26 +1877,29 @@ function mtl_render_account_page() {
 		}
 	}
 
-	// Whether deleting this account will anonymize (history on record) or
-	// fully remove it -- shown on the delete-confirmation view below.
-	$tbl_res     = $wpdb->prefix . 'tool_reservations';
-	$has_history = ! empty( $loans ) || (bool) $wpdb->get_var(
-		$wpdb->prepare(
-			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-			"SELECT 1 FROM {$tbl_res} WHERE member_id = %d LIMIT 1",
-			(int) $member->member_id
-		)
-	);
-	// Whether deletion will cancel a currently-active reservation -- called
-	// out separately on the confirm view since it's a more immediate,
-	// concrete consequence than the general history note above.
-	$has_active_reservation = (bool) $wpdb->get_var(
-		$wpdb->prepare(
-			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-			"SELECT 1 FROM {$tbl_res} WHERE member_id = %d AND expiry_date IS NULL LIMIT 1",
-			(int) $member->member_id
-		)
-	);
+	// What deleting this account would cost the member, for the confirmation
+	// view: whether they have any history at all (which makes the delete an
+	// anonymize rather than a full removal), and whether an active reservation
+	// would be cancelled -- called out separately there, being a more
+	// immediate, concrete consequence than the general history note. Only the
+	// confirmation view asks, so the count stays off the ordinary page load.
+	$has_history            = false;
+	$has_active_reservation = false;
+	if ( $confirm_delete ) {
+		$tbl_res    = $wpdb->prefix . 'tool_reservations';
+		$res_counts = $wpdb->get_row(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+				"SELECT COUNT(*) AS total, SUM(expiry_date IS NULL) AS active FROM {$tbl_res} WHERE member_id = %d",
+				(int) $member->member_id
+			)
+		);
+
+		// SUM() over no rows is NULL, and get_row() itself returns null if the
+		// query fails, so neither is dereferenced without checking first.
+		$has_history            = ! empty( $loans ) || ( $res_counts && (int) $res_counts->total > 0 );
+		$has_active_reservation = ( $res_counts && (int) $res_counts->active > 0 );
+	}
 
 	ob_start();
 	echo mtl_member_page_styles();
@@ -2156,8 +2132,8 @@ function mtl_render_account_page() {
 						</thead>
 						<tbody>
 							<?php
+							$today = current_time( 'Y-m-d' );
 							foreach ( $loans as $l ) :
-								$today       = current_time( 'Y-m-d' );
 								$is_returned = ! empty( $l->return_date );
 								if ( ! $is_returned ) {
 									$overdue      = ( $l->due_date < $today );
