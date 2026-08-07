@@ -32,12 +32,13 @@ Table members {
   state varchar(10) [not null, note: 'Dropdown-constrained code: U.S. state/territory or Canadian province, or "N/A" for anywhere else -- see mtl_get_state_options()']
   zip_code varchar(20) [not null]
   country varchar(100) [not null, default: 'United States', note: 'Full ISO 3166-1 country name, dropdown-constrained -- see mtl_get_country_options(). Not restricted to the U.S.']
-  phone_number varchar(20) [not null]
+  phone_number varchar(32) [not null, note: 'Canonical form "+<calling code> <national number>" (e.g. "+1 (414) 555-0123"), produced by mtl_format_phone_number() -- see the PHONE NUMBERS block comment in my-tool-library.php']
   email varchar(100) [not null, unique, note: 'Also the sign-in username for members who have created an online account']
   signup_date date [not null]
   recurring_donation_amount decimal(10,2) [default: 0.00]
   has_donated_tools char(1) [default: 'N', note: 'Y or N']
   anonymized_at timestamp [note: 'NULL = normal row. Set instead of a true delete when loans/tool_reservations history exists -- see mtl_delete_or_anonymize_member()']
+  private_notes text [note: 'Staff-only. Never selected by any public-facing or member-self-service query -- shown only in the admin Membership page detail view.']
 
   Note: '''
     One row per library member. Never stores a password -- WordPress core
@@ -131,6 +132,44 @@ Ref: tool_tag_mappings.tool_id > tool_inventory.tool_id
 Ref: tool_tag_mappings.tag_id > tool_tags.tag_id
 
 // ---------------------------------------------------------------------
+// Member trainings
+// ---------------------------------------------------------------------
+
+Table member_trainings {
+  training_id int [pk, increment]
+  training_name varchar(50) [not null, unique]
+  badge_image_url varchar(255) [note: 'Optional. When set, a current holder''s My Account page shows this image (with the training name as alt/hover text) instead of the plain green pill -- current trainings only. Staff-side admin pages always show trainings as plain names.']
+  certification_length_months int [note: 'NULL = never expires. How long a completed training stays valid, counted from that member''s start_date in member_training_mappings. Expiry is always derived, never stored -- see mtl_training_expiry_date()']
+
+  Note: '''
+    Safety/skill trainings staff can record a member as having completed
+    (e.g. Table Saw Safety, Welding Basics), managed on the Setup page --
+    the counterpart to the "Requires Training" tool tag. Editing
+    certification_length_months here re-dates every member who holds it,
+    since expiry is derived rather than stored.
+  '''
+}
+
+Table member_training_mappings {
+  member_id int [not null]
+  training_id int [not null]
+  start_date date [not null, note: 'The day this member completed the training. Combined with certification_length_months, determines whether their certification is still current -- a plain DATE, not a TIMESTAMP, since a certification is granted for a day.']
+
+  indexes {
+    (member_id, training_id) [pk]
+  }
+
+  Note: '''
+    Many-to-many join between members and member_trainings. Both FKs ON
+    DELETE CASCADE -- a safety net for genuine row removal, not the path a
+    member deletion takes (mtl_delete_or_anonymize_member() anonymizes the
+    members row rather than dropping it, so these survive as history).
+  '''
+}
+Ref: member_training_mappings.member_id > members.member_id
+Ref: member_training_mappings.training_id > member_trainings.training_id
+
+// ---------------------------------------------------------------------
 // Transactional tables
 // ---------------------------------------------------------------------
 
@@ -156,6 +195,7 @@ Table tool_reservations {
   tool_id int [not null]
   member_id int [not null]
   reservation_date timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'Also sets queue order for the tool: earliest active reservation = position 1']
+  ready_since timestamp [note: 'When this reservation became collectable: front of the queue AND the tool back on the shelf. NULL = still waiting their turn, so the hold-period clock hasn''t started. Kept in step by mtl_sync_reservation_readiness().']
   expiry_date timestamp [note: 'NULL = reservation is active/waiting. Set to the current moment when cancelled (by the member or an admin) or fulfilled by a loan.']
 
   Note: '''
