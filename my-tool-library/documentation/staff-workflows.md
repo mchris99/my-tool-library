@@ -262,83 +262,72 @@ Quick Reserve refuses to run if the member already has that tool on loan, or alr
 
 On **Membership**, expand a member's detail panel and click any tool listed under **Active Reservations** to open a **Manage Reservation** pop-up:
 
-- **Cancel Reservation** is always available — use it if the member no longer wants the tool or is unreachable.
-- **Start Loan for This Member** only appears when the member is first in line for that tool. Pick a due date (7/14/21/30-day quick buttons or custom) and click it to check the tool out to them directly, closing the reservation in the same step. If they're not first in the queue, the pop-up shows a note instead and points you to Loans & Reservations if you need to override the queue order.
+- **Cancel Reservation** is always available, this will remove the member from the waiting queue for the tool.
+- **Start Loan for This Member** only appears when the member is first in line for that tool. Pick a due date (7/14/21/30-day quick buttons or custom) and click it to check the tool out. This action also closes the member's reservation in the same step. If they're not first in the queue, the pop-up shows a note instead and points you to Loans & Reservations if you need to override the queue order.
 
 You can also cancel a reservation from **Loans & Reservations** directly: open the reservation's detail panel and click **Cancel reservation**.
 
 #### Asking members to give
 
-**Setup > General Details** has two optional fields that put a **Consider Giving** section in front of signed-in members — on their **Account** page, above Your details, and on **My Loans & Reservations**, below their reservations.
+**Setup > General Details** has two optional fields that put a **Consider Giving** section in front of signed-in members. They will see **Consider Givng** on their **Account** page, above Your details, and on **My Loans & Reservations**, below My Reservations.
 
-| Field                       | What it does                                                                                                                  |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Consider Giving Message** | Your ask, in your own words. A starting message is filled in for you; rewrite it to match how your library talks about money. |
-| **Consider Giving Link**    | Where the **Give Now** button sends people — your donation page, a fundraising platform, anywhere you collect gifts.          |
+- **Consider Giving Message** — Your message to members asking for a donation.
+- **Consider Giving Link** — Where the **Give Now** button sends people (your donation page, a fundraising platform, etc.).
 
-**The message controls whether the section appears at all.** Clear it and the section disappears from both pages; a link on its own won't bring it back, since a bare button with no explanation isn't an ask. **The link only controls the button** — leave it blank and members still see your message, just without a button. That's the setting to use if you'd rather people give in person at the desk.
+**The message controls whether the section appears at all.** Clear it and the section disappears from both pages. **The link only controls the button.** You may leave it blank to hide the button but keep the message (use this setting if you'd rather people give in person).
 
-The button opens in a new tab so nobody loses a half-finished renewal or cancellation, and it only ever appears on member-facing pages — never on the staff side.
-
-A note on the link: only ordinary `http://` and `https://` web addresses are accepted. You can leave the `https://` off when typing (`example.org/donate` works). Anything else is discarded when you save, and the Setup page tells you it was rather than failing quietly.
+> **Note:** Only ordinary `http://` and `https://` web addresses are accepted for the link.
 
 #### Trainings and certifications
 
-A training records that a member has been shown how to use something safely. Each one is set up under **Setup > Member Trainings**, where all three fields stay editable:
+A training records that a member has been shown how to use something safely. Each one is set up under **Setup > Member Trainings**:
 
 | Field               | What it does                                                                                                   |
 | ------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **Name**            | What the training is called. Renaming it keeps every member's completion record attached.                      |
+| **Name**            | What the training is called. Renaming it does not alter a member's training completion record.                 |
 | **Badge Image URL** | Optional. Shown on the member's own account page instead of a plain green pill.                                |
 | **Valid For**       | How many months it stays current, counted from the day each member completed it. Blank means it never expires. |
 
-**Recording a training.** On the **Membership** page, add or edit a member, tick each training they've completed and set the date they completed it. That date is what the certification runs from, so it matters — backdating a training the member took last year will correctly show it as closer to expiring, or already expired.
+**Recording a training.** On the **Membership** page, add or edit a member, tick each training they've completed and set the date they completed it. Backdating a training the member took last year will correctly show it as closer to expiring, or already expired.
 
 **When a certification lapses.** Nothing is deleted. The record stays on the member forever; it just stops counting as current. In their detail panel on the Membership page you'll see every training they've ever completed, each marked **Current** or **Expired** with its completion and expiry dates. To renew one, edit the member and set the completion date to the day they retook it.
 
-**Changing "Valid For" applies immediately and retroactively.** It isn't stored per member — each member's expiry is worked out from their own completion date and the training's current setting. Shortening a period can therefore expire people straight away, and lengthening it can bring lapsed certifications back. That's deliberate (it means you never have to re-enter anything), but it's worth knowing before you shorten one.
+**Changing "Valid For" applies immediately and retroactively.** Each member's expiry is worked out from their own completion date and the training's current setting. Shortening a period can therefore expire people straight away, and lengthening it can bring lapsed certifications back.
 
-**Finding qualified members.** On the **Membership** page, open **Advanced Search** and use the **Trainings** dropdown. Tick one or more trainings to show only members who hold _all_ of them, or use **Select all** to find members who've completed everything. This matches on **current** certifications only — someone whose Table Saw Safety has lapsed won't appear, which is the point: it answers "who can use this today". Their expired record is still visible in their detail panel.
+**Finding qualified members.** On the **Membership** page, open **Advanced Search** and use the **Trainings** dropdown. Tick one or more trainings to show only members who hold _all_ of them, or use **Select all** to find members who've completed everything. This matches on **current** certifications only.
 
-**What members see.** On their own account page, the badges near the top show only what they're currently certified in. A collapsible **Trainings** section below lists everything they've ever completed, expired included, with dates and status — so a lapsed certification is visible to them rather than silently disappearing.
+**What members see.** On their own account page, the badges near the top show only what they're currently certified in. A collapsible **Trainings** section below lists everything they've ever completed, expired included, with dates and status.
 
 #### When a member forgets their password
 
-Members reset their own password without staff involvement, and without ever leaving the branded pages:
+Members reset their own password without staff involvement:
 
 1. On the **Sign In** page they click **Lost your password?** in the footer.
 2. They enter their email address and we send them a link.
-3. The link opens a **Choose a New Password** page on your site. Once saved, they're returned to Sign In and can use the new password straight away.
+3. The link opens a **Choose a New Password** page on your site. Once saved, they're returned to Sign In and can use the new password.
 4. A second email confirms the change went through.
 
-That confirmation email matters more than it looks. If a member tells you they received one they weren't expecting, treat it seriously — it means somebody completed a password reset on their account, and they no longer control it. Reset it again yourself from **Users**, and check the email address on the account hasn't been altered too.
+If a member tells you they received a password change confirmation email they weren't expecting, have them change their password. This means somebody completed a password reset on their account, and they no longer control it.
 
-Two things worth knowing when a member asks for help:
+> **Note:** In the case of possible unauthorized account access, you should check that the email address on the account hasn't been altered too. If it has, you can manually change the email and password through the WordPress **Users** menu. After doing so, send a password reset link to the member so they can set their own password.
 
-- **The page always says the same thing**, whether or not the address matched an account. That stops the form being used to check whether a particular person is a member here — but it also means a typo'd address looks like success. If a member says no email arrived, have them check spam first, then confirm the address on their record matches what they typed.
-- **Links expire after 24 hours**, and stop working once used. An expired or already-used link sends them back to the reset page with an explanation, so they can request a fresh one.
+If the email never arrives for anyone, that's a mail problem on the site rather than a plugin one. WordPress sends emails through whatever mail setup your host provides, and many hosts need an SMTP plugin before `wp_mail()` reliably reaches inboxes.
 
-If the email never arrives for anyone, that's a mail problem on the site rather than a plugin one — WordPress sends it through whatever mail setup your host provides, and many hosts need an SMTP plugin before `wp_mail()` reliably reaches inboxes.
-
-Staff can also reset a password directly: **Users** in the WordPress sidebar, edit the account, **Set New Password**. Members needing that route are usually ones whose email address has changed, since they can no longer receive the link.
-
-A member who has **never** set a password is a different situation, not a forgotten one — see [Giving a new member their online sign-in](#giving-a-new-member-their-online-sign-in). They can still use **Lost your password?** and it will work, creating their sign-in first if they do not have one, so there is no harm in pointing them there. Note that a member setting their very first password does **not** get the "your password has been changed" confirmation described above: nothing was changed, and warning them about it would be alarming for an account they may only just have heard about.
-
-One thing to watch when changing an unclaimed member's email address: any setup link already sent to them keeps working but arrives at the old address. Send them a fresh one from **Send setup link** after saving the new address.
+See [Giving a new member their online sign-in](#giving-a-new-member-their-online-sign-in) for a member who has **never** set a password. They can still use the **Lost your password?** feature. Note that a member setting their very first password does **not** get the "your password has been changed" confirmation described above.
 
 #### Members' online accounts and the database reset
 
 Running **Setup > Run Database Setup** on a library that already has data deletes every record, but it **does not touch members' WordPress sign-ins**. Their accounts and passwords keep working. What breaks is the connection between the two: each record's ID number restarts from 1, so the sign-ins point at records that are gone or, worse, at somebody else's.
 
-The plugin protects against the "somebody else's" case — it checks that a record's email matches the account signing in, and refuses to show a record it can't match. A member in that state sees "we couldn't match your sign-in to a membership record" rather than a stranger's details.
+The plugin protects against the a user sign-in pointing to a different member: it checks that a record's email matches the account signing in, and refuses to show a record it can't match. A member in that state sees "we couldn't match your sign-in to a membership record".
 
 To put things right:
 
-- **Restore the `.sql` dump.** IDs come back as they were and every sign-in reconnects on its own. This is the fix.
+- **Restore the `.sql` dump.** IDs come back as they were and every sign-in reconnects on its own. You should access the database directly when restoring the dump file.
 - **Or re-add the member with the exact same email address** (Membership > Add a New Member, or a CSV import that includes their email). Their existing sign-in is found and reconnected to the new record on the spot, and they keep the password they already had. No setup email is sent, because there is nothing for them to set up. If you re-added them by CSV, press **Create logins** in the **Member Logins** panel afterwards to reconnect the whole batch at once.
-- If a member is stuck and their email in **Membership** does _not_ match the email on their WordPress user (under **Users**), set the record's email to match theirs and save. That reconnects them, and from then on changing their email from either screen keeps both sides in step.
+- If a member is stuck and their email in **Membership** does _not_ match the email on their WordPress user (under **Users**), set the record's email to match theirs and save.
 
-> **Note:** Deleting a member now leaves their WordPress sign-in alone if it can't be confirmed as theirs, and tells you so. Remove it yourself under **Users** if it is no longer wanted. This is deliberate, because deleting the wrong person's sign-in cannot be undone.
+> **Note:** Deleting a member leaves their WordPress sign-in alone if it can't be confirmed as theirs, and tells you so. Remove it yourself under **Users** if it is no longer wanted. This is deliberate, because deleting the wrong person's sign-in cannot be undone.
 
 #### Deleting a member
 
@@ -359,7 +348,7 @@ Click **Delete** next to a member on the **Membership** page. Deleting a member 
 - Their reservations, past and present.
 - The trainings they completed.
 
-Their row stays on the Membership page as **Former Member** with a **Removed** badge in place of Verified/Not Verified, and Edit/Delete disappear — there's nothing left on it to edit. Everything above stays attached to that row rather than to a name.
+Their row stays on the Membership page as **Former Member** with a **Removed** badge in place of Verified/Not Verified, and Edit/Delete disappear.
 
 The WordPress account is only deleted when it can be confirmed as that member's (its email still matches the record). If it can't — usually because a database reset renumbered the records — the account is left in place and the confirmation message says so. Remove it yourself under **Users** in that case.
 
