@@ -13,6 +13,9 @@ Using the admin pages requires signing in with a WordPress account that has eith
 5. [Adding a New Member In-Person & Verifying Their Identity](#4-adding-a-new-member-in-person--verifying-their-identity)
 6. [Starting a Loan for a Member](#5-starting-a-loan-for-a-member)
 7. [Additional Workflows](#6-additional-workflows)
+    - [Members](#members)
+    - [Inventory](#inventory)
+    - [Other](#other)
 
 ---
 
@@ -36,9 +39,9 @@ There are two staff roles, both of them standard WordPress roles.
 | Check tools out, renew, and mark returned          |   ✅   |      ✅       |
 | Create, cancel and fulfil reservations             |   ✅   |      ✅       |
 | Read the Workflows guide                           |   ✅   |      ✅       |
-| **Delete a member's record**                       |   ❌   |      ✅       |
-| **Delete a tool from inventory**                   |   ❌   |      ✅       |
-| **Open the Setup page** (and everything on it)     |   ❌   |      ✅       |
+| Delete a member's record                           |   ❌   |      ✅       |
+| Delete a tool from inventory                       |   ❌   |      ✅       |
+| Open the Setup page (and everything on it)         |   ❌   |      ✅       |
 | — Branding, colors, fonts, logo                    |   ❌   |      ✅       |
 | — Categories, tags and trainings lists             |   ❌   |      ✅       |
 | — Export data (`.sql` / CSV)                       |   ❌   |      ✅       |
@@ -159,11 +162,11 @@ Untick it if you would rather not email them yet — someone who gave an address
 
 The **Sign-in** column in the members table tells you where anyone stands:
 
-| Shows | Means | What to do |
-| --- | --- | --- |
-| **Active** | They have set a password. | Nothing. A member who has forgotten it uses "Lost your password?" like anyone else. |
-| **No password** | The sign-in exists, they have never set one. | **Send setup link** re-sends the email. |
-| **None** | No sign-in yet — added before this feature, or creation failed. | **Send setup link** creates it and emails them in one go. |
+| Shows           | Means                                                           | What to do                                                                          |
+| --------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **Active**      | They have set a password.                                       | Nothing. A member who has forgotten it uses "Lost your password?" like anyone else. |
+| **No password** | The sign-in exists, they have never set one.                    | **Send setup link** re-sends the email.                                             |
+| **None**        | No sign-in yet — added before this feature, or creation failed. | **Send setup link** creates it and emails them in one go.                           |
 
 Members are not stuck if the email goes astray. Anyone with a membership on file can use **Lost your password?** on the sign-in page and get themselves set up, even if they have no account yet. If they try to sign up again instead, the site now tells them they already have a membership and points them at the same place, rather than turning them away.
 
@@ -253,18 +256,9 @@ Quick Reserve refuses to run if the member already has that tool on loan, or alr
 
 ## 6. Additional Workflows
 
-### Renewing or ending a loan
+### Members
 
-On **Loans & Reservations**, open an active loan's detail panel:
-
-- **Renew loan** — pick a new due date (quick buttons or custom) and submit. The field pre-fills with the _current_ due date, so submitting without changing anything is a safe no-op.
-- **End loan (mark returned)** — marks the tool returned as of right now and makes it available again for the next reservation or a new one.
-
-For a fast drop-off (member returns the tool with no other changes needed), you can instead go to **Inventory**, find the tool, expand its row, and click **Mark Returned** — same effect as "End loan" above, just reachable without leaving the Inventory page.
-
-You can also manage a loan from the member's own record: on **Membership**, click a member's row to expand their detail panel, then click any tool listed under **Currently On Loan**. A pop-up opens with the same two actions — **Save New Due Date** (with 7/14/21/30-day quick buttons, same as Quick Loan) and **Mark as Returned** — so you don't have to leave the member's page to handle their loan.
-
-### Managing a reservation from a member's record
+#### Managing a reservation from a member's record
 
 On **Membership**, expand a member's detail panel and click any tool listed under **Active Reservations** to open a **Manage Reservation** pop-up:
 
@@ -273,14 +267,14 @@ On **Membership**, expand a member's detail panel and click any tool listed unde
 
 You can also cancel a reservation from **Loans & Reservations** directly: open the reservation's detail panel and click **Cancel reservation**.
 
-### Asking members to give
+#### Asking members to give
 
 **Setup > General Details** has two optional fields that put a **Consider Giving** section in front of signed-in members — on their **Account** page, above Your details, and on **My Loans & Reservations**, below their reservations.
 
-| Field | What it does |
-| --- | --- |
+| Field                       | What it does                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | **Consider Giving Message** | Your ask, in your own words. A starting message is filled in for you; rewrite it to match how your library talks about money. |
-| **Consider Giving Link** | Where the **Give Now** button sends people — your donation page, a fundraising platform, anywhere you collect gifts. |
+| **Consider Giving Link**    | Where the **Give Now** button sends people — your donation page, a fundraising platform, anywhere you collect gifts.          |
 
 **The message controls whether the section appears at all.** Clear it and the section disappears from both pages; a link on its own won't bring it back, since a bare button with no explanation isn't an ask. **The link only controls the button** — leave it blank and members still see your message, just without a button. That's the setting to use if you'd rather people give in person at the desk.
 
@@ -288,15 +282,15 @@ The button opens in a new tab so nobody loses a half-finished renewal or cancell
 
 A note on the link: only ordinary `http://` and `https://` web addresses are accepted. You can leave the `https://` off when typing (`example.org/donate` works). Anything else is discarded when you save, and the Setup page tells you it was rather than failing quietly.
 
-### Trainings and certifications
+#### Trainings and certifications
 
 A training records that a member has been shown how to use something safely. Each one is set up under **Setup > Member Trainings**, where all three fields stay editable:
 
-| Field | What it does |
-| --- | --- |
-| **Name** | What the training is called. Renaming it keeps every member's completion record attached. |
-| **Badge Image URL** | Optional. Shown on the member's own account page instead of a plain green pill. |
-| **Valid For** | How many months it stays current, counted from the day each member completed it. Blank means it never expires. |
+| Field               | What it does                                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Name**            | What the training is called. Renaming it keeps every member's completion record attached.                      |
+| **Badge Image URL** | Optional. Shown on the member's own account page instead of a plain green pill.                                |
+| **Valid For**       | How many months it stays current, counted from the day each member completed it. Blank means it never expires. |
 
 **Recording a training.** On the **Membership** page, add or edit a member, tick each training they've completed and set the date they completed it. That date is what the certification runs from, so it matters — backdating a training the member took last year will correctly show it as closer to expiring, or already expired.
 
@@ -304,49 +298,11 @@ A training records that a member has been shown how to use something safely. Eac
 
 **Changing "Valid For" applies immediately and retroactively.** It isn't stored per member — each member's expiry is worked out from their own completion date and the training's current setting. Shortening a period can therefore expire people straight away, and lengthening it can bring lapsed certifications back. That's deliberate (it means you never have to re-enter anything), but it's worth knowing before you shorten one.
 
-**Finding qualified members.** On the **Membership** page, open **Advanced Search** and use the **Trainings** dropdown. Tick one or more trainings to show only members who hold *all* of them, or use **Select all** to find members who've completed everything. This matches on **current** certifications only — someone whose Table Saw Safety has lapsed won't appear, which is the point: it answers "who can use this today". Their expired record is still visible in their detail panel.
+**Finding qualified members.** On the **Membership** page, open **Advanced Search** and use the **Trainings** dropdown. Tick one or more trainings to show only members who hold _all_ of them, or use **Select all** to find members who've completed everything. This matches on **current** certifications only — someone whose Table Saw Safety has lapsed won't appear, which is the point: it answers "who can use this today". Their expired record is still visible in their detail panel.
 
 **What members see.** On their own account page, the badges near the top show only what they're currently certified in. A collapsible **Trainings** section below lists everything they've ever completed, expired included, with dates and status — so a lapsed certification is visible to them rather than silently disappearing.
 
-### Reservations that expire on their own
-
-A tool isn't held forever. Once a reservation becomes **collectable**, meaning the member is at the front of the queue _and_ the tool is back on the shelf, a countdown starts. If they don't come in within the **Reservation Hold Period** (set on the Setup page), the reservation is cancelled automatically with today's date, and the tool passes to the next person in line.
-
-Where you'll see it:
-
-- **Loans & Reservations** — open any reservation showing **Ready** and its detail panel shows a **Collect by** date.
-- **The member's own My Loans & Reservations page** — they see "Please collect by …" against anything waiting for them.
-
-To change the period, go to **Setup > Reservations & Loans** and set **Reservation Hold Period**. Anything from 1 to 365 days, or tick **Never expires** to hold reservations indefinitely.
-
-> **Note:** Changing the number applies to reservations already waiting, since the deadline is calculated from when each became collectable rather than being fixed at the time it was made. Shortening the period can therefore expire some reservations on the next page load. Lengthening it gives everyone currently waiting more time.
-
-Expiry is checked whenever anyone loads a page, so the list is correct whenever you look at it.
-
-### Handling overdue tools
-
-The **Dashboard**'s "Overdue Tools" panel lists every loan past its due date at a glance. Follow up with the member directly (there is not yet a built-in email/SMS notification system). Once the tool is back, mark it returned as described above.
-
-### Reviewing library activity
-
-The **Dashboard** offers configurable, resizable stat panels. Drag panels to reorder or resize them; your layout is saved per-user.
-
-Two panels are search-driven rather than always-on: **Tool History Lookup** and **Member History Lookup**. Type a tool or member's name into the search box, pick it from the dropdown, and click **View History** to see more than the Inventory/Membership pages show on their own:
-
-- **Tool History Lookup** shows who has rented that tool and how many times each person has, plus a full loan-by-loan log (dates, due dates, returned/late/still-out status).
-- **Member History Lookup** shows that member's complete loan history (not just their currently active loans, which is all Membership's own detail panel shows) plus their full reservation history, including past/expired reservations.
-
-Tool History Lookup's search box includes retired tools, since the point is looking up history that still exists on record. Member History Lookup's search box excludes anonymized (deleted-account) members, though, since they no longer have a real name to search by &mdash; their loan activity still shows up grouped into a tool's own history, just under their "Former Member" placeholder.
-
-### Backing up your data
-
-Before any bulk import, plugin update, or major cleanup, go to **Setup > Export Data** and download either a full SQL dump or a ZIP of CSVs (one per table). Keep exports somewhere secure as they include full member contact details and verification links.
-
-**If you are keeping one as a real backup, keep the `.sql` dump.** It is the only export that can restore the library. The CSV export is for reading in a spreadsheet — the bulk importers always assign brand-new ID numbers, so re-importing `members.csv` creates fresh records rather than restoring the old ones, and there is no importer at all for loans or reservations.
-
-To restore a `.sql` dump you need database access (phpMyAdmin, the `mysql` command line, or `wp db import`) — there is no restore button in the plugin.
-
-### When a member forgets their password
+#### When a member forgets their password
 
 Members reset their own password without staff involvement, and without ever leaving the branded pages:
 
@@ -370,7 +326,7 @@ A member who has **never** set a password is a different situation, not a forgot
 
 One thing to watch when changing an unclaimed member's email address: any setup link already sent to them keeps working but arrives at the old address. Send them a fresh one from **Send setup link** after saving the new address.
 
-### Members' online accounts and the database reset
+#### Members' online accounts and the database reset
 
 Running **Setup > Run Database Setup** on a library that already has data deletes every record, but it **does not touch members' WordPress sign-ins**. Their accounts and passwords keep working. What breaks is the connection between the two: each record's ID number restarts from 1, so the sign-ins point at records that are gone or, worse, at somebody else's.
 
@@ -384,9 +340,9 @@ To put things right:
 
 > **Note:** Deleting a member now leaves their WordPress sign-in alone if it can't be confirmed as theirs, and tells you so. Remove it yourself under **Users** if it is no longer wanted. This is deliberate, because deleting the wrong person's sign-in cannot be undone.
 
-### Deleting a member
+#### Deleting a member
 
-**Administrators only.** Editors have no **Delete** button on the Membership page — if a member needs removing and you're an Editor, ask an administrator, or point the member at the self-service option below, which is always available to them.
+**Administrators only.** Editors have no **Delete** button on the Membership page. If a member needs removing and you're an Editor, ask an administrator, or point the member at the self-service option below, which is always available to them.
 
 Click **Delete** next to a member on the **Membership** page. Deleting a member removes the person, not the library's records of what they did.
 
@@ -395,35 +351,90 @@ Click **Delete** next to a member on the **Membership** page. Deleting a member 
 - Their name, address, phone number and email, replaced with placeholders.
 - Their verification documents (photo ID and proof-of-address links).
 - Any private staff notes on their record.
-- Their **WordPress sign-in — deleted outright**, account and all its settings. They cannot log in again.
+- Their **WordPress sign-in**, account and all its settings. They cannot log in again.
 
 **What is kept:**
 
 - Every loan they ever had, so each tool's borrowing history and totals stay correct.
 - Their reservations, past and present.
-- The trainings they completed, so the library's training records stay complete.
+- The trainings they completed.
 
 Their row stays on the Membership page as **Former Member** with a **Removed** badge in place of Verified/Not Verified, and Edit/Delete disappear — there's nothing left on it to edit. Everything above stays attached to that row rather than to a name.
 
-The WordPress account is only deleted when it can be confirmed as that member's (its email still matches the record). If it can't — usually because a database reset renumbered the records — the account is left in place and the confirmation message says so, since deleting the wrong person's sign-in is not reversible. Remove it yourself under **Users** in that case.
+The WordPress account is only deleted when it can be confirmed as that member's (its email still matches the record). If it can't — usually because a database reset renumbered the records — the account is left in place and the confirmation message says so. Remove it yourself under **Users** in that case.
 
-Any reservation the member currently has is **cancelled** as part of the delete, freeing their place in the queue. A currently open loan is left alone, since deleting the record doesn't bring the tool back.
+Any reservation the member currently has is **cancelled** as part of the delete. A currently open loan is left alone, so be sure to end the loans manually or mark the tools as retired if missing.
 
-This is **permanent and cannot be undone.**
+Deletion and anonymization are the two actions in this plugin that are **permanent and cannot be undone.** Export a backup first (see "Backing up your data" above) if you're ever unsure before deleting a member.
 
 **Members can always do this themselves, without staff involvement.** Signed in on the public site, a member goes to their **Account** page and, under **Danger Zone**, clicks **Delete Account and Remove Personal Data**. That walks them through the same two-step confirmation and produces exactly the same outcome described above.
 
-### Retiring or deleting a tool
+### Inventory
 
-Tools work the same way in spirit, without the personal-data issue:
+#### Renewing or ending a loan
 
-- **No loan or reservation history** — an administrator may click **Delete** on the **Inventory** page to remove it outright. Editors don't see this button; if you're working the desk and need a tool gone, either use **Retire** or ask an administrator.
+On **Loans & Reservations**, open an active loan's detail panel:
+
+- **Renew loan** — pick a new due date (quick buttons or custom) and submit. The field pre-fills with the _current_ due date, so submitting without changing anything is safe.
+- **End loan (mark returned)** — marks the tool returned as of right now and makes it available again for the next reservation or a new one.
+
+For a fast drop-off (member returns the tool with no other changes needed), you can instead go to **Inventory**, find the tool, expand its row, and click **Mark Returned**. The search function can be completed with a barcode scanner for quick processing.
+
+You can also manage a loan from the member's own record: on **Membership**, click a member's row to expand their detail panel, then click any tool listed under **Currently On Loan**. A pop-up opens with the same two actions — **Save New Due Date** (with 7/14/21/30-day quick buttons, same as Quick Loan) and **Mark as Returned** — so you don't have to leave the member's page to handle their loan.
+
+#### Reservations that expire on their own
+
+A tool isn't held forever. Once a reservation becomes **collectable**, meaning the member is at the front of the queue _and_ the tool is back on the shelf, a countdown starts. If they don't come in within the **Reservation Hold Period** (set on the Setup page), the reservation is cancelled automatically with today's date, and the tool passes to the next person in line.
+
+Where you'll see it:
+
+- **Loans & Reservations** — open any reservation showing **Ready** and its detail panel shows a **Collect by** date.
+- **The member's own My Loans & Reservations page** — they see "Please collect by …" against anything waiting for them.
+
+To change the period, go to **Setup > Reservations & Loans** and set **Reservation Hold Period**. Anything from 1 to 365 days, or tick **Never expires** to hold reservations indefinitely.
+
+> **Note:** Changing the number applies to reservations already waiting. Shortening the period can therefore expire some reservations on the next page load. Lengthening it gives everyone currently waiting more time.
+
+Expiry is checked whenever anyone loads a page, so the list is correct whenever you look at it.
+
+#### Handling overdue tools
+
+The **Dashboard**'s "Overdue Tools" panel lists every loan past its due date at a glance. Follow up with the member directly (there is not yet a built-in email/SMS notification system). Once the tool is back, mark it returned as described above.
+
+#### Retiring or deleting a tool
+
+You might retire a tool at the end of its useful life, or if it is stolen or missing. Deleting a tool is usually for removing tools that were added in error.
+
+- **No loan or reservation history** — an administrator may click **Delete** on the **Inventory** page to remove it outright. Editors don't see this button; they should either use **Retire** or ask an administrator.
 - **Has loan or reservation history** — click **Retire** instead. This hides the tool from the public catalog and blocks any new loan or reservation for it (any reservations already queued for it are automatically cancelled, with a note on-screen telling you how many), while keeping the tool's row and its full history intact. A currently open loan is left alone and can still be ended normally whenever it's resolved.
 
-Unlike a member or tool delete, retiring is fully reversible — click **Reactivate** on a retired tool to bring it back into service. Retired tools drop out of the Inventory page's default list; use the **Retired?** filter under Advanced Search (set to "Active + retired" or "Retired only") to find them.
+Unlike a member or tool delete, retiring is fully reversible. Click **Reactivate** on a retired tool to bring it back into service. Retired tools drop out of the Inventory page's default list; use the **Retired?** filter under Advanced Search (set to "Active + retired" or "Retired only") to find them.
 
-Export a backup first (see "Backing up your data" above) if you're ever unsure before deleting or anonymizing something. Deletion and anonymization are the two actions in this plugin that can't be undone.
+You can document the reason for retiring a tool under the tool's **private notes**.
 
-### Adjusting branding and appearance
+Export a backup first (see "Backing up your data" above) if you're ever unsure before deleting a tool. Deletion and anonymization are the two actions in this plugin that can't be undone.
 
-The **Setup** page's General Details section controls the logo, colors, fonts, button style, and corner radius used across both the admin pages and the public-facing pages. Update it any time your organization's branding changes.
+### Other
+
+#### Reviewing library activity
+
+The **Dashboard** offers configurable, resizable stat panels. Drag panels to reorder or resize them; your layout is saved per-user.
+
+Two panels are search-driven rather than always-on: **Tool History Lookup** and **Member History Lookup**. Type a tool or member's name into the search box, pick it from the dropdown, and click **View History** to see more than the Inventory/Membership pages show on their own:
+
+- **Tool History Lookup** shows who has rented that tool and how many times each person has, plus a full loan-by-loan log (dates, due dates, returned/late/still-out status).
+- **Member History Lookup** shows that member's complete loan history (not just their currently active loans, which is all Membership's own detail panel shows) plus their full reservation history, including past/expired reservations.
+
+Tool History Lookup's search box includes retired tools. Member History Lookup's search box excludes anonymized (deleted-account) members since they no longer have a real name to search by.
+
+#### Backing up your data
+
+Before any bulk import, plugin update, or major cleanup, go to **Setup > Export Data** and download either a full SQL dump or a ZIP of CSVs. Keep exports somewhere secure as they include full member contact details and verification links.
+
+**If you are keeping one as a real backup, keep the `.sql` dump.** It is the only export that can restore the library. The CSV export is for reading in a spreadsheet. The bulk importers always assign brand-new ID numbers, so re-importing `members.csv` creates fresh records rather than restoring the old ones, and there is no importer at all for loans or reservations.
+
+To restore from a `.sql` dump you need database access (phpMyAdmin, the `mysql` command line, or `wp db import`) — there is no restore button in the plugin.
+
+#### Adjusting branding and appearance
+
+The **Setup** page's General Details section controls the logo, colors, fonts, button style, and corner radius used across both the admin pages and the public-facing pages. Update it any time your organization's branding changes. Default is to inherit appearance settings.
