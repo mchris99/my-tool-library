@@ -438,3 +438,7 @@ To restore from a `.sql` dump you need database access (phpMyAdmin, the `mysql` 
 #### Adjusting branding and appearance
 
 The **Setup** page's General Details section controls the logo, colors, fonts, button style, and corner radius used across both the admin pages and the public-facing pages. Update it any time your organization's branding changes. Default is to inherit appearance settings.
+
+#### Making changes to the Staff Workflows page
+
+The **Workflows** page is converted to `HTML` directly from the `staff-workflows.md` file. If you want to add to, remove from, or otherwise change the directions that your staff will see, simply open the `staff-workflows.md` file in your favorite text editor, write your edits, and save. Changes can be seen by staff on page refresh.
