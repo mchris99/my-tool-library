@@ -55,7 +55,7 @@ This plugin is built around a specific, deliberately simple operating model: sin
 
 - [`my-tool-library/readme.txt`](my-tool-library/readme.txt) — full WordPress.org-style readme (Description, Installation, FAQ, Screenshots, Changelog)
 - [`my-tool-library/documentation/staff-workflows.md`](my-tool-library/documentation/staff-workflows.md) — staff workflow guide
-- [`my-tool-library/documentation/mtl_database_schematic/schema.dbml`](my-tool-library/documentation/mtl_database_schematic/schema.dbml) — database schema
+- [`my-tool-library/documentation/schema.dbml`](my-tool-library/documentation/schema.dbml) — database schema
 - [`my-tool-library/documentation/dummy-data.sql`](my-tool-library/documentation/dummy-data.sql) — sample data for local testing
 - Database Schema
   ![Database Schema](my-tool-library/documentation/assets/screenshot-7.png)
