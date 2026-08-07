@@ -18,15 +18,17 @@ Built by the [Milwaukee Tool Library](https://mkelibrary.org) (Evan Maruszewski 
 - Browse and search/filter the tool catalog (no account required)
 - Create a free account, reserve a tool, and track queue position
 - View active loans and due dates (due soon, due today, overdue)
-- Works with **zero JavaScript** on every public-facing page
+- Every public-facing page works with **JavaScript disabled**
 
 **For your staff**
 
 - Configurable Dashboard of stat panels (membership, loans, overdue, popularity, asset value)
 - Inventory management with CSV bulk import and per-tool financial tracking
 - Membership management with CSV bulk import and identity-verification tracking
+- Member trainings with optional badge images and expiring certifications
 - Unified Loans & Reservations page: check out, cancel, renew, end
-- Setup page for branding, categories/tags, database install, and full data export
+- Reservations that expire on their own after a configurable hold period
+- Setup page for branding, categories/tags/trainings, database install, and full data export
 
 ## Requirements
 
@@ -47,7 +49,7 @@ Full installation steps, FAQ, and changelog: [`my-tool-library/readme.txt`](my-t
 
 ## Scope and assumptions
 
-This plugin is built around a specific, deliberately simple operating model: single location/single copy per tool, staff-run (not enforced) identity verification, trusted WordPress Administrators as staff, no payment processing, and no outbound email notifications. See the ["Assumptions and intended use"](my-tool-library/readme.txt) section of the full readme before installing.
+This plugin is built around a specific, deliberately simple operating model: single location/single copy per tool, staff-run (not enforced) identity verification, WordPress Editors and Administrators as staff, no payment processing, and no status notifications (account and password email only). See the ["Assumptions and intended use"](my-tool-library/readme.txt) section of the full readme before installing.
 
 ## Documentation
 

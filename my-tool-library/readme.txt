@@ -21,7 +21,7 @@ My Tool Library turns a WordPress site into the online home of a physical tool-l
 * Create a free account, reserve a tool, and track your place in the waiting queue.
 * View active loans and due dates with an at-a-glance status: due soon, due today, or overdue.
 * Manage your own contact details from an Account page, and see your borrowing history.
-* The entire public-facing experience works with **zero JavaScript**. Every interaction is a plain link or form: searching, filtering, sorting, pagination, selecting a tool, reserving, cancelling. This plugin works identically with JavaScript disabled.
+* The entire public-facing experience requires **no JavaScript**. Every interaction is a plain link or form: searching, filtering, sorting, pagination, selecting a tool, reserving, cancelling. The catalog ships no script at all. The sign-up and Account pages carry one small cosmetic script that formats a phone number as you type it; turn JavaScript off and the field is simply typed in unformatted, since the server derives the stored value from the digits either way.
 
 = For your staff =
 
@@ -29,11 +29,13 @@ My Tool Library turns a WordPress site into the online home of a physical tool-l
 * Inventory management with CSV bulk import, categories/tags, and a detailed per-tool view showing loan history, current reservations, and financial tracking (value, depreciation, donor).
 * Membership management with CSV bulk import and identity-verification tracking (photo ID + proof of address), kept in a separate table from everyday member contact info.
 * A unified Loans & Reservations page: check a reservation out as a loan (with a configurable default loan length), cancel a reservation, renew or end a loan. Search, sorting, and advanced filters throughout.
-* A Setup page for branding (logo, colors, fonts, button style), category/tag management, database installation, and full data export/backup.
+* Member trainings: record which safety or equipment trainings a member has completed, with an optional badge image and a "valid for" period after which the certification lapses. Search the membership for everyone currently certified on a given tool.
+* Reservations that expire on their own: once a tool is back on the shelf and a member is at the front of its queue, a configurable hold period starts. If they don't collect it in time the reservation is cancelled automatically and the tool passes to the next person in line.
+* A Setup page for branding (logo, colors, fonts, button style), category/tag/training management, reservation and loan defaults, database installation, and full data export/backup.
 
 = Design principles =
 
-* Every public-facing page is intentionally built with no JavaScript at all, using plain forms, links, and CSS (including the `:target` pseudo-class for instant, same-page tool detail views).
+* Every public-facing page is intentionally built to need no JavaScript, using plain forms, links, and CSS (including the `:target` pseudo-class for instant, same-page tool detail views). The only script served to a customer is the phone-number formatter on sign-up and Account, and it is cosmetic: the server re-derives the stored number from the digits, so nothing typed there has to be trusted.
 * Admin pages use JavaScript freely where it improves the staff experience (sorting, filtering, resizing, drag-and-drop).
 * Member passwords are always handled by WordPress core (`wp_insert_user()`). The plugin's own database tables never store a password in any form.
 * Every member gets a WordPress account, whether they signed up themselves or were added by staff. An account created for them is given a random password nobody ever sees; the member chooses their real one through an emailed link, using WordPress's own password-reset machinery.
@@ -48,9 +50,9 @@ This plugin is built around a specific, deliberately simple operating model. Bef
 
 * **Single location, single copy per tool.** Each tool is one row with one barcode; the plugin does not model multiple copies of the same tool or multiple lending locations/branches. Duplicate locations could lead to collisions.
 * **Reservation does not require verification.** Any signed-in member can reserve a tool and join its queue. Identity verification (photo ID + proof of address) is a separate, staff-run process intended to happen in person. This would typically be at pickup, before a tool actually leaves the building. The plugin does not enforce verification as a precondition for reserving, and enforcing it at checkout time is a staff judgment call, not something the software blocks.
-* **Staff are trusted WordPress Administrators.** Every admin page requires the `manage_options` capability. There is currently no separate lower-privilege "staff" or "volunteer" role with restricted access.
+* **Staff are WordPress Editors and Administrators.** On activation the plugin grants an `mtl_manage_library` capability to both roles. Editors run the library day to day (Dashboard, Membership, Inventory, Loans & Reservations, Workflows); the Setup page, deleting a member, and deleting a tool are Administrator-only (`manage_options`). Both are full WordPress roles, so they also grant access elsewhere on your site -- Editor can write and edit posts and pages, Administrator can do anything at all. Narrow them with a role-management plugin if that matters to you; this plugin only ever checks whether an account is an Editor or an Administrator.
 * **No payments.** `recurring_donation_amount` on a member record is informational only; the plugin does not collect, charge, or reconcile payments of any kind.
-* **No outbound notifications.** There is no email/SMS system. Members and staff see current status (due soon, overdue, ready for pickup, queue position) by visiting the relevant page; nothing is pushed to them automatically.
+* **No status notifications.** Nothing about library activity is pushed to anyone: members and staff see due soon, overdue, ready for pickup and queue position by visiting the relevant page. The plugin does send account email -- a setup link so a new member can choose their first password, WordPress's own password-reset link, and a confirmation once a password has been changed -- but each of those is triggered by someone's action, never by a schedule. There is no SMS.
 * **One database, one WordPress install.** The plugin creates its own tables via `$wpdb` using your site's table prefix. It has not been tested against multisite network-activation; on multisite it should be activated per-site.
 * **Site timezone must be set correctly.** Reservations and loans are timestamped using WordPress's configured site timezone (Settings > General > Timezone). If that is left at its default, timestamps will not reflect your actual local time (see the FAQ).
 * **Signup has no CAPTCHA or throttling.** Anyone who can reach the sign-up page can create a member account (email confirmation is not required; the account is active immediately). This matches a walk-in-friendly, low-friction community tool library; if your site is at higher risk of automated abuse, put it behind whatever anti-spam layer (CAPTCHA, firewall rules, etc.) you'd normally use for a public registration form.
@@ -124,7 +126,9 @@ Yes. Testing can be done on your site or in a local instance through LocalWP (re
 
 = Does the plugin send email notifications (e.g. "your reservation is ready")? =
 
-Not currently. Members and staff see up-to-date status by visiting the relevant page; there is no outbound email or notification system in this version.
+Not about library activity. There are no "your reservation is ready", "due soon", or "overdue" emails; members and staff see that status by visiting the relevant page.
+
+It does send account email, all of it prompted by someone's action rather than by a schedule: the setup link that lets a member choose their first password, WordPress's own password-reset link, and a confirmation once a password has been changed. There is no SMS. Note that WordPress sends this mail through whatever mail setup your host provides -- many hosts need an SMTP plugin before `wp_mail()` reliably reaches inboxes.
 
 = Can I export my data? =
 
