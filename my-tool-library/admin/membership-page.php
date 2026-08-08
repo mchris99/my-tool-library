@@ -232,7 +232,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 				<input type="checkbox" name="mtl_send_setup_email" id="<?php echo $field_id( 'mtl_send_setup_email' ); ?>" value="1" checked>
 				Email them a link to choose their password
 			</label>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">A website sign-in is created for every new member either way. Leave this ticked and they get an email straight away with a link to set a password; untick it and they will need one sending later from <em>Member Logins</em>, or they can request one themselves from the site&rsquo;s &ldquo;Lost your password?&rdquo; page.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">A website sign-in is created either way. Members can always change their password by clicking <em>"Lost your password?"</em> from the main page.</p>
 		</td>
 	</tr>
 	<?php endif; ?>
