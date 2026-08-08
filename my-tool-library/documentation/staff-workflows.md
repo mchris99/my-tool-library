@@ -1,6 +1,6 @@
 # My Tool Library — Staff Workflow Guide
 
-Reference steps for the most common jobs staff will do in the plugin.
+Reference steps for the most common jobs staff will do in the plugin. This guide will benefit of all staff, but is written with system administrators in mind as the audience. Some of the actions listed here will not be executable without administrator privileges.
 
 Using the admin pages requires signing in with a WordPress account that has either the **Administrator** or the **Editor** role. Editor is the everyday desk role; Administrator is for whoever runs the library. See [Staff Roles and Permissions](#staff-roles-and-permissions) for exactly what each one can do.
 
