@@ -32,13 +32,14 @@ There are two staff roles, both of them standard WordPress roles.
 | Task                                               | Editor | Administrator |
 | -------------------------------------------------- | :----: | :-----------: |
 | View the Dashboard                                 |   ✅   |      ✅       |
-| Add, edit, and bulk-import members                 |   ✅   |      ✅       |
+| Add or edit members                                |   ✅   |      ✅       |
 | Record member trainings                            |   ✅   |      ✅       |
 | View verification documents, mark members verified |   ✅   |      ✅       |
-| Add, edit, retire and bulk-import tools            |   ✅   |      ✅       |
+| Add, edit, retire and tools                        |   ✅   |      ✅       |
 | Check tools out, renew, and mark returned          |   ✅   |      ✅       |
 | Create, cancel and fulfil reservations             |   ✅   |      ✅       |
 | Read the Workflows guide                           |   ✅   |      ✅       |
+| Bulk-import tools or members                       |   ❌   |      ✅       |
 | Delete a member's record                           |   ❌   |      ✅       |
 | Delete a tool from inventory                       |   ❌   |      ✅       |
 | Open the Setup page (and everything on it)         |   ❌   |      ✅       |
@@ -47,7 +48,7 @@ There are two staff roles, both of them standard WordPress roles.
 | — Export data (`.sql` / CSV)                       |   ❌   |      ✅       |
 | — Run Database Setup                               |   ❌   |      ✅       |
 
-An Editor doesn't see a **Setup** tab at all, and doesn't see a **Delete** button on the Membership or Inventory page. **Retire** is still theirs on Inventory, and it's the better tool for almost everything Delete gets reached for — it pulls the item from the public catalog and blocks new loans while keeping its history, and it can be undone.
+An Editor doesn't see a **Setup** tab at all, and doesn't see a **Delete** button on the Membership or Inventory page. **Retire** is still theirs on Inventory, and it's the better option for almost everything Delete gets reached for — it pulls the item from the public catalog and blocks new loans while keeping its history, and it can be undone.
 
 > **Note:** Editor is a full WordPress role, so it also grants the ability to write and edit posts and pages elsewhere on your site. If that matters to you, restrict it with a role-management plugin; the tool library only ever checks whether the account is an Editor or an Administrator.
 
@@ -80,7 +81,7 @@ Do this once, when the plugin is first installed on the site.
     - Upload the completed CSV and submit. The plugin reports how many rows succeeded and lists the reason for any row that failed (e.g. a missing required field or an invalid category), so you can fix just those rows and re-upload.
     - On the members template, the **`trainings`** column takes a training name, a colon, and the date it was completed. Separate several with semicolons: `Ladder Safety: 8/4/2026; Welding Basics: 8/3/2026`. Names must match the ones on your Setup page, though capitalization doesn't matter. If one entry is malformed or names a training that doesn't exist, the member is still imported — just without that training — and the reason is listed in the results, so you can fix it on their record rather than re-running the whole file.
 8. Use the **Export Data** section on the Setup page any time you want a full backup (a SQL dump or a ZIP of CSVs, one per table) — good practice before any bulk import or major change.
-9. **Set up accounts for the rest of your staff.** Everyone working the desk should get their own **Editor** account rather than sharing yours — see [Creating a New Staff Account](#2-creating-a-new-staff-account). Editors can do everything day to day; keep **Administrator** for whoever runs the library, since it's what unlocks this Setup page and deleting members.
+9. **Set up accounts for the rest of your staff.** Everyone working the desk should get their own **Editor** account rather than sharing yours — see [Creating a New Staff Account](#2-creating-a-new-staff-account). Editors can do everything day to day; keep **Administrator** for whoever runs the library, since it's what unlocks the Setup page and deleting members.
 
 ---
 
@@ -108,7 +109,7 @@ Follow the same steps, choosing **Administrator** at step 3.
 
 > **Note:** Both of these are full WordPress roles, so they grant access beyond this plugin. Editor can write and edit posts and pages, and Administrator can do anything at all on the site. Give out Administrator sparingly.
 
-> **Note:** If a staff member will also borrow tools as a member, have them use a different username (email) for their staff account than their personal email address, so the two accounts stay separate. Otherwise, they will not be able to borrow as a member.
+> **Note:** If a staff member will also borrow tools as a member, have them use a different username (or email) for their staff account than their personal email address, so the two accounts stay separate. Otherwise, they will not be able to borrow as a member.
 
 ---
 
@@ -128,7 +129,7 @@ Go to **My Tool Library > Inventory**.
 
 ### Adding many tools at once
 
-Use the **Bulk Import from CSV** panel described in [Initial Setup](#1-initial-setup), step 7. This is the fastest way to load an existing inventory spreadsheet, and can also be used later to add a new batch of donated or purchased tools. A `private_notes` column is supported too (see below) — just remember the CSV file itself isn't private once it leaves this page, so don't email or share an import file that has sensitive notes filled in.
+Use the **Bulk Import from CSV** panel described in [Initial Setup](#1-initial-setup), step 7. This is the fastest way to load an existing inventory spreadsheet, and can also be used later to add a new batch of donated or purchased tools. **Admin** action only.
 
 > **Note:** The database makes no assumptions about barcode data, other than that it is required and will be unique to the tool. Barcodes can include any text/number up to 100 characters.
 
@@ -145,34 +146,31 @@ Go to **My Tool Library > Membership**.
 ### Adding a walk-in member
 
 1. Click **Add a New Member**.
-2. Fill in their name, address (Address Line 1, optional Line 2, City, State/Province, ZIP/Postal Code, Country), phone number, and email address. Email doubles as their sign-in username if they later create an online account, so it must be unique.
-    - **Phone number** is two fields: a country dropdown (defaults to United States) and the number itself. Pick the country first, then just type the digits — it's formatted for you as you go, and staff, members signing themselves up, and CSV imports all end up with phone numbers in the exact same format on file.
+2. Fill in their name, address, phone number, and email address. Email doubles as their sign-in username if they later create an online account, so it must be unique.
 3. Leave the two verification fields (below) blank for now if you haven't yet checked their ID, or fill in just one if that's all the member has provided so far. Either way the member is added as **unverified** until both are on file, which does not block them from browsing or reserving tools online.
-4. Under **Trainings**, tick anything they've already completed. Ticking one opens a date box next to it — enter the date they completed it, since that's what the certification runs from. Leave it as today's date for a training they just did. See [Trainings and certifications](#trainings-and-certifications).
+4. Under **Trainings**, tick anything they've already completed. Ticking one opens a completion date box next to it. See [Trainings and certifications](#trainings-and-certifications).
 5. Leave **Email them a link to choose their password** ticked unless you have a reason not to. See below.
 6. Save.
 
 ### Giving a new member their online sign-in
 
-Adding a member creates their website sign-in automatically. It has no password to begin with — they choose one through a link you email them, which is the same mechanism as a normal password reset.
+Adding a member creates their website sign-in automatically. It has no password to begin with. They choose a password through a link you email them, which is the same mechanism as a normal password reset.
 
-Leaving the box ticked sends that email the moment you save, which is what you want for someone standing at the desk: they can set a password on their phone before they leave.
-
-Untick it if you would rather not email them yet — someone who gave an address they rarely check, or a member you are entering from a paper form and want to look over first. The sign-in still gets created; nobody is contacted. You can send the email later from the **Send setup link** button on their row.
+Leaving the box ticked sends that email the moment you save. You can send the email later from the **Send setup link** button on their row.
 
 The **Sign-in** column in the members table tells you where anyone stands:
 
-| Shows           | Means                                                           | What to do                                                                          |
-| --------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| **Active**      | They have set a password.                                       | Nothing. A member who has forgotten it uses "Lost your password?" like anyone else. |
-| **No password** | The sign-in exists, they have never set one.                    | **Send setup link** re-sends the email.                                             |
-| **None**        | No sign-in yet — added before this feature, or creation failed. | **Send setup link** creates it and emails them in one go.                           |
+| Shows           | Means                                        | What to do                                                         |
+| --------------- | -------------------------------------------- | ------------------------------------------------------------------ |
+| **Active**      | They have set a password.                    | Nothing. A member who has forgotten it uses "Lost your password?". |
+| **No password** | The sign-in exists, they have never set one. | **Send setup link** re-sends the email.                            |
+| **None**        | No sign-in yet, creation failed.             | **Send setup link** creates it and emails them in one go.          |
 
-Members are not stuck if the email goes astray. Anyone with a membership on file can use **Lost your password?** on the sign-in page and get themselves set up, even if they have no account yet. If they try to sign up again instead, the site now tells them they already have a membership and points them at the same place, rather than turning them away.
+> **Note:** Anyone with a membership on file can use **Lost your password?** on the sign-in page, even if they have no account yet. If they try to sign up again instead, the site tells them they already have a membership and points them at the same place.
 
 ### After a CSV import: creating logins in bulk
 
-A CSV import deliberately does **not** create sign-ins or send any email. Two reasons: making hundreds of accounts in a single request would time out, and importing a legacy membership list should not email everybody on it the second the file is uploaded.
+A CSV import deliberately does **not** create sign-ins or send any email. Two reasons: making hundreds of accounts in a single request would time out, and importing a legacy membership list should not email everybody on it immediately.
 
 Instead, once the import finishes, open the **Member Logins** panel below the import box (administrators only). It shows how many members have no sign-in and how many have never set a password, then gives you two buttons:
 
@@ -185,7 +183,7 @@ If the panel warns that some members' addresses **belong to a different WordPres
 
 ### Verifying a member's identity
 
-Verification means recording proof that staff have checked the member's photo ID and a proof-of-address document. A member is "verified" if and only if **both** scan links are on file — there's no separate checkbox.
+Verification means recording proof that staff have checked the member's photo ID and a proof-of-address document. A member is "verified" if and only if **both** scan links are on file.
 
 **Recommended process — collect documents with a Google Form:**
 
@@ -198,15 +196,15 @@ Verification means recording proof that staff have checked the member's photo ID
 
 A member can also have just **one** of the two documents on file, but the member stays unverified until both are present.
 
-To **remove** a document, clear its URL field on Edit and save. Clearing just one downgrades a verified member to unverified (their remaining document stays on file); clearing both deletes their verification record entirely.
+To remove a document, clear its URL field on Edit and save. Clearing just one downgrades a verified member to unverified (their remaining document stays on file); clearing both deletes their verification record entirely.
 
 > **Note:** If member verification is not important to your organization, an admin can simply type in any URL into both document fields to mark the user as verified. You may also choose to communicate with members that verification is not necessary **(see Setup > Member Verification Directions)**.
 
 ### Hosting Photos and Documents
 
-This plugin never uploads or stores image files itself — every photo/document field is a plain link. Host the actual file somewhere else (Google Drive recommended) and paste the resulting link into the plugin:
+This plugin never uploads or stores image files itself. Every photo/document field is a plain link. Host the actual file somewhere else (Google Drive recommended) and paste the resulting link into the plugin:
 
-- **Tool photos** are shown to the public — share them with "Anyone with the link."
+- **Tool photos** and **Training Badges** are shown to the public — share them with "Anyone with the link."
 - **Member verification documents** (ID, proof of address) are sensitive — share them only with staff, never publicly.
 
 ---
@@ -219,36 +217,36 @@ There are two ways to start a loan, depending on whether the member already has 
 
 Use this when the member reserved the tool online ahead of time and is now picking it up.
 
-1. **Get the tool reserved first**, if it isn't already: the member signs in to their own account on the public catalog and clicks **Reserve** on the tool they want. This works the same whether they do it from home ahead of time or from a library computer/kiosk on-site. Reserving does **not** require verification — any signed-in member can reserve and join the queue.
+1. **Get the tool reserved first**, if it isn't already: the member signs in to their own account on the public catalog and clicks **Reserve** on the tool they want. Reserving does **not** require member verification.
 2. Go to **My Tool Library > Loans & Reservations**.
-3. Find the member's reservation (search by member name, tool name, or barcode). If the tool is available, you can check it out to **any** member with an active reservation for it — not just whoever is first in the queue — since staff make the final call in person.
-4. Open the reservation's detail panel. Confirm the member's verification status shown there if your process requires it before releasing a tool (verification is a staff judgment call the software does not enforce — see [Section 4](#4-adding-a-new-member-in-person--verifying-their-identity)).
-5. Pick a due date using the quick 7/14/21/30-day buttons (21 days is the site's default, set on the Setup page) or enter a custom date. Due dates can't be set in the past — the form blocks it and the site will reject a backdated date even if one is forced through.
+3. Find the member's reservation (search by member name, tool name, or barcode). If the tool is available, you can check it out to **any** member with an active reservation for it, not just whoever is first in the queue.
+4. Open the reservation's detail panel. Confirm the member's verification status shown there if your process requires it before releasing a tool (verification is a staff judgment call the software does not enforce, see [Section 4](#4-adding-a-new-member-in-person--verifying-their-identity)).
+5. Pick a due date using the quick 7/14/21/30-day buttons (21 days is the site's default, set on the Setup page) or enter a custom date.
 6. Click **Check out to this member**. This converts the reservation into an active loan and removes it from the waiting queue.
 
-If the tool is currently on loan to someone else, checkout isn't available — end that loan first (see [Section 6](#6-additional-workflows)) before checking it out to the next person in line.
+If the tool is currently on loan to someone else, checkout isn't available. End that loan first (see [Section 6](#6-additional-workflows)) before checking it out to the next person in line.
 
 > **Note:** Reserved tools can also be loaned to a member from the **Membership** page.
 
 ### Option B: Quick Loan (no reservation needed)
 
-Use this for a walk-in member borrowing a tool on the spot, with no reservation on file — this is the everyday staff-side path for most in-person checkouts.
+Use this for a walk-in member borrowing a tool on the spot, with no reservation on file.
 
 1. Go to **My Tool Library > Inventory**.
 2. Find the tool and click its **Quick Loan** button.
-3. In the Quick Loan window, start typing the member's name or email in the **Member** box and click their entry to select them. Once selected, a **Verified**/**Not Verified** pill appears so you can see at a glance whether they've provided their ID documents yet — the plugin doesn't block a loan to an unverified member, but flags it so you can make the judgment call in person (same as at reservation checkout).
-4. Pick a due date using the quick 7/14/21/30-day buttons or enter a custom date. As with checkout, past dates aren't accepted.
-5. Click **Create Loan**. The loan is created immediately — no reservation is created or required.
+3. In the Quick Loan window, start typing the member's name or email in the **Member** box and click their entry to select them. Once selected, a **Verified**/**Not Verified** pill appears so you can see at a glance whether they've provided their ID documents yet (see [Section 4](#4-adding-a-new-member-in-person--verifying-their-identity)).
+4. Pick a due date using the quick 7/14/21/30-day buttons or enter a custom date.
+5. Click **Create Loan**. The loan is created immediately, no reservation is created or required.
 
 Quick Loan refuses to run if the tool is already checked out to someone else (end that loan first) or if you submit without selecting a member from the dropdown.
 
 ### Quick Reserve (reserve in person, no online account needed to use it)
 
-For a walk-in who wants to reserve a tool that's currently unavailable (or just hold it without taking it home yet) instead of borrowing it on the spot:
+Use this for a walk-in member who wants to reserve a tool for future use.
 
 1. Go to **My Tool Library > Inventory**, find the tool, and click **Quick Reserve** (next to Quick Loan in the tool's detail panel).
 2. Pick the member the same way as Quick Loan — the same search box and Verified/Not Verified pill are used.
-3. Click **Create Reservation**. There's no due date to set; it behaves exactly like a reservation the member made themselves online, and shows up the same way on Loans & Reservations and the member's own record.
+3. Click **Create Reservation**. There's no due date to set.
 
 Quick Reserve refuses to run if the member already has that tool on loan, or already has an active reservation for it.
 
