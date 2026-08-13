@@ -1458,6 +1458,26 @@ function mtl_render_inventory_page() {
 			font-size: 0.85em;
 		}
 
+		/* The category/tag multi-selects. Given two grid columns so a list of
+			names is readable, and resizable for libraries with a long list. */
+		.mtl-adv-fields .mtl-adv-multi {
+			grid-column: span 2;
+		}
+
+		.mtl-adv-fields .mtl-adv-multi select[multiple] {
+			min-height: 78px;
+			resize: vertical;
+			overflow: auto;
+		}
+
+		.mtl-adv-fields .mtl-adv-multi small {
+			display: block;
+			font-size: 0.72em;
+			color: #787c82;
+			line-height: 1.35;
+			margin-top: 2px;
+		}
+
 		/* Expandable rows */
 		.mtl-tool-row {
 			cursor: pointer;
@@ -2089,23 +2109,28 @@ function mtl_render_inventory_page() {
 			<fieldset class="mtl-adv-group">
 				<legend>Classification &amp; Value</legend>
 				<div class="mtl-adv-fields">
-					<div>
-						<label for="adv-category">Category</label>
-						<select id="adv-category">
-							<option value="">Any</option>
+					<?php
+					// Categories and tags are multi-select: nothing selected means
+					// "any", and picking several widens the results to tools
+					// matching any one of them.
+					?>
+					<div class="mtl-adv-multi">
+						<label for="adv-category">Categories</label>
+						<select id="adv-category" multiple size="4">
 							<?php foreach ( $categories as $cat ) : ?>
 								<option value="<?php echo esc_attr( strtolower( $cat->category_name ) ); ?>"><?php echo esc_html( $cat->category_name ); ?></option>
 							<?php endforeach; ?>
 						</select>
+						<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick or unpick several.</small>
 					</div>
-					<div>
-						<label for="adv-tag">Tag</label>
-						<select id="adv-tag">
-							<option value="">Any</option>
+					<div class="mtl-adv-multi">
+						<label for="adv-tag">Tags</label>
+						<select id="adv-tag" multiple size="4">
 							<?php foreach ( $tags as $tag ) : ?>
 								<option value="<?php echo esc_attr( strtolower( $tag->tag_name ) ); ?>"><?php echo esc_html( $tag->tag_name ); ?></option>
 							<?php endforeach; ?>
 						</select>
+						<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick or unpick several.</small>
 					</div>
 					<div>
 						<label for="adv-acquired-from">Acquired From</label>
@@ -2632,6 +2657,25 @@ function mtl_render_inventory_page() {
 				advToggle.textContent = isOpen ? 'Advanced Search' : 'Hide Advanced Search';
 			});
 
+			// Every value picked in a multi-select, as an array. Nothing
+			// selected gives [], which every check below reads as "any".
+			function selectedValues(el) {
+				return Array.from(el.selectedOptions).map(function(opt) {
+					return opt.value;
+				});
+			}
+
+			// Whether a row's comma-separated list (its categories or its tags)
+			// contains ANY of the picked values. Split rather than substring-
+			// matched, so picking "Saw" can't also drag in "Sawhorse".
+			function listMatchesAny(rowList, picked) {
+				if (!picked.length) return true;
+				const values = rowList ? rowList.split(', ') : [];
+				return picked.some(function(value) {
+					return values.includes(value);
+				});
+			}
+
 			// --- Combined quick filter + advanced search ---
 			// A row must pass the quick filter (substring match anywhere in the
 			// row) AND every non-empty advanced field to stay visible.
@@ -2642,8 +2686,8 @@ function mtl_render_inventory_page() {
 					name: advFields.name.value.trim().toLowerCase(),
 					barcode: advFields.barcode.value.trim().toLowerCase(),
 					brand: advFields.brand.value.trim().toLowerCase(),
-					category: advFields.category.value.trim().toLowerCase(),
-					tag: advFields.tag.value.trim().toLowerCase(),
+					categories: selectedValues(advFields.category),
+					tags: selectedValues(advFields.tag),
 					description: advFields.description.value.trim().toLowerCase(),
 					components: advFields.components.value.trim().toLowerCase(),
 					donor: advFields.donor.value.trim().toLowerCase(),
@@ -2682,8 +2726,8 @@ function mtl_render_inventory_page() {
 					if (visible && f.name && !d.name.includes(f.name)) visible = false;
 					if (visible && f.barcode && !d.barcode.includes(f.barcode)) visible = false;
 					if (visible && f.brand && !d.brand.includes(f.brand)) visible = false;
-					if (visible && f.category && !d.categories.includes(f.category)) visible = false;
-					if (visible && f.tag && !d.tags.includes(f.tag)) visible = false;
+					if (visible && !listMatchesAny(d.categories, f.categories)) visible = false;
+					if (visible && !listMatchesAny(d.tags, f.tags)) visible = false;
 					if (visible && f.description && !d.description.includes(f.description)) visible = false;
 					if (visible && f.components && !d.components.includes(f.components)) visible = false;
 					if (visible && f.donor && !d.donor.includes(f.donor)) visible = false;
@@ -2792,7 +2836,15 @@ function mtl_render_inventory_page() {
 			clearBtn.addEventListener('click', function() {
 				searchInput.value = '';
 				Object.values(advFields).forEach(function(el) {
-					el.value = '';
+					// A multi-select has no "empty" value to assign -- clearing
+					// it means unselecting every option.
+					if (el.multiple) {
+						Array.from(el.options).forEach(function(opt) {
+							opt.selected = false;
+						});
+					} else {
+						el.value = '';
+					}
 				});
 				applyFilters();
 			});

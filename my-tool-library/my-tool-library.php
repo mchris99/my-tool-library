@@ -3416,8 +3416,8 @@ function mtl_register_query_vars( $vars ) {
 	$vars[] = 'mtl_q';       // Basic search text.
 	$vars[] = 'mtl_name';    // Advanced: tool name.
 	$vars[] = 'mtl_brand';   // Advanced: brand.
-	$vars[] = 'mtl_cat';     // Advanced: category id.
-	$vars[] = 'mtl_tag';     // Advanced: tag id.
+	$vars[] = 'mtl_cat';     // Advanced: category ids (multi-select, so a list).
+	$vars[] = 'mtl_tag';     // Advanced: tag ids (multi-select, so a list).
 	$vars[] = 'mtl_status';  // Advanced: availability.
 	$vars[] = 'mtl_sort';    // Sort order.
 	$vars[] = 'mtl_view';    // Tiles | rows.

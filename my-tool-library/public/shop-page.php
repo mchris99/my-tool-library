@@ -276,19 +276,40 @@ function mtl_render_shop_page() {
 		return '<div class="mtl-front-card"><p>Our tool catalog is being set up. Please check back soon.</p></div>';
 	}
 
+	// Lookup data for the advanced panel's category/tag pickers. Fetched here,
+	// before the filters are read, because the selections are validated
+	// against it below.
+	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_cats} ORDER BY category_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
+	$tags_list  = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
+
 	// Read + sanitize the request parameters.
 	$q        = isset( $_GET['mtl_q'] ) ? sanitize_text_field( wp_unslash( $_GET['mtl_q'] ) ) : '';
 	$a_name   = isset( $_GET['mtl_name'] ) ? sanitize_text_field( wp_unslash( $_GET['mtl_name'] ) ) : '';
 	$a_brand  = isset( $_GET['mtl_brand'] ) ? sanitize_text_field( wp_unslash( $_GET['mtl_brand'] ) ) : '';
-	$a_cat    = isset( $_GET['mtl_cat'] ) ? (int) $_GET['mtl_cat'] : 0;
-	$a_tag    = isset( $_GET['mtl_tag'] ) ? (int) $_GET['mtl_tag'] : 0;
 	$a_status = isset( $_GET['mtl_status'] ) ? sanitize_key( wp_unslash( $_GET['mtl_status'] ) ) : '';
 	$sort     = isset( $_GET['mtl_sort'] ) ? sanitize_key( wp_unslash( $_GET['mtl_sort'] ) ) : '';
 	$view     = ( isset( $_GET['mtl_view'] ) && 'rows' === $_GET['mtl_view'] ) ? 'rows' : 'tiles';
 	$page_no  = isset( $_GET['mtl_pg'] ) ? max( 1, (int) $_GET['mtl_pg'] ) : 1;
 	$sel_id   = isset( $_GET['mtl_tool'] ) ? (int) $_GET['mtl_tool'] : 0;
 
-	$advanced_active = ( '' !== $a_name || '' !== $a_brand || $a_cat > 0 || $a_tag > 0 || '' !== $a_status );
+	// Category and tag are multi-select, so both arrive as id lists. The
+	// (array) cast also accepts the single scalar the filters used to send,
+	// which keeps old bookmarks and shared links working.
+	//
+	// Selections are intersected with the ids that actually exist: a stale or
+	// hand-edited value is dropped here rather than being carried into every
+	// link on the page, and the IN () list below can only ever hold real ids.
+	$id_list_param = function ( $key, array $valid_ids ) {
+		if ( ! isset( $_GET[ $key ] ) ) {
+			return array();
+		}
+		$requested = array_map( 'intval', (array) wp_unslash( $_GET[ $key ] ) );
+		return array_values( array_unique( array_intersect( $requested, $valid_ids ) ) );
+	};
+	$a_cats = $id_list_param( 'mtl_cat', array_map( 'intval', wp_list_pluck( $categories, 'category_id' ) ) );
+	$a_tags = $id_list_param( 'mtl_tag', array_map( 'intval', wp_list_pluck( $tags_list, 'tag_id' ) ) );
+
+	$advanced_active = ( '' !== $a_name || '' !== $a_brand || $a_cats || $a_tags || '' !== $a_status );
 
 	// The catalog's sort modes, whitelisted: each accepted mtl_sort value
 	// mapped to its safe ORDER BY fragment (never user SQL) and to the label
@@ -359,13 +380,19 @@ function mtl_render_shop_page() {
 		$where[] = 't.brand LIKE %s';
 		$args[]  = '%' . $wpdb->esc_like( $a_brand ) . '%';
 	}
-	if ( $a_cat > 0 ) {
-		$where[] = "EXISTS (SELECT 1 FROM {$tbl_cat_map} fcm WHERE fcm.tool_id = t.tool_id AND fcm.category_id = %d)";
-		$args[]  = $a_cat;
+	// Several categories (or tags) match ANY of them -- picking Woodworking and
+	// Plumbing widens the results rather than narrowing them to tools filed
+	// under both. The two filters still combine with each other, and with
+	// everything else here, as AND.
+	if ( $a_cats ) {
+		$cat_ph  = implode( ',', array_fill( 0, count( $a_cats ), '%d' ) );
+		$where[] = "EXISTS (SELECT 1 FROM {$tbl_cat_map} fcm WHERE fcm.tool_id = t.tool_id AND fcm.category_id IN ({$cat_ph}))";
+		$args    = array_merge( $args, $a_cats );
 	}
-	if ( $a_tag > 0 ) {
-		$where[] = "EXISTS (SELECT 1 FROM {$tbl_tag_map} ftm WHERE ftm.tool_id = t.tool_id AND ftm.tag_id = %d)";
-		$args[]  = $a_tag;
+	if ( $a_tags ) {
+		$tag_ph  = implode( ',', array_fill( 0, count( $a_tags ), '%d' ) );
+		$where[] = "EXISTS (SELECT 1 FROM {$tbl_tag_map} ftm WHERE ftm.tool_id = t.tool_id AND ftm.tag_id IN ({$tag_ph}))";
+		$args    = array_merge( $args, $a_tags );
 	}
 	$where_sql = 'WHERE ' . implode( ' AND ', $where );
 
@@ -438,10 +465,6 @@ function mtl_render_shop_page() {
 		}
 	}
 
-	// Dropdown data for the advanced panel.
-	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_cats} ORDER BY category_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-	$tags_list  = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-
 	// URL helpers. All links preserve the current filter/sort/view state and
 	// only override what changes; the search form carries the same state
 	// through hidden inputs.
@@ -450,8 +473,11 @@ function mtl_render_shop_page() {
 		'mtl_q'      => $q,
 		'mtl_name'   => $a_name,
 		'mtl_brand'  => $a_brand,
-		'mtl_cat'    => $a_cat > 0 ? $a_cat : '',
-		'mtl_tag'    => $a_tag > 0 ? $a_tag : '',
+		// Id lists: add_query_arg() expands these to mtl_cat[0]=..&mtl_cat[1]=..
+		// and PHP reads them straight back as an array. Empty stays '' so the
+		// $not_empty filter below drops the key entirely.
+		'mtl_cat'    => $a_cats ? $a_cats : '',
+		'mtl_tag'    => $a_tags ? $a_tags : '',
 		'mtl_status' => $a_status,
 		'mtl_sort'   => $sort,
 		'mtl_view'   => 'rows' === $view ? 'rows' : '',
@@ -696,6 +722,33 @@ function mtl_render_shop_page() {
 			box-sizing: border-box;
 			min-height: 30px;
 			padding: 3px 6px;
+		}
+
+		/* The category/tag multi-selects. Given two grid columns so a list of
+			names is readable, and resizable for libraries with a long list. */
+		.mtl-shop-adv-multi {
+			grid-column: span 2;
+		}
+
+		.mtl-shop-adv-multi select[multiple] {
+			min-height: 84px;
+			padding: 2px;
+			resize: vertical;
+			overflow: auto;
+		}
+
+		.mtl-shop-adv-multi small {
+			display: block;
+			font-size: 0.72em;
+			color: #6b7280;
+			margin-top: 3px;
+		}
+
+		/* One column wide, so span 2 would overflow the grid. */
+		@media (max-width: 480px) {
+			.mtl-shop-adv-multi {
+				grid-column: span 1;
+			}
 		}
 
 		.mtl-shop-adv-actions {
@@ -1172,23 +1225,28 @@ function mtl_render_shop_page() {
 							<label for="mtl-a-brand">Brand</label>
 							<input type="text" id="mtl-a-brand" name="mtl_brand" value="<?php echo esc_attr( $a_brand ); ?>">
 						</div>
-						<div>
-							<label for="mtl-a-cat">Category</label>
-							<select id="mtl-a-cat" name="mtl_cat">
-								<option value="0">Any</option>
+						<?php
+						// Categories and tags are multi-select: nothing selected
+						// means "any", and picking several widens the results to
+						// tools matching any one of them.
+						?>
+						<div class="mtl-shop-adv-multi">
+							<label for="mtl-a-cat">Categories</label>
+							<select id="mtl-a-cat" name="mtl_cat[]" multiple size="4">
 								<?php foreach ( $categories as $cat ) : ?>
-									<option value="<?php echo esc_attr( $cat->category_id ); ?>" <?php selected( $a_cat, (int) $cat->category_id ); ?>><?php echo esc_html( $cat->category_name ); ?></option>
+									<option value="<?php echo esc_attr( $cat->category_id ); ?>" <?php echo in_array( (int) $cat->category_id, $a_cats, true ) ? 'selected' : ''; ?>><?php echo esc_html( $cat->category_name ); ?></option>
 								<?php endforeach; ?>
 							</select>
+							<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick or unpick several.</small>
 						</div>
-						<div>
-							<label for="mtl-a-tag">Tag</label>
-							<select id="mtl-a-tag" name="mtl_tag">
-								<option value="0">Any</option>
+						<div class="mtl-shop-adv-multi">
+							<label for="mtl-a-tag">Tags</label>
+							<select id="mtl-a-tag" name="mtl_tag[]" multiple size="4">
 								<?php foreach ( $tags_list as $tg ) : ?>
-									<option value="<?php echo esc_attr( $tg->tag_id ); ?>" <?php selected( $a_tag, (int) $tg->tag_id ); ?>><?php echo esc_html( $tg->tag_name ); ?></option>
+									<option value="<?php echo esc_attr( $tg->tag_id ); ?>" <?php echo in_array( (int) $tg->tag_id, $a_tags, true ) ? 'selected' : ''; ?>><?php echo esc_html( $tg->tag_name ); ?></option>
 								<?php endforeach; ?>
 							</select>
+							<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick or unpick several.</small>
 						</div>
 						<div>
 							<label for="mtl-a-status">Availability</label>
