@@ -2474,6 +2474,154 @@ function mtl_giving_section_html( $extra_class = '' ) {
 }
 
 // ==========================================================================
+// RETURNS (CHECK-IN)
+//
+// A tool can be checked in from three places -- Loans & Reservations, a
+// tool's row on Inventory, and the Manage Loan modal on Membership -- and all
+// three write loans.return_date the same way, through the two helpers below.
+//
+// Every one of those forms offers an optional return date so a check-in can
+// be BACKDATED. Staff who are backed up on drop-offs often process a bin of
+// returns the following day; without this, the member's record would show
+// them returning a tool late when they did not.
+// ==========================================================================
+
+/**
+ * The "Return date" field shared by every check-in form: a date input that
+ * starts on today, is capped at today, and (when the loan's checkout date is
+ * known) can't be taken back past it.
+ *
+ * The field is deliberately not `required` -- an empty value falls back to
+ * today in mtl_resolve_return_timestamp(), so a form posted with the field
+ * cleared still behaves like the plain "mark returned" button it replaces.
+ *
+ * @param string $loan_date The loan's loan_date, for the input's `min`. Pass
+ *                          '' when it isn't known at render time (the shared
+ *                          Membership modal sets `min` from JS instead).
+ * @param string $input_id  Optional id for the input, when a label or script
+ *                          needs to address it.
+ * @return string Field HTML, ready to echo.
+ */
+function mtl_return_date_field_html( $loan_date = '', $input_id = '' ) {
+	$today = gmdate( 'Y-m-d', strtotime( current_time( 'mysql' ) ) );
+
+	$min    = '';
+	$ts_min = '' !== trim( (string) $loan_date ) ? strtotime( $loan_date ) : false;
+	if ( $ts_min ) {
+		$min = gmdate( 'Y-m-d', $ts_min );
+	}
+
+	$id_attr  = '' !== $input_id ? ' id="' . esc_attr( $input_id ) . '"' : '';
+	$for_attr = '' !== $input_id ? ' for="' . esc_attr( $input_id ) . '"' : '';
+
+	$html  = '<div class="mtl-return-date-field">';
+	$html .= '<label class="mtl-return-date-label"' . $for_attr . '>Return date</label>';
+	$html .= '<input type="date" name="return_date"' . $id_attr . ' class="mtl-return-date-input"';
+	$html .= ' value="' . esc_attr( $today ) . '" max="' . esc_attr( $today ) . '"';
+	$html .= '' !== $min ? ' min="' . esc_attr( $min ) . '"' : '';
+	$html .= '>';
+	$html .= '<span class="mtl-return-date-hint">Leave as today for a normal drop-off. Backdate it if the tool actually came back earlier and you are catching up &mdash; the member is then not recorded as returning it late.</span>';
+	$html .= '</div>';
+
+	return $html;
+}
+
+/**
+ * Works out the return_date TIMESTAMP to write for a check-in, from the
+ * optional date a staff member picked on the return form.
+ *
+ * Blank or today's date is the ordinary same-day drop-off, and records the
+ * exact current moment just as it did before backdating existed. An earlier
+ * date is a catch-up entry -- the tool came back that day but was only
+ * processed later -- and is stored at the start of that day, because the real
+ * check-in time is not known. Recording the true date is the whole point:
+ * "returned late" is a date-only comparison against due_date everywhere in
+ * this plugin, so a backdated return that made the due date correctly counts
+ * as on time.
+ *
+ * Rejects a future date, and a date before the tool was checked out. A date
+ * that lands ON the checkout day is pulled forward to the checkout moment
+ * rather than rejected, so a tool loaned and returned the same day can still
+ * be backdated and stay in a sane order.
+ *
+ * @param int    $loan_id     Loan row ID, used to read loan_date for the
+ *                            lower bound. An unknown or already-closed loan
+ *                            simply has no lower bound to test here -- the
+ *                            caller's own "... AND return_date IS NULL"
+ *                            UPDATE is what reports that case.
+ * @param string $posted_date Raw $_POST['return_date'], or '' when the form
+ *                            did not send one.
+ * @return array {
+ *     @type string $timestamp Y-m-d H:i:s to store, or '' when $error is set.
+ *     @type string $error     Admin-notice sentence, or '' when valid.
+ *     @type bool   $backdated Whether this check-in is dated before today.
+ * }
+ */
+function mtl_resolve_return_timestamp( $loan_id, $posted_date ) {
+	global $wpdb;
+
+	$now   = current_time( 'mysql' );
+	$today = gmdate( 'Y-m-d', strtotime( $now ) );
+	$date  = trim( (string) $posted_date );
+
+	if ( '' === $date || $date === $today ) {
+		return array(
+			'timestamp' => $now,
+			'error'     => '',
+			'backdated' => false,
+		);
+	}
+
+	if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) || ! strtotime( $date ) ) {
+		return array(
+			'timestamp' => '',
+			'error'     => 'Please provide a valid return date.',
+			'backdated' => false,
+		);
+	}
+
+	if ( $date > $today ) {
+		return array(
+			'timestamp' => '',
+			'error'     => 'The return date can&rsquo;t be in the future. Please pick today or an earlier date.',
+			'backdated' => false,
+		);
+	}
+
+	$tbl_loans = $wpdb->prefix . 'loans';
+	$loan_date = $wpdb->get_var(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+			"SELECT loan_date FROM {$tbl_loans} WHERE loan_id = %d",
+			(int) $loan_id
+		)
+	);
+
+	$timestamp = $date . ' 00:00:00';
+	if ( null !== $loan_date && '' !== trim( (string) $loan_date ) ) {
+		$loan_day = gmdate( 'Y-m-d', strtotime( $loan_date ) );
+		if ( $date < $loan_day ) {
+			return array(
+				'timestamp' => '',
+				'error'     => 'That tool wasn&rsquo;t checked out until ' . mtl_format_date( $loan_date ) . ', so it can&rsquo;t have been returned before then.',
+				'backdated' => false,
+			);
+		}
+		if ( $timestamp < $loan_date ) {
+			// Same calendar day as the checkout: midnight would put the return
+			// before the loan, so use the checkout moment itself.
+			$timestamp = $loan_date;
+		}
+	}
+
+	return array(
+		'timestamp' => $timestamp,
+		'error'     => '',
+		'backdated' => true,
+	);
+}
+
+// ==========================================================================
 // RESERVATION HOLD PERIOD
 //
 // A reservation is collectable once the member reaches the front of the
@@ -2957,6 +3105,35 @@ function mtl_apply_custom_admin_styles() {
             .mtl-admin-wrapper .button-secondary:hover {
                 background: ' . esc_attr( $accent_color ) . ' !important;
                 color: #fff !important;
+            }
+            /*
+             * The optional "Return date" field on every check-in form (see
+             * mtl_return_date_field_html()). Styled once here because the same
+             * markup is used on Loans & Reservations, Inventory and the
+             * Membership Manage Loan modal, each of which otherwise carries
+             * its own local CSS.
+             */
+            .mtl-return-date-field {
+                display: block;
+                margin: 8px 0;
+                text-align: left;
+            }
+            .mtl-return-date-label {
+                display: block;
+                font-size: 12px;
+                font-weight: 600;
+                margin-bottom: 3px;
+            }
+            .mtl-return-date-input {
+                max-width: 190px;
+            }
+            .mtl-return-date-hint {
+                color: #666;
+                display: block;
+                font-size: 11px;
+                line-height: 1.4;
+                margin-top: 3px;
+                max-width: 340px;
             }
         </style>';
 	}

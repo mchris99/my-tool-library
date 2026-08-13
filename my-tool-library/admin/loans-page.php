@@ -178,10 +178,13 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 		$html .= '<button type="submit" class="button button-primary">Renew loan</button>';
 		$html .= '</form>';
 
-		$html .= '<form method="post" action="" class="mtl-lr-action-form" onsubmit="return confirm(\'Mark this tool as returned today? This ends the loan.\');">';
+		// The return date defaults to today; backdating it is for staff working
+		// through a backlog of drop-offs (see mtl_resolve_return_timestamp()).
+		$html .= '<form method="post" action="" class="mtl-lr-action-form" onsubmit="return confirm(\'Mark this tool as returned? This ends the loan.\');">';
 		$html .= $nonce_field;
 		$html .= '<input type="hidden" name="mtl_lr_action" value="end_loan">';
 		$html .= '<input type="hidden" name="loan_id" value="' . (int) $rec['loan_id'] . '">';
+		$html .= mtl_return_date_field_html( $rec['loan_date'] );
 		$html .= '<button type="submit" class="button button-primary">End loan (mark returned)</button>';
 		$html .= '</form>';
 	}
@@ -365,19 +368,32 @@ function mtl_lr_handle_actions() {
 				$loan_id
 			)
 		);
+		// Today unless the form backdated it -- validated (and, if backdated,
+		// dated) by the shared helper.
+		$end_return = mtl_resolve_return_timestamp(
+			$loan_id,
+			isset( $_POST['return_date'] ) ? sanitize_text_field( wp_unslash( $_POST['return_date'] ) ) : ''
+		);
+		if ( '' !== $end_return['error'] ) {
+			return '<div class="notice notice-error is-dismissible"><p>' . $end_return['error'] . '</p></div>';
+		}
 		$done = $wpdb->query(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				"UPDATE {$tbl_loans} SET return_date = %s WHERE loan_id = %d AND return_date IS NULL",
-				$today,
+				$end_return['timestamp'],
 				$loan_id
 			)
 		);
 		if ( $done ) {
 			// Tool is back on the shelf, so the front of its queue becomes
-			// collectable and their hold period starts now.
+			// collectable. Their hold period starts now even on a backdated
+			// return: nobody could have collected it while it sat unprocessed.
 			mtl_sync_reservation_readiness( $end_tool_id );
-			return '<div class="notice notice-success is-dismissible"><p><strong>Loan ended.</strong> The tool is now back in inventory.</p></div>';
+			$end_note = $end_return['backdated']
+				? ' Recorded as returned on ' . mtl_format_date( $end_return['timestamp'] ) . '.'
+				: '';
+			return '<div class="notice notice-success is-dismissible"><p><strong>Loan ended.</strong> The tool is now back in inventory.' . $end_note . '</p></div>';
 		}
 		return '<div class="notice notice-error is-dismissible"><p>That loan could not be ended (it may already be returned).</p></div>';
 	}

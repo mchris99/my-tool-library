@@ -365,11 +365,21 @@ Deletion and anonymization are the two actions in this plugin that are **permane
 On **Loans & Reservations**, open an active loan's detail panel:
 
 - **Renew loan** — pick a new due date (quick buttons or custom) and submit. The field pre-fills with the _current_ due date, so submitting without changing anything is safe.
-- **End loan (mark returned)** — marks the tool returned as of right now and makes it available again for the next reservation or a new one.
+- **End loan (mark returned)** — marks the tool returned and makes it available again for the next reservation or a new one.
 
 For a fast drop-off (member returns the tool with no other changes needed), you can instead go to **Inventory**, find the tool, expand its row, and click **Mark Returned**. The search function can be completed with a barcode scanner for quick processing.
 
 You can also manage a loan from the member's own record: on **Membership**, click a member's row to expand their detail panel, then click any tool listed under **Currently On Loan**. A pop-up opens with the same two actions — **Save New Due Date** (with 7/14/21/30-day quick buttons, same as Quick Loan) and **Mark as Returned** — so you don't have to leave the member's page to handle their loan.
+
+#### Backdating a return
+
+Every one of those three return forms has a **Return date** field. It starts on today, which is what you want for an ordinary drop-off, so you can keep clicking straight through as before.
+
+Change it when you're catching up on a backlog — a bin of tools dropped off yesterday that you're only processing this morning, for example. Set the date the tool actually came back and the member's record shows that date, so nobody is marked as returning a tool late when they didn't.
+
+The date can't be in the future, and can't be earlier than the day the tool was checked out. A backdated return is recorded at the start of that day, since the exact drop-off time isn't known — the detail panel shows 12:00 AM against it, rather than a made-up time.
+
+One thing that is _not_ backdated: if somebody is queued for the tool, their **collect by** countdown starts when you process the return, not on the backdated date. They couldn't have collected a tool that was still sitting unprocessed, so their hold period shouldn't be eaten by your backlog.
 
 #### Reservations that expire on their own
 

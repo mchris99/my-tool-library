@@ -1148,22 +1148,37 @@ function mtl_render_inventory_page() {
 					$mr_loan_id
 				)
 			);
-			$mr_done = $wpdb->query(
-				$wpdb->prepare(
-					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-					"UPDATE {$tbl_loans} SET return_date = %s WHERE loan_id = %d AND return_date IS NULL",
-					current_time( 'mysql' ),
-					$mr_loan_id
-				)
+			// Today unless the form backdated it -- validated (and, if
+			// backdated, dated) by the shared helper.
+			$mr_return = mtl_resolve_return_timestamp(
+				$mr_loan_id,
+				isset( $_POST['return_date'] ) ? sanitize_text_field( wp_unslash( $_POST['return_date'] ) ) : ''
 			);
-
-			if ( $mr_done ) {
-				// Back on the shelf: the front of the queue is now collectable
-				// and their hold period starts from this moment.
-				mtl_sync_reservation_readiness( $mr_tool_id );
-				echo '<div class="notice notice-success is-dismissible"><p><strong>Marked returned.</strong> The tool is back in inventory.</p></div>';
+			if ( '' !== $mr_return['error'] ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> ' . wp_kses_post( $mr_return['error'] ) . '</p></div>';
 			} else {
-				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That loan could not be found, or was already marked returned.</p></div>';
+				$mr_done = $wpdb->query(
+					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+						"UPDATE {$tbl_loans} SET return_date = %s WHERE loan_id = %d AND return_date IS NULL",
+						$mr_return['timestamp'],
+						$mr_loan_id
+					)
+				);
+
+				if ( $mr_done ) {
+					// Back on the shelf: the front of the queue is now
+					// collectable. Their hold period starts from this moment
+					// even on a backdated return -- nobody could collect the
+					// tool while it sat unprocessed.
+					mtl_sync_reservation_readiness( $mr_tool_id );
+					$mr_note = $mr_return['backdated']
+						? ' Recorded as returned on ' . mtl_format_date( $mr_return['timestamp'] ) . '.'
+						: '';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Marked returned.</strong> The tool is back in inventory.' . wp_kses_post( $mr_note ) . '</p></div>';
+				} else {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That loan could not be found, or was already marked returned.</p></div>';
+				}
 			}
 		} else {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
@@ -1954,7 +1969,7 @@ function mtl_render_inventory_page() {
 	$tool_active_loan = array();
 	$active_loan_rows = $wpdb->get_results(
 		"
-        SELECT l.loan_id, l.tool_id, l.due_date, m.first_name, m.last_name
+        SELECT l.loan_id, l.tool_id, l.loan_date, l.due_date, m.first_name, m.last_name
         FROM {$tbl_loans} l
         JOIN {$tbl_members} m ON m.member_id = l.member_id
         WHERE l.return_date IS NULL
@@ -2347,9 +2362,11 @@ function mtl_render_inventory_page() {
 												$active_loan = isset( $tool_active_loan[ $tid ] ) ? $tool_active_loan[ $tid ] : null;
 												?>
 												<?php if ( $active_loan ) : ?>
-													<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('Mark this tool as returned today?');">
+													<?php // The return date defaults to today; backdating it covers drop-offs processed a day or more later. ?>
+													<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('Mark this tool as returned?');">
 														<?php wp_nonce_field( 'mtl_mark_returned_action', 'mtl_mark_returned_nonce' ); ?>
 														<input type="hidden" name="loan_id" value="<?php echo esc_attr( $active_loan->loan_id ); ?>">
+														<?php echo mtl_return_date_field_html( $active_loan->loan_date ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-escaped markup from the helper. ?>
 														<button type="submit" name="mtl_mark_returned" class="button button-primary">Mark Returned</button>
 													</form>
 													<span class="mtl-detail-actions-hint mtl-detail-actions-out">

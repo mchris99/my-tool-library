@@ -228,6 +228,10 @@ CREATE TABLE {{prefix}}member_training_mappings (
 -- timestamp available in each admin page's detail view. due_date stays a
 -- plain DATE -- it is a hand-picked calendar date (via a date picker), not a
 -- moment the system stamps.
+-- One exception to "the exact moment": a return can be BACKDATED by staff who
+-- are processing a backlog of drop-offs, in which case return_date holds the
+-- start of the day the tool actually came back, since the real check-in time
+-- is not known (see mtl_resolve_return_timestamp() in my-tool-library.php).
 CREATE TABLE {{prefix}}loans (
     loan_id INT AUTO_INCREMENT PRIMARY KEY,
     tool_id INT NOT NULL,

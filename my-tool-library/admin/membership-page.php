@@ -1494,20 +1494,38 @@ function mtl_render_membership_page() {
 			$mr_tool_id = (int) $wpdb->get_var(
 				$wpdb->prepare( "SELECT tool_id FROM {$tbl_loans} WHERE loan_id = %d", $mr_loan_id )
 			);
-			$mr_done    = $wpdb->query(
-				$wpdb->prepare(
-					"UPDATE {$tbl_loans} SET return_date = %s WHERE loan_id = %d AND return_date IS NULL",
-					current_time( 'mysql' ),
-					$mr_loan_id
-				)
+			// Today unless the modal backdated it -- validated (and, if
+			// backdated, dated) by the shared helper.
+			$mr_return = mtl_resolve_return_timestamp(
+				$mr_loan_id,
+				isset( $_POST['return_date'] ) ? sanitize_text_field( wp_unslash( $_POST['return_date'] ) ) : ''
 			);
-			if ( $mr_done ) {
-				// Back on the shelf: start the front of the queue's hold period.
-				mtl_sync_reservation_readiness( $mr_tool_id );
+			if ( '' !== $mr_return['error'] ) {
+				// Reopen the member's row so the return can be re-entered with
+				// a workable date, without hunting for them again.
 				$reopen_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
-				echo '<div class="notice notice-success is-dismissible"><p><strong>Marked returned.</strong> The tool is back in inventory.</p></div>';
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> ' . wp_kses_post( $mr_return['error'] ) . '</p></div>';
 			} else {
-				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That loan could not be found, or was already marked returned.</p></div>';
+				$mr_done = $wpdb->query(
+					$wpdb->prepare(
+						"UPDATE {$tbl_loans} SET return_date = %s WHERE loan_id = %d AND return_date IS NULL",
+						$mr_return['timestamp'],
+						$mr_loan_id
+					)
+				);
+				if ( $mr_done ) {
+					// Back on the shelf: start the front of the queue's hold
+					// period. It starts now even on a backdated return, since
+					// nobody could collect the tool while it sat unprocessed.
+					mtl_sync_reservation_readiness( $mr_tool_id );
+					$reopen_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
+					$mr_note          = $mr_return['backdated']
+						? ' Recorded as returned on ' . mtl_format_date( $mr_return['timestamp'] ) . '.'
+						: '';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Marked returned.</strong> The tool is back in inventory.' . wp_kses_post( $mr_note ) . '</p></div>';
+				} else {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That loan could not be found, or was already marked returned.</p></div>';
+				}
 			}
 		} else {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
@@ -2989,6 +3007,8 @@ function mtl_render_membership_page() {
 														data-member-id="<?php echo (int) $mid; ?>"
 														data-tool-name="<?php echo esc_attr( stripslashes( $loan->tool_name ) ); ?>"
 														data-due-date="<?php echo esc_attr( $loan->due_date ); ?>"
+														<?php // ISO date portion of the checkout timestamp (never mtl_format_date(), which is display-only): the modal's Return date can't go back past this day. ?>
+														data-loan-date="<?php echo esc_attr( substr( (string) $loan->loan_date, 0, 10 ) ); ?>"
 														title="Click to manage this loan">
 														<span>
 															<?php echo esc_html( stripslashes( $loan->tool_name ) ); ?>
@@ -3071,10 +3091,16 @@ function mtl_render_membership_page() {
 			</div>
 
 			<div class="mtl-lm-section">
-				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-lm-return-form" onsubmit="return confirm('Mark this tool as returned today? This ends the loan.');">
+				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-lm-return-form" onsubmit="return confirm('Mark this tool as returned? This ends the loan.');">
 					<?php wp_nonce_field( 'mtl_member_loan_action', 'mtl_member_loan_nonce' ); ?>
 					<input type="hidden" name="loan_id" id="mtl-lm-return-loan-id" value="">
 					<input type="hidden" name="member_id" id="mtl-lm-return-member-id" value="">
+					<?php
+					// One modal serves every loan on the page, so the field's
+					// `min` (the checkout date) is set by JS in openModal()
+					// rather than rendered here.
+					echo mtl_return_date_field_html( '', 'mtl-lm-return-date' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-escaped markup from the helper.
+					?>
 					<div class="mtl-lm-actions">
 						<button type="submit" name="mtl_member_mark_returned" class="button button-primary">Mark as Returned</button>
 						<button type="button" class="button" id="mtl-lm-cancel">Close</button>
@@ -3571,6 +3597,7 @@ function mtl_render_membership_page() {
 			const extendMemberId  = document.getElementById('mtl-lm-extend-member-id');
 			const returnLoanId    = document.getElementById('mtl-lm-return-loan-id');
 			const returnMemberId  = document.getElementById('mtl-lm-return-member-id');
+			const returnDate      = document.getElementById('mtl-lm-return-date');
 
 			function dateFromToday(days) {
 				const d = new Date();
@@ -3595,6 +3622,12 @@ function mtl_render_membership_page() {
 				returnLoanId.value   = loanId;
 				returnMemberId.value = memberId;
 				dueInput.value = li.dataset.dueDate;
+				// Reset the return date to today for each loan opened (the
+				// modal is reused), and floor it at this loan's checkout day.
+				if (returnDate) {
+					returnDate.value = returnDate.max;
+					returnDate.min   = li.dataset.loanDate || '';
+				}
 				clearActiveDueButton();
 				overlay.style.display = 'flex';
 			}

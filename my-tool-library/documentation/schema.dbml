@@ -179,7 +179,7 @@ Table loans {
   member_id int [not null]
   loan_date timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'Full timestamp: the exact checkout moment']
   due_date date [not null, note: 'Plain date -- an admin-picked calendar date, not a system-stamped moment']
-  return_date timestamp [note: 'NULL = tool is currently checked out. Set to a full timestamp when marked returned.']
+  return_date timestamp [note: 'NULL = tool is currently checked out. Set to a full timestamp when marked returned -- the exact moment, or midnight of the chosen day when staff backdate the return.']
 
   Note: '''
     One row per checkout. A given tool has at most one open loan at a time
