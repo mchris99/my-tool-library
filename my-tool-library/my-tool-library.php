@@ -2843,6 +2843,256 @@ function mtl_schedule_reservation_sweep() {
 }
 
 /**
+ * The organization name to sign library email with, falling back to the site
+ * title and then to the plugin's own name.
+ *
+ * @return string Never empty.
+ */
+function mtl_email_org_name() {
+	$org_name = trim( (string) get_option( 'mtl_org_name', '' ) );
+	if ( '' === $org_name ) {
+		$org_name = trim( (string) get_bloginfo( 'name' ) );
+	}
+	return '' === $org_name ? 'My Tool Library' : $org_name;
+}
+
+/**
+ * One "Label: value" row of the deleted-member table, with the label padded
+ * to a common width.
+ *
+ * The padding makes a real column in a fixed-width mail client and simply
+ * reads as extra space in a proportional one -- which is why every row still
+ * carries its own "Label:" rather than relying on the alignment to convey
+ * what it is. A multi-line value (an address, private notes) is indented to
+ * hang under the first line.
+ *
+ * @param string $label Row label, without the colon.
+ * @param string $value Row value; '' becomes an explicit "(none on file)".
+ * @return string One or more "\r\n"-joined lines.
+ */
+function mtl_email_table_row( $label, $value ) {
+	$pad   = 22;
+	$value = trim( (string) $value );
+	if ( '' === $value ) {
+		$value = '(none on file)';
+	}
+
+	$out    = '';
+	$indent = str_repeat( ' ', $pad );
+	foreach ( preg_split( '/\R/', $value ) as $i => $value_line ) {
+		$out .= ( 0 === $i )
+			? str_pad( $label . ':', $pad ) . $value_line
+			: "\r\n" . $indent . $value_line;
+	}
+	return $out;
+}
+
+/**
+ * Asks the site administrator to delete the verification files belonging to a
+ * member whose record has just been removed, and hands over the member's full
+ * details as the library's record of what was deleted.
+ *
+ * mtl_delete_or_anonymize_member() drops the member_verifications row, which
+ * destroys the LINKS to the member's ID and proof-of-address scans -- but the
+ * files themselves live wherever the library uploaded them (a Drive folder,
+ * a media library, a share) and nothing in this plugin can reach out and
+ * delete them. So the links are mailed to the administrator before they are
+ * lost, together with the request to delete what they point at. The email is
+ * deliberately the only remaining copy: it doubles as the library's written
+ * record that the deletion was asked for, and when the files are gone it is
+ * the last thing left to destroy.
+ *
+ * Sent even when no documents were on file, since the record of the deletion
+ * is worth having either way -- it just says so plainly instead of listing
+ * links.
+ *
+ * Goes to the WordPress site administrator, NOT mtl_contact_email() -- that
+ * address is published on public pages, and a member's full contact details
+ * and ID scans must not be handed to a shared inbox just because it happens
+ * to be the one printed in the footer.
+ *
+ * @param object $row          The member's $wpdb row, read before anonymizing.
+ * @param int    $member_id    Member row ID.
+ * @param array  $doc_urls     Label => URL for each document on file; may be
+ *                             empty, which the email states outright.
+ * @param array  $open_loans   Rows of still-open loans (tool_name, barcode,
+ *                             due_date), for the outstanding-loans section.
+ * @param string $initiated_by 'member' when they deleted their own account,
+ *                             'staff' when an administrator did it for them.
+ * @return bool True if the mail was handed off successfully.
+ */
+function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open_loans, $initiated_by ) {
+	$admin_email = sanitize_email( (string) get_option( 'admin_email', '' ) );
+	if ( ! is_email( $admin_email ) ) {
+		return false;
+	}
+
+	$org_name = mtl_email_org_name();
+
+	// "Last, First" -- this is a record to file and look up, not a greeting.
+	$last  = trim( stripslashes( (string) $row->last_name ) );
+	$first = trim( stripslashes( (string) $row->first_name ) );
+	$name  = trim( trim( $last . ', ' . $first ), ', ' );
+	if ( '' === $name ) {
+		$name = '(no name on record)';
+	}
+
+	// wp_date(), not gmdate(), so the timestamp on the record matches the
+	// library's own clock.
+	$deleted_at = wp_date( 'F j, Y \a\t g:i a' );
+	$by_whom    = 'member' === $initiated_by
+		? 'The member deleted their own account from the Account page.'
+		: 'A library administrator deleted the record from the Membership page.';
+
+	$address     = implode( "\r\n", array_filter( mtl_member_address_lines( $row ) ) );
+	$signup_ts   = strtotime( (string) $row->signup_date );
+	$signup_date = $signup_ts ? gmdate( 'F j, Y', $signup_ts ) : '';
+	$donation    = (float) $row->recurring_donation_amount;
+	$donated     = 'Y' === strtoupper( trim( (string) $row->has_donated_tools ) ) ? 'Yes' : 'No';
+
+	// Both the subject and the opening line promise action only when there is
+	// action to take -- an admin who reads "please delete their files" and
+	// finds none listed learns to skim the next one.
+	$subject = $doc_urls
+		? sprintf( '[%s] Member record deleted -- please delete their verification files', $org_name )
+		: sprintf( '[%s] Member record deleted -- no verification files to delete', $org_name );
+
+	$purpose = $doc_urls
+		? 'This email is the library\'s record of what was deleted, and of the request to remove the files listed at the end.'
+		: 'This email is the library\'s record of what was deleted. There are no verification files to remove -- see the end.';
+
+	$lines = array(
+		sprintf( 'The library record below was deleted on %s.', $deleted_at ),
+		'',
+		$by_whom,
+		'',
+		$purpose,
+		'',
+		'DELETED MEMBER RECORD',
+		str_repeat( '-', 58 ),
+		mtl_email_table_row( 'Member ID', '#' . (int) $member_id ),
+		mtl_email_table_row( 'Name (Last, First)', $name ),
+		mtl_email_table_row( 'Address', $address ),
+		mtl_email_table_row( 'Phone number', stripslashes( (string) $row->phone_number ) ),
+		mtl_email_table_row( 'Email', (string) $row->email ),
+		mtl_email_table_row( 'Signup date', $signup_date ),
+		mtl_email_table_row( 'Recurring donation', $donation > 0 ? sprintf( '$%s', number_format( $donation, 2 ) ) : 'None' ),
+		mtl_email_table_row( 'Has donated tools', $donated ),
+		mtl_email_table_row( 'Private notes', stripslashes( (string) $row->private_notes ) ),
+		str_repeat( '-', 58 ),
+		'',
+	);
+
+	// Outstanding loans. Deleting a record does not end a loan -- the member
+	// still physically has the tool -- so whoever reads this needs to know
+	// which items are still out and who is no longer reachable through the
+	// system to chase them.
+	if ( $open_loans ) {
+		$lines[] = sprintf(
+			'OUTSTANDING LOANS (%d) -- still out, and this member can no longer be contacted through the library:',
+			count( $open_loans )
+		);
+		foreach ( $open_loans as $loan ) {
+			$due      = strtotime( (string) $loan->due_date );
+			$lines[]  = sprintf(
+				'  - %s (%s), due %s',
+				trim( stripslashes( (string) $loan->tool_name ) ),
+				trim( stripslashes( (string) $loan->barcode ) ),
+				$due ? gmdate( 'F j, Y', $due ) : 'unknown'
+			);
+		}
+		$lines[] = '';
+		$lines[] = 'These loans stay open on the Loans & Reservations page, attached to "Former Member". End them when the tools come back, or retire the tools if they are gone for good.';
+	} else {
+		$lines[] = 'OUTSTANDING LOANS: none. The member had nothing on loan when the record was deleted.';
+	}
+
+	$lines[] = '';
+
+	if ( $doc_urls ) {
+		$lines[] = 'VERIFICATION FILES TO DELETE';
+		$lines[] = '';
+		$lines[] = 'The links below have been removed from the database, but the FILES they point at are stored outside it and could not be deleted automatically. Please delete them from wherever the library keeps them:';
+		$lines[] = '';
+		foreach ( $doc_urls as $label => $url ) {
+			$lines[] = sprintf( '  %s: %s', $label, $url );
+		}
+		$lines[] = '';
+		$lines[] = 'Once the files are gone, please delete this email too -- after them, it is the last copy of those links.';
+	} else {
+		$lines[] = 'VERIFICATION FILES TO DELETE: none.';
+		$lines[] = '';
+		$lines[] = 'This member had no verification documents on file, so there are no files to delete. No action is needed beyond keeping this record.';
+	}
+
+	$lines[] = '';
+	$lines[] = sprintf( '-- %s', $org_name );
+
+	return (bool) wp_mail( $admin_email, $subject, implode( "\r\n", $lines ) );
+}
+
+/**
+ * Confirms to a member that their account and personal details are gone.
+ *
+ * Sent to the address captured before the record was anonymized, since by the
+ * time this runs that column holds the reserved deleted-member-<id>@
+ * example.invalid placeholder and their WordPress account no longer exists.
+ *
+ * @param string $email          The member's real email, captured pre-delete.
+ * @param string $first_name     Their first name, captured pre-delete.
+ * @param int    $open_loans     Loans they still have out; they must still be
+ *                               returned, so the email says so.
+ * @param int    $cancelled_res  Active reservations closed by the deletion.
+ * @return bool True if the mail was handed off successfully.
+ */
+function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $cancelled_res ) {
+	$email = sanitize_email( (string) $email );
+	if ( ! is_email( $email ) ) {
+		return false;
+	}
+
+	$org_name      = mtl_email_org_name();
+	$greeting_name = trim( (string) $first_name );
+
+	$lines = array(
+		'' !== $greeting_name ? sprintf( 'Hi %s,', $greeting_name ) : 'Hello,',
+		'',
+		sprintf( 'Your %s account has been deleted, as requested.', $org_name ),
+		'',
+		'Your name, contact details and any identification documents we held for you have been permanently removed. Your borrowing history is kept as part of the library\'s records, but it is no longer linked to your name.',
+	);
+
+	if ( $cancelled_res > 0 ) {
+		$lines[] = '';
+		$lines[] = 1 === $cancelled_res
+			? 'The reservation you had waiting has been cancelled.'
+			: sprintf( 'The %d reservations you had waiting have been cancelled.', $cancelled_res );
+	}
+
+	// Deleting an account does not conjure the tools back onto the shelf, and
+	// this is the last message that can reach them about it.
+	if ( $open_loans > 0 ) {
+		$lines[] = '';
+		$lines[] = 1 === $open_loans
+			? 'Please note: you still have a tool on loan. It is still due back, so please return it to the library.'
+			: sprintf( 'Please note: you still have %d tools on loan. They are still due back, so please return them to the library.', $open_loans );
+	}
+
+	$contact_email = mtl_contact_email();
+	if ( '' !== $contact_email ) {
+		$lines[] = '';
+		$lines[] = sprintf( 'If you did not ask for this, please contact library staff at %s.', $contact_email );
+	}
+
+	$lines[] = '';
+	$lines[] = 'You are welcome back any time -- signing up again simply starts a new record.';
+	$lines[] = '';
+	$lines[] = sprintf( '-- %s', $org_name );
+
+	return (bool) wp_mail( $email, sprintf( '[%s] Your account has been deleted', $org_name ), implode( "\r\n", $lines ) );
+}
+
+/**
  * Honors a member delete request -- self-service (Account page) or
  * admin-initiated (Membership page).
  *
@@ -2873,20 +3123,35 @@ function mtl_schedule_reservation_sweep() {
  * stale is left in place and reported via wp_user_orphaned: deleting a
  * sign-in cannot be undone, and a stale id is not evidence of whose it is.
  *
- * @param int $member_id Member row ID.
- * @return array{outcome:string,name:string,cancelled_reservations:int,wp_user_orphaned:bool} outcome is 'anonymized' or 'not_found'; name is the display name captured before any changes; wp_user_orphaned is true when an account still claims this member id but could not be verified, so it was left alone.
+ * Two emails go out once the record is gone, both built entirely from details
+ * captured before the row was touched: the deleted member's full record to
+ * the site administrator, asking them to delete the verification FILES this
+ * plugin cannot reach (see mtl_send_verification_cleanup_email()), and a
+ * confirmation to the member that their account has been deleted. Neither is
+ * sent when the record was already anonymized -- that deletion, and its
+ * emails, happened the first time.
+ *
+ * @param int    $member_id    Member row ID.
+ * @param string $initiated_by 'member' when they deleted their own account,
+ *                             'staff' when an administrator did it for them.
+ *                             Only affects the wording of the admin email.
+ * @return array{outcome:string,name:string,cancelled_reservations:int,wp_user_orphaned:bool,cleanup_email_sent:bool,member_email_sent:bool} outcome is 'anonymized' or 'not_found'; name is the display name captured before any changes; wp_user_orphaned is true when an account still claims this member id but could not be verified, so it was left alone; cleanup_email_sent is whether the administrator's copy of the record got out.
  */
-function mtl_delete_or_anonymize_member( $member_id ) {
+function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 	global $wpdb;
 	$member_id   = (int) $member_id;
 	$tbl_members = $wpdb->prefix . 'members';
 	$tbl_verif   = $wpdb->prefix . 'member_verifications';
 	$tbl_res     = $wpdb->prefix . 'tool_reservations';
+	$tbl_loans   = $wpdb->prefix . 'loans';
 
+	// The whole row, not just the fields this function overwrites: the record
+	// mailed to the administrator has to carry every personal detail that is
+	// about to be destroyed, and this is the last moment it exists.
 	$row = $wpdb->get_row(
 		$wpdb->prepare(
 			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-			"SELECT first_name, last_name, email FROM {$tbl_members} WHERE member_id = %d",
+			"SELECT * FROM {$tbl_members} WHERE member_id = %d",
 			$member_id
 		)
 	);
@@ -2897,9 +3162,54 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 			'name'                   => '',
 			'cancelled_reservations' => 0,
 			'wp_user_orphaned'       => false,
+			'cleanup_email_sent'     => false,
+			'member_email_sent'      => false,
 		);
 	}
 	$name = trim( $row->first_name . ' ' . $row->last_name );
+
+	// A row anonymized by an earlier delete has no personal data left to
+	// remove and no real address to write to; the rest of this function is
+	// harmless to repeat, but the emails must not be.
+	$already_anonymized = ( null !== $row->anonymized_at );
+
+	// Everything the two emails need, read while the row still says who this
+	// is. The verification links especially: the row holding them is deleted
+	// further down, and once it is gone nothing can point at those files.
+	$doc_urls   = array();
+	$verif_urls = $wpdb->get_row(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+			"SELECT photo_id_scan_url, address_proof_scan_url FROM {$tbl_verif} WHERE member_id = %d",
+			$member_id
+		)
+	);
+	if ( $verif_urls ) {
+		// Either scan can stand alone -- a member may have provided only one
+		// so far (see schema.sql) -- so each is listed only if it is on file.
+		if ( '' !== trim( (string) $verif_urls->photo_id_scan_url ) ) {
+			$doc_urls['Photo ID scan'] = trim( (string) $verif_urls->photo_id_scan_url );
+		}
+		if ( '' !== trim( (string) $verif_urls->address_proof_scan_url ) ) {
+			$doc_urls['Proof of address scan'] = trim( (string) $verif_urls->address_proof_scan_url );
+		}
+	}
+
+	// Deleting an account does not bring the tools back: an open loan is left
+	// alone below, so the member is told they still owe it and the admin
+	// record lists what is still out.
+	$tbl_inventory = $wpdb->prefix . 'tool_inventory';
+	$open_loans    = $wpdb->get_results(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+			"SELECT t.tool_name, t.barcode, l.due_date
+			   FROM {$tbl_loans} l
+			   JOIN {$tbl_inventory} t ON t.tool_id = l.tool_id
+			  WHERE l.member_id = %d AND l.return_date IS NULL
+			  ORDER BY l.due_date ASC",
+			$member_id
+		)
+	);
 
 	// Resolved BEFORE the row is anonymized, while its email still identifies
 	// the person. Only an account that proves the link is deleted: if the link
@@ -2971,11 +3281,33 @@ function mtl_delete_or_anonymize_member( $member_id ) {
 		wp_delete_user( $wp_user_id );
 	}
 
+	// Mail goes out last, once every change above has stuck: a mail failure
+	// must never leave a half-deleted record behind, and nothing should
+	// announce a deletion that did not happen. Both are built entirely from
+	// the values captured at the top, since the row they came from no longer
+	// holds any of them.
+	$cleanup_sent = ! $already_anonymized && mtl_send_verification_cleanup_email(
+		$row,
+		$member_id,
+		$doc_urls,
+		$open_loans,
+		$initiated_by
+	);
+
+	$member_notified = ! $already_anonymized && mtl_send_account_deleted_email(
+		(string) $row->email,
+		(string) $row->first_name,
+		count( $open_loans ),
+		$cancelled_reservations
+	);
+
 	return array(
 		'outcome'                => 'anonymized',
 		'name'                   => $name,
 		'cancelled_reservations' => $cancelled_reservations,
 		'wp_user_orphaned'       => $wp_user_orphaned,
+		'cleanup_email_sent'     => (bool) $cleanup_sent,
+		'member_email_sent'      => (bool) $member_notified,
 	);
 }
 
@@ -4305,13 +4637,7 @@ function mtl_send_password_changed_email( $user ) {
 		return;
 	}
 
-	$org_name = trim( (string) get_option( 'mtl_org_name', '' ) );
-	if ( '' === $org_name ) {
-		$org_name = get_bloginfo( 'name' );
-	}
-	if ( '' === trim( (string) $org_name ) ) {
-		$org_name = 'My Tool Library';
-	}
+	$org_name = mtl_email_org_name();
 
 	// A name if we have one, otherwise the sign-in address -- never a bare
 	// "Hi," which reads like the spam this email needs to be trusted over.

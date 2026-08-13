@@ -1455,7 +1455,7 @@ function mtl_render_membership_page() {
 			$delete_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
 
 			if ( $delete_member_id > 0 ) {
-				$result       = mtl_delete_or_anonymize_member( $delete_member_id );
+				$result       = mtl_delete_or_anonymize_member( $delete_member_id, 'staff' );
 				$display_name = esc_html( stripslashes( (string) $result['name'] ) );
 				$res_note     = $result['cancelled_reservations'] > 0
 					? ( ' ' . (int) $result['cancelled_reservations'] . ' active reservation(s) of theirs were also cancelled.' )
@@ -1468,9 +1468,16 @@ function mtl_render_membership_page() {
 					? ' Their online sign-in could not be matched to this record, so it was left in place &mdash; remove it under Users if it is no longer needed.'
 					: '';
 
+				// The administrator's copy is the library's only record of the
+				// deleted details, and the only thing still pointing at the
+				// verification files -- so a failure has to be loud, not silent.
+				$cleanup_note = ! empty( $result['cleanup_email_sent'] )
+					? ' Their record, and a request to delete their stored verification files, has been emailed to the site administrator.'
+					: ' <strong>Their record could not be emailed to the site administrator</strong> &mdash; nothing now points at their verification files, so delete those manually from wherever the library stores them.';
+
 				if ( 'anonymized' === $result['outcome'] ) {
 					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $display_name is esc_html()'d above.
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Personal data removed.</strong> ' . $display_name . ' is now shown as a former member. Their personal details, verification documents and online sign-in have been permanently removed, while their loans, reservations and completed trainings have been kept so the library&rsquo;s records stay accurate.' . esc_html( $res_note ) . wp_kses_post( $orphan_note ) . '</p></div>';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Personal data removed.</strong> ' . $display_name . ' is now shown as a former member. Their personal details, verification documents and online sign-in have been permanently removed, while their loans, reservations and completed trainings have been kept so the library&rsquo;s records stay accurate.' . esc_html( $res_note ) . wp_kses_post( $orphan_note ) . wp_kses_post( $cleanup_note ) . '</p></div>';
 				} else {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member could not be found or was already deleted.</p></div>';
 				}

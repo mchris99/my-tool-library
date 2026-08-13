@@ -128,7 +128,7 @@ Yes. Testing can be done on your site or in a local instance through LocalWP (re
 
 Not about library activity. There are no "your reservation is ready", "due soon", or "overdue" emails; members and staff see that status by visiting the relevant page.
 
-It does send account email, all of it prompted by someone's action rather than by a schedule: the setup link that lets a member choose their first password, WordPress's own password-reset link, and a confirmation once a password has been changed. There is no SMS. Note that WordPress sends this mail through whatever mail setup your host provides -- many hosts need an SMTP plugin before `wp_mail()` reliably reaches inboxes.
+It does send account email, all of it prompted by someone's action rather than by a schedule: the setup link that lets a member choose their first password, WordPress's own password-reset link, a confirmation once a password has been changed, and -- when a member record is deleted -- a confirmation to the member plus a request to the site administrator to delete that member's stored verification files. There is no SMS. Note that WordPress sends this mail through whatever mail setup your host provides -- many hosts need an SMTP plugin before `wp_mail()` reliably reaches inboxes.
 
 = Can I export my data? =
 

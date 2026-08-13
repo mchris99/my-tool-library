@@ -54,7 +54,7 @@ An Editor doesn't see a **Setup** tab at all, and doesn't see a **Delete** butto
 
 ### Members can always delete their own account
 
-None of the above stops a **member** removing themselves, which they can do without staff permission. That works regardless of which staff roles exist, and it produces exactly the same outcome as a staff deletion (see [Deleting a member](#deleting-a-member)).
+None of the above stops a **member** removing themselves, which they can do without staff permission. That works regardless of which staff roles exist, and it produces exactly the same outcome as a staff deletion (see [Deleting a member](#deleting-a-member)) — including the emails to the member and to the site administrator, so a self-service deletion never happens without staff hearing about it.
 
 ---
 
@@ -209,6 +209,8 @@ This plugin never uploads or stores image files itself. Every photo/document fie
 - **Tool photos** and **Training Badges** are shown to the public — share them with "Anyone with the link."
 - **Member verification documents** (ID, proof of address) are sensitive — share them only with staff, never publicly.
 
+Deleting a member does not delete hosted files. Member deletion emails the links to the site administrator with a request to delete the files by hand. See [Two emails go out on every member delete](#two-emails-go-out-on-every-member-delete).
+
 ---
 
 ## 5. Starting a Loan for a Member
@@ -356,7 +358,21 @@ Any reservation the member currently has is **cancelled** as part of the delete.
 
 Deletion and anonymization are the two actions in this plugin that are **permanent and cannot be undone.** Export a backup first (see "Backing up your data" above) if you're ever unsure before deleting a member.
 
+> **Note:** Every member delete sends **two emails** — one to the member confirming their account is gone, and one to the site administrator carrying the deleted record and asking them to delete the member's stored verification files. This happens whether staff or the member did the deleting. See [Two emails go out on every member delete](#two-emails-go-out-on-every-member-delete).
+
 **Members can always do this themselves, without staff involvement.** Signed in on the public site, a member goes to their **Account** page and, under **Danger Zone**, clicks **Delete Account and Remove Personal Data**. That walks them through the same two-step confirmation and produces exactly the same outcome described above.
+
+#### Two emails go out on every member delete
+
+This happens whether staff did the delete or the member did it themselves.
+
+**To the site administrator — the deleted record, and a request to delete the verification files.** The delete removes the _links_ to the member's photo ID and proof-of-address scans from the database, but the files themselves live wherever your library uploaded them. Those links are emailed to the WordPress site administrator address (**Settings > General** in WordPress), along with a request to delete what they point at.
+
+The email carries the member's **full record as it stood at deletion** and is the only copy left once the database row is anonymized. It also lists any **outstanding loans**.
+
+**To the member — their account has been deleted.** A confirmation of what was removed and what was kept. If they still have a tool on loan, it says so and asks them to return it.
+
+> **Note:** WordPress sends emails through whatever mail setup your host provides, and many hosts need an SMTP plugin before `wp_mail()` reliably reaches inboxes.
 
 ### Inventory
 

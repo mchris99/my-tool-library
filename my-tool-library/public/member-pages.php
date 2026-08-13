@@ -1795,7 +1795,9 @@ function mtl_render_account_page() {
 		if ( ! isset( $_POST['mtl_delete_account_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_account_nonce'] ) ), 'mtl_delete_account_action' ) ) {
 			$errors[] = 'Your session expired. Please try again.';
 		} else {
-			mtl_delete_or_anonymize_member( (int) $member->member_id );
+			// 'member': the emails this sends say the member did this
+			// themselves, not that staff did it for them.
+			mtl_delete_or_anonymize_member( (int) $member->member_id, 'member' );
 			// wp_delete_user() alone doesn't end the current request's own
 			// session, so log out explicitly before redirecting somewhere
 			// that doesn't require being signed in.
