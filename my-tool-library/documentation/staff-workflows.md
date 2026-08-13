@@ -89,6 +89,8 @@ Do this once, when the plugin is first installed on the site.
 
 Staff access is controlled entirely by WordPress's built-in user roles. This plugin has no separate staff login system. See [Staff Roles and Permissions](#staff-roles-and-permissions) for what each role can do.
 
+> **Note:** If a staff member will also borrow tools as a member, have them use a different username (or email) for their staff account than their personal email address, so the two accounts stay separate. Otherwise, they will not be able to borrow as a member.
+
 ### Adding an Editor (the usual choice)
 
 Give **Editor** to anyone working the desk: volunteers, front-of-house staff, anyone who checks tools in and out or signs members up. They get everything except the Setup page and deleting members.
@@ -109,7 +111,7 @@ Follow the same steps, choosing **Administrator** at step 3.
 
 > **Note:** Both of these are full WordPress roles, so they grant access beyond this plugin. Editor can write and edit posts and pages, and Administrator can do anything at all on the site. Give out Administrator sparingly.
 
-> **Note:** If a staff member will also borrow tools as a member, have them use a different username (or email) for their staff account than their personal email address, so the two accounts stay separate. Otherwise, they will not be able to borrow as a member.
+> **Note:** If you are an admin, you might want to create an alternate account with the Editor role. This will simplify the user interface and prevent accidental data loss.
 
 ---
 
