@@ -1336,6 +1336,13 @@ function mtl_render_signup_page() {
 	// because it needs a real link and that loop escapes its messages.
 	$needs_password_setup = false;
 
+	// Typed twice because the address IS the username, and a WordPress username
+	// cannot be changed afterwards. Kept out of $vals: it is a form field only,
+	// never a value that reaches the members table. Repopulated on a validation
+	// failure, unlike the passwords, so a member can see the two side by side
+	// and correct whichever one is wrong.
+	$email_confirm = '';
+
 	// Agreements state, carried from the handler to the render below.
 	// $agreement_ticked keeps the boxes ticked across a validation failure --
 	// making somebody re-tick six boxes because they fat-fingered their ZIP
@@ -1386,6 +1393,7 @@ function mtl_render_signup_page() {
 			$vals['phone_country']  = mtl_valid_phone_country( sanitize_text_field( wp_unslash( $_POST['phone_country'] ?? '' ) ) );
 			$vals['phone_national'] = sanitize_text_field( wp_unslash( $_POST['phone_national'] ?? '' ) );
 			$vals['email']          = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
+			$email_confirm          = sanitize_email( wp_unslash( $_POST['email2'] ?? '' ) );
 			// Passwords are unslashed but NOT sanitized -- altering the
 			// characters would silently change the member's chosen password.
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -1410,6 +1418,12 @@ function mtl_render_signup_page() {
 			}
 			if ( '' === $vals['email'] || ! is_email( $vals['email'] ) ) {
 				$errors[] = 'Please enter a valid email address.';
+			} elseif ( 0 !== strcasecmp( $vals['email'], $email_confirm ) ) {
+				// Case-insensitively: somebody who types Jo@x.com then jo@x.com
+				// has confirmed the address they meant, and WordPress signs them
+				// in either way. Rejecting that would be a typo check inventing
+				// a typo.
+				$errors[] = 'The two email addresses you entered do not match.';
 			} elseif ( email_exists( $vals['email'] ) ) {
 				$errors[] = 'An account with that email already exists. Try signing in instead.';
 			} elseif ( mtl_find_member_by_email( $vals['email'] ) ) {
@@ -1655,10 +1669,18 @@ function mtl_render_signup_page() {
 						<label for="mtl-su-phone_national">Phone number</label>
 						<?php mtl_render_phone_input( $vals['phone_country'], $vals['phone_national'], 'mtl-su-' ); ?>
 					</div>
+				</div>
+
+				<div class="mtl-member-row">
 					<div class="mtl-member-field">
 						<label for="mtl-su-email">Email address</label>
 						<input type="email" id="mtl-su-email" name="email" value="<?php echo esc_attr( $vals['email'] ); ?>" required>
 						<p class="mtl-member-hint">This is also your username for signing in.</p>
+					</div>
+					<div class="mtl-member-field">
+						<label for="mtl-su-email2">Confirm email address</label>
+						<input type="email" id="mtl-su-email2" name="email2" value="<?php echo esc_attr( $email_confirm ); ?>" required>
+						<p class="mtl-member-hint">Confirm email address.</p>
 					</div>
 				</div>
 

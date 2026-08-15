@@ -567,7 +567,9 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 		<th scope="row"><label for="<?php echo $field_id( 'email' ); ?>">Email *</label></th>
 		<td>
 			<input type="email" name="email" id="<?php echo $field_id( 'email' ); ?>" class="regular-text" maxlength="100" value="<?php echo esc_attr( $values['email'] ); ?>" required>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Each member must have a unique email address &mdash; no two members can share one. It doubles as their sign-in for the website.</p>
+			<?php if ( $offer_setup ) : ?>
+				<p style="font-size: 0.85em; color: #8a6d00; margin: 6px 0 0 0;"><strong>&#9888; Check the address before you save.</strong> It becomes their WordPress username and can never be changed.</p>
+			<?php endif; ?>
 		</td>
 	</tr>
 	<?php if ( $offer_setup ) : ?>
