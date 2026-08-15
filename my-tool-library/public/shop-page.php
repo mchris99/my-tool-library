@@ -306,8 +306,8 @@ function mtl_render_shop_page() {
 		$requested = array_map( 'intval', (array) wp_unslash( $_GET[ $key ] ) );
 		return array_values( array_unique( array_intersect( $requested, $valid_ids ) ) );
 	};
-	$a_cats = $id_list_param( 'mtl_cat', array_map( 'intval', wp_list_pluck( $categories, 'category_id' ) ) );
-	$a_tags = $id_list_param( 'mtl_tag', array_map( 'intval', wp_list_pluck( $tags_list, 'tag_id' ) ) );
+	$a_cats        = $id_list_param( 'mtl_cat', array_map( 'intval', wp_list_pluck( $categories, 'category_id' ) ) );
+	$a_tags        = $id_list_param( 'mtl_tag', array_map( 'intval', wp_list_pluck( $tags_list, 'tag_id' ) ) );
 
 	$advanced_active = ( '' !== $a_name || '' !== $a_brand || $a_cats || $a_tags || '' !== $a_status );
 
@@ -1193,6 +1193,7 @@ function mtl_render_shop_page() {
 
 		<?php // One-off status banner after a reserve/cancel action. ?>
 		<?php echo mtl_front_notice_html(); ?>
+		<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 
 		<!-- Search + advanced filter (one GET form; native <details> for advanced) -->
 		<div class="mtl-shop-toolbar">

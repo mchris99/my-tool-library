@@ -52,7 +52,7 @@ This plugin is built around a specific, deliberately simple operating model. Bef
 * **Reservation does not require verification.** Any signed-in member can reserve a tool and join its queue. Identity verification (photo ID + proof of address) is a separate, staff-run process intended to happen in person. This would typically be at pickup, before a tool actually leaves the building. The plugin does not enforce verification as a precondition for reserving, and enforcing it at checkout time is a staff judgment call, not something the software blocks.
 * **Staff are WordPress Editors and Administrators.** On activation the plugin grants an `mtl_manage_library` capability to both roles. Editors run the library day to day (Dashboard, Membership, Inventory, Loans & Reservations, Workflows); the Setup page, deleting a member, and deleting a tool are Administrator-only (`manage_options`). Both are full WordPress roles, so they also grant access elsewhere on your site -- Editor can write and edit posts and pages, Administrator can do anything at all. Narrow them with a role-management plugin if that matters to you; this plugin only ever checks whether an account is an Editor or an Administrator.
 * **No payments.** `recurring_donation_amount` on a member record is informational only; the plugin does not collect, charge, or reconcile payments of any kind.
-* **No status notifications.** Nothing about library activity is pushed to anyone: members and staff see due soon, overdue, ready for pickup and queue position by visiting the relevant page. The plugin does send account email -- a setup link so a new member can choose their first password, WordPress's own password-reset link, and a confirmation once a password has been changed -- but each of those is triggered by someone's action, never by a schedule. There is no SMS.
+* **No status notifications.** Nothing about library activity is pushed to anyone: members and staff see due soon, overdue, ready for pickup and queue position by visiting the relevant page. The plugin does send account email -- a setup link so a new member can choose their first password, WordPress's own password-reset link, a confirmation once a password has been changed, and, if member agreements are enabled, a request to agree and a record of what was agreed -- but each of those is triggered by someone's action, never by a schedule. There is no SMS.
 * **One database, one WordPress install.** The plugin creates its own tables via `$wpdb` using your site's table prefix. It has not been tested against multisite network-activation; on multisite it should be activated per-site.
 * **Site timezone must be set correctly.** Reservations and loans are timestamped using WordPress's configured site timezone (Settings > General > Timezone). If that is left at its default, timestamps will not reflect your actual local time (see the FAQ).
 * **Signup has no CAPTCHA or throttling.** Anyone who can reach the sign-up page can create a member account (email confirmation is not required; the account is active immediately). This matches a walk-in-friendly, low-friction community tool library; if your site is at higher risk of automated abuse, put it behind whatever anti-spam layer (CAPTCHA, firewall rules, etc.) you'd normally use for a public registration form.
@@ -124,11 +124,26 @@ Yes. The Setup page lets you set your organization's logo, colors, fonts, button
 
 Yes. Testing can be done on your site or in a local instance through LocalWP (recommended). Simply borrow or create a dummy data SQL file (there is a dummy-data.sql file included in the documentation for this plugin). If borrowing the included dummy-data.sql file, it is recommended to change the stale dates of loans, reservations, and membership signup to reflect current dates (your favorite AI tool can do this quickly). Use the database schema, dbml file, and visual schematics when creating your own dummy date file. Run the SQL file as a command through the WordPress backend database manager (phpMyAdmin, Adminer, AdminNeo, etc.) to insert your dummy data. You may then test the plugin as both an administrator and customer.
 
-= Does the plugin send email notifications (e.g. "your reservation is ready")? =
+= Does the plugin send emails? =
 
-Not about library activity. There are no "your reservation is ready", "due soon", or "overdue" emails; members and staff see that status by visiting the relevant page.
+Yes, but never about library lending activity.
 
-It does send account email, all of it prompted by someone's action rather than by a schedule: the setup link that lets a member choose their first password, WordPress's own password-reset link, a confirmation once a password has been changed, and -- when a member record is deleted -- a confirmation to the member plus a request to the site administrator to delete that member's stored verification files. There is no SMS. Note that WordPress sends this mail through whatever mail setup your host provides -- many hosts need an SMTP plugin before `wp_mail()` reliably reaches inboxes.
+Every email it does send is triggered by a person, not a schedule:
+
+* The setup link a new member uses to choose their first password.
+* WordPress's own password-reset link, and the confirmation once a password has been changed.
+* On a member delete: a confirmation to the member, plus a request to the site administrator to delete that member's stored verification files.
+* With member agreements switched on: a request asking a member to review and agree, and a confirmation recording what they agreed to, with any attached documents included.
+
+= The plugin's emails aren't arriving. How do I set up outgoing mail? =
+
+The plugin has no mail settings of its own. It calls WordPress's `wp_mail()` and nothing else, so delivery is entirely WordPress and host configuration.
+
+Out of the box WordPress sends from `wordpress@your-domain.com`, a mailbox that usually does not exist, from a server your domain has never authorized. Receiving servers treat that as forgery, which is why the mail lands in spam or is rejected outright. To fix it:
+
+1. Install an SMTP plugin (WP Mail SMTP, Post SMTP, FluentSMTP) and connect it to a real sending service: your Google Workspace or Microsoft 365 account, or a transactional provider such as Postmark, SendGrid, Mailgun or Amazon SES.
+2. Set the From address to a real mailbox on your own domain, e.g. `library@yourdomain.org`. Members reply to these emails, so it should be one staff read.
+3. Add the SPF and DKIM DNS records your sending service gives you. Add DMARC only once those two verify.
 
 = Can I export my data? =
 
@@ -137,6 +152,8 @@ Yes. The Setup page can export the plugin's full dataset as either a SQL dump (i
 = What happens when I delete a member, or a member deletes their own account? =
 
 It depends on whether that member has any loan or reservation history. With none, the delete is a true, permanent removal: their row in the plugin's database and their WordPress account are both gone. With history, the plugin can't remove their row outright (loans and reservations reference it, and deleting it would corrupt those tables' history), so it anonymizes them instead: name, address, phone, and email are overwritten with placeholders, their verification documents are deleted, and their WordPress account is deleted -- but their loan and reservation rows are left completely untouched, so a tool's total-loans count and similar statistics stay accurate. Either way it's permanent and cannot be undone. Members can start this themselves from their Account page ("Delete Account and Remove Personal Data"); staff can do the same for any member from the Membership page's Delete button, which explains up front which outcome a given member will get.
+
+One narrow exception, if you enable member agreements: an agreement record keeps **the member's name and email address as they were at the moment they agreed**, and keeps them after that member is deleted. A record with nobody's name on it cannot show who agreed, which is the only thing it exists to show. Nothing else about them is retained on those records -- no IP addresses, no device or browser data, nothing about the connection at all. A name, an email address, what they agreed to, and when. Data exports contain these records too, so store export files somewhere access-controlled. This retention normally needs mentioning in whatever privacy notice you give members, and it is worth deciding on your own legal advice before you turn the feature on.
 
 = What happens when I delete a tool? =
 

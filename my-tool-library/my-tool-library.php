@@ -25,6 +25,37 @@ if ( ! defined( 'MTL_PLUGIN_DIR' ) ) {
 }
 
 /**
+ * An appearance setting, made safe to print inside a <style> block.
+ *
+ * ESCAPING FOR HTML IS THE WRONG TOOL HERE, and using it silently breaks the
+ * setting. esc_html()/esc_attr() turn the apostrophes in a font stack into
+ * &#039;, and a browser parsing CSS does not decode HTML entities -- so
+ * `font-family: 'Segoe UI', sans-serif` arrives as
+ * `font-family: &#039;Segoe UI&#039;, sans-serif`, the declaration is invalid,
+ * and the font is dropped with no error anywhere. Every quoted font stack the
+ * Setup page offers is affected.
+ *
+ * So values are made safe by ALLOWLIST instead: letters, digits, space, comma,
+ * period, hyphen, percent, quotes and hash. That covers font stacks, sizes
+ * (1.2em, 120%), hex colours, weights, transforms and scales, while excluding
+ * every character needed to escape the declaration or the element -- no
+ * semicolon, braces, parentheses, colon, backslash or angle bracket, so
+ * neither `</style>`, a second declaration, `url(...)` nor a CSS comment can be
+ * smuggled through.
+ *
+ * @param string $value    Stored option value.
+ * @param string $fallback Used when $value is empty after cleaning. An empty
+ *                         CSS value is an invalid declaration, so a caller
+ *                         should pass something usable ('inherit', a colour).
+ * @return string Safe to echo directly into a stylesheet.
+ */
+function mtl_css_value( $value, $fallback = 'inherit' ) {
+	$value = preg_replace( '/[^a-zA-Z0-9 ,.\-%\'"#]/', '', (string) $value );
+	$value = trim( (string) $value );
+	return '' !== $value ? $value : $fallback;
+}
+
+/**
  * Formats a MySQL date/datetime string for display (default MM/DD/YYYY).
  * Display-only: `<input type="date">` values and JS-sortable `data-*`
  * attributes must stay in ISO YYYY-MM-DD and never go through this.
@@ -39,6 +70,38 @@ function mtl_format_date( $value, $format = 'm/d/Y' ) {
 	}
 	$ts = strtotime( $value );
 	return $ts ? esc_html( gmdate( $format, $ts ) ) : '&mdash;';
+}
+
+/**
+ * Formats a UTC datetime from the member-agreement tables for display in the
+ * site's timezone.
+ *
+ * SEPARATE FROM mtl_format_date() on purpose. Every other date in this plugin
+ * is a TIMESTAMP read back in the database session timezone; the two
+ * member_agreement* tables store DATETIME holding explicit UTC. One helper
+ * could not tell the two bases apart from the value alone, and a caller that
+ * picked wrong would shift a legal timestamp by hours with no error anywhere.
+ * The column type decides which you call.
+ *
+ * EVERY date from member_agreements and member_agreement_acceptances goes
+ * through this, admin screens included: member receipt, staff detail panel,
+ * Setup's "in use since", the record download, and both emails.
+ *
+ * @param string $utc    A 'Y-m-d H:i:s' string holding UTC.
+ * @param string $format PHP date() format.
+ * @return string Formatted in site time, or an em dash if empty/unparseable.
+ */
+function mtl_format_utc_datetime( $utc, $format = 'm/d/Y' ) {
+	if ( empty( $utc ) ) {
+		return '&mdash;';
+	}
+	try {
+		$dt = new DateTime( $utc, new DateTimeZone( 'UTC' ) );
+	} catch ( Exception $e ) {
+		return '&mdash;';
+	}
+	$dt->setTimezone( wp_timezone() );
+	return esc_html( $dt->format( $format ) );
 }
 
 /**
@@ -2892,15 +2955,14 @@ function mtl_email_table_row( $label, $value ) {
  * member whose record has just been removed, and hands over the member's full
  * details as the library's record of what was deleted.
  *
- * mtl_delete_or_anonymize_member() drops the member_verifications row, which
- * destroys the LINKS to the member's ID and proof-of-address scans -- but the
- * files themselves live wherever the library uploaded them (a Drive folder,
- * a media library, a share) and nothing in this plugin can reach out and
- * delete them. So the links are mailed to the administrator before they are
- * lost, together with the request to delete what they point at. The email is
- * deliberately the only remaining copy: it doubles as the library's written
- * record that the deletion was asked for, and when the files are gone it is
- * the last thing left to destroy.
+ * Deleting a member drops the member_verifications row, which destroys the
+ * LINKS to their ID and proof-of-address scans -- but the files themselves live
+ * wherever the library uploaded them (a Drive folder, a media library, a share)
+ * and nothing in this plugin can reach out and delete them. So the links are
+ * mailed to the administrator before they are lost, together with the request
+ * to delete what they point at. That email is then the only remaining copy: it
+ * doubles as the library's written record that the deletion was asked for, and
+ * once the files are gone it is the last thing left to destroy.
  *
  * Sent even when no documents were on file, since the record of the deletion
  * is worth having either way -- it just says so plainly instead of listing
@@ -2993,8 +3055,8 @@ function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open
 			count( $open_loans )
 		);
 		foreach ( $open_loans as $loan ) {
-			$due      = strtotime( (string) $loan->due_date );
-			$lines[]  = sprintf(
+			$due     = strtotime( (string) $loan->due_date );
+			$lines[] = sprintf(
 				'  - %s (%s), due %s',
 				trim( stripslashes( (string) $loan->tool_name ) ),
 				trim( stripslashes( (string) $loan->barcode ) ),
@@ -3199,9 +3261,13 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 	// alone below, so the member is told they still owe it and the admin
 	// record lists what is still out.
 	$tbl_inventory = $wpdb->prefix . 'tool_inventory';
-	$open_loans    = $wpdb->get_results(
+
+	// Both interpolations are table names built from $wpdb->prefix. Disabled
+	// across the block rather than per line, because the sniff fires on every
+	// line of a multi-line string.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	$open_loans = $wpdb->get_results(
 		$wpdb->prepare(
-			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 			"SELECT t.tool_name, t.barcode, l.due_date
 			   FROM {$tbl_loans} l
 			   JOIN {$tbl_inventory} t ON t.tool_id = l.tool_id
@@ -3210,6 +3276,7 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 			$member_id
 		)
 	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	// Resolved BEFORE the row is anonymized, while its email still identifies
 	// the person. Only an account that proves the link is deleted: if the link
@@ -3367,33 +3434,33 @@ function mtl_apply_custom_admin_styles() {
 
 		echo '<style>
             .mtl-admin-wrapper {
-                color: ' . esc_attr( $b_color ) . ';
-                font-family: ' . esc_attr( $b_font ) . ';
-                font-size: ' . esc_attr( $b_size ) . ';
-                font-weight: ' . esc_attr( $b_weight ) . ';
-                background: ' . esc_attr( $bg_color ) . ';
-                --mtl-accent-color: ' . esc_attr( $accent_color ) . ';
-                --mtl-radius: ' . esc_attr( $radius ) . ';
-                --mtl-header-color: ' . esc_attr( $h_color ) . ';
-                --mtl-body-color: ' . esc_attr( $b_color ) . ';
-                --mtl-link-color: ' . esc_attr( $l_color ) . ';
-                --mtl-btn-scale: ' . esc_attr( $btn_scale ) . ';
+                color: ' . mtl_css_value( $b_color, '#096491' ) . ';
+                font-family: ' . mtl_css_value( $b_font ) . ';
+                font-size: ' . mtl_css_value( $b_size ) . ';
+                font-weight: ' . mtl_css_value( $b_weight, '400' ) . ';
+                background: ' . mtl_css_value( $bg_color, '#ffffff' ) . ';
+                --mtl-accent-color: ' . mtl_css_value( $accent_color, '#f7c600' ) . ';
+                --mtl-radius: ' . mtl_css_value( $radius, '4px' ) . ';
+                --mtl-header-color: ' . mtl_css_value( $h_color, '#ff6600' ) . ';
+                --mtl-body-color: ' . mtl_css_value( $b_color, '#096491' ) . ';
+                --mtl-link-color: ' . mtl_css_value( $l_color, '#00b3ff' ) . ';
+                --mtl-btn-scale: ' . mtl_css_value( $btn_scale, '1' ) . ';
             }
             .mtl-admin-wrapper h2,
             .mtl-admin-wrapper h3,
             .mtl-admin-wrapper h4,
             .mtl-admin-wrapper summary {
-                color: ' . esc_attr( $h_color ) . ' !important;
-                font-family: ' . esc_attr( $h_font ) . ';
-                font-size: ' . esc_attr( $h_size ) . ';
-                font-weight: ' . esc_attr( $h_weight ) . ';
-                text-transform: ' . esc_attr( $h_transform ) . ';
+                color: ' . mtl_css_value( $h_color, '#ff6600' ) . ' !important;
+                font-family: ' . mtl_css_value( $h_font ) . ';
+                font-size: ' . mtl_css_value( $h_size ) . ';
+                font-weight: ' . mtl_css_value( $h_weight, '700' ) . ';
+                text-transform: ' . mtl_css_value( $h_transform, 'none' ) . ';
             }
             .mtl-admin-wrapper a {
-                color: ' . esc_attr( $l_color ) . ';
-                font-family: ' . esc_attr( $l_font ) . ';
-                font-size: ' . esc_attr( $l_size ) . ';
-                text-decoration: ' . esc_attr( $l_dec ) . ';
+                color: ' . mtl_css_value( $l_color, '#00b3ff' ) . ';
+                font-family: ' . mtl_css_value( $l_font ) . ';
+                font-size: ' . mtl_css_value( $l_size ) . ';
+                text-decoration: ' . mtl_css_value( $l_dec, 'none' ) . ';
             }
             .mtl-admin-wrapper a:hover {
                 text-decoration: underline;
@@ -3425,17 +3492,17 @@ function mtl_apply_custom_admin_styles() {
                 padding: 0 calc(8px * var(--mtl-btn-scale)) !important;
             }
             .mtl-admin-wrapper .button-primary {
-                background: ' . esc_attr( $h_color ) . ' !important;
-                border-color: ' . esc_attr( $h_color ) . ' !important;
+                background: ' . mtl_css_value( $h_color, '#ff6600' ) . ' !important;
+                border-color: ' . mtl_css_value( $h_color, '#ff6600' ) . ' !important;
                 color: #fff !important;
             }
             .mtl-admin-wrapper .button-secondary {
                 background: transparent;
-                border-color: ' . esc_attr( $accent_color ) . ' !important;
-                color: ' . esc_attr( $accent_color ) . ' !important;
+                border-color: ' . mtl_css_value( $accent_color, '#f7c600' ) . ' !important;
+                color: ' . mtl_css_value( $accent_color, '#f7c600' ) . ' !important;
             }
             .mtl-admin-wrapper .button-secondary:hover {
-                background: ' . esc_attr( $accent_color ) . ' !important;
+                background: ' . mtl_css_value( $accent_color, '#f7c600' ) . ' !important;
                 color: #fff !important;
             }
             /*
@@ -3469,6 +3536,1644 @@ function mtl_apply_custom_admin_styles() {
             }
         </style>';
 	}
+}
+
+// ==========================================================================
+// MEMBER AGREEMENTS -- MODE AND CACHING
+//
+// Three modes, held in the mtl_agreements_mode option:
+//
+// off   -- nothing recorded, computed or shown anywhere but the mode control
+// itself. The default.
+// paper -- staff record signatures against paper copies and the plugin tracks
+// who is outstanding. Members are never asked to agree online and are
+// never blocked, but can see their own record.
+// full  -- members agree online at signup, agree again after a revision, and
+// cannot self-serve a reservation until they do.
+//
+// Every surface asks mtl_agreements_tracking() (paper OR full),
+// mtl_agreements_online() (full ONLY) or mtl_agreements_staff_recording()
+// (paper, plus full when the administrator allowed it). Gating the reserve gate
+// or the front-end banner on tracking() would block or nag paper-mode members
+// who have no way to act, which is the likeliest bug in this feature.
+// ==========================================================================
+
+/**
+ * Request-scoped cache for the agreements mode and the active-agreement count,
+ * held in a prefixed global.
+ *
+ * Both values must be readable by the predicates below AND clearable by the
+ * Setup handlers within the same request, which rules out a function-local
+ * static -- nothing outside the function can reset one. A global rather than a
+ * class property because this file is entirely procedural, and mixing the two
+ * trips Universal.Files.SeparateFunctionsFromOO.
+ *
+ * @return array{mode:string|null, active_count:int|null}
+ */
+function &mtl_agreements_cache() {
+	if ( ! isset( $GLOBALS['mtl_agreements_cache'] ) ) {
+		$GLOBALS['mtl_agreements_cache'] = array(
+			'mode'         => null,
+			'active_count' => null,
+		);
+	}
+	return $GLOBALS['mtl_agreements_cache'];
+}
+
+/**
+ * Clears the request-scoped agreement caches.
+ *
+ * Call at the END of EVERY handler that writes mtl_agreements_mode or changes a
+ * row in member_agreements: add, edit, retire, un-retire, move up, move down,
+ * and the mode save. The same request then re-renders the page, so a missed
+ * call does not crash -- it shows the admin the state from a moment ago.
+ *
+ * @return void
+ */
+function mtl_agreements_flush_cache() {
+	$cache                 = &mtl_agreements_cache();
+	$cache['mode']         = null;
+	$cache['active_count'] = null;
+}
+
+/**
+ * Counts agreements that are currently active (not retired).
+ *
+ * Cached for the request: this is consulted on nearly every page the feature
+ * touches, via mtl_agreements_mode(), and must not become a query per call site.
+ *
+ * @return int
+ */
+function mtl_count_active_agreements() {
+	$cache = &mtl_agreements_cache();
+	if ( null !== $cache['active_count'] ) {
+		return $cache['active_count'];
+	}
+
+	global $wpdb;
+	$table = $wpdb->prefix . 'member_agreements';
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	$cache['active_count'] = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE retired_at IS NULL" );
+
+	return $cache['active_count'];
+}
+
+/**
+ * The mode the administrator chose: 'off', 'paper' or 'full'.
+ *
+ * THIS IS THE ADMINISTRATOR'S SETTING AND NOTHING ELSE. It changes only when
+ * somebody picks a different option on Setup and saves it. Do not fold "is
+ * there anything to enforce" in here -- retiring the last agreement would then
+ * appear to switch the feature off by itself, which reads as the plugin
+ * losing the setting. That question belongs to the two gates below.
+ *
+ * Fails CLOSED on the value itself: absent, misspelled or hand-edited is
+ * treated as 'off' rather than assumed to be something permissive.
+ *
+ * @return string 'off'|'paper'|'full'
+ */
+function mtl_agreements_mode() {
+	$cache = &mtl_agreements_cache();
+	if ( null !== $cache['mode'] ) {
+		return $cache['mode'];
+	}
+
+	$stored = (string) get_option( 'mtl_agreements_mode', 'off' );
+
+	$cache['mode'] = in_array( $stored, array( 'paper', 'full' ), true ) ? $stored : 'off';
+
+	return $cache['mode'];
+}
+
+/**
+ * Whether agreements are recorded and shown to staff at all. True for BOTH
+ * paper and full.
+ *
+ * Gates the staff side: the detail panel block, row badges, Advanced Search, the
+ * record download, the confirmation email, and whether any acceptance row is
+ * written. The surfaces that WRITE a staff row ask
+ * mtl_agreements_staff_recording() instead, which is narrower.
+ *
+ * @return bool
+ */
+function mtl_agreements_tracking() {
+	// The active-agreement check lives here rather than in mtl_agreements_mode()
+	// so that having nothing to track never rewrites the administrator's
+	// setting. With no agreement active there is nothing to record against, so
+	// every surface stays hidden -- but Setup still shows the chosen mode, and
+	// adding an agreement brings it all straight back.
+	return 'off' !== mtl_agreements_mode() && 0 < mtl_count_active_agreements();
+}
+
+/**
+ * Whether member-facing surfaces and enforcement are live. True for full ONLY.
+ *
+ * Gates the signup requirement, the account-page agreement form, the front-end
+ * banner, the reserve gate, the bulk request panel and both request emails.
+ *
+ * NEVER gate these on mtl_agreements_tracking(): in paper mode a member cannot
+ * agree online, so blocking or prompting them would leave them behind a door
+ * with no handle.
+ *
+ * @return bool
+ */
+function mtl_agreements_online() {
+	// Same active-agreement guard as tracking(), and it is load-bearing: with
+	// the mode on but nothing active, every member reads as having agreed to
+	// nothing, so without this the banner and the reserve gate would block the
+	// whole membership over a list with no entries.
+	return 'full' === mtl_agreements_mode() && 0 < mtl_count_active_agreements();
+}
+
+/**
+ * Whether staff may record a signature against a paper copy at the desk.
+ *
+ * Gates the Add New Member checkboxes, the detail panel's Record agreement
+ * button and the dialog behind it, and both staff contexts in the writer.
+ *
+ * Always true in paper mode: staff recording IS that mode, so honouring the
+ * option there would leave a mode switched on that can record nothing. In full
+ * mode it is the administrator's choice, and it is off by default -- a library
+ * whose members all agree online never wants a desk button that writes an
+ * attestation on their behalf.
+ *
+ * @return bool
+ */
+function mtl_agreements_staff_recording() {
+	if ( ! mtl_agreements_tracking() ) {
+		return false;
+	}
+
+	return 'paper' === mtl_agreements_mode() || '1' === (string) get_option( 'mtl_agreements_allow_paper', '' );
+}
+
+// ==========================================================================
+// MEMBER AGREEMENTS -- CONTEXTS AND ASSENT LANGUAGE
+//
+// An acceptance row records not just WHAT the member agreed to but HOW they
+// were asked. The context is the only thing a caller of
+// mtl_record_agreement_acceptance() states about the circumstances; everything
+// else the row says is derived from the map below.
+// ==========================================================================
+
+/**
+ * The four contexts in which an acceptance can be recorded, and what each one
+ * means.
+ *
+ * MUST build the array on every call -- never a file-scope constant or a static
+ * cache. The assent strings are wrapped in __(), and WordPress does not load a
+ * plugin's text domain until `init`, so an array built at file scope would
+ * resolve them to English permanently. Since these strings are snapshotted into
+ * acceptance rows, that would record a non-English member as having been shown
+ * wording they never saw. Building per call also survives a mid-request locale
+ * switch.
+ *
+ * staff_add and staff_edit carry identical wording today but stay separate:
+ * this map is where they would diverge if "signed at the desk on joining" ever
+ * needs to read differently from "signed later, after a revision".
+ *
+ * @return array<string, array{is_staff: bool, assent: string}>
+ */
+function mtl_agreement_contexts() {
+	return array(
+		'signup'     => array(
+			'is_staff' => false,
+			/* translators: LEGALLY OPERATIVE. This exact sentence is stored permanently against each member as the wording that framed their agreement, and may be produced as evidence. Translate it precisely rather than idiomatically; a loose rendering weakens the record for every member who reads it in this language. */
+			'assent'   => __( 'By ticking this box and creating an account, I confirm that I have read and agree to the statement above.', 'my-tool-library' ),
+		),
+		'agree_page' => array(
+			'is_staff' => false,
+			/* translators: LEGALLY OPERATIVE. Stored permanently against each member as the wording that framed their agreement, and may be produced as evidence. Translate precisely rather than idiomatically. */
+			'assent'   => __( 'By ticking this box, I confirm that I have read and agree to the statement above.', 'my-tool-library' ),
+		),
+		'staff_add'  => array(
+			'is_staff' => true,
+			/* translators: LEGALLY OPERATIVE. Stored permanently as the attestation library staff made on a member's behalf against a signed paper form, and may be produced as evidence. Translate precisely rather than idiomatically. */
+			'assent'   => __( 'Library staff confirm that this member has signed a paper copy of the statement above.', 'my-tool-library' ),
+		),
+		'staff_edit' => array(
+			'is_staff' => true,
+			/* translators: LEGALLY OPERATIVE. Stored permanently as the attestation library staff made on a member's behalf against a signed paper form, and may be produced as evidence. Translate precisely rather than idiomatically. */
+			'assent'   => __( 'Library staff confirm that this member has signed a paper copy of the statement above.', 'my-tool-library' ),
+		),
+	);
+}
+
+/**
+ * Whether a context is a recognised one.
+ *
+ * The writer refuses to insert a row for anything else, because both the assent
+ * wording and the staff/member distinction are looked up from the context -- an
+ * unrecognised value has no honest answer for either.
+ *
+ * @param string $context Context key.
+ * @return bool
+ */
+function mtl_agreement_context_is_valid( $context ) {
+	return isset( mtl_agreement_contexts()[ $context ] );
+}
+
+/**
+ * The words that frame the tick, for one context.
+ *
+ * This is the ONLY source of the assent wording. The screen that asks and the
+ * row that records must show the same sentence, so both read it from here --
+ * never a literal typed into a template.
+ *
+ * @param string $context One of the keys of mtl_agreement_contexts().
+ * @return string Assent wording, or '' for an unrecognised context.
+ */
+function mtl_assent_language( $context ) {
+	$contexts = mtl_agreement_contexts();
+	return isset( $contexts[ $context ] ) ? $contexts[ $context ]['assent'] : '';
+}
+
+/**
+ * Whether an acceptance recorded in this context was entered by staff on a
+ * member's behalf rather than ticked by the member themselves.
+ *
+ * @param string $context One of the keys of mtl_agreement_contexts().
+ * @return bool False for an unrecognised context.
+ */
+function mtl_acceptance_is_staff( $context ) {
+	$contexts = mtl_agreement_contexts();
+	return isset( $contexts[ $context ] ) ? $contexts[ $context ]['is_staff'] : false;
+}
+
+// ==========================================================================
+// MEMBER AGREEMENTS -- READING THE AGREEMENT LIST
+// ==========================================================================
+
+/**
+ * Longest agreement text an admin may write, in characters.
+ *
+ * The column is TEXT and would take far more. The cap is a usability limit, not
+ * a storage one: every active agreement appears in full on the signup form, and
+ * six long ones stacked together is a wall of text nobody reads -- which is the
+ * failure mode this whole feature exists to avoid.
+ */
+define( 'MTL_AGREEMENT_TEXT_MAXLENGTH', 2000 );
+
+/**
+ * Every agreement still in circulation, in the order members see them.
+ *
+ * ALWAYS ordered by sort_order then agreement_id. Two rows can end up sharing a
+ * sort_order through concurrent reordering, and without the tiebreak the signup
+ * form and the account page could list them differently on different page
+ * loads -- which looks like a bug in the record.
+ *
+ * @return object[] Rows from member_agreements, retired ones excluded.
+ */
+function mtl_get_active_agreements() {
+	global $wpdb;
+	$table = $wpdb->prefix . 'member_agreements';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix, not user input.
+	return $wpdb->get_results( "SELECT * FROM {$table} WHERE retired_at IS NULL ORDER BY sort_order ASC, agreement_id ASC" );
+}
+
+/**
+ * Every retired agreement, newest retirement first.
+ *
+ * @return object[] Rows from member_agreements, active ones excluded.
+ */
+function mtl_get_retired_agreements() {
+	global $wpdb;
+	$table = $wpdb->prefix . 'member_agreements';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix, not user input.
+	return $wpdb->get_results( "SELECT * FROM {$table} WHERE retired_at IS NOT NULL ORDER BY retired_at DESC, agreement_id ASC" );
+}
+
+/**
+ * One agreement row by ID, retired or not.
+ *
+ * @param int $agreement_id Agreement ID.
+ * @return object|null Row, or null if there is no such agreement.
+ */
+function mtl_get_agreement( $agreement_id ) {
+	global $wpdb;
+	$table = $wpdb->prefix . 'member_agreements';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix, not user input.
+	return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE agreement_id = %d", (int) $agreement_id ) );
+}
+
+/**
+ * How many acceptance rows exist for an agreement.
+ *
+ * Decides whether Setup offers Delete or Retire: an agreement nobody has ever
+ * accepted can be deleted outright, and this is how that is established --
+ * counted, not guessed from how recently it was created. The ON DELETE RESTRICT
+ * foreign key is the real guarantee; this only decides which button to show.
+ *
+ * @param int $agreement_id Agreement ID.
+ * @return int
+ */
+function mtl_count_agreement_acceptances( $agreement_id ) {
+	global $wpdb;
+	$table = $wpdb->prefix . 'member_agreement_acceptances';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix, not user input.
+	return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE agreement_id = %d", (int) $agreement_id ) );
+}
+
+/**
+ * How many current members are up to date on one agreement.
+ *
+ * The number the edit-an-agreement warning names: members who ARE up to date,
+ * since those are the ones a version bump knocks back out of agreement. Anyone
+ * who had not agreed yet is already outstanding.
+ *
+ * Anonymized members are excluded -- they have no account to be prompted on.
+ *
+ * @param int $agreement_id Agreement ID.
+ * @param int $version_num  Version to measure against.
+ * @return int
+ */
+function mtl_count_members_agreed_to( $agreement_id, $version_num ) {
+	global $wpdb;
+	$acceptances = $wpdb->prefix . 'member_agreement_acceptances';
+	$members     = $wpdb->prefix . 'members';
+	// Every interpolation below is a table name built from $wpdb->prefix; the
+	// two values are placeholders. Disabled across the block rather than per
+	// line because the sniff fires on each line of a multi-line string.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- reporting count, no cache invalidation point.
+	$count = (int) $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT COUNT(DISTINCT a.member_id)
+			   FROM {$acceptances} a
+			   JOIN {$members} m ON m.member_id = a.member_id AND m.anonymized_at IS NULL
+			  WHERE a.agreement_id = %d
+			    AND a.agreement_version_num >= %d",
+			(int) $agreement_id,
+			(int) $version_num
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	return $count;
+}
+
+/**
+ * SQL predicate for "this member is outstanding", as a WHERE fragment.
+ *
+ * The definition of outstanding lives here and nowhere else. Three queries need
+ * it -- the paper-to-full count, the request queue's audience filter, and the
+ * excluded count -- and if it were written out in each, changing what
+ * outstanding means would mean finding all three and keeping them in step.
+ *
+ * Expects the members table aliased as `m` in the surrounding query. Contains no
+ * user input: every interpolation is a table name from $wpdb->prefix.
+ *
+ * @return string SQL beginning "(", suitable for appending to a WHERE.
+ */
+function mtl_agreements_outstanding_sql() {
+	global $wpdb;
+	$agreements  = $wpdb->prefix . 'member_agreements';
+	$acceptances = $wpdb->prefix . 'member_agreement_acceptances';
+
+	// Counts the active agreements this member holds a current-or-newer
+	// acceptance for; anyone short of the full set is outstanding.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	return "(
+		SELECT COUNT(*)
+		  FROM {$agreements} g
+		 WHERE g.retired_at IS NULL
+		   AND EXISTS (
+		       SELECT 1 FROM {$acceptances} a
+		        WHERE a.member_id = m.member_id
+		          AND a.agreement_id = g.agreement_id
+		          AND a.agreement_version_num >= g.version_num
+		   )
+	) < (SELECT COUNT(*) FROM {$agreements} WHERE retired_at IS NULL)";
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+}
+
+/**
+ * How many current members are missing at least one current-version acceptance.
+ *
+ * Used for one thing: the count in the paper-to-full confirmation, so an admin
+ * is told how many people that switch is about to block before they make it.
+ *
+ * Returns 0 when no agreement is active, which is correct -- with nothing to
+ * agree to, nobody is outstanding.
+ *
+ * @return int
+ */
+function mtl_count_members_not_in_agreement() {
+	$active = mtl_count_active_agreements();
+	if ( 0 === $active ) {
+		return 0;
+	}
+
+	global $wpdb;
+	$members = $wpdb->prefix . 'members';
+
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- reporting count, no cache invalidation point.
+	return (int) $wpdb->get_var(
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- table name from $wpdb->prefix plus the shared predicate; no user input.
+		"SELECT COUNT(*) FROM {$members} m WHERE m.anonymized_at IS NULL AND " . mtl_agreements_outstanding_sql()
+	);
+}
+
+// ==========================================================================
+// MEMBER AGREEMENTS -- EMAIL COPY
+//
+// Three admin-editable strings, each shipped with a working default so no email
+// this feature sends is ever blank or subject-less.
+// ==========================================================================
+
+/**
+ * The shipped defaults for the three admin-editable email strings.
+ *
+ * Built per call, for the same reason mtl_agreement_contexts() is: __() before
+ * `init` resolves to English permanently.
+ *
+ * @return array{subject: string, body: string, request_body: string}
+ */
+function mtl_agreement_email_defaults() {
+	return array(
+		'subject'      => __( 'Your agreement record', 'my-tool-library' ),
+		'body'         => __( 'This email is your record of the agreements you have made with us. Please keep it for your reference.', 'my-tool-library' ),
+		'request_body' => __( 'We have updated our member agreements, and we need you to review and agree to them before you borrow again. Sign in to your account to read them and agree.', 'my-tool-library' ),
+	);
+}
+
+/**
+ * Subject line for the confirmation email, admin-set or shipped default.
+ *
+ * Line breaks are stripped HERE as well as on save. A subject containing CR or
+ * LF is classic mail-header injection -- everything after the break becomes a
+ * new header, which is how a Bcc: gets added to every agreement email the site
+ * sends. The option could have been written by anything (WP-CLI, a migration, a
+ * hand-edited database), so the value is never trusted just because a save
+ * handler once cleaned it.
+ *
+ * @return string
+ */
+function mtl_agreement_email_subject() {
+	$defaults = mtl_agreement_email_defaults();
+	$stored   = (string) get_option( 'mtl_agreement_email_subject', '' );
+	$stored   = str_replace( array( "\r", "\n" ), '', sanitize_text_field( $stored ) );
+	return '' !== trim( $stored ) ? $stored : $defaults['subject'];
+}
+
+/**
+ * Admin-supplied body of the confirmation email, or the shipped default.
+ *
+ * @return string Plain text.
+ */
+function mtl_agreement_email_body() {
+	$defaults = mtl_agreement_email_defaults();
+	$stored   = (string) get_option( 'mtl_agreement_email_body', '' );
+	return '' !== trim( $stored ) ? $stored : $defaults['body'];
+}
+
+/**
+ * Admin-supplied body of the agreement *request* email, or the shipped default.
+ *
+ * A different message from the confirmation, with a different purpose, so it
+ * gets its own option rather than reusing the one above. Used by both the bulk
+ * sender and the per-member Send agreement request action, which are one
+ * message and should not be two options to keep in step.
+ *
+ * @return string Plain text.
+ */
+function mtl_agreement_request_email_body() {
+	$defaults = mtl_agreement_email_defaults();
+	$stored   = (string) get_option( 'mtl_agreement_request_email_body', '' );
+	return '' !== trim( $stored ) ? $stored : $defaults['request_body'];
+}
+
+/**
+ * Asks one member to review and agree.
+ *
+ * Sent by both the per-member action on the detail panel and the bulk sender.
+ * One message with one purpose, so it is one function and one Setup option
+ * rather than two to keep in step.
+ *
+ * WRITES USER META ONLY. Sending a request never changes a member's agreement
+ * status -- status is derived from version comparison and nothing else. The
+ * meta is a send-throttle, not a state.
+ *
+ * The generated part varies by what the recipient actually needs, which is what
+ * makes "all active members" a safe audience: telling somebody who is fully
+ * current to "please agree" would be both wrong and the fastest way to teach
+ * members to ignore these emails.
+ *
+ * No files are attached. The recipient has not agreed to anything yet; the
+ * attachments belong on the confirmation they get once they do.
+ *
+ * @param int $member_id Member to write to.
+ * @return bool Whether the mail was accepted for delivery.
+ */
+function mtl_send_agreement_request_email( $member_id ) {
+	$member_id = (int) $member_id;
+	if ( $member_id <= 0 || ! mtl_agreements_online() ) {
+		return false;
+	}
+
+	global $wpdb;
+	$members = $wpdb->prefix . 'members';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix.
+	$member = $wpdb->get_row( $wpdb->prepare( "SELECT first_name, last_name, email, anonymized_at FROM {$members} WHERE member_id = %d", $member_id ) );
+	if ( ! $member || null !== $member->anonymized_at || '' === trim( (string) $member->email ) ) {
+		return false;
+	}
+
+	$org_name = get_option( 'mtl_org_name', '' );
+	if ( '' === trim( (string) $org_name ) ) {
+		$org_name = 'My Tool Library';
+	}
+
+	$greeting_name = trim( (string) $member->first_name );
+	if ( '' === $greeting_name ) {
+		$greeting_name = trim( $member->first_name . ' ' . $member->last_name );
+	}
+	if ( '' === $greeting_name ) {
+		$greeting_name = 'there';
+	}
+
+	$lines = array(
+		sprintf( 'Hi %s,', $greeting_name ),
+		'',
+		mtl_agreement_request_email_body(),
+		'',
+	);
+
+	$outstanding = mtl_member_outstanding_agreements( $member_id );
+	if ( $outstanding ) {
+		$lines[] = __( 'We need you to review and agree to the following:', 'my-tool-library' );
+		$number  = 1;
+		foreach ( $outstanding as $agreement ) {
+			$lines[] = mtl_wrap_numbered_line( $number, $agreement->agreement_text );
+			++$number;
+		}
+		$lines[] = '';
+		$lines[] = __( 'You can do that here:', 'my-tool-library' );
+		$lines[] = mtl_front_page_url( 'account' ) . '#mtl-agreements';
+	} else {
+		// No task, and it must not invent one. No anchor either: there is no
+		// agreement form on that page for a member who is up to date, so an
+		// anchor would point at nothing.
+		$lines[] = __( 'You have already agreed to everything currently required -- there is nothing you need to do. You can see what you agreed to here:', 'my-tool-library' );
+		$lines[] = mtl_front_page_url( 'account' );
+	}
+
+	$contact_email = mtl_contact_email();
+	if ( '' !== $contact_email ) {
+		$lines[] = '';
+		$lines[] = sprintf(
+			/* translators: %s: the library's contact email address. */
+			__( 'If anything looks wrong, contact library staff at %s.', 'my-tool-library' ),
+			$contact_email
+		);
+	}
+
+	$lines[] = '';
+	$lines[] = sprintf( '-- %s', $org_name );
+
+	$subject = sprintf(
+		/* translators: %s: the library's name. */
+		__( '[%s] Please review our member agreements', 'my-tool-library' ),
+		$org_name
+	);
+	$sent = wp_mail( $member->email, $subject, implode( "\r\n", $lines ) );
+
+	if ( $sent ) {
+		// Read by both senders to skip anyone contacted in the last day, so a
+		// second click cannot mail somebody three times in a minute.
+		// The email is required, not optional: the helper refuses to guess a
+		// link from the id alone.
+		$user_id = mtl_find_wp_user_id_by_member_id( $member_id, $member->email );
+		if ( $user_id > 0 ) {
+			update_user_meta( $user_id, 'mtl_agreement_requested_at', time() );
+		}
+	}
+
+	return (bool) $sent;
+}
+
+/**
+ * One numbered item of a generated agreement list, wrapped with a hanging
+ * indent so the numbers stay readable in a plain-text mail client.
+ *
+ * @param int    $number 1-based position within this email, not the agreement id.
+ * @param string $text   Agreement text.
+ * @return string
+ */
+function mtl_wrap_numbered_line( $number, $text ) {
+	$prefix  = $number . '. ';
+	$body    = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( (string) $text ) ) );
+	$wrapped = wordwrap( $body, 68 - strlen( $prefix ), "\r\n" . str_repeat( ' ', strlen( $prefix ) ), false );
+	return $prefix . $wrapped;
+}
+
+/**
+ * Largest combined attachment payload, in bytes.
+ *
+ * Mail providers commonly reject anything over 10-25 MB, and a rejection loses
+ * the whole email rather than just the attachment. 10 MB is the conservative
+ * end of that range.
+ */
+define( 'MTL_AGREEMENT_MAIL_MAX_BYTES', 10 * 1024 * 1024 );
+
+/**
+ * Sends a member their record of what they just agreed to.
+ *
+ * The generated list comes from the ACCEPTANCE ROWS just written, not from a
+ * fresh read of member_agreements. At send time the two are identical -- the
+ * rows were snapshotted moments earlier -- but reading the snapshot means the
+ * email can never disagree with the record it is confirming, even if an admin
+ * saves an edit in the same second.
+ *
+ * THE RESULT CANNOT ROLL ANYTHING BACK. The acceptance rows are committed
+ * first, so a member whose mail provider is down has still agreed. Callers use
+ * the return value only to report the failure to staff.
+ *
+ * The generated wording stays generic because it has to hold for every document
+ * a library might ever use: it says that they agreed, to what wording, and when,
+ * without characterising what they took on. Library-specific framing belongs in
+ * the admin-supplied body, and assent_text is not quoted because it varies by
+ * context.
+ *
+ * @param int   $member_id      Member to write to.
+ * @param int[] $acceptance_ids The rows this email is about.
+ * @return bool Whether the mail was accepted for delivery.
+ */
+function mtl_send_agreement_confirmation_email( $member_id, $acceptance_ids ) {
+	$member_id      = (int) $member_id;
+	$acceptance_ids = array_values( array_unique( array_filter( array_map( 'intval', (array) $acceptance_ids ) ) ) );
+	if ( $member_id <= 0 || ! $acceptance_ids || ! mtl_agreements_tracking() ) {
+		return false;
+	}
+
+	global $wpdb;
+	$acceptances  = $wpdb->prefix . 'member_agreement_acceptances';
+	$agreements   = $wpdb->prefix . 'member_agreements';
+	$placeholders = implode( ',', array_fill( 0, count( $acceptance_ids ), '%d' ) );
+
+	// Scoped to this member as well as these ids, so a caller passing an id
+	// belonging to somebody else cannot mail one member another's record.
+	// Ordered by the agreements' sort_order, matching every other listing.
+	$args = array_merge( array( $member_id ), $acceptance_ids );
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- read per send; there is no cache to invalidate.
+	$rows = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT a.*
+			   FROM {$acceptances} a
+			   LEFT JOIN {$agreements} g ON g.agreement_id = a.agreement_id
+			  WHERE a.member_id = %d
+			    AND a.acceptance_id IN ({$placeholders})
+			  ORDER BY g.sort_order ASC, a.agreement_id ASC",
+			$args
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+
+	if ( ! $rows ) {
+		return false;
+	}
+
+	// The snapshot, not the live members row: this is a receipt, and it should
+	// name whoever the member was when they agreed.
+	$to = trim( (string) $rows[0]->member_email );
+	if ( '' === $to || ! is_email( $to ) ) {
+		return false;
+	}
+
+	$org_name = get_option( 'mtl_org_name', '' );
+	if ( '' === trim( (string) $org_name ) ) {
+		$org_name = 'My Tool Library';
+	}
+
+	$greeting_name = trim( (string) $rows[0]->member_name );
+	if ( '' !== $greeting_name ) {
+		$parts         = explode( ' ', $greeting_name );
+		$greeting_name = $parts[0];
+	}
+	if ( '' === $greeting_name ) {
+		$greeting_name = 'there';
+	}
+
+	$lines = array(
+		sprintf( 'Hi %s,', $greeting_name ),
+		'',
+		mtl_agreement_email_body(),
+		'',
+		__( 'You agreed to the following:', 'my-tool-library' ),
+	);
+
+	// Numbered from 1 within THIS email -- these are not agreement ids and not
+	// positions in the full list. A member re-accepting only agreement 3 gets a
+	// single item numbered 1.
+	$number = 1;
+	foreach ( $rows as $row ) {
+		$lines[] = mtl_wrap_numbered_line( $number, $row->agreement_text );
+		++$number;
+	}
+
+	$lines[] = '';
+	$lines[] = sprintf(
+		/* translators: %s: date and time the member agreed, in the site's timezone. */
+		__( 'Agreed %s.', 'my-tool-library' ),
+		wp_strip_all_tags( mtl_format_utc_datetime( $rows[0]->accepted_at, 'j F Y \a\t g:i a' ) )
+	);
+
+	// Attachments: only the files for the agreements in THIS email.
+	$attachments = array();
+	$file_urls   = array();
+	$total_bytes = 0;
+	foreach ( $rows as $row ) {
+		if ( empty( $row->file_url ) ) {
+			continue;
+		}
+		$attachment_id = attachment_url_to_postid( $row->file_url );
+		$path          = $attachment_id > 0 ? get_attached_file( $attachment_id ) : '';
+
+		// A file missing from disk is skipped rather than failing the send --
+		// the member still gets their record.
+		if ( ! $path || ! is_file( $path ) || ! is_readable( $path ) ) {
+			continue;
+		}
+
+		// Two agreements can legitimately point at the same PDF; attaching it
+		// twice is noise.
+		if ( in_array( $path, $attachments, true ) ) {
+			continue;
+		}
+
+		$attachments[] = $path;
+		$file_urls[]   = (string) $row->file_url;
+		$total_bytes  += (int) filesize( $path );
+	}
+
+	if ( $attachments && $total_bytes <= MTL_AGREEMENT_MAIL_MAX_BYTES ) {
+		$lines[] = '';
+		$lines[] = __( 'The documents referred to above are attached to this email.', 'my-tool-library' );
+	} elseif ( $attachments ) {
+		// All-or-nothing rather than attaching until the budget runs out: a
+		// partial set is worse than none, because the member cannot tell which
+		// are missing.
+		$attachments = array();
+		$lines[]     = '';
+		$lines[]     = __( 'The documents referred to above were too large to attach. You can view them here:', 'my-tool-library' );
+		$link_number = 1;
+		foreach ( $file_urls as $url ) {
+			$lines[] = $link_number . '. ' . $url;
+			++$link_number;
+		}
+	}
+
+	$contact_email = mtl_contact_email();
+	if ( '' !== $contact_email ) {
+		$lines[] = '';
+		$lines[] = sprintf(
+			/* translators: %s: the library's contact email address. */
+			__( 'If anything looks wrong, contact library staff at %s.', 'my-tool-library' ),
+			$contact_email
+		);
+	}
+
+	$lines[] = '';
+	$lines[] = sprintf( '-- %s', $org_name );
+
+	// Stripped again here, not only on save: the option could have been written
+	// by WP-CLI, a migration or a hand-edited database, and a CR or LF in a
+	// subject is how a Bcc: gets added to every agreement email the site sends.
+	$subject = str_replace( array( "\r", "\n" ), '', mtl_agreement_email_subject() );
+	$subject = sprintf( '[%s] %s', $org_name, $subject );
+
+	return (bool) wp_mail( $to, $subject, implode( "\r\n", $lines ), '', $attachments );
+}
+
+/**
+ * The acceptance rows written to a member most recently, as ids.
+ *
+ * "Most recently" means every row sharing the highest accepted_at for that
+ * member. That is the newest acceptance event -- never an older one.
+ *
+ * ONE-SECOND RESOLUTION IS THE LIMIT OF THIS. accepted_at is a DATETIME, so two
+ * separate events in the same second come back together. Only safe where that
+ * cannot happen or does not matter:
+ *
+ * - Signup and Add New Member: the member was created moments ago, so every row
+ *   they have is this one event.
+ * - Resend: an extra row from the same second is still theirs.
+ *
+ * Where a member may already have history and the email must name exactly what
+ * was just written, keep the ids mtl_record_agreement_acceptance() returns.
+ *
+ * @param int $member_id Member to read.
+ * @return int[] Acceptance ids, empty when the member has none.
+ */
+function mtl_latest_acceptance_event_ids( $member_id ) {
+	global $wpdb;
+	$acceptances = $wpdb->prefix . 'member_agreement_acceptances';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- read per send; there is no cache to invalidate.
+	$ids = $wpdb->get_col(
+		$wpdb->prepare(
+			"SELECT acceptance_id
+			   FROM {$acceptances}
+			  WHERE member_id = %d
+			    AND accepted_at = (
+			        SELECT MAX(accepted_at) FROM {$acceptances} WHERE member_id = %d
+			    )",
+			(int) $member_id,
+			(int) $member_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	return array_map( 'intval', (array) $ids );
+}
+
+// --------------------------------------------------------------------------
+// AGREEMENT REQUESTS -- THE BULK QUEUE
+//
+// Mirrors the setup-email queue directly above: one shared FROM/WHERE fragment
+// so the count and the fetch can never disagree about who is due, and a runner
+// working to a wall-clock budget rather than a row count.
+// --------------------------------------------------------------------------
+
+/**
+ * The FROM/WHERE shared by the agreement-request queue's count and its fetch.
+ *
+ * THE JOINS ARE THE CORRECTNESS, not an optimisation. The email tells the
+ * member to agree on the website, and the Account page sends anyone not signed
+ * in to a login form -- so a member with no account, or one who has never set a
+ * password, gets an instruction they cannot follow. That is the default state
+ * of the population this panel serves: staff-added and CSV-imported members.
+ *
+ * - No WordPress account at all: excluded by the INNER JOIN on users.
+ * - Account but no password yet: excluded by the mtl_setup_pending check, since
+ *   a setup link is a different email with a different job.
+ *
+ * The panel reports the exclusion rather than dropping people silently, which
+ * would look identical to a successful send.
+ *
+ * @param string $audience   'outstanding' or 'all'. Validated by the caller.
+ * @param bool   $resend_all Include people emailed in the last day.
+ * @return string SQL fragment beginning "FROM".
+ */
+function mtl_agreement_request_queue_from_where( $audience, $resend_all ) {
+	global $wpdb;
+	$members     = $wpdb->prefix . 'members';
+	$agreements  = $wpdb->prefix . 'member_agreements';
+	$acceptances = $wpdb->prefix . 'member_agreement_acceptances';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	$sql = "FROM {$members} m
+		 INNER JOIN {$wpdb->users} u ON u.user_email = m.email
+		 INNER JOIN {$wpdb->usermeta} l ON l.user_id = u.ID AND l.meta_key = 'mtl_member_id' AND CAST(l.meta_value AS UNSIGNED) = m.member_id
+		  LEFT JOIN {$wpdb->usermeta} s ON s.user_id = u.ID AND s.meta_key = 'mtl_setup_pending'
+		  LEFT JOIN {$wpdb->usermeta} r ON r.user_id = u.ID AND r.meta_key = 'mtl_agreement_requested_at'
+		 WHERE m.anonymized_at IS NULL
+		   AND m.email <> ''
+		   AND s.umeta_id IS NULL";
+
+	if ( 'outstanding' === $audience ) {
+		// The same set the Advanced Search filter's two amber states return:
+		// missing ANY active agreement, whether they never agreed to anything
+		// or simply have not caught up with a revision.
+		$sql .= ' AND ' . mtl_agreements_outstanding_sql();
+	}
+
+	if ( ! $resend_all ) {
+		$sql .= $wpdb->prepare(
+			' AND ( r.umeta_id IS NULL OR CAST(r.meta_value AS UNSIGNED) < %d )',
+			time() - DAY_IN_SECONDS
+		);
+	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	return $sql;
+}
+
+/**
+ * The only place an audience string is trusted.
+ *
+ * $audience originates in a POST field and is threaded into query
+ * construction, so it is whitelisted here and only the validated value is
+ * passed onward. An unrecognised value must never WIDEN the audience: the safe
+ * fallback is the narrower set.
+ *
+ * @param string $audience Raw value.
+ * @return string 'outstanding' or 'all'.
+ */
+function mtl_valid_agreement_audience( $audience ) {
+	return in_array( $audience, array( 'outstanding', 'all' ), true ) ? $audience : 'outstanding';
+}
+
+/**
+ * How many members are due an agreement request right now.
+ *
+ * @param string $audience   'outstanding' or 'all'.
+ * @param bool   $resend_all Include people emailed in the last day.
+ * @return int
+ */
+function mtl_count_members_awaiting_agreement_request( $audience = 'outstanding', $resend_all = false ) {
+	global $wpdb;
+	$audience = mtl_valid_agreement_audience( $audience );
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- fragment is table names plus a prepare()d timestamp; see mtl_agreement_request_queue_from_where().
+	return (int) $wpdb->get_var( 'SELECT COUNT(*) ' . mtl_agreement_request_queue_from_where( $audience, (bool) $resend_all ) );
+}
+
+/**
+ * The next batch of member ids to ask.
+ *
+ * Re-derived each call rather than paged with an offset: sending stamps
+ * mtl_agreement_requested_at, which drops that member out of the set, so
+ * repeated runs walk forward on their own.
+ *
+ * @param int    $limit      Maximum ids to return.
+ * @param string $audience   'outstanding' or 'all'.
+ * @param bool   $resend_all Include people emailed in the last day.
+ * @return int[]
+ */
+function mtl_members_awaiting_agreement_request( $limit, $audience = 'outstanding', $resend_all = false ) {
+	global $wpdb;
+	$audience = mtl_valid_agreement_audience( $audience );
+
+	$sql = 'SELECT m.member_id ' . mtl_agreement_request_queue_from_where( $audience, (bool) $resend_all )
+		. $wpdb->prepare( ' ORDER BY m.member_id ASC LIMIT %d', (int) $limit );
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- fragment is table names plus prepare()d values; see mtl_agreement_request_queue_from_where().
+	return array_map( 'intval', (array) $wpdb->get_col( $sql ) );
+}
+
+/**
+ * How many of the members due a request have never agreed to anything.
+ *
+ * A subset of mtl_count_members_awaiting_agreement_request( 'outstanding' ),
+ * built from the same shared fragment so the two populations cannot drift --
+ * the panel reports this as "N of those", and it has to be true of that N.
+ *
+ * @param bool $resend_all Include people emailed in the last day.
+ * @return int
+ */
+function mtl_count_agreement_request_never_agreed( $resend_all = false ) {
+	global $wpdb;
+	$acceptances = $wpdb->prefix . 'member_agreement_acceptances';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	$sql = 'SELECT COUNT(*) ' . mtl_agreement_request_queue_from_where( 'outstanding', (bool) $resend_all )
+		. " AND NOT EXISTS ( SELECT 1 FROM {$acceptances} a2 WHERE a2.member_id = m.member_id )";
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table names plus the prepare()d fragment above.
+	return (int) $wpdb->get_var( $sql );
+}
+
+/**
+ * How many members would be asked but cannot sign in, so are excluded.
+ *
+ * Reported prominently by the panel rather than silently dropped: a silent drop
+ * looks identical to a successful send, and the admin would never learn that
+ * 47 people were skipped.
+ *
+ * @param string $audience 'outstanding' or 'all'.
+ * @return int
+ */
+function mtl_count_agreement_request_excluded( $audience = 'outstanding' ) {
+	global $wpdb;
+	$audience = mtl_valid_agreement_audience( $audience );
+	$members  = $wpdb->prefix . 'members';
+
+	// The same population inverted: everyone in the audience who has no usable
+	// account. A separate query rather than a flag on the one above, so the
+	// exclusion cannot be confused with the send list.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	$sql = "SELECT COUNT(*) FROM {$members} m
+		  LEFT JOIN {$wpdb->users} u ON u.user_email = m.email
+		  LEFT JOIN {$wpdb->usermeta} l ON l.user_id = u.ID AND l.meta_key = 'mtl_member_id' AND CAST(l.meta_value AS UNSIGNED) = m.member_id
+		  LEFT JOIN {$wpdb->usermeta} s ON s.user_id = u.ID AND s.meta_key = 'mtl_setup_pending'
+		 WHERE m.anonymized_at IS NULL
+		   AND ( u.ID IS NULL OR l.umeta_id IS NULL OR s.umeta_id IS NOT NULL OR m.email = '' )";
+
+	if ( 'outstanding' === $audience ) {
+		$sql .= ' AND ' . mtl_agreements_outstanding_sql();
+	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table names only, built from $wpdb->prefix.
+	return (int) $wpdb->get_var( $sql );
+}
+
+/**
+ * Asks as many members as fit in the time budget.
+ *
+ * Same shape as mtl_run_setup_email_batch(), and for the same reason: this is
+ * SMTP-bound work whose per-item cost varies by orders of magnitude between
+ * environments, so a fixed row count is either pointlessly small locally or a
+ * guaranteed timeout in production.
+ *
+ * SENDING CHANGES NO MEMBER'S STATUS. Not one acceptance row is written,
+ * altered or invalidated. The only thing it writes is the per-member send
+ * throttle.
+ *
+ * @param string $audience       'outstanding' or 'all'.
+ * @param bool   $resend_all     Ignore the once-a-day guard.
+ * @param int    $budget_seconds Wall-clock budget.
+ * @param int    $max_items      Hard cap, as a second guard on the budget.
+ * @return array{sent:int, failed:int, remaining:int, excluded:int}
+ */
+function mtl_run_agreement_request_batch( $audience = 'outstanding', $resend_all = false, $budget_seconds = 20, $max_items = 200 ) {
+	$audience = mtl_valid_agreement_audience( $audience );
+	$started  = microtime( true );
+	$sent     = 0;
+	$failed   = 0;
+
+	foreach ( mtl_members_awaiting_agreement_request( (int) $max_items, $audience, $resend_all ) as $member_id ) {
+		if ( microtime( true ) - $started > $budget_seconds ) {
+			break;
+		}
+
+		if ( mtl_send_agreement_request_email( $member_id ) ) {
+			++$sent;
+		} else {
+			++$failed;
+		}
+	}
+
+	return array(
+		'sent'      => $sent,
+		'failed'    => $failed,
+		'remaining' => mtl_count_members_awaiting_agreement_request( $audience, $resend_all ),
+		'excluded'  => mtl_count_agreement_request_excluded( $audience ),
+	);
+}
+
+// ==========================================================================
+// MEMBER AGREEMENTS -- FILE FINGERPRINTS
+//
+// Attached files are Media Library items, so fingerprinting one is a plain
+// filesystem read of a path WordPress computed: no network call, no
+// authentication, no Content-Type sniffing and no admin-supplied path to
+// contain.
+// ==========================================================================
+
+/**
+ * Largest file this will hash, in bytes.
+ *
+ * Hashing a multi-gigabyte file blocks the request for as long as it takes
+ * hash_file() to read it. Anything above this is treated exactly like an unreadable
+ * file: no fingerprint, nothing blocked.
+ */
+define( 'MTL_AGREEMENT_HASH_MAX_BYTES', 64 * 1024 * 1024 );
+
+/**
+ * SHA-256 of an attachment's file.
+ *
+ * Single return contract: a 64-character lowercase hex hash, or '' meaning "not
+ * recorded". Never throws, never fatals, and never blocks anything -- a member
+ * must still be able to agree when a fingerprint could not be taken.
+ *
+ * Takes an attachment ID, not a URL, because the ID is what the plugin stores.
+ *
+ * @param int $attachment_id Media Library attachment ID.
+ * @return string 64 hex characters, or '' if no fingerprint could be taken.
+ */
+function mtl_agreement_file_hash( $attachment_id ) {
+	if ( 'ok' !== mtl_agreement_file_hash_status( $attachment_id ) ) {
+		return '';
+	}
+	$path = get_attached_file( (int) $attachment_id );
+	$hash = hash_file( 'sha256', $path );
+	return is_string( $hash ) ? $hash : '';
+}
+
+/**
+ * Why mtl_agreement_file_hash() would or would not produce a fingerprint.
+ *
+ * Exists so the Setup page can say WHY no fingerprint was recorded instead of
+ * leaving the admin guessing at a blank field.
+ *
+ * @param int $attachment_id Media Library attachment ID.
+ * @return string 'ok', 'not_an_attachment', 'missing_file' or 'too_large'.
+ */
+function mtl_agreement_file_hash_status( $attachment_id ) {
+	$attachment_id = (int) $attachment_id;
+	if ( $attachment_id <= 0 || 'attachment' !== get_post_type( $attachment_id ) ) {
+		return 'not_an_attachment';
+	}
+	$path = get_attached_file( $attachment_id );
+	if ( ! $path || ! is_file( $path ) || ! is_readable( $path ) ) {
+		return 'missing_file';
+	}
+	$size = filesize( $path );
+	if ( false === $size || $size > MTL_AGREEMENT_HASH_MAX_BYTES ) {
+		return 'too_large';
+	}
+	return 'ok';
+}
+
+// ==========================================================================
+// MEMBER AGREEMENTS -- THE WRITE PATH
+//
+// One writer. Its four call sites (signup, the account page, Add New Member,
+// Edit Member) state only who, which agreement, which context and what version
+// they had on screen; every other column is derived here.
+//
+// Two rules govern everything below:
+//
+// 1. Nothing UPDATEs or DELETEs an acceptance row. Agreeing again inserts
+// another; reads take the newest.
+// 2. Snapshot columns are copied at insert and never joined for afterwards, so
+// editing an agreement in 2028 cannot change what a member is recorded as having
+// agreed to in 2026.
+// ==========================================================================
+
+/**
+ * Records one member's acceptance of one agreement.
+ *
+ * Callers pass only who, which, from where, and what version they displayed;
+ * never the snapshot values, since a caller that forgot one would write a
+ * permanent record that is quietly wrong.
+ *
+ * Fails closed on every doubt. Each early return below is a case where the row
+ * could not be trusted to describe what happened, and a missing record is
+ * recoverable where a false one is not.
+ *
+ * @param int      $member_id    Member the acceptance belongs to.
+ * @param int      $agreement_id Agreement being accepted.
+ * @param string   $context      One of the keys of mtl_agreement_contexts().
+ * @param int|null $seen_version The version_num the form displayed. Null skips
+ *                               the check, which every real caller supplies --
+ *                               nothing writes an acceptance without having
+ *                               shown somebody something first.
+ * @return int The new acceptance_id, or 0 if nothing was written. Truthy on
+ *             success either way, so a caller that only asks "did it write?"
+ *             reads correctly -- but a caller that needs to email exactly the
+ *             rows it just wrote should keep the ids rather than re-deriving
+ *             them from the timestamp, which has one-second resolution and
+ *             cannot separate two events in the same second.
+ */
+function mtl_record_agreement_acceptance( $member_id, $agreement_id, $context, $seen_version = null ) {
+	global $wpdb;
+
+	$member_id    = (int) $member_id;
+	$agreement_id = (int) $agreement_id;
+
+	if ( $member_id <= 0 || $agreement_id <= 0 ) {
+		return 0;
+	}
+
+	// tracking(), not online(): paper mode must still write staff-recorded
+	// rows. Off writes nothing at all.
+	if ( ! mtl_agreements_tracking() ) {
+		return 0;
+	}
+
+	// An unrecognised context has no assent wording and no staff/member answer,
+	// so a row written under one would claim agreement framed by nothing.
+	if ( ! mtl_agreement_context_is_valid( $context ) ) {
+		return 0;
+	}
+
+	$is_staff = mtl_acceptance_is_staff( $context );
+
+	// Neither side can tick a box on a site where no box is rendered. One
+	// arriving anyway means a forged POST or a form rendered before the setting
+	// changed, and writing it would make accepted_context a lie: a member row in
+	// paper mode, or a staff attestation at a library that switched the desk
+	// button off.
+	if ( 'paper' === mtl_agreements_mode() && ! $is_staff ) {
+		return 0;
+	}
+	if ( $is_staff && ! mtl_agreements_staff_recording() ) {
+		return 0;
+	}
+
+	// Deriving acted_by from the session rather than accepting it is what makes
+	// accepted_context and acted_by impossible to contradict. A staff context
+	// with nobody logged in would be an unattributed attestation, which is the
+	// exact thing that derivation exists to prevent -- so it is refused rather
+	// than recorded as user 0.
+	$acted_by = $is_staff ? get_current_user_id() : 0;
+	if ( $is_staff && $acted_by <= 0 ) {
+		return 0;
+	}
+
+	$agreement = mtl_get_agreement( $agreement_id );
+	if ( ! $agreement || null !== $agreement->retired_at ) {
+		return 0;
+	}
+
+	// The one caller-supplied value, and it can only ever cause a refusal. If
+	// the version on screen is not the version now live, the row would claim
+	// agreement to wording the person never read.
+	if ( null !== $seen_version && (int) $seen_version !== (int) $agreement->version_num ) {
+		return 0;
+	}
+
+	$members_table = $wpdb->prefix . 'members';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix.
+	$member = $wpdb->get_row( $wpdb->prepare( "SELECT first_name, last_name, email FROM {$members_table} WHERE member_id = %d", $member_id ) );
+	if ( ! $member ) {
+		return 0;
+	}
+
+	// Resolved live from the attachment ID rather than read from a stored URL,
+	// so a site that has since moved domain still records a working address.
+	$file_url = (int) $agreement->attachment_id > 0 ? (string) wp_get_attachment_url( (int) $agreement->attachment_id ) : '';
+
+	// The column holds 512 characters. A longer URL is dropped rather than
+	// truncated or allowed to fail the insert: a truncated URL looks valid and
+	// is not, and refusing the whole acceptance over an unusually long path
+	// would block a member from agreeing for a reason that has nothing to do
+	// with them. file_sha256 still identifies the document either way.
+	if ( strlen( $file_url ) > 512 ) {
+		$file_url = '';
+	}
+
+	$member_name = trim( $member->first_name . ' ' . $member->last_name );
+
+	$inserted = $wpdb->insert(
+		$wpdb->prefix . 'member_agreement_acceptances',
+		array(
+			'member_id'                      => $member_id,
+			'agreement_id'                   => $agreement_id,
+			'accepted_at'                    => gmdate( 'Y-m-d H:i:s' ),
+			'agreement_text'                 => $agreement->agreement_text,
+			'assent_text'                    => mtl_assent_language( $context ),
+			'agreement_version_num'          => (int) $agreement->version_num,
+			'agreement_version_published_at' => $agreement->version_published_at,
+			'file_url'                       => '' !== $file_url ? $file_url : null,
+			'file_sha256'                    => ! empty( $agreement->file_sha256 ) ? $agreement->file_sha256 : null,
+			'accepted_context'               => $context,
+			'acted_by'                       => $is_staff ? $acted_by : null,
+			'member_name'                    => $member_name,
+			'member_email'                   => $member->email,
+		),
+		array( '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s' )
+	);
+
+	return $inserted ? (int) $wpdb->insert_id : 0;
+}
+
+/**
+ * Records everything a member currently owes, in one call.
+ *
+ * Three of the four call sites want exactly this: signup, Add New Member and
+ * Edit Member all present the whole outstanding set at once. Only the account
+ * page records individually, because a member there may tick some and not
+ * others.
+ *
+ * PARTIAL FAILURE IS A FAILURE. Compare the return value against the number you
+ * expected to write -- not against zero. A member left with three of five rows
+ * written reads as somebody who has not got round to it, which is the worst
+ * available outcome because it looks like ordinary member behaviour rather than
+ * a bug. Signup and Add New Member must roll the whole thing back on a
+ * shortfall; the account page re-renders what remains.
+ *
+ * @param int    $member_id     Member to record for.
+ * @param string $context       One of the keys of mtl_agreement_contexts().
+ * @param array  $seen_versions agreement_id => version_num, straight from the
+ *                              form's hidden fields. Never legitimately empty:
+ *                              every caller renders a form first.
+ * @return int How many rows were written.
+ */
+function mtl_record_all_outstanding_agreements( $member_id, $context, $seen_versions = array() ) {
+	$written = 0;
+	foreach ( mtl_member_outstanding_agreements( $member_id ) as $agreement ) {
+		$agreement_id = (int) $agreement->agreement_id;
+		$seen         = isset( $seen_versions[ $agreement_id ] ) ? (int) $seen_versions[ $agreement_id ] : null;
+		if ( mtl_record_agreement_acceptance( $member_id, $agreement_id, $context, $seen ) ) {
+			++$written;
+		}
+	}
+	return $written;
+}
+
+// ==========================================================================
+// MEMBER AGREEMENTS -- READING A MEMBER'S POSITION
+//
+// Status is derived from version comparison and nothing else. There is no
+// per-member override, no reset column and no deadline anybody can set: a
+// member moves out of agreement when a version number goes up, and back into it
+// when they accept the new one.
+// ==========================================================================
+
+/**
+ * Where one member stands: 'disabled', 'ok', 'outdated' or 'none'.
+ *
+ * | disabled | The feature is off, or no agreement is active.                |
+ * | ok       | Every active agreement accepted at >= its current version.    |
+ * | outdated | Something is on record, but not all of it, or not current.    |
+ * | none     | No acceptance on record at all.                               |
+ *
+ * `ok` uses greater-than-or-equal, not equality: if a version_num is ever
+ * lowered by hand, members who accepted the higher version must not be dragged
+ * backwards and re-prompted for something they have already agreed to.
+ *
+ * `outdated` and `none` stay distinct because they mean different things to
+ * staff -- one member was caught by a revision, the other never agreed to
+ * anything.
+ *
+ * Delegates to the map so there is exactly one implementation of the rule. Use
+ * this for a single member (the account page, the reserve gate, the Edit form)
+ * and mtl_member_agreements_status_map() for a list.
+ *
+ * @param int $member_id Member to check.
+ * @return string
+ */
+function mtl_member_agreements_status( $member_id ) {
+	$map = mtl_member_agreements_status_map( array( (int) $member_id ) );
+	return isset( $map[ (int) $member_id ] ) ? $map[ (int) $member_id ] : 'disabled';
+}
+
+/**
+ * The same answer for many members, in one query.
+ *
+ * The Membership list must never call the single-member function per row --
+ * that is a query per member on a paginated table. This is a batching wrapper
+ * around the same comparison, not a second implementation of it.
+ *
+ * @param int[] $member_ids Members to check.
+ * @return array<int, string> member_id => status. Every requested ID is present.
+ */
+function mtl_member_agreements_status_map( $member_ids ) {
+	$member_ids = array_values( array_unique( array_filter( array_map( 'intval', (array) $member_ids ) ) ) );
+	if ( ! $member_ids ) {
+		return array();
+	}
+
+	// A mode of off already covers "no agreement is active" --
+	// mtl_agreements_tracking() is false when no agreement is active, so
+	// this one check answers both halves of `disabled`.
+	if ( ! mtl_agreements_tracking() ) {
+		return array_fill_keys( $member_ids, 'disabled' );
+	}
+
+	$active_count = mtl_count_active_agreements();
+	$statuses     = array_fill_keys( $member_ids, 'none' );
+
+	global $wpdb;
+	$acceptances  = $wpdb->prefix . 'member_agreement_acceptances';
+	$agreements   = $wpdb->prefix . 'member_agreements';
+	$placeholders = implode( ',', array_fill( 0, count( $member_ids ), '%d' ) );
+
+	// One row per member: how many DISTINCT active agreements they hold a
+	// current-or-newer acceptance for, and whether they have any acceptance at
+	// all. The retired filter sits in the LEFT JOIN's ON clause so a retired
+	// agreement drops out of `satisfied` while its acceptance still counts
+	// toward `rows_total`, which is what separates `outdated` from `none` for
+	// somebody whose only record is against a retired agreement.
+	//
+	// The %d placeholders are a counted run built from $member_ids, which the
+	// placeholder sniff cannot see through -- hence the disable below covering
+	// it as well as the table names.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- status is derived per request; there is no cache to invalidate.
+	$rows = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT a.member_id,
+			        COUNT(DISTINCT CASE WHEN a.agreement_version_num >= g.version_num THEN a.agreement_id END) AS satisfied,
+			        COUNT(*) AS rows_total
+			   FROM {$acceptances} a
+			   LEFT JOIN {$agreements} g
+			          ON g.agreement_id = a.agreement_id
+			         AND g.retired_at IS NULL
+			  WHERE a.member_id IN ({$placeholders})
+			  GROUP BY a.member_id",
+			$member_ids
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+
+	foreach ( (array) $rows as $row ) {
+		$id = (int) $row->member_id;
+		if ( (int) $row->satisfied >= $active_count ) {
+			$statuses[ $id ] = 'ok';
+		} elseif ( (int) $row->rows_total > 0 ) {
+			$statuses[ $id ] = 'outdated';
+		}
+	}
+
+	return $statuses;
+}
+
+/**
+ * The agreements a member still owes, in the order they are shown.
+ *
+ * Every active agreement with no acceptance at its current version. The account
+ * page renders this, the signup handler compares against it, and the bulk
+ * writer loops it.
+ *
+ * @param int $member_id Member to check.
+ * @return object[] Rows from member_agreements, empty when nothing is owed.
+ */
+function mtl_member_outstanding_agreements( $member_id ) {
+	$member_id = (int) $member_id;
+	if ( $member_id <= 0 || ! mtl_agreements_tracking() ) {
+		return array();
+	}
+
+	global $wpdb;
+	$agreements  = $wpdb->prefix . 'member_agreements';
+	$acceptances = $wpdb->prefix . 'member_agreement_acceptances';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table names only, built from $wpdb->prefix.
+	$rows = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT g.*
+			   FROM {$agreements} g
+			  WHERE g.retired_at IS NULL
+			    AND NOT EXISTS (
+			        SELECT 1
+			          FROM {$acceptances} a
+			         WHERE a.member_id = %d
+			           AND a.agreement_id = g.agreement_id
+			           AND a.agreement_version_num >= g.version_num
+			    )
+			  ORDER BY g.sort_order ASC, g.agreement_id ASC",
+			$member_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	return (array) $rows;
+}
+
+/**
+ * Current acceptances for many members, in one query.
+ *
+ * The same answer mtl_get_member_acceptances() gives for one member.
+ * The Membership page renders every listed member's detail panel inline, so the
+ * per-member helper would be one query per row on a fifty-row page. Same shape
+ * as the existing $member_trainings map on that page.
+ *
+ * @param int[] $member_ids Members to read.
+ * @return array<int, object[]> member_id => acceptance rows, newest per agreement.
+ */
+function mtl_get_member_acceptances_map( $member_ids ) {
+	$member_ids = array_values( array_unique( array_filter( array_map( 'intval', (array) $member_ids ) ) ) );
+	if ( ! $member_ids ) {
+		return array();
+	}
+
+	global $wpdb;
+	$acceptances  = $wpdb->prefix . 'member_agreement_acceptances';
+	$agreements   = $wpdb->prefix . 'member_agreements';
+	$placeholders = implode( ',', array_fill( 0, count( $member_ids ), '%d' ) );
+
+	// The subquery groups by member AND agreement, so "newest" is per member per
+	// agreement rather than per agreement across everybody.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- read per request; there is no cache to invalidate.
+	$rows = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT a.*
+			   FROM {$acceptances} a
+			   JOIN (
+			        SELECT member_id, agreement_id, MAX(acceptance_id) AS latest
+			          FROM {$acceptances}
+			         WHERE member_id IN ({$placeholders})
+			         GROUP BY member_id, agreement_id
+			   ) newest ON newest.latest = a.acceptance_id
+			   LEFT JOIN {$agreements} g ON g.agreement_id = a.agreement_id
+			  ORDER BY a.member_id ASC, g.sort_order ASC, a.agreement_id ASC",
+			$member_ids
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+
+	$map = array_fill_keys( $member_ids, array() );
+	foreach ( (array) $rows as $row ) {
+		$map[ (int) $row->member_id ][] = $row;
+	}
+	return $map;
+}
+
+/**
+ * Every agreement/version pair each member has EVER accepted.
+ *
+ * Reads beyond the newest row, unlike everything else in the staff UI, because
+ * it backs Advanced Search's "who accepted version 2?" filter: a member who
+ * accepted v2 and has since accepted v3 must still be found.
+ *
+ * @param int[] $member_ids Members to read.
+ * @return array<int, string[]> member_id => array of "agreementId:version".
+ */
+function mtl_get_member_acceptance_versions_map( $member_ids ) {
+	$member_ids = array_values( array_unique( array_filter( array_map( 'intval', (array) $member_ids ) ) ) );
+	if ( ! $member_ids ) {
+		return array();
+	}
+
+	global $wpdb;
+	$acceptances  = $wpdb->prefix . 'member_agreement_acceptances';
+	$placeholders = implode( ',', array_fill( 0, count( $member_ids ), '%d' ) );
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- read per request; there is no cache to invalidate.
+	$rows = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT DISTINCT member_id, agreement_id, agreement_version_num
+			   FROM {$acceptances}
+			  WHERE member_id IN ({$placeholders})",
+			$member_ids
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+
+	$map = array_fill_keys( $member_ids, array() );
+	foreach ( (array) $rows as $row ) {
+		$map[ (int) $row->member_id ][] = (int) $row->agreement_id . ':' . (int) $row->agreement_version_num;
+	}
+	return $map;
+}
+
+/**
+ * Which versions of an agreement anybody has actually accepted.
+ *
+ * Built from the acceptances rather than counted up to the current version_num,
+ * so Advanced Search never offers a version that would return nothing.
+ *
+ * @param int $agreement_id Agreement to look up.
+ * @return int[] Version numbers, ascending.
+ */
+function mtl_agreement_accepted_versions( $agreement_id ) {
+	global $wpdb;
+	$acceptances = $wpdb->prefix . 'member_agreement_acceptances';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix.
+	$rows = $wpdb->get_col( $wpdb->prepare( "SELECT DISTINCT agreement_version_num FROM {$acceptances} WHERE agreement_id = %d ORDER BY agreement_version_num ASC", (int) $agreement_id ) );
+	return array_map( 'intval', (array) $rows );
+}
+
+/**
+ * Every acceptance a member has ever made, oldest first.
+ *
+ * The one read that shows full history rather than the current position, for the
+ * downloadable agreement record: "they agreed to v1 in 2026 and v2 in 2027" is
+ * precisely the sequence a dispute turns on.
+ *
+ * @param int $member_id Member to read.
+ * @return object[] Acceptance rows, oldest first.
+ */
+function mtl_get_member_acceptance_history( $member_id ) {
+	global $wpdb;
+	$acceptances = $wpdb->prefix . 'member_agreement_acceptances';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix.
+	return (array) $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$acceptances} WHERE member_id = %d ORDER BY acceptance_id ASC", (int) $member_id ) );
+}
+
+/**
+ * A member's current acceptance of each agreement they have ever accepted.
+ *
+ * The newest row per agreement, selected on MAX(acceptance_id) rather than
+ * MAX(accepted_at): accepted_at has one-second resolution, so two rows written
+ * in the same second would be ambiguous, while the auto-increment is monotonic
+ * and never collides.
+ *
+ * Shared by the Membership detail panel, the Edit form, the account page and
+ * the agreement record download, so none of them can disagree about which row
+ * is current. Retired agreements are included -- the member did agree to them,
+ * and that does not stop being true.
+ *
+ * EVERY DISPLAYED VALUE COMES FROM THE ACCEPTANCE ROW. The join below exists
+ * only to order the results the way the rest of the UI orders agreements; not
+ * one column is read from it. Reading agreement_text or file_url through that
+ * join instead would show today's wording against a years-old acceptance, which
+ * is the single failure this table's design exists to prevent.
+ *
+ * @param int $member_id Member to read.
+ * @return object[] Acceptance rows, newest per agreement, in display order.
+ */
+function mtl_get_member_acceptances( $member_id ) {
+	$member_id = (int) $member_id;
+	if ( $member_id <= 0 ) {
+		return array();
+	}
+
+	global $wpdb;
+	$acceptances = $wpdb->prefix . 'member_agreement_acceptances';
+	$agreements  = $wpdb->prefix . 'member_agreements';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table names only, built from $wpdb->prefix.
+	$rows = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT a.*
+			   FROM {$acceptances} a
+			   JOIN (
+			        SELECT agreement_id, MAX(acceptance_id) AS latest
+			          FROM {$acceptances}
+			         WHERE member_id = %d
+			         GROUP BY agreement_id
+			   ) newest ON newest.latest = a.acceptance_id
+			   LEFT JOIN {$agreements} g ON g.agreement_id = a.agreement_id
+			  ORDER BY g.sort_order ASC, a.agreement_id ASC",
+			$member_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	return (array) $rows;
 }
 
 // ==========================================================================
@@ -3936,9 +5641,9 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 				min-height: 100vh;
 				display: flex;
 				flex-direction: column;
-				background: <?php echo esc_html( $bg ); ?>;
-				color: <?php echo esc_html( $b_color ); ?>;
-				font-family: <?php echo esc_html( $b_font ); ?>;
+				background: <?php echo mtl_css_value( $bg, '#ffffff' ); ?>;
+				color: <?php echo mtl_css_value( $b_color, '#096491' ); ?>;
+				font-family: <?php echo mtl_css_value( $b_font ); ?>;
 			}
 
 			.mtl-front-header {
@@ -3952,7 +5657,7 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 			}
 
 			.mtl-front-header h1 {
-				color: <?php echo esc_html( $h_color ); ?>;
+				color: <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
 				margin: 10px 0 0 0;
 			}
 
@@ -3980,7 +5685,7 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 			}
 
 			a {
-				color: <?php echo esc_html( $l_color ); ?>;
+				color: <?php echo mtl_css_value( $l_color, '#00b3ff' ); ?>;
 			}
 
 			.mtl-front-footer {
@@ -4059,12 +5764,12 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 			}
 
 			.mtl-front-card input[type="submit"] {
-				background: <?php echo esc_html( $h_color ); ?>;
-				border: 1px solid <?php echo esc_html( $h_color ); ?>;
+				background: <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
+				border: 1px solid <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
 				color: #fff;
-				padding: calc(9px * <?php echo esc_html( $btn_scale ); ?>) calc(22px * <?php echo esc_html( $btn_scale ); ?>);
-				border-radius: <?php echo esc_html( $radius ); ?>;
-				font-size: calc(1em * <?php echo esc_html( $btn_scale ); ?>);
+				padding: calc(9px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>) calc(22px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
+				border-radius: <?php echo mtl_css_value( $radius, '4px' ); ?>;
+				font-size: calc(1em * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
 				cursor: pointer;
 			}
 
@@ -4490,7 +6195,7 @@ function mtl_render_lost_password_page() {
 // The clear MUST stay last. Move it earlier and both suppressions silently stop
 // working, while the happy path still looks perfect: the member sets a password
 // and gets in, they are just also told their password "has been changed" and the
-// administrator is emailed about it. See the plan's verification step 2.
+// administrator is emailed about it.
 // --------------------------------------------------------------------------
 
 /**

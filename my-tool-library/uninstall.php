@@ -18,8 +18,18 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 // temporary plugin deletion should never silently destroy it. Use the
 // Setup page's export feature to back up that data before removing tables
 // manually.
+//
+// The four member-agreement options are in this list. THE TWO AGREEMENT TABLES
+// MUST NEVER BE ADDED: they hold the record of what each member agreed to, and
+// removing a plugin should not destroy it. Attached files are left alone too --
+// they are ordinary Media Library items the library may still want.
 $mtl_options = array(
 	'mtl_accent_color',
+	'mtl_agreement_email_body',
+	'mtl_agreement_email_subject',
+	'mtl_agreement_request_email_body',
+	'mtl_agreements_allow_paper',
+	'mtl_agreements_mode',
 	'mtl_background_color',
 	'mtl_body_color',
 	'mtl_body_font',
@@ -57,6 +67,11 @@ foreach ( $mtl_options as $mtl_option ) {
 // above. $delete_all = true removes this meta key for every user, not just
 // one, without needing to know their individual user IDs.
 delete_metadata( 'user', 0, 'mtl_dashboard_layout', '', true );
+
+// The agreement-request send throttle: a "when did we last ask this person"
+// timestamp. No member's agreement status depends on it, so it goes with the
+// other housekeeping above.
+delete_metadata( 'user', 0, 'mtl_agreement_requested_at', '', true );
 
 // The staff capability this plugin grants to the Administrator and Editor
 // roles (see mtl_register_staff_capabilities()). It only ever means "may use

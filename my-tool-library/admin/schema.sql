@@ -20,6 +20,10 @@ DROP TABLE IF EXISTS {{prefix}}tool_categories;
 DROP TABLE IF EXISTS {{prefix}}member_training_mappings;
 DROP TABLE IF EXISTS {{prefix}}member_trainings;
 DROP TABLE IF EXISTS {{prefix}}member_verifications;
+-- Acceptances hold foreign keys into BOTH member_agreements and members, so
+-- they drop first; member_agreements then drops before members.
+DROP TABLE IF EXISTS {{prefix}}member_agreement_acceptances;
+DROP TABLE IF EXISTS {{prefix}}member_agreements;
 DROP TABLE IF EXISTS {{prefix}}tool_inventory;
 DROP TABLE IF EXISTS {{prefix}}members;
 
@@ -216,6 +220,139 @@ CREATE TABLE {{prefix}}member_training_mappings (
     FOREIGN KEY (member_id) REFERENCES {{prefix}}members(member_id) ON DELETE CASCADE,
     FOREIGN KEY (training_id) REFERENCES {{prefix}}member_trainings(training_id) ON DELETE CASCADE
 );
+
+-- Member Agreements
+-- The statements a member must agree to before an account is created, written
+-- and maintained by admins on the Setup page -- exactly like member_trainings
+-- above, and edited in place there in the same way.
+--
+-- agreement_text is the wording the member reads next to the checkbox. It is
+-- REQUIRED; an agreement with no text is not an agreement. Stored as plain
+-- text and escaped on output -- no HTML is permitted, because this string is
+-- snapshotted into a legal record and replayed on public pages.
+--
+-- attachment_id is an OPTIONAL supporting file (a policy PDF, a fee schedule,
+-- a safety sheet) held in the WordPress Media Library. file_sha256
+-- fingerprints the file's bytes so a record identifies the exact file that was
+-- attached; both are NULL together when no file is attached.
+--
+-- There is deliberately NO file_url column here. An earlier design cached the
+-- resolved URL and it was wrong twice over: it went stale the moment a site
+-- changed domain, and it was a second copy of a value with a single source.
+-- Every read calls wp_get_attachment_url( attachment_id ) instead. Acceptance
+-- rows still SNAPSHOT the URL, because there the point is to freeze what it
+-- was at that moment; here the point is to always be current.
+--
+-- version_num starts at 1 and is incremented on EVERY save that changes the
+-- wording or the attached file -- there is no "minor edit" exemption, by
+-- decision. Every member whose latest acceptance of THIS agreement is on a
+-- lower number reads as outstanding and is asked again.
+--
+-- version_published_at is when the CURRENT version took effect -- stamped on
+-- creation and re-stamped on every version bump. It is what the Setup panel's
+-- "in use since" reads, and it is the date on which this obligation began.
+--
+-- retired_at mirrors tool_inventory.retired_at: NULL means active and
+-- required; once set, the agreement stops appearing at signup and stops being
+-- enforced, but the row stays so existing acceptance records keep resolving.
+-- Agreements are NEVER hard-deleted once accepted -- the foreign key on the
+-- acceptances table is explicitly RESTRICT, so the database refuses it.
+--
+-- All DATETIMEs in these two tables hold UTC and are written explicitly from
+-- PHP with gmdate(). They are deliberately NOT TIMESTAMP: TIMESTAMP converts
+-- on read using the session timezone, so its meaning would depend on who was
+-- asking, and it cannot represent dates after 2038 -- unacceptable for records
+-- meant to outlive the staff who created them.
+CREATE TABLE {{prefix}}member_agreements (
+    agreement_id INT AUTO_INCREMENT PRIMARY KEY,
+    agreement_text TEXT NOT NULL,
+    attachment_id INT DEFAULT NULL,
+    file_sha256 CHAR(64) DEFAULT NULL,
+    version_num INT NOT NULL DEFAULT 1,
+    version_published_at DATETIME NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    retired_at DATETIME NULL DEFAULT NULL
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Junction table for Member <-> Agreements
+-- Append-only. One row per acceptance EVENT, so (member_id, agreement_id) is
+-- deliberately NOT a primary key and no row is ever updated in place -- this
+-- is the one place the pattern departs from member_training_mappings above,
+-- which keys on the pair. A member who accepts v1 and later v2 of the same
+-- agreement has two rows, and the v1 row stays exactly as it was.
+--
+-- agreement_text, assent_text, agreement_version_num,
+-- agreement_version_published_at, file_url and file_sha256 are all SNAPSHOTS
+-- copied in at insert time, never live lookups. That is the whole point: an
+-- admin editing the wording afterwards leaves existing rows describing what
+-- was actually agreed to. Reading the current wording through the foreign key
+-- would silently rewrite history.
+--
+-- assent_text is the wording that framed the tick -- "By ticking this box I
+-- agree to the statement above", or the staff attestation equivalent. In a
+-- clickwrap dispute the contested question is frequently whether the interface
+-- conveyed assent at all, not what the clause said; a record of the clause
+-- without the assent wording answers only half of it. It comes from
+-- mtl_assent_language( $context ), the SAME function that renders it on
+-- screen, and only that function may supply it.
+--
+-- accepted_context is one of 'signup', 'agree_page', 'staff_add',
+-- 'staff_edit'. NO DEFAULT: every possible value is a factual claim about how
+-- the member agreed, so there is no inert value to fall back to.
+--
+-- THIS TABLE CONTAINS PERSONAL DATA -- member_name and member_email, held
+-- deliberately and RETAINED even when the member is deleted, so the library
+-- can still show who agreed to what. That is a considered retention decision.
+-- Consequently NO ROW IN THIS TABLE IS EVER UPDATED AFTER INSERT, by anything,
+-- including a member deletion. There is no exception and no carve-out. Any
+-- future code that writes an UPDATE against this table is a bug.
+--
+-- There is deliberately no IP address, user agent or device column here.
+-- acted_by identifies a member of STAFF, not the member the row is about: it
+-- is set only for staff-recorded acceptances, so
+--   acted_by IS NOT NULL  <=>  accepted_context IN ('staff_add','staff_edit')
+-- It is NOT a foreign key -- wp_users is core's table, and that staff account
+-- may be deleted long before this row stops mattering.
+--
+-- member_name is 101 = members.first_name(50) + a space + last_name(50).
+-- Being snapshots, these preserve mistakes: a member who corrects a typo the
+-- next day leaves the typo here forever, which is correct and must never be
+-- "fixed" by a backfill.
+--
+-- ON DELETE CASCADE on member_id matches member_training_mappings: a safety
+-- net for a row genuinely removed by hand, not the path a member deletion
+-- takes. ON DELETE RESTRICT on agreement_id is the opposite on purpose: it
+-- makes "agreements are retired, never deleted" a rule the database enforces,
+-- and it is spelled out rather than left to MySQL's default because a
+-- guarantee that depends on an implicit server setting is not one.
+CREATE TABLE {{prefix}}member_agreement_acceptances (
+    acceptance_id INT AUTO_INCREMENT PRIMARY KEY,
+    member_id INT NOT NULL,
+    agreement_id INT NOT NULL,
+    accepted_at DATETIME NOT NULL,
+    agreement_text TEXT NOT NULL,
+    assent_text TEXT NOT NULL,
+    agreement_version_num INT NOT NULL DEFAULT 1,
+    agreement_version_published_at DATETIME NOT NULL,
+    file_url VARCHAR(512) DEFAULT NULL,
+    file_sha256 CHAR(64) DEFAULT NULL,
+    accepted_context VARCHAR(20) NOT NULL,
+    acted_by BIGINT UNSIGNED DEFAULT NULL,
+    member_name VARCHAR(101) NOT NULL DEFAULT '',
+    member_email VARCHAR(100) NOT NULL DEFAULT '',
+
+    -- Two columns, not three. The status query selects MAX(acceptance_id), and
+    -- in InnoDB every secondary index already carries the primary key as its
+    -- row locator, so this behaves as (member_id, agreement_id, acceptance_id)
+    -- for free. Its leftmost column also satisfies InnoDB's index requirement
+    -- for the member_id foreign key.
+    KEY member_agreement (member_id, agreement_id),
+    -- Required for the agreement_id foreign key; also serves Advanced Search's
+    -- "who accepted agreement X at version Y".
+    KEY agreement (agreement_id),
+    FOREIGN KEY (member_id) REFERENCES {{prefix}}members(member_id) ON DELETE CASCADE,
+    FOREIGN KEY (agreement_id) REFERENCES {{prefix}}member_agreements(agreement_id) ON DELETE RESTRICT
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==========================================
 -- 4. TRANSACTIONAL TABLES (Loans & Reservations)

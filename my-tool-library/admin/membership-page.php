@@ -93,6 +93,352 @@ function mtl_maybe_serve_member_csv_template() {
 	exit;
 }
 
+add_action( 'admin_init', 'mtl_maybe_serve_agreement_record' );
+
+/**
+ * Serves one member's complete agreement history as a printable page.
+ *
+ * This is the one screen the feature exists to produce. Everything else is
+ * about CAPTURING agreement; without this, the answer to "show me what this
+ * member agreed to, in a form I can hand to a lawyer" is "ask an administrator
+ * to export the database and open it in a spreadsheet".
+ *
+ * Administrators only -- assembling one person's complete history into a
+ * portable file is a different act from reading a status on screen, and belongs
+ * with whoever already controls the data exports. Editors see the agreement
+ * block and the badges but not this.
+ *
+ * Runs on admin_init, before any HTML, so it can own the whole response.
+ *
+ * IT WRITES NOTHING. No acceptance row, no user meta, no status change.
+ * Producing evidence must never alter it.
+ */
+function mtl_maybe_serve_agreement_record() {
+	$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+	if ( ! isset( $_GET['mtl_agreement_record'] ) || 'mtl-membership' !== $page || ! mtl_can_manage_settings() ) {
+		return;
+	}
+	if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ), 'mtl_agreement_record_action' ) ) {
+		return;
+	}
+
+	$member_id = absint( $_GET['mtl_agreement_record'] );
+	if ( $member_id <= 0 ) {
+		return;
+	}
+
+	global $wpdb;
+	$members = $wpdb->prefix . 'members';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix.
+	$member  = $wpdb->get_row( $wpdb->prepare( "SELECT member_id, first_name, last_name, email, anonymized_at FROM {$members} WHERE member_id = %d", $member_id ) );
+	$history = mtl_get_member_acceptance_history( $member_id );
+
+	$org_name = get_option( 'mtl_org_name', '' );
+	if ( '' === trim( (string) $org_name ) ) {
+		$org_name = 'My Tool Library';
+	}
+
+	// The identity shown is the SNAPSHOT from the acceptance rows, not the live
+	// member row -- so it is correct for somebody who has since changed their
+	// name, and it still works for a deleted member. That is the reason the
+	// identity is retained through deletion at all.
+	$snapshot_name  = '';
+	$snapshot_email = '';
+	if ( $history ) {
+		$latest         = end( $history );
+		$snapshot_name  = (string) $latest->member_name;
+		$snapshot_email = (string) $latest->member_email;
+	}
+	if ( '' === $snapshot_name && $member ) {
+		$snapshot_name = trim( $member->first_name . ' ' . $member->last_name );
+	}
+	if ( '' === $snapshot_email && $member ) {
+		$snapshot_email = (string) $member->email;
+	}
+
+	nocache_headers();
+	header( 'Content-Type: text/html; charset=utf-8' );
+	?>
+<!DOCTYPE html>
+<html <?php language_attributes(); ?>>
+<head>
+	<meta charset="<?php bloginfo( 'charset' ); ?>">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="robots" content="noindex, nofollow">
+	<title>Member agreement record &mdash; <?php echo esc_html( $snapshot_name ); ?></title>
+	<style>
+		/* Deliberately self-contained and free of the admin theme: this page is
+			printed to PDF or saved, and must stay readable either way.
+
+			color-scheme and an explicit background are both required. Without
+			them a browser in dark mode paints its own dark ground behind the
+			text colour set below, and the record comes out near-unreadable --
+			on screen and in the PDF. */
+		html { color-scheme: light; background: #fff; }
+		body { background: #fff; font-family: Georgia, 'Times New Roman', serif; color: #111; max-width: 46em; margin: 2em auto; padding: 0 1.5em; line-height: 1.5; }
+		h1 { font-size: 1.4em; margin: 0 0 0.2em 0; letter-spacing: 0.04em; text-transform: uppercase; }
+		.mtl-rec-sub { color: #444; margin: 0 0 1.6em 0; font-size: 0.9em; }
+		.mtl-rec-head { border-top: 2px solid #111; border-bottom: 2px solid #111; padding: 0.8em 0; margin-bottom: 1.6em; }
+		.mtl-rec-block { border-top: 1px solid #999; padding-top: 0.9em; margin-top: 1.6em; page-break-inside: avoid; }
+		.mtl-rec-block h2 { font-size: 1em; margin: 0 0 0.7em 0; letter-spacing: 0.03em; text-transform: uppercase; }
+		dl { display: grid; grid-template-columns: 11em 1fr; gap: 0.35em 1em; margin: 0; }
+		dt { font-weight: 700; }
+		dd { margin: 0; }
+		.mtl-rec-hash { font-family: 'Courier New', monospace; font-size: 0.85em; word-break: break-all; }
+		.mtl-rec-url { font-size: 0.85em; word-break: break-all; }
+		.mtl-rec-none { color: #444; font-style: italic; }
+		.mtl-rec-print { margin-bottom: 1.5em; }
+		@media print { .mtl-rec-print { display: none; } body { margin: 0; max-width: none; } }
+	</style>
+</head>
+<body>
+	<p class="mtl-rec-print"><button type="button" onclick="window.print();">Print or save as PDF</button></p>
+
+	<h1>Member agreement record</h1>
+	<p class="mtl-rec-sub">
+		<?php echo esc_html( $org_name ); ?> &middot;
+		generated <?php echo esc_html( gmdate( 'j F Y, H:i' ) ); ?> (UTC)
+	</p>
+
+	<div class="mtl-rec-head">
+		<dl>
+			<dt>Member</dt>
+			<dd><?php echo '' !== $snapshot_name ? esc_html( $snapshot_name ) : '<span class="mtl-rec-none">not recorded</span>'; ?></dd>
+			<dt>Email</dt>
+			<dd><?php echo '' !== $snapshot_email ? esc_html( $snapshot_email ) : '<span class="mtl-rec-none">not recorded</span>'; ?></dd>
+			<dt>Member ID</dt>
+			<dd><?php echo esc_html( $member_id ); ?></dd>
+			<?php if ( ! $member ) : ?>
+				<dt>Status</dt>
+				<dd>Member record deleted</dd>
+			<?php elseif ( ! empty( $member->anonymized_at ) ) : ?>
+				<dt>Status</dt>
+				<dd>Personal data removed <?php echo wp_kses_post( mtl_format_date( $member->anonymized_at, 'j F Y' ) ); ?></dd>
+			<?php endif; ?>
+		</dl>
+	</div>
+
+	<?php if ( ! $history ) : ?>
+		<p class="mtl-rec-none">No agreements are on record for this member.</p>
+	<?php else : ?>
+		<?php foreach ( $history as $row ) : ?>
+			<?php
+			// accepted_context written out in full prose rather than as the
+			// stored token, because this page is read by people who have never
+			// seen the schema.
+			$how       = array(
+				'signup'     => 'The member ticked the box themselves, while creating their account',
+				'agree_page' => 'The member ticked the box themselves, on their account page',
+				'staff_add'  => 'Recorded by library staff against a signed paper copy, while adding the member',
+				'staff_edit' => 'Recorded by library staff against a signed paper copy, after the member already existed',
+			);
+			$how_text  = isset( $how[ $row->accepted_context ] ) ? $how[ $row->accepted_context ] : $row->accepted_context;
+			$file_name = ! empty( $row->file_url ) ? basename( wp_parse_url( $row->file_url, PHP_URL_PATH ) ) : '';
+
+			// Resolved at render, never stored: staff turnover outlasts these
+			// rows by design, so a deleted account degrades to its number
+			// rather than to a blank.
+			$actor = '';
+			if ( ! empty( $row->acted_by ) ) {
+				$actor_user = get_userdata( (int) $row->acted_by );
+				$actor      = $actor_user
+					? sprintf( '%s (WordPress user %d)', $actor_user->display_name, (int) $row->acted_by )
+					: sprintf( 'a former staff account (#%d)', (int) $row->acted_by );
+			}
+			?>
+			<div class="mtl-rec-block">
+				<h2>Agreement <?php echo esc_html( (int) $row->agreement_id ); ?> &middot; version <?php echo esc_html( (int) $row->agreement_version_num ); ?></h2>
+				<dl>
+					<dt>Agreed</dt>
+					<dd>
+						<?php echo esc_html( $row->accepted_at ); ?> UTC
+						(<?php echo wp_kses_post( mtl_format_utc_datetime( $row->accepted_at, 'j F Y, g:i a' ) ); ?> local)
+					</dd>
+
+					<dt>How</dt>
+					<dd><?php echo esc_html( $how_text ); ?></dd>
+
+					<?php if ( '' !== $actor ) : ?>
+						<?php // Never printed empty: its presence always means somebody acted on the member's behalf. ?>
+						<dt>Recorded by</dt>
+						<dd><?php echo esc_html( $actor ); ?></dd>
+					<?php endif; ?>
+
+					<dt>They were shown</dt>
+					<dd>&ldquo;<?php echo nl2br( esc_html( $row->agreement_text ) ); ?>&rdquo;</dd>
+
+					<dt>They were told</dt>
+					<dd>&ldquo;<?php echo esc_html( $row->assent_text ); ?>&rdquo;</dd>
+
+					<dt>Version</dt>
+					<dd>
+						<?php echo esc_html( (int) $row->agreement_version_num ); ?>,
+						in use since <?php echo wp_kses_post( mtl_format_utc_datetime( $row->agreement_version_published_at, 'j F Y' ) ); ?>
+					</dd>
+
+					<dt>Attached file</dt>
+					<dd>
+						<?php if ( '' === $file_name ) : ?>
+							None
+						<?php else : ?>
+							<?php echo esc_html( $file_name ); ?><br>
+							<span class="mtl-rec-url"><?php echo esc_html( $row->file_url ); ?></span>
+							<?php if ( ! empty( $row->file_sha256 ) ) : ?>
+								<?php // Printed in full, not truncated as on the detail panel: this is the one context where somebody will actually compare it. ?>
+								<br><span class="mtl-rec-hash">SHA-256 <?php echo esc_html( $row->file_sha256 ); ?></span>
+							<?php else : ?>
+								<br><span class="mtl-rec-none">No fingerprint was recorded for this file.</span>
+							<?php endif; ?>
+						<?php endif; ?>
+					</dd>
+				</dl>
+			</div>
+		<?php endforeach; ?>
+	<?php endif; ?>
+</body>
+</html>
+	<?php
+	exit;
+}
+
+/**
+ * The Record Agreement form: one markup, rendered in two containers.
+ *
+ * With scripting it goes in a native <dialog>; without, it renders inline on
+ * the detail panel from the `?mtl_record_agreement=<id>` link. Not two
+ * implementations -- a staff member who cannot open the dialog would otherwise
+ * have NO way at all to record a signature, and this is the screen where the
+ * plugin's progressive-enhancement stance is load-bearing.
+ *
+ * There is no per-checkbox error state, because there is no way to fail one:
+ * ticking nothing closes without writing, and a revision under the form
+ * rejects the whole submission via $changed rather than any single agreement.
+ *
+ * @param object   $member      Member row.
+ * @param object[] $acceptances Latest acceptance per agreement for this member.
+ * @param bool     $changed     Whether an agreement was revised mid-form.
+ * @param int[]    $checked     Agreement ids to render already ticked.
+ * @return string HTML.
+ */
+function mtl_render_record_agreement_form( $member, $acceptances, $changed = false, $checked = array() ) {
+	$member_id   = (int) $member->member_id;
+	$outstanding = mtl_member_outstanding_agreements( $member_id );
+	$by_id       = array();
+	foreach ( $acceptances as $acceptance ) {
+		$by_id[ (int) $acceptance->agreement_id ] = $acceptance;
+	}
+	$outstanding_ids = array_map( 'intval', wp_list_pluck( $outstanding, 'agreement_id' ) );
+	$full_name       = trim( $member->first_name . ' ' . $member->last_name );
+
+	ob_start();
+	?>
+	<form method="post" class="mtl-record-agreement-form">
+		<?php wp_nonce_field( 'mtl_record_agreement_action', 'mtl_record_agreement_nonce' ); ?>
+		<input type="hidden" name="agreement_member_id" value="<?php echo esc_attr( $member_id ); ?>">
+
+		<h3 id="mtl-record-title-<?php echo esc_attr( $member_id ); ?>" style="margin-top:0;">
+			Record agreement &middot; <?php echo esc_html( $full_name ); ?>
+		</h3>
+
+		<?php // First and unmissable, before the checkboxes in DOM order, and not dismissible. Staff are about to assert something on another person's behalf into a record that can never be deleted. ?>
+		<div class="notice notice-warning inline" style="margin: 0 0 14px 0;">
+			<p style="margin: 6px 0;">
+				<strong>&#9888; Only tick these once you have the member&rsquo;s signed form in hand.</strong>
+				You are recording that this person agreed, and that record is permanent &mdash; it cannot be removed or corrected afterwards.
+			</p>
+		</div>
+
+		<?php if ( $changed ) : ?>
+			<div class="notice notice-error inline" style="margin: 0 0 14px 0;" role="alert" tabindex="-1">
+				<p>Nothing was recorded. One or more of these agreements was revised while this was open, so the wording below has changed. Please read the new wording before recording anything.</p>
+			</div>
+		<?php endif; ?>
+
+		<?php
+		$already = array();
+		foreach ( $acceptances as $acceptance ) {
+			if ( ! in_array( (int) $acceptance->agreement_id, $outstanding_ids, true ) ) {
+				$already[] = $acceptance;
+			}
+		}
+		?>
+
+		<?php if ( $already ) : ?>
+			<fieldset class="mtl-record-group">
+				<legend>Already on record</legend>
+				<?php foreach ( $already as $acceptance ) : ?>
+					<?php // Read-only, no checkbox: a member already current on an agreement cannot re-record it, because a duplicate row would say nothing new. ?>
+					<div class="mtl-record-item">
+						<p style="margin: 0;">&#10003; <?php echo nl2br( esc_html( $acceptance->agreement_text ) ); ?></p>
+						<p class="mtl-record-meta">
+							v<?php echo esc_html( (int) $acceptance->agreement_version_num ); ?>
+							&middot; agreed <?php echo wp_kses_post( mtl_format_utc_datetime( $acceptance->accepted_at, 'j M Y' ) ); ?>
+							&middot; <?php echo mtl_acceptance_is_staff( $acceptance->accepted_context ) ? 'by staff' : 'by the member'; ?>
+						</p>
+					</div>
+				<?php endforeach; ?>
+			</fieldset>
+		<?php endif; ?>
+
+		<?php if ( ! $outstanding ) : ?>
+			<p style="color:#666;">This member is up to date on every agreement. There is nothing to record.</p>
+		<?php else : ?>
+			<fieldset class="mtl-record-group">
+				<legend>Not yet recorded</legend>
+				<?php foreach ( $outstanding as $agreement ) : ?>
+					<?php
+					$aid      = (int) $agreement->agreement_id;
+					$box_id   = 'mtl-rec-' . $member_id . '-' . $aid;
+					$file_url = (int) $agreement->attachment_id > 0 ? wp_get_attachment_url( (int) $agreement->attachment_id ) : '';
+					$prior    = isset( $by_id[ $aid ] ) ? $by_id[ $aid ] : null;
+					?>
+					<div class="mtl-record-item">
+						<label for="<?php echo esc_attr( $box_id ); ?>" class="mtl-record-label">
+							<input type="checkbox" id="<?php echo esc_attr( $box_id ); ?>" name="agreements[<?php echo esc_attr( $aid ); ?>]" value="1" class="mtl-record-box" data-member="<?php echo esc_attr( $member_id ); ?>" <?php checked( true, in_array( $aid, array_map( 'intval', $checked ), true ) ); ?>>
+							<span><?php echo nl2br( esc_html( $agreement->agreement_text ) ); ?></span>
+						</label>
+						<p class="mtl-record-meta">
+							v<?php echo esc_html( (int) $agreement->version_num ); ?>
+							<?php if ( $prior ) : ?>
+								<?php // So staff can see this is a re-signing rather than a first. ?>
+								&middot; previously agreed to v<?php echo esc_html( (int) $prior->agreement_version_num ); ?>
+								on <?php echo wp_kses_post( mtl_format_utc_datetime( $prior->accepted_at, 'j M Y' ) ); ?>
+							<?php endif; ?>
+							<?php if ( $file_url ) : ?>
+								&middot; <a href="<?php echo esc_url( $file_url ); ?>" target="_blank" rel="noopener noreferrer"
+									aria-label="<?php echo esc_attr( 'View the attached document for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $agreement->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>">View the attached document &#8599;</a>
+							<?php endif; ?>
+						</p>
+						<input type="hidden" name="agreement_versions[<?php echo esc_attr( $aid ); ?>]" value="<?php echo esc_attr( (int) $agreement->version_num ); ?>">
+					</div>
+				<?php endforeach; ?>
+			</fieldset>
+
+			<?php // The sentence staff are attesting to, shown before they attest to it. Same string the writer stores. ?>
+			<p class="mtl-record-assent"><?php echo esc_html( mtl_assent_language( 'staff_edit' ) ); ?></p>
+
+			<p>
+				<label>
+					<input type="checkbox" name="mtl_send_agreement_copy" value="1" checked>
+					<?php esc_html_e( 'Email the member their copy of what was recorded', 'my-tool-library' ); ?>
+				</label>
+			</p>
+		<?php endif; ?>
+
+		<p style="margin-bottom:0;">
+			<?php if ( $outstanding ) : ?>
+				<?php // Server-side so it works with scripting off; it ticks the boxes and re-renders, it does not record. ?>
+				<button type="submit" name="mtl_tick_all_agreements" value="1" class="button">Tick all</button>
+			<?php endif; ?>
+			<a class="button" href="<?php echo esc_url( remove_query_arg( 'mtl_record_agreement' ) ); ?>#mtl-detail-<?php echo esc_attr( $member_id ); ?>">Cancel</a>
+			<?php if ( $outstanding ) : ?>
+				<button type="submit" name="mtl_record_agreement" value="1" class="button button-primary">Record</button>
+			<?php endif; ?>
+		</p>
+	</form>
+	<?php
+	return ob_get_clean();
+}
 /**
  * Reads the trainings picker's posted fields into a training_id => start_date
  * map. Shared by the Add and Edit handlers so the two can't drift.
@@ -430,6 +776,161 @@ function mtl_render_membership_page() {
 	$edit_member_id = 0;
 	$edit_values    = null;
 
+	// State for the Record Agreement dialog and the per-member request action.
+	// $record_agreement_id names the member whose dialog is open; the rest carry
+	// a failed submit back into the re-render.
+	$record_agreement_id      = isset( $_GET['mtl_record_agreement'] ) ? absint( $_GET['mtl_record_agreement'] ) : 0;
+	$record_agreement_changed = false;
+	$record_agreement_checked = array();
+
+	// 0a. HANDLE "RECORD AGREEMENT" SUBMISSION
+	//
+	// Administrators and Editors -- this is desk work. Behaves identically in
+	// paper and full mode: a library that collects signatures at the desk and
+	// one that also lets members agree online record a desk signature in exactly
+	// the same way, and switching modes never changes how staff do this job.
+	if ( isset( $_POST['mtl_record_agreement'] ) && mtl_agreements_staff_recording() && mtl_can_manage_library() ) {
+		if ( ! isset( $_POST['mtl_record_agreement_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_record_agreement_nonce'] ) ), 'mtl_record_agreement_action' ) ) {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		} else {
+			$target_id           = isset( $_POST['agreement_member_id'] ) ? absint( $_POST['agreement_member_id'] ) : 0;
+			$posted              = mtl_read_agreements_post();
+			$record_agreement_id = $target_id;
+			$outstanding         = mtl_member_outstanding_agreements( $target_id );
+
+			// Only ids this member actually owes are considered, so a forged
+			// POST naming a retired agreement or one they are already current
+			// on is rejected here rather than left to the writer's own checks
+			// to happen to cover.
+			$outstanding_ids = array_map( 'intval', wp_list_pluck( $outstanding, 'agreement_id' ) );
+			$ticked          = array_values( array_intersect( $posted['ticked'], $outstanding_ids ) );
+
+			$check = mtl_check_agreements_submission( $outstanding, $ticked, $posted['versions'] );
+
+			if ( $check['stale'] || $check['added'] ) {
+				// Staff must never attest to text that changed under them
+				// mid-conversation. Nothing is written and the form re-renders
+				// with the new wording, unticked.
+				$record_agreement_changed = true;
+			} elseif ( ! $ticked ) {
+				// Ticking nothing and pressing Record is not an error -- staff
+				// open this dialog to look as often as to act.
+				$record_agreement_id = 0;
+			} else {
+				// Ids kept as written, not re-derived from the timestamp --
+				// accepted_at has one-second resolution and cannot separate two
+				// events that land in the same second.
+				$recorded     = 0;
+				$recorded_ids = array();
+				foreach ( $ticked as $aid ) {
+					$seen          = isset( $posted['versions'][ $aid ] ) ? (int) $posted['versions'][ $aid ] : null;
+					$acceptance_id = mtl_record_agreement_acceptance( $target_id, $aid, 'staff_edit', $seen );
+					if ( $acceptance_id > 0 ) {
+						++$recorded;
+						$recorded_ids[] = $acceptance_id;
+					}
+				}
+
+				if ( $recorded > 0 ) {
+					$record_agreement_id = 0;
+
+					// Their copy of what was recorded, sent because it is
+					// theirs -- not because anything is being asked of them.
+					// Ticked by default, following the existing setup-email
+					// checkbox on the Add form; an unticked box posts nothing,
+					// so absence is a deliberate "don't email them".
+					$mtl_rec_emailed = false;
+					if ( isset( $_POST['mtl_send_agreement_copy'] ) ) {
+						$mtl_rec_emailed = mtl_send_agreement_confirmation_email( $target_id, $recorded_ids );
+					}
+
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Recorded.</strong> ' . esc_html( number_format_i18n( $recorded ) ) . ' agreement' . ( 1 === $recorded ? '' : 's' ) . ' recorded against this member&rsquo;s signed form.';
+					if ( isset( $_POST['mtl_send_agreement_copy'] ) && ! $mtl_rec_emailed ) {
+						// Reported rather than swallowed: the record stands
+						// either way, but silence would mean nobody finds out
+						// the member never got their copy until a dispute.
+						echo ' <strong>Their emailed copy could not be sent</strong> &mdash; use <em>Resend agreement email</em> on their detail panel to try again.';
+					}
+					echo '</p></div>';
+				} else {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Nothing could be recorded. Please try again.</p></div>';
+				}
+			}
+		}
+	}
+
+	// 0b. HANDLE "TICK ALL"
+	//
+	// A server-side submit rather than a script, so the dialog works with
+	// scripting off. It ticks the boxes and re-renders; it does not record.
+	if ( isset( $_POST['mtl_tick_all_agreements'] ) && mtl_agreements_staff_recording() && mtl_can_manage_library() ) {
+		if ( isset( $_POST['mtl_record_agreement_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_record_agreement_nonce'] ) ), 'mtl_record_agreement_action' ) ) {
+			$record_agreement_id      = isset( $_POST['agreement_member_id'] ) ? absint( $_POST['agreement_member_id'] ) : 0;
+			$record_agreement_checked = array_map( 'intval', wp_list_pluck( mtl_member_outstanding_agreements( $record_agreement_id ), 'agreement_id' ) );
+		}
+	}
+
+	// 0bb. HANDLE "RESEND AGREEMENT EMAIL"
+	//
+	// A confirmation that failed to send has no other remedy: the acceptance is
+	// committed and correct, but the member has no copy of it. This re-sends the
+	// LATEST acceptance event, regenerating the list from those rows -- never an
+	// older event, and it never writes a new acceptance row.
+	if ( isset( $_POST['mtl_resend_agreement_email'] ) && mtl_agreements_tracking() && mtl_can_manage_library() ) {
+		if ( ! isset( $_POST['mtl_resend_agreement_email_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_resend_agreement_email_nonce'] ) ), 'mtl_resend_agreement_email_action' ) ) {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		} else {
+			$target_id = isset( $_POST['agreement_member_id'] ) ? absint( $_POST['agreement_member_id'] ) : 0;
+			$event_ids = $target_id > 0 ? mtl_latest_acceptance_event_ids( $target_id ) : array();
+
+			if ( ! $event_ids ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Nothing to send.</strong> This member has no agreements on record.</p></div>';
+			} elseif ( mtl_send_agreement_confirmation_email( $target_id, $event_ids ) ) {
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Sent.</strong> The member has been emailed their copy of the most recent agreements recorded for them. Nothing about their record has changed.</p></div>';
+			} else {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Not sent.</strong> The email could not be delivered. Check the site&rsquo;s mail settings and try again.</p></div>';
+			}
+		}
+	}
+
+	// 0c. HANDLE PER-MEMBER "SEND AGREEMENT REQUEST"
+	//
+	// mtl_agreements_online() only: a request email tells the member to agree on
+	// the website, and there is nowhere to do that in paper mode. This is part
+	// of what gives paper mode its defining property -- the plugin never asks a
+	// member for anything in it.
+	if ( isset( $_POST['mtl_send_agreement_request'] ) && mtl_agreements_online() && mtl_can_manage_library() ) {
+		if ( ! isset( $_POST['mtl_send_agreement_request_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_send_agreement_request_nonce'] ) ), 'mtl_send_agreement_request_action' ) ) {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		} else {
+			$target_id = isset( $_POST['agreement_member_id'] ) ? absint( $_POST['agreement_member_id'] ) : 0;
+
+			// mtl_find_wp_user_id_by_member_id() needs the email as well as the
+			// id -- it refuses to guess a link from the id alone.
+			$mtl_req_email = '';
+			if ( $target_id > 0 ) {
+				$mtl_req_members = $wpdb->prefix . 'members';
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix.
+				$mtl_req_email = (string) $wpdb->get_var( $wpdb->prepare( "SELECT email FROM {$mtl_req_members} WHERE member_id = %d", $target_id ) );
+			}
+			$user_id = '' !== $mtl_req_email ? mtl_find_wp_user_id_by_member_id( $target_id, $mtl_req_email ) : 0;
+
+			// Same once-a-day guard the bulk sender uses, so pressing this
+			// repeatedly does not mail somebody three times in a minute.
+			$last_sent = $user_id > 0 ? (int) get_user_meta( $user_id, 'mtl_agreement_requested_at', true ) : 0;
+
+			if ( $user_id <= 0 ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Not sent.</strong> This member has no website sign-in, so there is nowhere for them to agree. Record their signed form instead, or send them a password setup email first.</p></div>';
+			} elseif ( $last_sent > 0 && ( time() - $last_sent ) < DAY_IN_SECONDS ) {
+				echo '<div class="notice notice-warning is-dismissible"><p><strong>Not sent.</strong> This member was already asked within the last day.</p></div>';
+			} elseif ( mtl_send_agreement_request_email( $target_id ) ) {
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Sent.</strong> The member has been asked to review and agree. Nothing about their record has changed yet.</p></div>';
+			} else {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Not sent.</strong> The email could not be delivered. Check the site&rsquo;s mail settings and try again.</p></div>';
+			}
+		}
+	}
+
 	// 1. HANDLE "ADD" FORM SUBMISSION (Insert Data)
 	if ( isset( $_POST['mtl_add_member'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_add_member_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_member_nonce'] ) ), 'mtl_add_member_action' ) ) {
@@ -563,6 +1064,34 @@ function mtl_render_membership_page() {
 					// MANY-TO-MANY: one row per completed training, each carrying
 					// the date that member completed it.
 					mtl_sync_member_trainings( $new_member_id, $training_starts );
+
+					// Agreements ticked on the form, recorded against the paper
+					// the member signed at the desk. A shortfall warns but keeps
+					// the member -- same handling as a failed login below, since
+					// staff can finish from the detail panel.
+					if ( mtl_agreements_staff_recording() ) {
+						$posted_agreements  = mtl_read_agreements_post();
+						$wanted             = count( $posted_agreements['ticked'] );
+						$agreements_written = 0;
+						$mtl_written_ids    = array();
+						foreach ( $posted_agreements['ticked'] as $mtl_aid ) {
+							$mtl_seen      = isset( $posted_agreements['versions'][ $mtl_aid ] ) ? (int) $posted_agreements['versions'][ $mtl_aid ] : null;
+							$mtl_accept_id = mtl_record_agreement_acceptance( $new_member_id, $mtl_aid, 'staff_add', $mtl_seen );
+							if ( $mtl_accept_id > 0 ) {
+								++$agreements_written;
+								$mtl_written_ids[] = $mtl_accept_id;
+							}
+						}
+						if ( $agreements_written < $wanted ) {
+							$mtl_shortfall = $wanted - $agreements_written;
+							echo '<div class="notice notice-warning is-dismissible"><p><strong>The member was saved, but ' . esc_html( number_format_i18n( $mtl_shortfall ) ) . ' agreement' . ( 1 === $mtl_shortfall ? '' : 's' ) . ' could not be recorded.</strong> Use <em>Record agreement</em> on their detail panel to finish. This usually means an agreement was revised while the form was open.</p></div>';
+						}
+
+						// Their copy, same checkbox treatment as the dialog.
+						if ( $mtl_written_ids && isset( $_POST['mtl_send_agreement_copy'] ) ) {
+							mtl_send_agreement_confirmation_email( $new_member_id, $mtl_written_ids );
+						}
+					}
 
 					// Verification documents live in their own table, separated
 					// for security compliance. Insert a row as soon as at least
@@ -1123,6 +1652,37 @@ function mtl_render_membership_page() {
 		}
 	}
 
+	// Bulk agreement requests. Administrators only -- one click here mails the
+	// whole membership. Editors keep the per-member action above.
+	$agreement_batch_notice = '';
+	if ( isset( $_POST['mtl_send_agreement_requests'] ) && mtl_agreements_online() && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_agreement_requests_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_agreement_requests_nonce'] ) ), 'mtl_agreement_requests_action' ) ) {
+			// The one place the audience string is trusted, and it is
+			// whitelisted before it reaches anything that builds a query. An
+			// unrecognised value falls back to the NARROWER set, never "all".
+			$agreement_audience = mtl_valid_agreement_audience(
+				isset( $_POST['mtl_agreement_audience'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_agreement_audience'] ) ) : ''
+			);
+			$agreement_batch    = mtl_run_agreement_request_batch( $agreement_audience, isset( $_POST['mtl_agreement_resend_all'] ) );
+
+			$agreement_batch_notice = '<div class="notice notice-success is-dismissible"><p><strong>Member Agreements:</strong> '
+				. intval( $agreement_batch['sent'] ) . ' request(s) sent. Nobody&rsquo;s agreement status has changed &mdash; this only asks.';
+
+			if ( $agreement_batch['failed'] > 0 ) {
+				$agreement_batch_notice .= ' ' . intval( $agreement_batch['failed'] ) . ' could not be sent &mdash; they stay on the list, so try again once mail delivery is working.';
+			}
+			if ( $agreement_batch['remaining'] > 0 ) {
+				$agreement_batch_notice .= ' ' . intval( $agreement_batch['remaining'] ) . ' still to go &mdash; press the button again to continue.';
+			}
+			if ( $agreement_batch['excluded'] > 0 ) {
+				$agreement_batch_notice .= ' ' . intval( $agreement_batch['excluded'] ) . ' were left out because they cannot sign in yet.';
+			}
+			$agreement_batch_notice .= '</p></div>';
+		} else {
+			$agreement_batch_notice = '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
 	// Per-member "send them a link" from the members table. Editors may do this
 	// one at a time: it is the same act as ticking the box on Add Member.
 	if ( isset( $_POST['mtl_send_one_setup_email'] ) && mtl_can_manage_library() ) {
@@ -1172,6 +1732,24 @@ function mtl_render_membership_page() {
 		} else {
 			$login_batch_notice = '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
 		}
+	}
+
+	if ( '' !== $agreement_batch_notice ) {
+		echo wp_kses_post( $agreement_batch_notice );
+	}
+
+	// A mode is set but no agreement is active, so nothing can be tracked and
+	// every agreement surface on this page is gone. The setting itself is
+	// unchanged; without this notice staff just find the badges and the Record
+	// agreement button missing and reasonably conclude the feature reset itself.
+	if ( 'off' !== mtl_agreements_mode() && ! mtl_agreements_tracking() ) {
+		echo '<div class="notice notice-warning is-dismissible"><p><strong>Member agreements are switched on, but no agreement is active.</strong> Nothing is tracked and nothing is shown on this page until at least one is in use';
+		if ( mtl_can_manage_settings() ) {
+			echo ' &mdash; add or un-retire one under <a href="' . esc_url( admin_url( 'admin.php?page=mtl-setup' ) ) . '">Setup &rarr; Member Agreements</a>.';
+		} else {
+			echo '. An administrator can add one under Setup.';
+		}
+		echo '</p></div>';
 	}
 
 	if ( '' !== $login_batch_notice ) {
@@ -2285,6 +2863,126 @@ function mtl_render_membership_page() {
 			background: var(--mtl-header-color, #ff6600);
 			opacity: 0.4;
 		}
+
+		.mtl-agreement-badge {
+			display: inline-block;
+			background: #fcf0d4;
+			color: #7a5b00;
+			border: 1px solid #dba617;
+			border-radius: 3px;
+			padding: 1px 6px;
+			font-size: 0.8em;
+			white-space: nowrap;
+			margin-top: 3px;
+		}
+
+		/* The collapsed line is a count, not a heading -- kept at the same
+			scale as the training table so the two read as peers. */
+		.mtl-agreement-details > summary {
+			cursor: pointer;
+			font-size: 0.85em;
+			color: #646970;
+			padding: 2px 0;
+		}
+
+		.mtl-agreement-details > summary:hover {
+			color: #2271b1;
+		}
+
+		/* Only the exception is coloured, so a roll of "3 of 3" stays quiet. */
+		.mtl-agreement-count-flag {
+			color: #7a5b00;
+			font-weight: 600;
+		}
+
+		.mtl-agreement-panel {
+			margin: 6px 0 14px 3px;
+			padding-left: 11px;
+			border-left: 2px solid #f0f0f1;
+		}
+
+		.mtl-agreement-line {
+			display: flex;
+			gap: 7px;
+			align-items: flex-start;
+			padding: 7px 0;
+			border-bottom: 1px solid #f0f0f1;
+		}
+
+		.mtl-agreement-line:last-of-type {
+			border-bottom: 0;
+		}
+
+		.mtl-agreement-yes,
+		.mtl-agreement-no {
+			flex: 0 0 auto;
+			font-size: 0.9em;
+			line-height: 1.6;
+		}
+
+		.mtl-agreement-yes { color: #007017; font-weight: 700; }
+		.mtl-agreement-no { color: #b32d2e; font-weight: 700; }
+
+		.mtl-record-meta {
+			margin: 2px 0 0 0;
+			font-size: 0.85em;
+			color: #666;
+		}
+
+		.mtl-agreement-actions {
+			display: flex;
+			gap: 6px;
+			flex-wrap: wrap;
+			align-items: center;
+			margin: 12px 0 0 0;
+		}
+
+		.mtl-record-group {
+			border: 1px solid #dcdcde;
+			border-radius: 4px;
+			padding: 10px 14px 4px 14px;
+			margin: 0 0 14px 0;
+		}
+
+		.mtl-record-group legend {
+			font-weight: 600;
+			padding: 0 6px;
+		}
+
+		.mtl-record-item { margin-bottom: 12px; }
+
+		.mtl-record-label {
+			display: flex;
+			gap: 8px;
+			align-items: flex-start;
+			cursor: pointer;
+		}
+
+		.mtl-record-label input[type="checkbox"] { margin-top: 3px; flex: 0 0 auto; }
+
+		.mtl-record-assent {
+			color: #50575e;
+			font-style: italic;
+			margin: 10px 0;
+		}
+
+		.mtl-record-inline {
+			border: 1px solid #c3c4c7;
+			border-left: 4px solid #2271b1;
+			background: #fff;
+			padding: 12px 16px;
+			margin-top: 12px;
+		}
+
+		dialog.mtl-record-dialog {
+			max-width: 640px;
+			width: 92%;
+			border: 1px solid #c3c4c7;
+			border-radius: 4px;
+			padding: 18px 22px;
+		}
+
+		dialog.mtl-record-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 	</style>
 
 	<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);" <?php echo $keep_form_open ? ' open' : ''; ?>>
@@ -2299,6 +2997,55 @@ function mtl_render_membership_page() {
 				<table class="form-table" style="margin-top: 0;">
 					<?php mtl_render_member_form_fields( $form_values, $trainings, '', true ); ?>
 				</table>
+
+				<?php
+				// Inline rather than behind the Record Agreement dialog, since
+				// there is no detail panel to launch one from yet. Optional too,
+				// unlike signup -- staff add walk-ins whose paperwork is not
+				// signed, and saving them flagged beats refusing to save them.
+				if ( mtl_agreements_staff_recording() ) {
+					$mtl_add_agreements = mtl_get_active_agreements();
+					if ( $mtl_add_agreements ) {
+						?>
+						<fieldset class="mtl-record-group" style="max-width: 640px;">
+							<legend>Member agreements</legend>
+							<div class="notice notice-warning inline" style="margin: 0 0 12px 0;">
+								<p style="margin: 6px 0;"><strong>&#9888; Only tick these once you have the member&rsquo;s signed form in hand.</strong> You are recording that this person agreed, and that record is permanent. Leave them blank if the paperwork is not signed yet &mdash; you can record it later from their detail panel.</p>
+							</div>
+							<?php foreach ( $mtl_add_agreements as $mtl_add_ag ) : ?>
+								<?php
+								$mtl_add_aid  = (int) $mtl_add_ag->agreement_id;
+								$mtl_add_box  = 'mtl-add-agreement-' . $mtl_add_aid;
+								$mtl_add_file = (int) $mtl_add_ag->attachment_id > 0 ? wp_get_attachment_url( (int) $mtl_add_ag->attachment_id ) : '';
+								?>
+								<div class="mtl-record-item">
+									<label for="<?php echo esc_attr( $mtl_add_box ); ?>" class="mtl-record-label">
+										<input type="checkbox" id="<?php echo esc_attr( $mtl_add_box ); ?>" name="agreements[<?php echo esc_attr( $mtl_add_aid ); ?>]" value="1">
+										<span><?php echo nl2br( esc_html( $mtl_add_ag->agreement_text ) ); ?></span>
+									</label>
+									<p class="mtl-record-meta">
+										v<?php echo esc_html( (int) $mtl_add_ag->version_num ); ?>
+										<?php if ( $mtl_add_file ) : ?>
+											&middot; <a href="<?php echo esc_url( $mtl_add_file ); ?>" target="_blank" rel="noopener noreferrer"
+												aria-label="<?php echo esc_attr( 'View the attached document for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $mtl_add_ag->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>">View the attached document &#8599;</a>
+										<?php endif; ?>
+									</p>
+									<input type="hidden" name="agreement_versions[<?php echo esc_attr( $mtl_add_aid ); ?>]" value="<?php echo esc_attr( (int) $mtl_add_ag->version_num ); ?>">
+								</div>
+							<?php endforeach; ?>
+							<p class="mtl-record-assent"><?php echo esc_html( mtl_assent_language( 'staff_add' ) ); ?></p>
+							<p>
+								<label>
+									<input type="checkbox" name="mtl_send_agreement_copy" value="1" checked>
+									<?php esc_html_e( 'Email the member their copy of what was recorded', 'my-tool-library' ); ?>
+								</label>
+							</p>
+						</fieldset>
+						<?php
+					}
+				}
+				?>
+
 				<p class="submit">
 					<input type="submit" name="mtl_add_member" id="mtl_add_member" class="button button-primary" value="Save to Database">
 				</p>
@@ -2353,7 +3100,8 @@ function mtl_render_membership_page() {
 		$logins_to_send  = mtl_count_members_awaiting_setup_email();
 		$logins_all_done = ( 0 === $logins_missing && 0 === $logins_pending && 0 === $logins_blocked );
 		?>
-		<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);" <?php echo ( $logins_missing > 0 || $logins_pending > 0 ) ? ' open' : ''; ?>>
+		<?php // Starts collapsed. The count in the summary is the part staff scan for; the panel itself is only needed when acting on it. ?>
+		<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
 			<summary style="font-size: 1.1em; font-weight: 600; cursor: pointer; outline: none; color: var(--mtl-header-color);">
 				Member Logins
 				<?php if ( $logins_missing > 0 || $logins_pending > 0 ) : ?>
@@ -2400,6 +3148,79 @@ function mtl_render_membership_page() {
 			</div>
 		</details>
 	<?php endif; ?>
+	<?php
+	// Bulk agreement requests. Administrators only, and absent in paper mode --
+	// the panel sends members to a page where they agree online, which paper
+	// mode does not have.
+	if ( mtl_agreements_online() && mtl_can_manage_settings() ) :
+		$ag_outstanding  = mtl_count_members_awaiting_agreement_request( 'outstanding', true );
+		$ag_due_now      = mtl_count_members_awaiting_agreement_request( 'outstanding', false );
+		$ag_recent       = $ag_outstanding - $ag_due_now;
+		$ag_excluded     = mtl_count_agreement_request_excluded( 'outstanding' );
+		$ag_never_agreed = mtl_count_agreement_request_never_agreed( true );
+		?>
+		<?php // Starts collapsed, matching Member Logins above. ?>
+		<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
+			<summary style="font-size: 1.1em; font-weight: 600; cursor: pointer; outline: none; color: var(--mtl-header-color);">
+				Member Agreements
+				<?php if ( $ag_outstanding > 0 ) : ?>
+					<span style="font-weight: 400; color: #8a6d00;">&mdash; <?php echo intval( $ag_outstanding ); ?> have not agreed</span>
+				<?php endif; ?>
+			</summary>
+
+			<div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
+				<p style="margin-top: 0;">Ask members to review and agree to the current agreements. They receive an email with a link and agree on the website themselves.</p>
+
+				<ul style="margin: 0 0 15px 20px; list-style: disc;">
+					<li><strong><?php echo intval( $ag_outstanding ); ?></strong> member(s) have not agreed to all of the current agreements.</li>
+					<li><strong><?php echo intval( $ag_never_agreed ); ?></strong> of those have never agreed to anything.</li>
+					<?php if ( $ag_recent > 0 ) : ?>
+						<li><strong><?php echo intval( $ag_recent ); ?></strong> were emailed in the last 24 hours and will be skipped.</li>
+					<?php endif; ?>
+				</ul>
+
+				<?php if ( $ag_excluded > 0 ) : ?>
+					<?php // Reported rather than silently dropped: a silent drop looks like a successful send. ?>
+					<div class="notice notice-warning inline" style="margin: 0 0 15px 0;">
+						<p style="margin: 6px 0;">
+							<strong>&#9888; <?php echo intval( $ag_excluded ); ?> of them cannot sign in yet, so they have no way to agree. Create their logins first. </strong>
+							See <em>Member Logins</em> above, then send setup emails. They will be left out of this send.
+						</p>
+					</div>
+				<?php endif; ?>
+
+				<form method="post" action="<?php echo esc_url( $base_url ); ?>">
+					<?php wp_nonce_field( 'mtl_agreement_requests_action', 'mtl_agreement_requests_nonce' ); ?>
+
+					<fieldset style="margin-bottom: 12px;">
+						<legend style="font-weight: 600;">Send to</legend>
+						<label style="display: block; margin-bottom: 4px;">
+							<input type="radio" name="mtl_agreement_audience" value="outstanding" checked>
+							Members who have not agreed to all current agreements
+						</label>
+						<label style="display: block;">
+							<input type="radio" name="mtl_agreement_audience" value="all">
+							All active members
+							<span style="color: #666; font-size: 0.9em;">&mdash; anyone already up to date is told there is nothing to do.</span>
+						</label>
+					</fieldset>
+
+					<p style="margin-bottom: 4px;">
+						<input type="submit" name="mtl_send_agreement_requests" class="button button-primary" value="Send agreement requests"<?php echo 0 === $ag_outstanding ? ' disabled' : ''; ?>>
+					</p>
+					<p style="margin-top: 0;">
+						<label style="color: #666; font-size: 0.9em;">
+							<input type="checkbox" name="mtl_agreement_resend_all" value="1">
+							Include members emailed in the last 24 hours
+						</label>
+					</p>
+
+					<p style="color: #666; font-size: 0.85em; margin-bottom: 0;">Works through the list a batch at a time. <strong>Sending does not change anyone&rsquo;s status.</strong> Revising an agreement does not automatically send emails.</p>
+				</form>
+			</div>
+		</details>
+	<?php endif; ?>
+
 
 	<?php if ( $editing && $edit_values ) : ?>
 		<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);" open>
@@ -2489,6 +3310,32 @@ function mtl_render_membership_page() {
 			'expiry_date' => mtl_training_expiry_date( $mt_row->start_date, $mt_row->certification_length_months ),
 			'is_current'  => mtl_training_is_current( $mt_row->start_date, $mt_row->certification_length_months ),
 		);
+	}
+
+	// Agreements per member, batched for the same reason: the detail panels all
+	// render inline, so the single-member helpers would be several queries per
+	// row. Three queries total, whatever the roster size. Live in paper mode as
+	// well as full -- the whole staff side is gated on tracking(), not online().
+	$mtl_all_member_ids      = array_map( 'intval', wp_list_pluck( $members, 'member_id' ) );
+	$member_agreement_status = array();
+	$member_acceptances      = array();
+	$member_agreement_vers   = array();
+	$mtl_active_agreements   = array();
+	$mtl_all_agreements      = array();
+	if ( mtl_agreements_tracking() && $mtl_all_member_ids ) {
+		$member_agreement_status = mtl_member_agreements_status_map( $mtl_all_member_ids );
+		$member_acceptances      = mtl_get_member_acceptances_map( $mtl_all_member_ids );
+		$member_agreement_vers   = mtl_get_member_acceptance_versions_map( $mtl_all_member_ids );
+		$mtl_active_agreements   = mtl_get_active_agreements();
+		// Advanced Search lists retired agreements too: a withdrawn agreement is
+		// the most likely subject of a "who accepted that version?" search.
+		$mtl_all_agreements = array_merge( $mtl_active_agreements, mtl_get_retired_agreements() );
+	}
+
+	// agreement_id => versions anybody has accepted, for the Version dropdown.
+	$mtl_agreement_version_options = array();
+	foreach ( $mtl_all_agreements as $mtl_vopt_ag ) {
+		$mtl_agreement_version_options[ (string) (int) $mtl_vopt_ag->agreement_id ] = mtl_agreement_accepted_versions( (int) $mtl_vopt_ag->agreement_id );
 	}
 
 	// 5B. PER-MEMBER BORROWING ACTIVITY
@@ -2642,6 +3489,52 @@ function mtl_render_membership_page() {
 							<option value="">Any</option>
 							<option value="yes">Yes</option>
 							<option value="no">No</option>
+						</select>
+					</div>
+					<?php if ( mtl_agreements_tracking() ) : ?>
+						<div>
+							<?php // A badge finds one member; this is what lets staff work through a backlog after revising an agreement. ?>
+							<label for="adv-m-agreements">Agreements</label>
+							<select id="adv-m-agreements">
+								<option value="">Any status</option>
+								<option value="ok">Up to date</option>
+								<option value="outdated">Outstanding</option>
+								<option value="none">Never agreed</option>
+							</select>
+						</div>
+						<div>
+							<?php
+							// The question that arrives on a bad day: which
+							// members accepted THAT version -- the one with the
+							// error in it, the one the insurer is asking about.
+							// Without this the only route is a database query.
+							?>
+							<label for="adv-m-agreement">Accepted agreement</label>
+							<select id="adv-m-agreement">
+								<option value="">Any agreement</option>
+								<?php foreach ( $mtl_all_agreements as $mtl_adv_ag ) : ?>
+									<option value="<?php echo esc_attr( (int) $mtl_adv_ag->agreement_id ); ?>">
+										<?php
+										echo esc_html( mb_substr( trim( preg_replace( '/\s+/', ' ', $mtl_adv_ag->agreement_text ) ), 0, 60 ) );
+										echo null !== $mtl_adv_ag->retired_at ? esc_html__( ' (retired)', 'my-tool-library' ) : '';
+										?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+						</div>
+						<div>
+							<label for="adv-m-agreement-version">Version</label>
+							<select id="adv-m-agreement-version" disabled>
+								<option value="">Any version</option>
+							</select>
+						</div>
+					<?php endif; ?>
+					<div>
+						<label for="adv-m-hasnotes">Has Private Notes?</label>
+						<select id="adv-m-hasnotes">
+							<option value="">Any</option>
+							<option value="1">Yes</option>
+							<option value="0">No</option>
 						</select>
 					</div>
 				</div>
@@ -2811,6 +3704,31 @@ function mtl_render_membership_page() {
 							data-donation="<?php echo esc_attr( $member->recurring_donation_amount ); ?>"
 							data-donated="<?php echo esc_attr( strtolower( $member->has_donated_tools ) ); ?>"
 							data-verified="<?php echo $is_verified ? 'yes' : 'no'; ?>"
+							<?php // Only whether notes exist -- the notes themselves stay in the detail panel. ?>
+							data-hasnotes="<?php echo trim( (string) $member->private_notes ) !== '' ? '1' : '0'; ?>"
+							<?php
+							// Agreement status, and every agreement/version pair
+							// this member has EVER accepted -- comma-wrapped
+							// (",3:1,3:2,") so testing ",3:1," can never match
+							// agreement 13 or version 12. Deliberately not just
+							// the latest: somebody who accepted v2 and has since
+							// accepted v3 must still be found when searching v2.
+							$mtl_ag_status = isset( $member_agreement_status[ $mid ] ) ? $member_agreement_status[ $mid ] : 'disabled';
+							$mtl_ag_vers   = isset( $member_agreement_vers[ $mid ] ) && $member_agreement_vers[ $mid ]
+								? ',' . implode( ',', $member_agreement_vers[ $mid ] ) . ','
+								: '';
+
+							// Omitted entirely when the feature is off rather
+							// than emitted as "disabled": off means the page
+							// carries no trace of this feature at all, not that
+							// it carries a trace saying so.
+							if ( mtl_agreements_tracking() ) :
+								?>
+							data-agreements="<?php echo esc_attr( $mtl_ag_status ); ?>"
+							data-agreement-vers="<?php echo esc_attr( $mtl_ag_vers ); ?>"
+								<?php
+							endif;
+							?>
 							<?php // Boolean flags backing the activity filters ("1" / "0"). ?>
 							data-has-active="<?php echo $active_count > 0 ? '1' : '0'; ?>"
 							data-has-prior="<?php echo $prior_count > 0 ? '1' : '0'; ?>"
@@ -2848,6 +3766,17 @@ function mtl_render_membership_page() {
 									<span class="mtl-verified-badge">Verified</span>
 								<?php else : ?>
 									<span class="mtl-unverified-badge">Not Verified</span>
+								<?php endif; ?>
+								<?php
+								// Two labels, because they mean different things
+								// to staff: caught by a revision, versus never
+								// agreed at all. Nothing for `ok`, so the list
+								// stays quiet once everyone is current.
+								if ( ! $is_anonymized && 'none' === $mtl_ag_status ) :
+									?>
+									<span class="mtl-agreement-badge" title="<?php esc_attr_e( 'This member has no agreements on record', 'my-tool-library' ); ?>"><?php esc_html_e( 'No agreements', 'my-tool-library' ); ?></span>
+								<?php elseif ( ! $is_anonymized && 'outdated' === $mtl_ag_status ) : ?>
+									<span class="mtl-agreement-badge" title="<?php esc_attr_e( 'This member has not agreed to the current version of every agreement', 'my-tool-library' ); ?>"><?php esc_html_e( 'Agreements outstanding', 'my-tool-library' ); ?></span>
 								<?php endif; ?>
 							</td>
 							<?php
@@ -2952,6 +3881,159 @@ function mtl_render_membership_page() {
 											<p style="color: #999;">No verification documents on file. Use Edit to add the member&rsquo;s photo ID and/or proof-of-address scan.</p>
 										<?php endif; ?>
 
+										<?php
+										// --- Agreements -----------------------------
+										//
+										// Summary view: version, date, and
+										// member-or-staff. The checksum, the staff
+										// name, the assent wording and superseded
+										// acceptances are all in the record download
+										// instead.
+										if ( mtl_agreements_tracking() ) :
+											$mtl_p_acceptances = isset( $member_acceptances[ $mid ] ) ? $member_acceptances[ $mid ] : array();
+											$mtl_p_outstanding = mtl_member_outstanding_agreements( $mid );
+											$mtl_p_out_ids     = array_map( 'intval', wp_list_pluck( $mtl_p_outstanding, 'agreement_id' ) );
+											$mtl_p_active      = count( $mtl_active_agreements );
+											$mtl_p_accepted    = $mtl_p_active - count( $mtl_p_outstanding );
+											$mtl_p_open        = ( $record_agreement_id === $mid );
+											?>
+											<strong>Agreements</strong>
+											<?php // Collapsed to the one-line summary: staff scanning a member record need the exception, not the roll call. ?>
+											<details class="mtl-agreement-details" <?php echo $mtl_p_open ? 'open' : ''; ?>>
+												<summary>
+													<span class="<?php echo $mtl_p_outstanding ? 'mtl-agreement-count-flag' : ''; ?>">
+														<?php
+														printf(
+															/* translators: 1: agreements accepted, 2: agreements active. */
+															esc_html__( '%1$s of %2$s accepted', 'my-tool-library' ),
+															esc_html( number_format_i18n( max( 0, $mtl_p_accepted ) ) ),
+															esc_html( number_format_i18n( $mtl_p_active ) )
+														);
+														?>
+													</span>
+												</summary>
+
+												<div class="mtl-agreement-panel">
+													<?php if ( ! $mtl_p_acceptances && ! $mtl_p_outstanding ) : ?>
+														<p style="color:#999;">No agreements have been written yet, so there is nothing to record.</p>
+													<?php endif; ?>
+
+													<?php foreach ( $mtl_p_acceptances as $mtl_p_acc ) : ?>
+														<?php
+														// An agreement that is currently
+														// outstanding is shown below with
+														// its cross, not here with a tick.
+														if ( in_array( (int) $mtl_p_acc->agreement_id, $mtl_p_out_ids, true ) ) {
+															continue;
+														}
+														?>
+														<div class="mtl-agreement-line">
+															<span class="mtl-agreement-yes">&#10003;</span>
+															<div>
+																<?php echo nl2br( esc_html( $mtl_p_acc->agreement_text ) ); ?>
+																<p class="mtl-record-meta">
+																	v<?php echo esc_html( (int) $mtl_p_acc->agreement_version_num ); ?>
+																	&middot; agreed <?php echo wp_kses_post( mtl_format_utc_datetime( $mtl_p_acc->accepted_at, 'j M Y' ) ); ?>
+																	&middot; <?php echo mtl_acceptance_is_staff( $mtl_p_acc->accepted_context ) ? 'by staff' : 'by the member'; ?>
+																</p>
+															</div>
+														</div>
+													<?php endforeach; ?>
+
+													<?php foreach ( $mtl_p_outstanding as $mtl_p_out ) : ?>
+														<?php $mtl_p_file = (int) $mtl_p_out->attachment_id > 0 ? wp_get_attachment_url( (int) $mtl_p_out->attachment_id ) : ''; ?>
+														<div class="mtl-agreement-line">
+															<span class="mtl-agreement-no">&#10007;</span>
+															<div>
+																<?php echo nl2br( esc_html( $mtl_p_out->agreement_text ) ); ?>
+																<p class="mtl-record-meta">
+																	Not on record
+																	<?php if ( $mtl_p_file ) : ?>
+																		<?php // Linked so staff can show it at the desk. ?>
+																		&middot; <a href="<?php echo esc_url( $mtl_p_file ); ?>" target="_blank" rel="noopener noreferrer">View the attached document &#8599;</a>
+																	<?php endif; ?>
+																</p>
+															</div>
+														</div>
+													<?php endforeach; ?>
+
+													<?php
+													// Whether the desk can record for THIS member at all;
+													// the button additionally needs something outstanding,
+													// while the form below stands in for the dialog and
+													// says so itself when there is nothing left to record.
+													$mtl_p_can_record = mtl_agreements_staff_recording() && ! $is_anonymized;
+													?>
+
+													<?php if ( $mtl_p_can_record && $mtl_p_outstanding ) : ?>
+														<p class="mtl-record-meta">Once this member has reviewed the agreements and signed, record it with <em>Record agreement</em> below.</p>
+													<?php endif; ?>
+
+													<p class="mtl-agreement-actions">
+														<?php if ( $mtl_p_can_record && $mtl_p_outstanding ) : ?>
+															<?php
+															// A real link, so the dialog works with scripting off:
+															// following it renders the identical form inline below.
+															// A staff member who cannot open the dialog would
+															// otherwise have NO way to record a signature.
+															$mtl_p_launch = add_query_arg( 'mtl_record_agreement', $mid, $base_url ) . '#mtl-detail-' . $mid;
+															?>
+															<a class="button mtl-record-launch" data-member="<?php echo esc_attr( $mid ); ?>" href="<?php echo esc_url( $mtl_p_launch ); ?>">Record agreement</a>
+														<?php endif; ?>
+
+														<?php if ( mtl_agreements_online() && ! $is_anonymized && $mtl_p_outstanding ) : ?>
+															<?php // Writes no status and changes nothing -- it asks. Absent in paper mode, where there is nowhere for the member to act. ?>
+															<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display:inline;">
+																<?php wp_nonce_field( 'mtl_send_agreement_request_action', 'mtl_send_agreement_request_nonce' ); ?>
+																<input type="hidden" name="agreement_member_id" value="<?php echo esc_attr( $mid ); ?>">
+																<button type="submit" name="mtl_send_agreement_request" value="1" class="button">Send agreement request</button>
+															</form>
+														<?php endif; ?>
+
+														<?php if ( $mtl_p_acceptances && ! $is_anonymized ) : ?>
+															<?php
+															// The remedy when a confirmation failed to send. Offered
+															// whenever there is something to resend rather than only
+															// after a recorded failure: the plugin stores no
+															// mail-failure flag, and a member who deleted the email
+															// wants it back for the same reason.
+															?>
+															<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display:inline;">
+																<?php wp_nonce_field( 'mtl_resend_agreement_email_action', 'mtl_resend_agreement_email_nonce' ); ?>
+																<input type="hidden" name="agreement_member_id" value="<?php echo esc_attr( $mid ); ?>">
+																<button type="submit" name="mtl_resend_agreement_email" value="1" class="button">Resend agreement email</button>
+															</form>
+														<?php endif; ?>
+
+														<?php if ( mtl_can_manage_settings() ) : ?>
+															<?php
+															// Administrators only, and offered on Former Member
+															// rows too -- that is exactly when it is needed, and
+															// the reason the identity is retained through
+															// deletion at all.
+															$mtl_p_record_url = wp_nonce_url(
+																add_query_arg( 'mtl_agreement_record', $mid, $base_url ),
+																'mtl_agreement_record_action'
+															);
+															?>
+															<a class="button" href="<?php echo esc_url( $mtl_p_record_url ); ?>" target="_blank" rel="noopener">Download agreement record</a>
+														<?php endif; ?>
+													</p>
+
+													<?php
+													// The no-JavaScript container. Identical markup to the
+													// dialog below -- one form rendered in two places, not
+													// two implementations.
+													if ( $mtl_p_open && $mtl_p_can_record ) {
+														echo '<div class="mtl-record-inline">';
+														echo mtl_render_record_agreement_form( $member, $mtl_p_acceptances, $record_agreement_changed, $record_agreement_checked ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer.
+														echo '</div>';
+													}
+													?>
+												</div>
+											</details>
+										<?php endif; ?>
+
 										<strong>Trainings Completed</strong>
 										<?php if ( ! empty( $member_trainings[ $mid ] ) ) : ?>
 											<table class="mtl-training-table">
@@ -2988,7 +4070,6 @@ function mtl_render_membership_page() {
 											<strong>Private Notes</strong>
 											<div class="mtl-sensitive-note">
 												<?php echo nl2br( esc_html( stripslashes( $member->private_notes ) ) ); ?>
-												<p style="margin: 6px 0 0 0; font-style: italic;">Staff-only &mdash; never shown on the public catalog, the member&rsquo;s account page, or anywhere else a member can see it.</p>
 											</div>
 										<?php endif; ?>
 									</div>
@@ -3246,12 +4327,23 @@ function mtl_render_membership_page() {
 				donationMax: document.getElementById('adv-m-donation-max'),
 				donated: document.getElementById('adv-m-donated'),
 				verified: document.getElementById('adv-m-verified'),
+				agreements: document.getElementById('adv-m-agreements'),
+				agreement: document.getElementById('adv-m-agreement'),
+				agreementVersion: document.getElementById('adv-m-agreement-version'),
+				hasNotes: document.getElementById('adv-m-hasnotes'),
 				hasActive: document.getElementById('adv-m-has-active'),
 				hasPrior: document.getElementById('adv-m-has-prior'),
 				hasRes: document.getElementById('adv-m-has-res'),
 				hasPastDue: document.getElementById('adv-m-has-pastdue'),
 				overdueNow: document.getElementById('adv-m-overdue-now'),
 			};
+
+			// The three agreement selects are only rendered when agreement
+			// tracking is on, so advFields holds nulls in their place when it
+			// is off. Everything that treats the fields as a group -- wiring
+			// up listeners, clearing them -- works from this list instead, so
+			// a missing select can't take the whole panel down with it.
+			const advFieldEls = Object.values(advFields).filter(Boolean);
 
 			// --- Trainings multi-select ---
 			// Deliberately NOT part of advFields: everything in there is a
@@ -3329,6 +4421,39 @@ function mtl_render_membership_page() {
 				});
 			}
 
+			// --- Agreement version dropdown ---
+			// Populated from the versions members have ACTUALLY accepted, not
+			// counted up to the current version_num: a version nobody ever
+			// accepted must not be offered as a filter that returns nothing.
+			const agreementVersions = <?php echo wp_json_encode( $mtl_agreement_version_options ); ?>;
+
+			if (advFields.agreement && advFields.agreementVersion) {
+				advFields.agreement.addEventListener('change', function() {
+					const sel = advFields.agreementVersion;
+					const chosen = advFields.agreement.value;
+					sel.innerHTML = '';
+					const any = document.createElement('option');
+					any.value = '';
+					any.textContent = 'Any version';
+					sel.appendChild(any);
+
+					const versions = chosen && agreementVersions[chosen] ? agreementVersions[chosen] : [];
+					versions.forEach(function(v) {
+						const opt = document.createElement('option');
+						opt.value = String(v);
+						opt.textContent = 'Version ' + v;
+						sel.appendChild(opt);
+					});
+
+					// Nothing to choose between with no agreement picked, and
+					// nothing to choose between when only one version was ever
+					// accepted -- but left enabled in the second case so the
+					// admin can still narrow to it deliberately.
+					sel.disabled = !chosen || versions.length === 0;
+					applyFilters();
+				});
+			}
+
 			advToggle.addEventListener('click', function() {
 				const isOpen = advPanel.style.display !== 'none';
 				advPanel.style.display = isOpen ? 'none' : 'block';
@@ -3352,6 +4477,10 @@ function mtl_render_membership_page() {
 					donationMax: advFields.donationMax.value !== '' ? parseFloat(advFields.donationMax.value) : null,
 					donated: advFields.donated.value,
 					verified: advFields.verified.value,
+					agreements: advFields.agreements ? advFields.agreements.value : '',
+					agreement: advFields.agreement ? advFields.agreement.value : '',
+					agreementVersion: advFields.agreementVersion ? advFields.agreementVersion.value : '',
+					hasNotes: advFields.hasNotes.value,
 					hasActive: advFields.hasActive.value,
 					hasPrior: advFields.hasPrior.value,
 					hasRes: advFields.hasRes.value,
@@ -3377,6 +4506,22 @@ function mtl_render_membership_page() {
 					if (visible && f.signupTo && d.signup > f.signupTo) visible = false;
 					if (visible && f.donated && d.donated !== f.donated) visible = false;
 					if (visible && f.verified && d.verified !== f.verified) visible = false;
+					if (visible && f.hasNotes && d.hasnotes !== f.hasNotes) visible = false;
+					if (visible && f.agreements && d.agreements !== f.agreements) visible = false;
+
+					// "Accepted agreement / version" reads EVERY acceptance, not
+					// just the newest -- a member who accepted v2 and has since
+					// accepted v3 must still be returned when searching for v2.
+					// data-agreement-vers is comma-wrapped (",3:1,3:2,") so
+					// testing ",3:1," cannot match agreement 13 or version 12.
+					if (visible && f.agreement) {
+						const accepted = d.agreementVers || '';
+						if (f.agreementVersion) {
+							if (accepted.indexOf(',' + f.agreement + ':' + f.agreementVersion + ',') === -1) visible = false;
+						} else if (accepted.indexOf(',' + f.agreement + ':') === -1) {
+							visible = false;
+						}
+					}
 
 					// Borrowing-activity booleans. The selects use "1"/"0" and
 					// the rows carry matching flags, so an empty value ("Any")
@@ -3473,14 +4618,14 @@ function mtl_render_membership_page() {
 			}
 
 			searchInput.addEventListener('keyup', applyFilters);
-			Object.values(advFields).forEach(function(el) {
+			advFieldEls.forEach(function(el) {
 				el.addEventListener('input', applyFilters);
 				el.addEventListener('change', applyFilters);
 			});
 
 			clearBtn.addEventListener('click', function() {
 				searchInput.value = '';
-				Object.values(advFields).forEach(function(el) {
+				advFieldEls.forEach(function(el) {
 					el.value = '';
 				});
 				// The trainings picker is checkboxes, not a value-bearing
@@ -3776,6 +4921,66 @@ function mtl_render_membership_page() {
 					btn.classList.add('mtl-lm-due-active');
 				});
 			});
+		});
+	</script>
+
+	<script>
+		// Record Agreement: moves the form the detail panel already rendered
+		// inline into a native <dialog>. The launcher is a real link, so with
+		// scripting off it just navigates and the inline form is what you get.
+		document.addEventListener('DOMContentLoaded', function() {
+			const launchers = document.querySelectorAll('.mtl-record-launch');
+			if (!launchers.length || typeof HTMLDialogElement === 'undefined') {
+				return;
+			}
+
+			launchers.forEach(function(link) {
+				link.addEventListener('click', function(e) {
+					const memberId = link.dataset.member;
+					const inline = document.querySelector('#mtl-detail-' + memberId + ' .mtl-record-inline');
+
+					// The form is only in the DOM once the link has been
+					// followed. On a first click there is nothing to move, so
+					// let the navigation happen and the dialog opens on the
+					// way back.
+					if (!inline) {
+						return;
+					}
+
+					e.preventDefault();
+
+					let dialog = document.getElementById('mtl-record-dialog-' + memberId);
+					if (!dialog) {
+						dialog = document.createElement('dialog');
+						dialog.id = 'mtl-record-dialog-' + memberId;
+						dialog.className = 'mtl-record-dialog';
+						// Announces as "Record agreement, <name>" rather than
+						// just "dialog".
+						dialog.setAttribute('aria-labelledby', 'mtl-record-title-' + memberId);
+						dialog.appendChild(inline.firstElementChild ? inline : inline);
+						document.body.appendChild(dialog);
+					}
+
+					// showModal() gives focus containment and Escape for free,
+					// and returns focus to the launcher on close.
+					dialog.showModal();
+					const first = dialog.querySelector('input[type="checkbox"], button, [href]');
+					if (first) { first.focus(); }
+				});
+			});
+
+			// A dialog rendered open on page load: the link was followed
+			// without scripting intercepting it, so upgrade it now. The inline
+			// container stays in the DOM as the fallback.
+			const openInline = document.querySelector('.mtl-record-inline');
+			if (openInline) {
+				const form = openInline.querySelector('.mtl-record-agreement-form');
+				const memberInput = form ? form.querySelector('[name="agreement_member_id"]') : null;
+				if (memberInput) {
+					const launcher = document.querySelector('.mtl-record-launch[data-member="' + memberInput.value + '"]');
+					if (launcher) { launcher.click(); }
+				}
+			}
 		});
 	</script>
 	<?php

@@ -2425,7 +2425,6 @@ function mtl_render_inventory_page() {
 											<strong>Private Notes</strong>
 											<div class="mtl-sensitive-note">
 												<?php echo nl2br( esc_html( stripslashes( $item->private_notes ) ) ); ?>
-												<p style="margin: 6px 0 0 0; font-style: italic;">Staff-only &mdash; never shown on the public catalog or anywhere a member can see it.</p>
 											</div>
 										<?php endif; ?>
 

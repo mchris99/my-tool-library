@@ -60,6 +60,8 @@ function mtl_export_table_names() {
 	return array(
 		'members',
 		'member_verifications',
+		'member_agreements',
+		'member_agreement_acceptances',
 		'member_trainings',
 		'member_training_mappings',
 		'tool_inventory',
@@ -73,6 +75,24 @@ function mtl_export_table_names() {
 }
 
 /**
+ * A usable #rrggbb colour, falling back to a default.
+ *
+ * <input type="color"> has no empty state: given anything that is not a valid
+ * #rrggbb value it displays #000000, and saving the form then persists that
+ * black. So a stored colour that is empty or malformed has to become the
+ * documented default before it is rendered into the field, or one unrelated
+ * save turns the whole site black.
+ *
+ * @param string $value   Stored option value.
+ * @param string $fallback Colour to use when $value is unusable.
+ * @return string A valid #rrggbb colour.
+ */
+function mtl_color_or_default( $value, $fallback ) {
+	$value = sanitize_hex_color( trim( (string) $value ) );
+	return ( is_string( $value ) && '' !== $value ) ? $value : $fallback;
+}
+
+/**
  * The exact phrase an admin must type to confirm the destructive database
  * reset.
  *
@@ -80,6 +100,44 @@ function mtl_export_table_names() {
  */
 function mtl_db_reset_confirmation_phrase() {
 	return 'Delete ALL my data';
+}
+
+/**
+ * The "attach a file" control shared by the add and edit agreement forms.
+ *
+ * Renders a hidden attachment_id, a readout of the current choice and the two
+ * buttons that drive the Media Library modal. The modal is unfiltered -- both
+ * the Upload Files and Media Library tabs, any file type -- because a library
+ * may reasonably attach a PDF, a scanned form or an image.
+ *
+ * @param string $field_id      Unique DOM id prefix for this instance.
+ * @param int    $attachment_id Currently attached file, or 0 for none.
+ */
+function mtl_render_agreement_file_picker( $field_id, $attachment_id ) {
+	$attachment_id = (int) $attachment_id;
+	$file_url      = $attachment_id > 0 ? wp_get_attachment_url( $attachment_id ) : '';
+	$file_name     = $file_url ? basename( wp_parse_url( $file_url, PHP_URL_PATH ) ) : '';
+	?>
+	<div class="mtl-agreement-file-picker" data-mtl-picker="<?php echo esc_attr( $field_id ); ?>">
+		<p style="margin-bottom: 4px;"><strong>Attached file</strong> (optional)</p>
+		<input type="hidden" name="agreement_attachment_id" id="<?php echo esc_attr( $field_id ); ?>-id" value="<?php echo esc_attr( $attachment_id > 0 ? $attachment_id : '' ); ?>">
+		<p style="margin: 0 0 6px 0;">
+			<span id="<?php echo esc_attr( $field_id ); ?>-name" style="font-family: monospace;">
+				<?php echo $file_name ? esc_html( $file_name ) : '(none chosen)'; ?>
+			</span>
+			<button type="button" class="button mtl-agreement-file-select" data-target="<?php echo esc_attr( $field_id ); ?>">Select or upload file</button>
+			<button type="button" class="button mtl-agreement-file-remove" data-target="<?php echo esc_attr( $field_id ); ?>" <?php echo $attachment_id > 0 ? '' : 'style="display:none;"'; ?>>Remove file</button>
+		</p>
+		<!-- A standing note, not a dismissible one, placed where the file is
+			chosen -- because that is the moment the mistake gets made. -->
+		<p style="margin: 0; font-size: 0.85em; color: #8a6d3b; background: #fcf8e3; border-left: 4px solid #dba617; padding: 6px 10px;">
+			Anyone with the link can open this file, whether or not they have an account. Do not attach anything that should not be public.
+		</p>
+		<noscript>
+			<p style="font-size: 0.85em; color: #666;">Choosing a file needs JavaScript. Upload it under <strong>Media &rarr; Add New</strong> first, then come back with JavaScript enabled.</p>
+		</noscript>
+	</div>
+	<?php
 }
 
 add_action( 'admin_init', 'mtl_maybe_export_data' );
@@ -339,6 +397,11 @@ function mtl_render_setup_page() {
 	$tbl_tags       = $wpdb->prefix . 'tool_tags';
 	$tbl_trainings  = $wpdb->prefix . 'member_trainings';
 
+	// The Member Agreements file picker uses the Media Library modal. Enqueued
+	// here rather than on admin_enqueue_scripts because this callback runs
+	// before the footer, where the media templates and scripts print.
+	wp_enqueue_media();
+
 	echo '<div class="wrap mtl-admin-wrapper">';
 	echo '<h2>My Tool Library Setup & Settings</h2>';
 
@@ -356,7 +419,11 @@ function mtl_render_setup_page() {
 			update_option( 'mtl_verified_badge_image_url', isset( $_POST['mtl_verified_badge_image_url'] ) ? sanitize_url( wp_unslash( $_POST['mtl_verified_badge_image_url'] ) ) : '' );
 
 			// Header Options.
-			update_option( 'mtl_header_color', isset( $_POST['mtl_header_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['mtl_header_color'] ) ) : '' );
+			// Colours resolve to their default rather than to '' when missing or
+			// malformed. An empty colour option renders a black swatch in
+			// <input type="color">, which the next save then persists -- see
+			// mtl_color_or_default().
+			update_option( 'mtl_header_color', mtl_color_or_default( isset( $_POST['mtl_header_color'] ) ? wp_unslash( $_POST['mtl_header_color'] ) : '', '#ff6600' ) );
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
 			update_option( 'mtl_header_font', isset( $_POST['mtl_header_font'] ) ? mtl_sanitize_css_value( $_POST['mtl_header_font'] ) : '' );
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
@@ -372,7 +439,7 @@ function mtl_render_setup_page() {
 			update_option( 'mtl_header_transform', in_array( $posted_transform, $allowed_transforms, true ) ? $posted_transform : 'none' );
 
 			// Body Options.
-			update_option( 'mtl_body_color', isset( $_POST['mtl_body_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['mtl_body_color'] ) ) : '' );
+			update_option( 'mtl_body_color', mtl_color_or_default( isset( $_POST['mtl_body_color'] ) ? wp_unslash( $_POST['mtl_body_color'] ) : '', '#096491' ) );
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
 			update_option( 'mtl_body_font', isset( $_POST['mtl_body_font'] ) ? mtl_sanitize_css_value( $_POST['mtl_body_font'] ) : '' );
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
@@ -383,7 +450,7 @@ function mtl_render_setup_page() {
 			update_option( 'mtl_body_weight', in_array( $posted_b_weight, $allowed_b_weights, true ) ? $posted_b_weight : '400' );
 
 			// Link Options.
-			update_option( 'mtl_link_color', isset( $_POST['mtl_link_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['mtl_link_color'] ) ) : '' );
+			update_option( 'mtl_link_color', mtl_color_or_default( isset( $_POST['mtl_link_color'] ) ? wp_unslash( $_POST['mtl_link_color'] ) : '', '#00b3ff' ) );
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
 			update_option( 'mtl_link_font', isset( $_POST['mtl_link_font'] ) ? mtl_sanitize_css_value( $_POST['mtl_link_font'] ) : '' );
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
@@ -394,8 +461,8 @@ function mtl_render_setup_page() {
 			update_option( 'mtl_link_decoration', in_array( $posted_decoration, $allowed_decorations, true ) ? $posted_decoration : 'none' );
 
 			// Buttons & Page Accents.
-			update_option( 'mtl_accent_color', isset( $_POST['mtl_accent_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['mtl_accent_color'] ) ) : '' );
-			update_option( 'mtl_background_color', isset( $_POST['mtl_background_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['mtl_background_color'] ) ) : '' );
+			update_option( 'mtl_accent_color', mtl_color_or_default( isset( $_POST['mtl_accent_color'] ) ? wp_unslash( $_POST['mtl_accent_color'] ) : '', '#f7c600' ) );
+			update_option( 'mtl_background_color', mtl_color_or_default( isset( $_POST['mtl_background_color'] ) ? wp_unslash( $_POST['mtl_background_color'] ) : '', '#ffffff' ) );
 
 			$allowed_radii = array( '0px', '4px', '10px', '999px' );
 			$posted_radius = isset( $_POST['mtl_border_radius'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_border_radius'] ) ) : '';
@@ -797,6 +864,381 @@ function mtl_render_setup_page() {
 	}
 
 	// ==========================================
+	// HANDLE MEMBER AGREEMENTS SUBMISSIONS
+	//
+	// Each mutation flushes the agreements cache: the mode and the active count
+	// are memoised per request and either can go stale the instant one runs.
+	//
+	// $mtl_agreement_edit_id / $mtl_agreement_conflict carry state down to the
+	// render section -- which agreement to open the edit form for, and whether
+	// the last save lost a race with another admin.
+	// ==========================================
+	$tbl_agreements  = $wpdb->prefix . 'member_agreements';
+	$tbl_acceptances = $wpdb->prefix . 'member_agreement_acceptances';
+
+	$mtl_agreement_edit_id   = isset( $_GET['mtl_edit_agreement'] ) ? absint( $_GET['mtl_edit_agreement'] ) : 0;
+	$mtl_agreement_conflict  = null;
+	$mtl_agreement_add_open  = false;
+	$mtl_agreement_form_text = '';
+
+	// ---- Mode ----------------------------------------------------------
+	//
+	// Its own form rather than riding along with Save Settings: paper -> full
+	// needs a confirmation, and hanging that off the button that also saves
+	// branding would fire it on unrelated saves.
+	if ( isset( $_POST['mtl_save_agreements_mode'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_agreements_mode_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_agreements_mode_nonce'] ) ), 'mtl_agreements_mode_action' ) ) {
+			$posted_mode = isset( $_POST['mtl_agreements_mode'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_agreements_mode'] ) ) : '';
+
+			// Whitelisted server-side. An unrecognised value is not saved at
+			// all rather than coerced -- mtl_agreements_mode() would read it
+			// as `off`, but storing a value the plugin does not understand
+			// makes the Setup page disagree with the database.
+			if ( in_array( $posted_mode, array( 'off', 'paper', 'full' ), true ) ) {
+				update_option( 'mtl_agreements_mode', $posted_mode );
+
+				// Saved in every mode, so the choice survives a trip through
+				// paper or off and comes back as it was set. Paper mode reads it
+				// but does not obey it -- see mtl_agreements_staff_recording().
+				$posted_allow_paper = isset( $_POST['mtl_agreements_allow_paper'] ) ? '1' : '';
+				update_option( 'mtl_agreements_allow_paper', $posted_allow_paper );
+
+				mtl_agreements_flush_cache();
+
+				if ( 'full' === $posted_mode ) {
+					$mtl_desk_sentence = '1' === $posted_allow_paper
+						? ' Staff can also record signed paper at the desk.'
+						: ' Staff cannot record signed paper &mdash; tick <em>Allow paper tracking</em> if they need to.';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Saved.</strong> Members now agree online. Anyone who is not up to date cannot reserve a tool until they agree. No one has been emailed &mdash; send agreement requests from the Membership page.' . wp_kses_post( $mtl_desk_sentence ) . '</p></div>';
+				} elseif ( 'paper' === $posted_mode ) {
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Saved.</strong> Staff record signed paper agreements. Members are not asked to agree on the website and are never blocked from reserving.</p></div>';
+				} else {
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Saved.</strong> Member agreements are off. Nothing is recorded or shown, and no existing record has been deleted.</p></div>';
+				}
+			} else {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That is not a valid mode. Nothing was changed.</p></div>';
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ---- Add an agreement ----------------------------------------------
+	if ( isset( $_POST['mtl_add_agreement'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_add_agreement_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_agreement_nonce'] ) ), 'mtl_add_agreement_action' ) ) {
+			// sanitize_textarea_field() rather than sanitize_text_field(): the
+			// text is stored and rendered as plain text but line breaks are
+			// meaningful and must survive.
+			$new_text    = isset( $_POST['agreement_text'] ) ? trim( sanitize_textarea_field( wp_unslash( $_POST['agreement_text'] ) ) ) : '';
+			$new_file_id = isset( $_POST['agreement_attachment_id'] ) ? absint( $_POST['agreement_attachment_id'] ) : 0;
+			$new_file_id = ( $new_file_id > 0 && 'attachment' === get_post_type( $new_file_id ) ) ? $new_file_id : 0;
+
+			if ( '' === $new_text ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Enter the text members have to agree to.</p></div>';
+				$mtl_agreement_add_open = true;
+			} elseif ( mb_strlen( $new_text ) > MTL_AGREEMENT_TEXT_MAXLENGTH ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That text is too long. Keep it under ' . esc_html( number_format_i18n( MTL_AGREEMENT_TEXT_MAXLENGTH ) ) . ' characters so the signup form stays readable.</p></div>';
+				$mtl_agreement_add_open  = true;
+				$mtl_agreement_form_text = $new_text;
+			} else {
+				// sort_order is one past the current maximum, so a new
+				// agreement appends. Gaps are expected -- retiring never
+				// renumbers -- and the value is only ever used for relative
+				// ordering, never as a position count.
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix.
+				$next_sort = (int) $wpdb->get_var( "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM {$tbl_agreements}" );
+				$now_utc   = gmdate( 'Y-m-d H:i:s' );
+
+				// '' from the hash means "no fingerprint could be taken",
+				// which is stored as NULL and never blocks the save.
+				$new_hash = $new_file_id > 0 ? mtl_agreement_file_hash( $new_file_id ) : '';
+
+				$inserted = $wpdb->insert(
+					$tbl_agreements,
+					array(
+						'agreement_text'       => $new_text,
+						'attachment_id'        => $new_file_id > 0 ? $new_file_id : null,
+						'file_sha256'          => '' !== $new_hash ? $new_hash : null,
+						'version_num'          => 1,
+						'version_published_at' => $now_utc,
+						'sort_order'           => $next_sort,
+					),
+					array( '%s', '%d', '%s', '%d', '%s', '%d' )
+				);
+
+				if ( $inserted ) {
+					mtl_agreements_flush_cache();
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Added.</strong> The new agreement is live at version 1. Anyone who has not agreed to it is now outstanding.</p></div>';
+				} else {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The agreement could not be saved. Please try again.</p></div>';
+					$mtl_agreement_add_open  = true;
+					$mtl_agreement_form_text = $new_text;
+				}
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ---- Edit an agreement ---------------------------------------------
+	//
+	// Any change to the wording or the file increments version_num, putting
+	// every member who had agreed back to outstanding. There is no minor-edit
+	// exemption: the plugin cannot tell a typo from a material change.
+	if ( isset( $_POST['mtl_edit_agreement'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_edit_agreement_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_edit_agreement_nonce'] ) ), 'mtl_edit_agreement_action' ) ) {
+			// A submitted edit closes the form. The edit link carries
+			// ?mtl_edit_agreement=<id>, and the form posts back to that same
+			// URL, so without this the query string reopens the form over the
+			// success notice. The branches below reopen it deliberately where
+			// the admin still has something to fix.
+			$mtl_agreement_edit_id = 0;
+
+			$edit_id      = isset( $_POST['agreement_id'] ) ? absint( $_POST['agreement_id'] ) : 0;
+			$seen_version = isset( $_POST['seen_version'] ) ? absint( $_POST['seen_version'] ) : 0;
+			$edit_text    = isset( $_POST['agreement_text'] ) ? trim( sanitize_textarea_field( wp_unslash( $_POST['agreement_text'] ) ) ) : '';
+			$edit_file_id = isset( $_POST['agreement_attachment_id'] ) ? absint( $_POST['agreement_attachment_id'] ) : 0;
+			$edit_file_id = ( $edit_file_id > 0 && 'attachment' === get_post_type( $edit_file_id ) ) ? $edit_file_id : 0;
+			$existing     = $edit_id > 0 ? mtl_get_agreement( $edit_id ) : null;
+
+			if ( ! $existing ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That agreement no longer exists.</p></div>';
+			} elseif ( '' === $edit_text ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Enter the text members have to agree to. Nothing was saved.</p></div>';
+				$mtl_agreement_edit_id   = $edit_id;
+				$mtl_agreement_form_text = $edit_text;
+			} elseif ( mb_strlen( $edit_text ) > MTL_AGREEMENT_TEXT_MAXLENGTH ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That text is too long. Keep it under ' . esc_html( number_format_i18n( MTL_AGREEMENT_TEXT_MAXLENGTH ) ) . ' characters. Nothing was saved.</p></div>';
+				$mtl_agreement_edit_id   = $edit_id;
+				$mtl_agreement_form_text = $edit_text;
+			} else {
+				$existing_file_id = (int) $existing->attachment_id;
+				$text_unchanged   = ( $edit_text === (string) $existing->agreement_text );
+				$file_unchanged   = ( $edit_file_id === $existing_file_id );
+				$fresh_hash       = $edit_file_id > 0 ? mtl_agreement_file_hash( $edit_file_id ) : '';
+
+				if ( $text_unchanged && $file_unchanged ) {
+					// A save that changes nothing is a no-op, so opening the
+					// form to read it and clicking Save does not re-prompt the
+					// membership. file_sha256 is still refreshed, so a file
+					// replaced on disk out of band clears the drift warning.
+					$wpdb->update(
+						$tbl_agreements,
+						array( 'file_sha256' => '' !== $fresh_hash ? $fresh_hash : null ),
+						array( 'agreement_id' => $edit_id ),
+						array( '%s' ),
+						array( '%d' )
+					);
+					mtl_agreements_flush_cache();
+					echo '<div class="notice notice-info is-dismissible"><p><strong>No changes.</strong> The text and file are the same as before, so the version was not increased and no one has been asked to agree again.</p></div>';
+				} else {
+					$now_utc = gmdate( 'Y-m-d H:i:s' );
+
+					// Optimistic concurrency: the version the editing admin was
+					// shown is submitted back, so two admins saving at once
+					// cannot both bump and prompt the membership twice.
+					$affected = $wpdb->query(
+						$wpdb->prepare(
+							// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix.
+							"UPDATE {$tbl_agreements}
+							    SET agreement_text = %s,
+							        attachment_id = %s,
+							        file_sha256 = %s,
+							        version_num = version_num + 1,
+							        version_published_at = %s
+							  WHERE agreement_id = %d
+							    AND version_num = %d",
+							$edit_text,
+							$edit_file_id > 0 ? (string) $edit_file_id : null,
+							'' !== $fresh_hash ? $fresh_hash : null,
+							$now_utc,
+							$edit_id,
+							$seen_version
+						)
+					);
+
+					if ( 0 === (int) $affected ) {
+						// Somebody else got there first. Neither retry nor
+						// merge: the render section reopens the form with
+						// their saved text and keeps this admin's wording
+						// below it to copy from.
+						$mtl_agreement_edit_id  = $edit_id;
+						$mtl_agreement_conflict = array(
+							'agreement_id' => $edit_id,
+							'your_text'    => $edit_text,
+						);
+					} else {
+						mtl_agreements_flush_cache();
+						$new_version = (int) $existing->version_num + 1;
+						echo '<div class="notice notice-success is-dismissible"><p><strong>Saved as version ' . esc_html( number_format_i18n( $new_version ) ) . '.</strong> Everyone who had agreed to the previous version is now outstanding, and in full mode cannot reserve tools until they agree again. No email has been sent &mdash; send agreement requests from the Membership page.</p></div>';
+					}
+				}
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ---- Retire / un-retire / delete ------------------------------------
+	if ( isset( $_POST['mtl_retire_agreement'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_retire_agreement_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_retire_agreement_nonce'] ) ), 'mtl_retire_agreement_action' ) ) {
+			$retire_id = isset( $_POST['agreement_id'] ) ? absint( $_POST['agreement_id'] ) : 0;
+
+			// sort_order is left untouched, so retiring one agreement does not
+			// silently renumber the rest.
+			//
+			// A direct query rather than $wpdb->update(): the WHERE has to test
+			// `retired_at IS NULL`, and $wpdb->update() renders a null in its
+			// where array as `= NULL`, which matches nothing.
+			$updated = $retire_id > 0 ? $wpdb->query(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix.
+					"UPDATE {$tbl_agreements} SET retired_at = %s WHERE agreement_id = %d AND retired_at IS NULL",
+					gmdate( 'Y-m-d H:i:s' ),
+					$retire_id
+				)
+			) : 0;
+
+			if ( $updated ) {
+				mtl_agreements_flush_cache();
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Retired.</strong> It is no longer shown at signup and no longer required. Members who already agreed to it keep that record, and it still appears on their account page.</p></div>';
+			} else {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That agreement could not be retired. It may already be retired.</p></div>';
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	if ( isset( $_POST['mtl_unretire_agreement'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_unretire_agreement_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_unretire_agreement_nonce'] ) ), 'mtl_unretire_agreement_action' ) ) {
+			$unretire_id = isset( $_POST['agreement_id'] ) ? absint( $_POST['agreement_id'] ) : 0;
+
+			// Appends to the end rather than restoring the old position, which
+			// would drop it into the middle of a list the admin has since
+			// rearranged. The version number is untouched, so earlier accepters
+			// stay up to date.
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix.
+			$next_sort = (int) $wpdb->get_var( "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM {$tbl_agreements}" );
+
+			$updated = $unretire_id > 0 ? $wpdb->update(
+				$tbl_agreements,
+				array(
+					'retired_at' => null,
+					'sort_order' => $next_sort,
+				),
+				array( 'agreement_id' => $unretire_id ),
+				array( '%s', '%d' ),
+				array( '%d' )
+			) : false;
+
+			if ( false !== $updated ) {
+				mtl_agreements_flush_cache();
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Back in use.</strong> It has been added to the end of the list at its existing version number. Members who never agreed to it are now outstanding.</p></div>';
+			} else {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That agreement could not be put back into use.</p></div>';
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	if ( isset( $_POST['mtl_delete_agreement'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_delete_agreement_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_agreement_nonce'] ) ), 'mtl_delete_agreement_action' ) ) {
+			$delete_id = isset( $_POST['agreement_id'] ) ? absint( $_POST['agreement_id'] ) : 0;
+
+			// Delete is offered only for an agreement nobody has ever accepted
+			// -- checked here again, not just when the button was rendered,
+			// because someone could have accepted it in between. The
+			// ON DELETE RESTRICT foreign key is the real guarantee; this check
+			// exists so the admin gets an explanation instead of a database
+			// error.
+			if ( $delete_id > 0 && mtl_count_agreement_acceptances( $delete_id ) > 0 ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Not deleted.</strong> Someone has agreed to this, so the record has to be kept. Retire it instead &mdash; that stops it being required without destroying anyone&rsquo;s record.</p></div>';
+			} elseif ( $delete_id > 0 && $wpdb->delete( $tbl_agreements, array( 'agreement_id' => $delete_id ), array( '%d' ) ) ) {
+				mtl_agreements_flush_cache();
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Deleted.</strong> No one had agreed to it, so nothing was lost.</p></div>';
+			} else {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That agreement could not be deleted.</p></div>';
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ---- Reorder ---------------------------------------------------------
+	if ( isset( $_POST['mtl_move_agreement'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_move_agreement_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_move_agreement_nonce'] ) ), 'mtl_move_agreement_action' ) ) {
+			$move_id        = isset( $_POST['agreement_id'] ) ? absint( $_POST['agreement_id'] ) : 0;
+			$move_direction = isset( $_POST['direction'] ) ? sanitize_text_field( wp_unslash( $_POST['direction'] ) ) : '';
+			$active_list    = mtl_get_active_agreements();
+
+			if ( in_array( $move_direction, array( 'up', 'down' ), true ) && $move_id > 0 && $active_list ) {
+				// Find the row's position in the rendered order and swap
+				// sort_order with its neighbour. Working from the same ordered
+				// list the admin is looking at -- rather than comparing
+				// sort_order values directly -- means the swap still does the
+				// obvious thing when two rows share a value.
+				$position = null;
+				foreach ( $active_list as $index => $candidate ) {
+					if ( (int) $candidate->agreement_id === $move_id ) {
+						$position = $index;
+						break;
+					}
+				}
+
+				$neighbour_index = ( 'up' === $move_direction ) ? $position - 1 : $position + 1;
+
+				if ( null !== $position && isset( $active_list[ $neighbour_index ] ) ) {
+					$this_row  = $active_list[ $position ];
+					$other_row = $active_list[ $neighbour_index ];
+
+					// Two rows sharing a sort_order would swap to no effect,
+					// so give the moving row a value that definitely lands on
+					// the correct side of its neighbour.
+					$this_sort  = (int) $this_row->sort_order;
+					$other_sort = (int) $other_row->sort_order;
+					if ( $this_sort === $other_sort ) {
+						$this_sort = ( 'up' === $move_direction ) ? $other_sort - 1 : $other_sort + 1;
+					} else {
+						$swap       = $this_sort;
+						$this_sort  = $other_sort;
+						$other_sort = $swap;
+					}
+
+					$wpdb->update( $tbl_agreements, array( 'sort_order' => $this_sort ), array( 'agreement_id' => (int) $this_row->agreement_id ), array( '%d' ), array( '%d' ) );
+					$wpdb->update( $tbl_agreements, array( 'sort_order' => $other_sort ), array( 'agreement_id' => (int) $other_row->agreement_id ), array( '%d' ), array( '%d' ) );
+					mtl_agreements_flush_cache();
+				}
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ---- Email wording ----------------------------------------------------
+	if ( isset( $_POST['mtl_save_agreement_emails'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_agreement_emails_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_agreement_emails_nonce'] ) ), 'mtl_agreement_emails_action' ) ) {
+			// The subject is a mail header, so line breaks come out of it.
+			// A subject containing CR or LF is classic header injection --
+			// everything after the break is read as a new header, which is how
+			// a Bcc: gets added to every agreement email the site sends. It is
+			// stripped again at send time, since the option could be written
+			// by something that never came through this form.
+			$posted_subject = isset( $_POST['mtl_agreement_email_subject'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_agreement_email_subject'] ) ) : '';
+			$posted_subject = str_replace( array( "\r", "\n" ), '', $posted_subject );
+
+			update_option( 'mtl_agreement_email_subject', $posted_subject );
+			update_option( 'mtl_agreement_email_body', isset( $_POST['mtl_agreement_email_body'] ) ? sanitize_textarea_field( wp_unslash( $_POST['mtl_agreement_email_body'] ) ) : '' );
+			update_option( 'mtl_agreement_request_email_body', isset( $_POST['mtl_agreement_request_email_body'] ) ? sanitize_textarea_field( wp_unslash( $_POST['mtl_agreement_request_email_body'] ) ) : '' );
+
+			echo '<div class="notice notice-success is-dismissible"><p><strong>Saved.</strong> Email wording updated. Leaving a field empty restores the wording the plugin ships with.</p></div>';
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ==========================================
 	// 4. HANDLE DATABASE SETUP SUBMISSION
 	// ==========================================
 	if ( isset( $_POST['mtl_run_db_setup'] ) && mtl_can_manage_settings() ) {
@@ -898,6 +1340,19 @@ function mtl_render_setup_page() {
 
 	$accent_color = get_option( 'mtl_accent_color', '#f7c600' );
 	$bg_color     = get_option( 'mtl_background_color', '#ffffff' );
+
+	// A stored colour can be EMPTY as well as absent, and get_option()'s default
+	// only covers absent. That distinction is destructive here: <input
+	// type="color"> rejects anything that is not #rrggbb and falls back to
+	// #000000, so an empty option renders a black swatch, and the next Save
+	// Settings -- for any reason at all -- writes that black into the option and
+	// turns every page black. Colour pickers cannot express "unset", so an empty
+	// value must resolve to the documented default before it reaches the field.
+	$h_color      = mtl_color_or_default( $h_color, '#ff6600' );
+	$b_color      = mtl_color_or_default( $b_color, '#096491' );
+	$l_color      = mtl_color_or_default( $l_color, '#00b3ff' );
+	$accent_color = mtl_color_or_default( $accent_color, '#f7c600' );
+	$bg_color     = mtl_color_or_default( $bg_color, '#ffffff' );
 	$radius       = get_option( 'mtl_border_radius', '4px' );
 	$btn_scale    = get_option( 'mtl_button_scale', '1' );
 
@@ -1525,6 +1980,303 @@ function mtl_render_setup_page() {
 		</div>
 	</div>
 
+	<!-- Band 1b: Member Agreements, full width. Sits directly below General
+		Details because the mode selector at its head is a settings-level
+		decision, and because the agreement list needs the full width to show
+		each agreement's text in full rather than truncated -- editing is
+		expensive here, so the page pushes admins to get it right first time. -->
+	<div class="mtl-setup-row">
+		<div class="mtl-setup-tile mtl-setup-tile-full">
+			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Member Agreements</h3>
+			<p style="font-size: 0.9em; color: #666;">Statements every member has to agree to &mdash; a liability waiver, a code of conduct, a fee schedule. Members see all of them, in this order, and what they agreed to is recorded exactly as it was worded at the time.</p>
+
+			<?php
+			$mtl_stored_mode      = (string) get_option( 'mtl_agreements_mode', 'off' );
+			$mtl_stored_mode      = in_array( $mtl_stored_mode, array( 'off', 'paper', 'full' ), true ) ? $mtl_stored_mode : 'off';
+			$mtl_allow_paper      = (string) get_option( 'mtl_agreements_allow_paper', '' );
+			$mtl_active_list      = mtl_get_active_agreements();
+			$mtl_retired_list     = mtl_get_retired_agreements();
+			$mtl_outstanding_now  = ( 'paper' === $mtl_stored_mode ) ? mtl_count_members_not_in_agreement() : 0;
+			$mtl_agreement_emails = mtl_agreement_email_defaults();
+			?>
+
+			<?php if ( 'off' !== $mtl_stored_mode && ! $mtl_active_list ) : ?>
+				<!-- The one configuration that silently does nothing, so it must
+					not be silent. -->
+				<div class="notice notice-warning inline" style="margin: 0 0 16px 0;">
+					<p><strong>Nothing is being tracked.</strong> Member agreements are switched on, but there is no agreement for members to agree to. Add one below, or set this back to Off.</p>
+				</div>
+			<?php endif; ?>
+
+			<form method="post" action="" id="mtl-agreements-mode-form">
+				<?php wp_nonce_field( 'mtl_agreements_mode_action', 'mtl_agreements_mode_nonce' ); ?>
+				<fieldset style="margin-bottom: 8px;">
+					<legend class="screen-reader-text">How member agreements work</legend>
+
+					<label style="display: block; margin-bottom: 10px;">
+						<input type="radio" name="mtl_agreements_mode" value="off" <?php checked( 'off', $mtl_stored_mode ); ?>>
+						<strong>Off</strong><br>
+						<span style="color: #666; margin-left: 24px; display: block;">No agreements are tracked. Nothing is recorded or shown. Any records you already have are kept.</span>
+					</label>
+
+					<label style="display: block; margin-bottom: 10px;">
+						<input type="radio" name="mtl_agreements_mode" value="paper" <?php checked( 'paper', $mtl_stored_mode ); ?>>
+						<strong>Track signed paper only</strong><br>
+						<span style="color: #666; margin-left: 24px; display: block;">Staff record who has signed your paper agreements. Members are not asked to agree on the website and are never blocked from reserving. They can see their own record on their account page.</span>
+					</label>
+
+					<label style="display: block; margin-bottom: 10px;">
+						<input type="radio" name="mtl_agreements_mode" value="full" <?php checked( 'full', $mtl_stored_mode ); ?>>
+						<strong>Full &mdash; members agree online</strong><br>
+						<span style="color: #666; margin-left: 24px; display: block;">Members must tick every agreement to create an account, and must agree again whenever you revise one. Anyone outstanding cannot reserve a tool until they do.</span>
+					</label>
+
+					<?php // Indented under Full because that is the mode it qualifies. Paper mode ignores it -- staff recording is the whole of that mode. ?>
+					<label style="display: block; margin: 0 0 10px 24px;">
+						<input type="checkbox" name="mtl_agreements_allow_paper" value="1" <?php checked( '1', $mtl_allow_paper ); ?>>
+						<strong>Allow paper tracking</strong><br>
+						<span style="color: #666; margin-left: 24px; display: block;">Staff can also record a member&rsquo;s signed paper agreement at the desk, from Add New Member or the member&rsquo;s detail panel. Leave this off if everyone agrees online. Paper mode above always allows it.</span>
+					</label>
+				</fieldset>
+				<p class="submit" style="margin: 0 0 4px 0;">
+					<button type="submit" name="mtl_save_agreements_mode" class="button button-primary"
+						data-mtl-outstanding="<?php echo esc_attr( $mtl_outstanding_now ); ?>"
+						data-mtl-current-mode="<?php echo esc_attr( $mtl_stored_mode ); ?>">Save Mode</button>
+				</p>
+			</form>
+
+			<hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
+
+			<h4 style="margin-bottom: 4px;">Agreements</h4>
+			<?php if ( ! $mtl_active_list ) : ?>
+				<p style="color: #999;">None yet. Add the first one below.</p>
+			<?php else : ?>
+				<ol class="mtl-agreement-list" style="margin: 0 0 16px 0; padding-left: 24px;">
+					<?php foreach ( $mtl_active_list as $mtl_index => $mtl_agreement ) : ?>
+						<?php
+						$mtl_agreement_id = (int) $mtl_agreement->agreement_id;
+						$mtl_file_id      = (int) $mtl_agreement->attachment_id;
+						$mtl_file_url     = $mtl_file_id > 0 ? wp_get_attachment_url( $mtl_file_id ) : '';
+						$mtl_hash_status  = $mtl_file_id > 0 ? mtl_agreement_file_hash_status( $mtl_file_id ) : '';
+						$mtl_accept_count = mtl_count_agreement_acceptances( $mtl_agreement_id );
+						$mtl_is_editing   = ( $mtl_agreement_edit_id === $mtl_agreement_id );
+
+						// The number the edit warning names: members who ARE up
+						// to date, because those are exactly the people a
+						// version bump knocks back out of agreement.
+						$mtl_up_to_date = mtl_count_members_agreed_to( $mtl_agreement_id, (int) $mtl_agreement->version_num );
+						?>
+						<li style="margin-bottom: 18px;">
+							<div style="white-space: pre-wrap;"><?php echo esc_html( $mtl_agreement->agreement_text ); ?></div>
+
+							<p style="margin: 6px 0 2px 0; font-size: 0.9em; color: #666;">
+								<?php if ( $mtl_file_id > 0 && $mtl_file_url ) : ?>
+									File: <a href="<?php echo esc_url( $mtl_file_url ); ?>" target="_blank" rel="noopener"><?php echo esc_html( basename( wp_parse_url( $mtl_file_url, PHP_URL_PATH ) ) ); ?></a>
+								<?php elseif ( $mtl_file_id > 0 ) : ?>
+									File: <em>attachment <?php echo esc_html( $mtl_file_id ); ?> is missing</em>
+								<?php else : ?>
+									No file attached
+								<?php endif; ?>
+								&nbsp;&middot;&nbsp;
+								v<?php echo esc_html( number_format_i18n( (int) $mtl_agreement->version_num ) ); ?>
+								&middot; in use since <?php echo wp_kses_post( mtl_format_utc_datetime( $mtl_agreement->version_published_at, 'j M Y' ) ); ?>
+								&nbsp;&middot;&nbsp;
+								<?php
+								echo esc_html(
+									sprintf(
+										/* translators: %s: number of members. */
+										_n( '%s member is up to date', '%s members are up to date', $mtl_up_to_date, 'my-tool-library' ),
+										number_format_i18n( $mtl_up_to_date )
+									)
+								);
+								?>
+							</p>
+
+							<?php if ( $mtl_file_id > 0 ) : ?>
+								<p style="margin: 0 0 4px 0; font-size: 0.85em; color: #666;">
+									<?php if ( 'ok' === $mtl_hash_status && ! empty( $mtl_agreement->file_sha256 ) ) : ?>
+										<?php // Printed in full: this is the value somebody compares against a file they have been sent, and a truncated one cannot be compared. ?>
+										Fingerprint <code style="word-break: break-all; user-select: all;"><?php echo esc_html( (string) $mtl_agreement->file_sha256 ); ?></code>
+										<?php if ( mtl_agreement_file_hash( $mtl_file_id ) !== (string) $mtl_agreement->file_sha256 ) : ?>
+											<span style="color: #b32d2e;"><strong>&mdash; the file has changed since this was recorded.</strong> Members who agreed earlier saw a different document. Open the agreement and save it to record the new file, which asks everyone to agree again.</span>
+										<?php endif; ?>
+									<?php elseif ( 'missing_file' === $mtl_hash_status ) : ?>
+										<span style="color: #b32d2e;">No fingerprint &mdash; the file is missing from the Media Library. Members cannot open it.</span>
+									<?php elseif ( 'not_an_attachment' === $mtl_hash_status ) : ?>
+										<span style="color: #b32d2e;">No fingerprint &mdash; the attachment no longer exists.</span>
+									<?php elseif ( 'too_large' === $mtl_hash_status ) : ?>
+										No fingerprint &mdash; the file is too large to fingerprint. It still works normally.
+									<?php else : ?>
+										No fingerprint recorded.
+									<?php endif; ?>
+								</p>
+							<?php endif; ?>
+
+							<div class="mtl-agreement-actions" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+								<form method="post" action="" style="display: inline;">
+									<?php wp_nonce_field( 'mtl_move_agreement_action', 'mtl_move_agreement_nonce' ); ?>
+									<input type="hidden" name="agreement_id" value="<?php echo esc_attr( $mtl_agreement_id ); ?>">
+									<input type="hidden" name="direction" value="up">
+									<button type="submit" name="mtl_move_agreement" class="button" <?php disabled( 0, $mtl_index ); ?> aria-label="Move up">&uarr;</button>
+								</form>
+								<form method="post" action="" style="display: inline;">
+									<?php wp_nonce_field( 'mtl_move_agreement_action', 'mtl_move_agreement_nonce' ); ?>
+									<input type="hidden" name="agreement_id" value="<?php echo esc_attr( $mtl_agreement_id ); ?>">
+									<input type="hidden" name="direction" value="down">
+									<button type="submit" name="mtl_move_agreement" class="button" <?php disabled( count( $mtl_active_list ) - 1, $mtl_index ); ?> aria-label="Move down">&darr;</button>
+								</form>
+								<a class="button" href="<?php echo esc_url( add_query_arg( 'mtl_edit_agreement', $mtl_agreement_id ) ); ?>#mtl-agreement-<?php echo esc_attr( $mtl_agreement_id ); ?>">Edit</a>
+								<?php if ( 0 === $mtl_accept_count ) : ?>
+									<form method="post" action="" style="display: inline;" onsubmit="return confirm('Delete this agreement? No one has agreed to it, so nothing will be lost. This cannot be undone.');">
+										<?php wp_nonce_field( 'mtl_delete_agreement_action', 'mtl_delete_agreement_nonce' ); ?>
+										<input type="hidden" name="agreement_id" value="<?php echo esc_attr( $mtl_agreement_id ); ?>">
+										<button type="submit" name="mtl_delete_agreement" class="button mtl-btn-danger">Delete</button>
+									</form>
+								<?php else : ?>
+									<form method="post" action="" style="display: inline;" onsubmit="return confirm('Retire this agreement? It stops being shown and stops being required. Everyone who already agreed to it keeps that record.');">
+										<?php wp_nonce_field( 'mtl_retire_agreement_action', 'mtl_retire_agreement_nonce' ); ?>
+										<input type="hidden" name="agreement_id" value="<?php echo esc_attr( $mtl_agreement_id ); ?>">
+										<button type="submit" name="mtl_retire_agreement" class="button">Retire</button>
+									</form>
+								<?php endif; ?>
+							</div>
+
+							<?php if ( $mtl_is_editing ) : ?>
+								<div id="mtl-agreement-<?php echo esc_attr( $mtl_agreement_id ); ?>" style="border: 1px solid #c3c4c7; border-left: 4px solid #2271b1; background: #fff; padding: 12px 16px; margin-top: 12px;">
+									<h4 style="margin-top: 0;">Edit this agreement</h4>
+
+									<?php if ( $mtl_agreement_conflict && (int) $mtl_agreement_conflict['agreement_id'] === $mtl_agreement_id ) : ?>
+										<div class="notice notice-error inline" style="margin: 0 0 12px 0;">
+											<p><strong>Nothing was saved.</strong> Someone else saved a change to this agreement while you had it open, so your version was not applied on top of theirs. Their wording is in the box below. Your unsaved wording is kept underneath &mdash; copy anything you still need from it, then edit and save again.</p>
+										</div>
+									<?php endif; ?>
+
+									<form method="post" action="">
+										<?php wp_nonce_field( 'mtl_edit_agreement_action', 'mtl_edit_agreement_nonce' ); ?>
+										<input type="hidden" name="agreement_id" value="<?php echo esc_attr( $mtl_agreement_id ); ?>">
+										<!-- The version this form was rendered with. Submitted back so a
+											save that lost a race with another admin is refused rather
+											than applied on top of a change nobody reviewed. -->
+										<input type="hidden" name="seen_version" value="<?php echo esc_attr( $mtl_agreement->version_num ); ?>">
+
+										<p style="margin-top: 0;">
+											<label for="mtl-agreement-text-<?php echo esc_attr( $mtl_agreement_id ); ?>"><strong>Text members must agree to</strong></label><br>
+											<textarea id="mtl-agreement-text-<?php echo esc_attr( $mtl_agreement_id ); ?>" name="agreement_text" rows="6" style="width: 100%;" maxlength="<?php echo esc_attr( MTL_AGREEMENT_TEXT_MAXLENGTH ); ?>" required><?php echo esc_textarea( ( '' !== $mtl_agreement_form_text && ! $mtl_agreement_add_open && ! $mtl_agreement_conflict ) ? $mtl_agreement_form_text : $mtl_agreement->agreement_text ); ?></textarea>
+										</p>
+
+										<?php mtl_render_agreement_file_picker( 'mtl-file-edit-' . $mtl_agreement_id, $mtl_file_id ); ?>
+
+										<div class="notice notice-warning inline" style="margin: 12px 0;">
+											<p><strong>&#9888; Saving a change here asks every member to agree again.</strong></p>
+											<p>
+												<?php
+												printf(
+													/* translators: 1: number of members up to date, 2: the new version number, 3: number of members again. */
+													esc_html__( '%1$s members have agreed to version %2$s. Saving makes this version %3$s, and all %1$s will be prompted on the website and blocked from reserving tools until they accept it. There is no way to make a small correction without this happening, and it cannot be undone.', 'my-tool-library' ),
+													esc_html( number_format_i18n( $mtl_up_to_date ) ),
+													esc_html( number_format_i18n( (int) $mtl_agreement->version_num ) ),
+													esc_html( number_format_i18n( (int) $mtl_agreement->version_num + 1 ) )
+												);
+												?>
+											</p>
+											<p>No email is sent. To tell members, go to <strong>Membership &rarr; Member Agreements</strong> and send agreement requests.</p>
+											<p style="margin-bottom: 0;">If you have not changed anything, saving does nothing and nobody is asked again.</p>
+										</div>
+
+										<p class="submit" style="margin: 0;">
+											<button type="submit" name="mtl_edit_agreement" class="button button-primary">Save and re-prompt all members</button>
+											<a class="button" href="<?php echo esc_url( remove_query_arg( 'mtl_edit_agreement' ) ); ?>">Cancel</a>
+										</p>
+									</form>
+
+									<?php if ( $mtl_agreement_conflict && (int) $mtl_agreement_conflict['agreement_id'] === $mtl_agreement_id ) : ?>
+										<p style="margin-bottom: 4px;"><strong>Your unsaved wording</strong></p>
+										<textarea readonly rows="6" style="width: 100%; background: #f6f7f7;" aria-label="Your unsaved wording"><?php echo esc_textarea( $mtl_agreement_conflict['your_text'] ); ?></textarea>
+									<?php endif; ?>
+								</div>
+							<?php endif; ?>
+						</li>
+					<?php endforeach; ?>
+				</ol>
+			<?php endif; ?>
+
+			<!-- Add an agreement -->
+			<details <?php echo $mtl_agreement_add_open ? 'open' : ''; ?> style="border: 1px solid #ddd; padding: 10px 14px; margin-bottom: 16px;">
+				<summary style="cursor: pointer; font-weight: 600;">Add an agreement</summary>
+				<form method="post" action="" style="margin-top: 12px;">
+					<?php wp_nonce_field( 'mtl_add_agreement_action', 'mtl_add_agreement_nonce' ); ?>
+					<p style="margin-top: 0;">
+						<label for="mtl-agreement-text-new"><strong>Text members must agree to</strong> (required)</label><br>
+						<textarea id="mtl-agreement-text-new" name="agreement_text" rows="5" style="width: 100%;" maxlength="<?php echo esc_attr( MTL_AGREEMENT_TEXT_MAXLENGTH ); ?>" required placeholder="I agree to return tools by the due date, and to report any damage before returning them."><?php echo esc_textarea( $mtl_agreement_add_open ? $mtl_agreement_form_text : '' ); ?></textarea>
+						<span style="font-size: 0.85em; color: #666;">Plain text only. Line breaks are kept; links and formatting are not. To give members a document, attach a file below.</span>
+					</p>
+					<?php mtl_render_agreement_file_picker( 'mtl-file-new', 0 ); ?>
+					<p class="submit" style="margin-bottom: 0;">
+						<button type="submit" name="mtl_add_agreement" class="button button-primary">Add Agreement</button>
+					</p>
+				</form>
+			</details>
+
+			<?php if ( $mtl_retired_list ) : ?>
+				<details style="margin-top: 16px;">
+					<summary style="cursor: pointer;">Retired agreements (<?php echo esc_html( number_format_i18n( count( $mtl_retired_list ) ) ); ?>)</summary>
+					<ul style="margin-top: 12px;">
+						<?php foreach ( $mtl_retired_list as $mtl_retired ) : ?>
+							<li style="margin-bottom: 12px;">
+								<div style="white-space: pre-wrap; color: #555;"><?php echo esc_html( $mtl_retired->agreement_text ); ?></div>
+								<p style="margin: 4px 0; font-size: 0.9em; color: #666;">
+									v<?php echo esc_html( number_format_i18n( (int) $mtl_retired->version_num ) ); ?>
+									&middot; retired <?php echo wp_kses_post( mtl_format_utc_datetime( $mtl_retired->retired_at, 'j M Y' ) ); ?>
+								</p>
+								<form method="post" action="" onsubmit="return confirm('Put this agreement back into use? It goes to the end of the list at its existing version number. Members who never agreed to it will be outstanding.');">
+									<?php wp_nonce_field( 'mtl_unretire_agreement_action', 'mtl_unretire_agreement_nonce' ); ?>
+									<input type="hidden" name="agreement_id" value="<?php echo esc_attr( $mtl_retired->agreement_id ); ?>">
+									<button type="submit" name="mtl_unretire_agreement" class="button">Put back into use</button>
+								</form>
+							</li>
+						<?php endforeach; ?>
+					</ul>
+				</details>
+			<?php endif; ?>
+
+			<hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
+
+			<h4 style="margin-bottom: 4px;">Emails</h4>
+			<p style="font-size: 0.9em; color: #666; margin-top: 0;">Both emails are plain text. The plugin writes the greeting, the numbered list of what was agreed to, and the sign-off; what you write below goes in between. Leave a field empty to use the wording the plugin ships with.</p>
+			<form method="post" action="">
+				<?php wp_nonce_field( 'mtl_agreement_emails_action', 'mtl_agreement_emails_nonce' ); ?>
+				<table class="form-table" style="margin-top: 0;">
+					<tr>
+						<th scope="row"><label for="mtl_agreement_email_subject">Confirmation subject</label></th>
+						<td>
+							<input type="text" name="mtl_agreement_email_subject" id="mtl_agreement_email_subject" class="regular-text" maxlength="150"
+								value="<?php echo esc_attr( (string) get_option( 'mtl_agreement_email_subject', '' ) ); ?>"
+								placeholder="<?php echo esc_attr( $mtl_agreement_emails['subject'] ); ?>">
+							<p class="description">Your organization name is added in front of this automatically.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mtl_agreement_email_body">Confirmation body</label></th>
+						<td>
+							<textarea name="mtl_agreement_email_body" id="mtl_agreement_email_body" rows="4" class="large-text" placeholder="<?php echo esc_attr( $mtl_agreement_emails['body'] ); ?>"><?php echo esc_textarea( (string) get_option( 'mtl_agreement_email_body', '' ) ); ?></textarea>
+							<p class="description">Sent to a member after they agree, with the agreed wording listed and any attached files included. Do not list the agreements here &mdash; the plugin does that.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mtl_agreement_request_email_body">Request body</label></th>
+						<td>
+							<textarea name="mtl_agreement_request_email_body" id="mtl_agreement_request_email_body" rows="4" class="large-text" placeholder="<?php echo esc_attr( $mtl_agreement_emails['request_body'] ); ?>"><?php echo esc_textarea( (string) get_option( 'mtl_agreement_request_email_body', '' ) ); ?></textarea>
+							<p class="description">Sent when you ask members to agree, from the Membership page. Only used when members agree online.</p>
+						</td>
+					</tr>
+				</table>
+				<p class="submit" style="margin: 0;">
+					<button type="submit" name="mtl_save_agreement_emails" class="button button-primary">Save Email Wording</button>
+				</p>
+			</form>
+		</div>
+	</div>
+
 	<!-- Band 2: the lookup lists. Two up on a wide screen, stacking on a
 		narrow one -- the responsive behaviour the page already had. -->
 	<div class="mtl-setup-row">
@@ -1828,6 +2580,80 @@ function mtl_render_setup_page() {
 				}
 			}
 		}
+	</script>
+
+	<script>
+		// Member Agreements: the Media Library picker, and the one mode change
+		// that needs confirming before it happens.
+		(function() {
+			// The picker. Unfiltered on purpose -- a library may reasonably
+			// attach a PDF, a scanned form or an image, so nothing here
+			// restricts the type.
+			var frames = {};
+			document.querySelectorAll('.mtl-agreement-file-select').forEach(function(button) {
+				button.addEventListener('click', function() {
+					var target = button.getAttribute('data-target');
+					if (typeof wp === 'undefined' || !wp.media) {
+						return;
+					}
+					if (!frames[target]) {
+						frames[target] = wp.media({
+							title: 'Choose a file for this agreement',
+							button: { text: 'Use this file' },
+							multiple: false
+						});
+						frames[target].on('select', function() {
+							var file = frames[target].state().get('selection').first().toJSON();
+							document.getElementById(target + '-id').value = file.id;
+							document.getElementById(target + '-name').textContent = file.filename || file.title;
+							var remove = document.querySelector('.mtl-agreement-file-remove[data-target="' + target + '"]');
+							if (remove) {
+								remove.style.display = '';
+							}
+						});
+					}
+					frames[target].open();
+				});
+			});
+
+			document.querySelectorAll('.mtl-agreement-file-remove').forEach(function(button) {
+				button.addEventListener('click', function() {
+					var target = button.getAttribute('data-target');
+					document.getElementById(target + '-id').value = '';
+					document.getElementById(target + '-name').textContent = '(none chosen)';
+					button.style.display = 'none';
+				});
+			});
+
+			// Only one transition needs an interstitial: paper to full blocks
+			// every outstanding member from reserving the instant it is saved,
+			// with no email to soften it. Every other transition is either
+			// harmless or a release, so confirming them all would train the
+			// admin to click through this one too.
+			var modeForm = document.getElementById('mtl-agreements-mode-form');
+			if (!modeForm) {
+				return;
+			}
+			modeForm.addEventListener('submit', function(event) {
+				var button = modeForm.querySelector('[name="mtl_save_agreements_mode"]');
+				var chosen = modeForm.querySelector('[name="mtl_agreements_mode"]:checked');
+				if (!button || !chosen) {
+					return;
+				}
+				if (button.getAttribute('data-mtl-current-mode') !== 'paper' || chosen.value !== 'full') {
+					return;
+				}
+				var count = parseInt(button.getAttribute('data-mtl-outstanding'), 10) || 0;
+				var message = 'Switching to full mode will immediately require ' + count +
+					(count === 1 ? ' member' : ' members') +
+					' to agree online, and block them from reserving tools until they do.\n\n' +
+					'They will not be emailed automatically — send agreement requests from the Membership page.\n\n' +
+					'Switching back to "Track signed paper only" releases everyone again straight away.';
+				if (!window.confirm(message)) {
+					event.preventDefault();
+				}
+			});
+		})();
 	</script>
 	<?php
 	echo '</div>';

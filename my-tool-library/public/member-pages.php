@@ -254,6 +254,11 @@ function mtl_front_notice( $key ) {
 		'account_updated'        => array( 'success', 'Your account details have been updated.' ),
 		'account_verif_removed'  => array( 'success', 'Your details were updated. Because your address changed, your verified status has been reset &mdash; an administrator will need to re-verify your account.' ),
 		'account_deleted'        => array( 'success', 'Your account and personal data have been deleted. You&rsquo;re welcome to browse the catalog, but you&rsquo;ll need to sign up again if you&rsquo;d like to reserve a tool.' ),
+		// The reserve gate sends members here. The wording explains what
+		// happened and what to do, because the alternative -- a reservation
+		// that silently did not happen -- is the worst version of this.
+		'agreements_required'    => array( 'error', 'Before you can reserve a tool, please read and agree to our member agreements below. Your reservation was not created.' ),
+		'agreements_recorded'    => array( 'success', 'Thank you. Your agreement has been recorded.' ),
 		// Sign-in failures, carried back from wp-login.php by
 		// mtl_handle_failed_front_login(). Deliberately does not say WHICH of
 		// the two was wrong: that would confirm to anyone guessing whether a
@@ -764,6 +769,107 @@ function mtl_member_page_styles() {
 			margin: 14px 0;
 		}
 
+		/* Member agreements. The clause itself is the label and therefore the
+			click target, so the row is laid out to keep the checkbox aligned
+			with the first line of what can be several paragraphs of text. */
+		.mtl-agreements {
+			border: 1px solid #dcdcde;
+			border-radius: 6px;
+			padding: 14px 16px 4px 16px;
+			margin: 18px 0;
+		}
+
+		.mtl-agreements legend {
+			font-weight: 600;
+			padding: 0 6px;
+		}
+
+		.mtl-agreements-intro {
+			margin: 0 0 12px 0;
+			color: #50575e;
+		}
+
+		.mtl-agreement-item {
+			margin-bottom: 14px;
+		}
+
+		.mtl-agreement-item-invalid {
+			border-left: 3px solid #b32d2e;
+			padding-left: 10px;
+			margin-left: -13px;
+		}
+
+		.mtl-agreement-label {
+			display: flex;
+			gap: 10px;
+			align-items: flex-start;
+			cursor: pointer;
+		}
+
+		.mtl-agreement-label input[type="checkbox"] {
+			flex: 0 0 auto;
+			margin-top: 3px;
+			width: 18px;
+			height: 18px;
+		}
+
+		/* Paired with the red rule above, never carrying the meaning alone. */
+		.mtl-agreement-error {
+			margin: 4px 0 0 28px;
+			color: #b32d2e;
+			font-weight: 600;
+		}
+
+		.mtl-agreement-file,
+		.mtl-agreement-superseded {
+			margin: 4px 0 0 28px;
+			font-size: 0.9em;
+		}
+
+		.mtl-agreement-superseded {
+			color: #50575e;
+		}
+
+		.mtl-agreements-assent {
+			margin: 14px 0;
+			color: #50575e;
+		}
+
+		.mtl-agreements-summary ul {
+			margin: 6px 0 0 0;
+			padding-left: 20px;
+		}
+
+		/* The receipt: what they have already agreed to. */
+		.mtl-agreement-receipt {
+			list-style: none;
+			margin: 0;
+			padding: 0;
+		}
+
+		.mtl-agreement-receipt li {
+			display: flex;
+			gap: 10px;
+			align-items: flex-start;
+			margin-bottom: 14px;
+		}
+
+		.mtl-agreement-tick {
+			flex: 0 0 auto;
+			color: #007017;
+			font-weight: 700;
+		}
+
+		.mtl-agreement-meta {
+			margin: 2px 0 0 0;
+			font-size: 0.9em;
+			color: #50575e;
+		}
+
+		.mtl-agreement-retired-note {
+			font-style: italic;
+		}
+
 		/* Availability badges + category/tag pills. These pages call the shop's
 			own mtl_shop_status_badges() / mtl_shop_pills() helpers, so they take
 			the shop's rules verbatim from public/shop-page.php. */
@@ -778,6 +884,321 @@ function mtl_member_page_styles() {
  */
 function mtl_member_page_footer() {
 	return '<a href="' . esc_url( mtl_front_page_url( 'main' ) ) . '">&larr; Back to the tool catalog</a>';
+}
+
+// --------------------------------------------------------------------------
+// Member agreements -- the shared renderer
+//
+// The signup form and the account page's outstanding block both draw their
+// checkboxes from mtl_render_agreements_fieldset(), so the two cannot drift.
+// --------------------------------------------------------------------------
+
+/**
+ * The standing banner telling a member they owe an agreement, or ''.
+ *
+ * Wording matches the actual state. "Our agreements have been updated" is
+ * simply untrue for somebody who never agreed to anything, and a member told
+ * that will reasonably reply that they never saw the first set either.
+ *
+ * Not a live region: it is present on page load rather than injected, so
+ * announcing it would be noise on every page view.
+ *
+ * Gated on mtl_agreements_online(), since paper mode gives the member nowhere
+ * to act on it.
+ *
+ * @return string HTML, or '' when there is nothing to say.
+ */
+function mtl_agreements_banner_html() {
+	if ( ! mtl_agreements_online() ) {
+		return '';
+	}
+
+	$member = mtl_current_member();
+	if ( ! $member ) {
+		return '';
+	}
+
+	$status = mtl_member_agreements_status( (int) $member->member_id );
+	if ( 'outdated' === $status ) {
+		$text = __( 'Some of our member agreements have changed. Please review and agree on your account page before reserving a tool.', 'my-tool-library' );
+	} elseif ( 'none' === $status ) {
+		$text = __( 'Please review and agree to our member agreements on your account page before reserving a tool.', 'my-tool-library' );
+	} else {
+		return '';
+	}
+
+	return '<div class="mtl-front-notice mtl-front-notice-error">'
+		. esc_html( $text ) . ' '
+		. '<a href="' . esc_url( mtl_front_page_url( 'account' ) . '#mtl-agreements' ) . '">' . esc_html__( 'Review your agreements', 'my-tool-library' ) . '</a>'
+		. '</div>';
+}
+
+/**
+ * The first few words of an agreement, for error messages and link names.
+ *
+ * @param string $text  Agreement text.
+ * @param int    $words How many words to keep.
+ * @return string Plain text, ellipsis appended when truncated.
+ */
+function mtl_agreement_excerpt( $text, $words = 8 ) {
+	$text  = trim( preg_replace( '/\s+/', ' ', (string) $text ) );
+	$parts = explode( ' ', $text );
+	if ( count( $parts ) <= $words ) {
+		return $text;
+	}
+	return implode( ' ', array_slice( $parts, 0, $words ) ) . '&hellip;';
+}
+
+/**
+ * Renders a group of agreements as a fieldset of checkboxes.
+ *
+ * These forms are the legal gate -- a member who cannot operate them cannot
+ * join the library -- so the accessible structure is load-bearing:
+ *
+ * - the whole clause is the label, so it is both the click target and the
+ *   accessible name;
+ * - the group is a fieldset with a legend, announced as a group;
+ * - the assent sentence is bound by aria-describedby from the fieldset, so it
+ *   is heard before submitting rather than met while tabbing;
+ * - each file link's accessible name carries the agreement's opening words and
+ *   says it opens in a new tab, so several attached documents are
+ *   distinguishable in a link list;
+ * - nothing is disabled. The submit button always works and always produces an
+ *   explanation.
+ *
+ * Recognised $args keys, all optional:
+ *
+ *   context     'signup' or 'agree_page'. Selects the assent wording.
+ *   id_prefix   Prefix for element ids, unique per form on a page.
+ *   legend      Group heading.
+ *   intro       Sentence above the list, or '' for none.
+ *   checked     Agreement ids to render ticked.
+ *   invalid     Agreement ids that failed validation.
+ *   superseded  agreement_id => "you agreed to an earlier version" line.
+ *
+ * @param object[] $agreements Rows from member_agreements, in display order.
+ * @param array    $args       Rendering options, as above.
+ * @return string HTML.
+ */
+function mtl_render_agreements_fieldset( $agreements, $args = array() ) {
+	$args = array_merge(
+		array(
+			'context'    => 'signup',
+			'id_prefix'  => 'mtl-agreement',
+			'legend'     => 'Member agreements',
+			'intro'      => '',
+			'checked'    => array(),
+			'invalid'    => array(),
+			'superseded' => array(),
+		),
+		$args
+	);
+
+	if ( empty( $agreements ) ) {
+		return '';
+	}
+
+	$assent_id = $args['id_prefix'] . '-assent';
+	$checked   = array_map( 'intval', (array) $args['checked'] );
+	$invalid   = array_map( 'intval', (array) $args['invalid'] );
+
+	ob_start();
+	?>
+	<fieldset class="mtl-agreements" aria-describedby="<?php echo esc_attr( $assent_id ); ?>">
+		<legend><?php echo esc_html( $args['legend'] ); ?></legend>
+		<?php if ( '' !== $args['intro'] ) : ?>
+			<p class="mtl-agreements-intro"><?php echo esc_html( $args['intro'] ); ?></p>
+		<?php endif; ?>
+
+		<?php foreach ( $agreements as $agreement ) : ?>
+			<?php
+			$aid       = (int) $agreement->agreement_id;
+			$box_id    = $args['id_prefix'] . '-' . $aid;
+			$err_id    = $box_id . '-error';
+			$is_bad    = in_array( $aid, $invalid, true );
+			$file_url  = (int) $agreement->attachment_id > 0 ? wp_get_attachment_url( (int) $agreement->attachment_id ) : '';
+			$describes = array();
+			if ( $is_bad ) {
+				$describes[] = $err_id;
+			}
+			?>
+			<div class="mtl-agreement-item<?php echo $is_bad ? ' mtl-agreement-item-invalid' : ''; ?>">
+				<label class="mtl-agreement-label" for="<?php echo esc_attr( $box_id ); ?>">
+					<input
+						type="checkbox"
+						id="<?php echo esc_attr( $box_id ); ?>"
+						name="agreements[<?php echo esc_attr( $aid ); ?>]"
+						value="1"
+						<?php checked( true, in_array( $aid, $checked, true ) ); ?>
+						<?php echo $is_bad ? ' aria-invalid="true"' : ''; ?>
+						<?php echo $describes ? ' aria-describedby="' . esc_attr( implode( ' ', $describes ) ) . '"' : ''; ?>
+					>
+					<span><?php echo nl2br( esc_html( $agreement->agreement_text ) ); ?></span>
+				</label>
+
+				<?php if ( $is_bad ) : ?>
+					<p class="mtl-agreement-error" id="<?php echo esc_attr( $err_id ); ?>"><?php esc_html_e( 'You need to tick this box to continue.', 'my-tool-library' ); ?></p>
+				<?php endif; ?>
+
+				<?php if ( $file_url ) : ?>
+					<p class="mtl-agreement-file">
+						<a href="<?php echo esc_url( $file_url ); ?>" target="_blank" rel="noopener noreferrer"
+							aria-label="<?php echo esc_attr( 'View the attached document for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $agreement->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>"><?php esc_html_e( 'View the attached document', 'my-tool-library' ); ?> \&#8599;</a>
+					</p>
+				<?php endif; ?>
+
+				<?php if ( isset( $args['superseded'][ $aid ] ) ) : ?>
+					<p class="mtl-agreement-superseded"><?php echo esc_html( $args['superseded'][ $aid ] ); ?></p>
+				<?php endif; ?>
+
+				<!-- The version this member is being shown. Submitted back so an
+					acceptance can never be recorded against wording that was
+					revised while the form sat open. -->
+				<input type="hidden" name="agreement_versions[<?php echo esc_attr( $aid ); ?>]" value="<?php echo esc_attr( (int) $agreement->version_num ); ?>">
+			</div>
+		<?php endforeach; ?>
+
+		<p class="mtl-agreements-assent" id="<?php echo esc_attr( $assent_id ); ?>">
+			<?php echo esc_html( mtl_assent_language( $args['context'] ) ); ?>
+		</p>
+	</fieldset>
+	<?php
+	return ob_get_clean();
+}
+
+/**
+ * The error summary shown when a submit is missing agreements.
+ *
+ * A real element at the top of the form, linking to the checkboxes it is about.
+ * role="alert" announces it on a re-render; tabindex lets focus move to it, so
+ * a screen-reader user submitting an incomplete form hears why.
+ *
+ * @param object[] $missing   Agreement rows that were not ticked.
+ * @param string   $id_prefix Same prefix the fieldset was rendered with.
+ * @return string HTML, or '' when nothing is missing.
+ */
+function mtl_render_agreements_error_summary( $missing, $id_prefix ) {
+	if ( empty( $missing ) ) {
+		return '';
+	}
+
+	ob_start();
+	?>
+	<div class="mtl-front-notice mtl-front-notice-error mtl-agreements-summary" role="alert" tabindex="-1" id="<?php echo esc_attr( $id_prefix ); ?>-summary">
+		<div><strong><?php esc_html_e( 'You must agree to:', 'my-tool-library' ); ?></strong></div>
+		<ul>
+			<?php foreach ( $missing as $agreement ) : ?>
+				<li>
+					<a href="#<?php echo esc_attr( $id_prefix . '-' . (int) $agreement->agreement_id ); ?>">
+						<?php echo wp_kses( mtl_agreement_excerpt( $agreement->agreement_text, 12 ), array() ); ?>
+					</a>
+				</li>
+			<?php endforeach; ?>
+		</ul>
+	</div>
+	<script>
+		// Focus the summary so a keyboard or screen-reader user lands on the
+		// explanation rather than at the top of an apparently unchanged page.
+		// Progressive enhancement only: role="alert" already announces it, and
+		// the summary's links work without any of this.
+		(function() {
+			var s = document.getElementById(<?php echo wp_json_encode( $id_prefix . '-summary' ); ?>);
+			if (s) { s.focus(); }
+		})();
+	</script>
+	<?php
+	return ob_get_clean();
+}
+
+/**
+ * Reads the agreements POST back into ids and displayed versions.
+ *
+ * @return array {
+ *     @type int[] ticked   Agreement ids whose box was ticked.
+ *     @type array versions agreement_id => version_num as displayed.
+ * }
+ */
+function mtl_read_agreements_post() {
+	$ticked   = array();
+	$versions = array();
+
+	// No submitted string is trusted: only array keys are read from agreements[],
+	// and both keys and values from agreement_versions[] are cast to integers.
+	// Every caller then checks those ids against the live list.
+	// phpcs:ignore WordPress.Security.NonceVerification.Missing -- every caller verifies its own nonce before calling this.
+	if ( isset( $_POST['agreements'] ) && is_array( $_POST['agreements'] ) ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- absint() is the sanitizer, applied to every key.
+		$ticked = array_map( 'absint', array_keys( wp_unslash( $_POST['agreements'] ) ) );
+	}
+
+	// phpcs:ignore WordPress.Security.NonceVerification.Missing -- as above.
+	if ( isset( $_POST['agreement_versions'] ) && is_array( $_POST['agreement_versions'] ) ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- absint() is the sanitizer, applied to both key and value.
+		$raw_versions = (array) wp_unslash( $_POST['agreement_versions'] );
+		foreach ( $raw_versions as $key => $value ) {
+			$versions[ absint( $key ) ] = absint( $value );
+		}
+	}
+
+	return array(
+		'ticked'   => array_values( array_unique( array_filter( $ticked ) ) ),
+		'versions' => $versions,
+	);
+}
+
+/**
+ * Checks a submitted set of agreements against what is live right now.
+ *
+ * Covers the gap between a form being drawn and coming back, during which an
+ * admin may have added, retired or revised an agreement, or changed the mode.
+ *
+ * The version check is all-or-nothing: refusing up front leaves nothing to
+ * undo, where refusing row by row mid-loop would leave a partial write.
+ *
+ * @param object[] $live     Currently active agreements.
+ * @param int[]    $ticked   Agreement ids the member ticked.
+ * @param array    $versions agreement_id => version_num the form displayed.
+ * @return array {
+ *     @type object[] missing        Live agreements with no tick.
+ *     @type int[]    stale          Ids whose displayed version is no longer current.
+ *     @type int[]    added          Ids that appeared after the form was drawn.
+ *     @type bool     ok             True when nothing blocks the write.
+ * }
+ */
+function mtl_check_agreements_submission( $live, $ticked, $versions ) {
+	$missing = array();
+	$stale   = array();
+	$added   = array();
+
+	foreach ( $live as $agreement ) {
+		$aid = (int) $agreement->agreement_id;
+
+		// Never shown to this member -- added while they were filling the form
+		// in. Erroring about a checkbox they never saw would be accurate and
+		// useless, so the caller re-renders with it shown and unticked.
+		if ( ! isset( $versions[ $aid ] ) ) {
+			$added[] = $aid;
+			continue;
+		}
+
+		// The dangerous one. Recording this would assert, permanently and with
+		// a checksum, that the member agreed to wording they never read.
+		if ( (int) $versions[ $aid ] !== (int) $agreement->version_num ) {
+			$stale[] = $aid;
+			continue;
+		}
+
+		if ( ! in_array( $aid, $ticked, true ) ) {
+			$missing[] = $agreement;
+		}
+	}
+
+	return array(
+		'missing' => $missing,
+		'stale'   => $stale,
+		'added'   => $added,
+		'ok'      => ( ! $missing && ! $stale && ! $added ),
+	);
 }
 
 // --------------------------------------------------------------------------
@@ -819,6 +1240,19 @@ function mtl_handle_reserve_action() {
 	$member = mtl_current_member();
 	if ( ! $member ) {
 		$redirect( 'login_required' );
+	}
+
+	// The agreements gate. online() only: in paper mode a member cannot agree on
+	// the website, so blocking them would leave them with no way to unblock
+	// themselves. The Reserve button stays visible and the gate catches the
+	// click, so no reservation is created and there is nothing to resume -- the
+	// member agrees, then reserves whenever they like.
+	if ( mtl_agreements_online() ) {
+		$agreement_status = mtl_member_agreements_status( (int) $member->member_id );
+		if ( 'outdated' === $agreement_status || 'none' === $agreement_status ) {
+			wp_safe_redirect( add_query_arg( 'mtl_msg', 'agreements_required', mtl_front_page_url( 'account' ) ) . '#mtl-agreements' );
+			exit;
+		}
 	}
 
 	global $wpdb;
@@ -901,6 +1335,17 @@ function mtl_render_signup_page() {
 	// sign-in. Rendered as its own notice below rather than as an $errors entry,
 	// because it needs a real link and that loop escapes its messages.
 	$needs_password_setup = false;
+
+	// Agreements state, carried from the handler to the render below.
+	// $agreement_ticked keeps the boxes ticked across a validation failure --
+	// making somebody re-tick six boxes because they fat-fingered their ZIP
+	// code is the kind of thing that loses a signup.
+	$agreement_ticked  = array();
+	$agreement_invalid = array();
+	$agreement_missing = array();
+	$agreement_changed = false;
+	$agreement_seen    = array();
+
 	// Sticky values so a validation error doesn't wipe the form (password
 	// fields are intentionally never repopulated).
 	$vals = array(
@@ -986,6 +1431,44 @@ function mtl_render_signup_page() {
 				$errors[] = 'The two passwords you entered do not match.';
 			}
 
+			// --- Agreements ---
+			//
+			// The mode and the live list are re-read here rather than trusted
+			// from render time, so a form drawn under `full` still goes through
+			// after a switch to `paper` or `off`. Errors accumulate with the
+			// field errors above, so everything wrong reports at once.
+			$posted           = mtl_read_agreements_post();
+			$agreement_ticked = $posted['ticked'];
+			$agreement_seen   = $posted['versions'];
+
+			if ( mtl_agreements_online() ) {
+				$live_agreements = mtl_get_active_agreements();
+				$check           = mtl_check_agreements_submission( $live_agreements, $agreement_ticked, $agreement_seen );
+
+				if ( $check['stale'] || $check['added'] ) {
+					// Something changed under them. Re-render with the new
+					// wording; untick only what changed, and leave every other
+					// field and tick alone -- re-typing an address because a
+					// fee policy was edited is how a signup gets abandoned.
+					$agreement_changed = true;
+					$agreement_ticked  = array_values( array_diff( $agreement_ticked, $check['stale'], $check['added'] ) );
+					$errors[]          = 'One or more of our agreements changed while you were reading them. The updated wording is shown below; please review and agree again.';
+				} elseif ( $check['missing'] ) {
+					$agreement_missing = $check['missing'];
+					foreach ( $check['missing'] as $mtl_missed ) {
+						$agreement_invalid[] = (int) $mtl_missed->agreement_id;
+					}
+					// The summary block lists these as links; this line is what
+					// appears in the ordinary error list beside the field
+					// errors, naming them rather than counting them.
+					$mtl_names = array();
+					foreach ( $check['missing'] as $mtl_missed ) {
+						$mtl_names[] = wp_strip_all_tags( mtl_agreement_excerpt( $mtl_missed->agreement_text ) );
+					}
+					$errors[] = __( 'You must agree to:', 'my-tool-library' ) . ' ' . implode( '; ', $mtl_names );
+				}
+			}
+
 			if ( empty( $errors ) ) {
 				// Create the member row first so a failed wp_insert_user()
 				// never leaves an orphaned WP user; if it fails afterward,
@@ -1034,15 +1517,49 @@ function mtl_render_signup_page() {
 					} else {
 						update_user_meta( $user_id, 'mtl_member_id', $member_id );
 
-						// Sign the new member in immediately; this runs on
-						// template_redirect, before any output, so the auth
-						// cookie can still be set.
-						wp_set_current_user( $user_id, $vals['email'] );
-						wp_set_auth_cookie( $user_id, true );
-						do_action( 'wp_login', $vals['email'], get_userdata( $user_id ) );
+						// Recorded before signing anybody in, so a shortfall can
+						// still be rolled back. Compared against the number
+						// expected, not against zero -- a half-agreed account
+						// looks like a member who has not got round to it, so
+						// nothing would ever flag it as broken.
+						$agreements_ok = true;
+						if ( mtl_agreements_online() ) {
+							$expected      = count( mtl_member_outstanding_agreements( $member_id ) );
+							$recorded      = mtl_record_all_outstanding_agreements( $member_id, 'signup', $agreement_seen );
+							$agreements_ok = ( $recorded === $expected );
+						}
 
-						wp_safe_redirect( mtl_front_page_url( 'main' ) );
-						exit;
+						if ( ! $agreements_ok ) {
+							// Unwind everything, in the reverse of the order it
+							// was created. The acceptance rows go with the
+							// member row through the foreign key's ON DELETE
+							// CASCADE, so there is nothing separate to clean up.
+							wp_delete_user( $user_id );
+							$wpdb->delete( $tbl_members, array( 'member_id' => $member_id ), array( '%d' ) );
+							$errors[] = 'Sorry, something went wrong recording your agreements. Nothing was saved &mdash; please try again.';
+						} else {
+							// Sent outside the rollback path above: a mail
+							// failure must not undo a completed signup, and the
+							// member sees the normal success page either way.
+							//
+							// Re-deriving the event from the timestamp is safe
+							// here because the member was created moments ago,
+							// so every row they have is this one event. See
+							// mtl_latest_acceptance_event_ids().
+							if ( mtl_agreements_online() ) {
+								mtl_send_agreement_confirmation_email( $member_id, mtl_latest_acceptance_event_ids( $member_id ) );
+							}
+
+							// Sign the new member in immediately; this runs on
+							// template_redirect, before any output, so the auth
+							// cookie can still be set.
+							wp_set_current_user( $user_id, $vals['email'] );
+							wp_set_auth_cookie( $user_id, true );
+							do_action( 'wp_login', $vals['email'], get_userdata( $user_id ) );
+
+							wp_safe_redirect( mtl_front_page_url( 'main' ) );
+							exit;
+						}
 					}
 				}
 			}
@@ -1156,6 +1673,33 @@ function mtl_render_signup_page() {
 						<input type="password" id="mtl-su-pass2" name="password2" autocomplete="new-password" required>
 					</div>
 				</div>
+
+				<?php
+				// online() only -- paper mode collects signatures at the desk.
+				// Read live rather than reusing the handler's copy, so the form
+				// shows the agreements as they stand now.
+				if ( mtl_agreements_online() ) {
+					$signup_agreements = mtl_get_active_agreements();
+					if ( $signup_agreements ) {
+						// Both helpers escape every value they interpolate; the
+						// markup around those values is the plugin's own.
+						echo mtl_render_agreements_error_summary( $agreement_missing, 'mtl-su-agreement' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer.
+						echo mtl_render_agreements_fieldset( // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer.
+							$signup_agreements,
+							array(
+								'context'   => 'signup',
+								'id_prefix' => 'mtl-su-agreement',
+								'legend'    => 'Member agreements',
+								'intro'     => $agreement_changed
+									? 'These have changed since you opened this page. Please read them again.'
+									: 'Please read these and tick each box.',
+								'checked'   => $agreement_ticked,
+								'invalid'   => $agreement_invalid,
+							)
+						);
+					}
+				}
+				?>
 
 				<p style="margin: 18px 0 0 0;">
 					<button type="submit" name="mtl_signup" value="1" class="mtl-member-btn">Create Account</button>
@@ -1472,6 +2016,7 @@ function mtl_render_member_reservations_page() {
 		<a class="mtl-member-back" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a>
 
 		<?php echo mtl_front_notice_html(); ?>
+		<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 
 		<?php
 		// Always shown (with an empty-state message when there's nothing
@@ -1698,6 +2243,98 @@ function mtl_render_account_page() {
 
 	$errors = array();
 
+	// Agreements state, carried down to the render below.
+	$agreement_ticked   = array();
+	$agreement_invalid  = array();
+	$agreement_missing  = array();
+	$agreement_changed  = false;
+	$agreement_errors   = array();
+	$agreement_recorded = false;
+
+	// --- Handle the agreements submission (POST + its own nonce). ---
+	//
+	// Fires only on its own submit button and nonce, so a member fixing their
+	// phone number is never told they failed to tick an agreement. No PRG
+	// redirect -- the page re-rendered here is already the one showing the
+	// result.
+	if ( mtl_is_post_request() && isset( $_POST['mtl_agree'] ) && mtl_agreements_online() ) {
+		if ( ! isset( $_POST['mtl_agreements_agree_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_agreements_agree_nonce'] ) ), 'mtl_agreements_agree_action' ) ) {
+			$agreement_errors[] = 'Your session expired. Please try agreeing again.';
+		} else {
+			$posted           = mtl_read_agreements_post();
+			$agreement_ticked = $posted['ticked'];
+			$outstanding      = mtl_member_outstanding_agreements( (int) $member->member_id );
+
+			// Every submitted id is checked against this member's own
+			// outstanding list first, so a forged POST naming a retired
+			// agreement, one they are already current on, or one that does not
+			// exist is rejected here rather than deeper in the writer.
+			$outstanding_ids  = array_map( 'intval', wp_list_pluck( $outstanding, 'agreement_id' ) );
+			$agreement_ticked = array_values( array_intersect( $agreement_ticked, $outstanding_ids ) );
+
+			$check = mtl_check_agreements_submission( $outstanding, $agreement_ticked, $posted['versions'] );
+
+			if ( $check['stale'] || $check['added'] ) {
+				$agreement_changed  = true;
+				$agreement_ticked   = array_values( array_diff( $agreement_ticked, $check['stale'], $check['added'] ) );
+				$agreement_errors[] = 'One or more of our agreements changed while you were reading them. The updated wording is shown below; please review and agree again.';
+			} elseif ( $check['missing'] ) {
+				$agreement_missing = $check['missing'];
+				foreach ( $check['missing'] as $mtl_missed ) {
+					$agreement_invalid[] = (int) $mtl_missed->agreement_id;
+				}
+				$mtl_names = array();
+				foreach ( $check['missing'] as $mtl_missed ) {
+					$mtl_names[] = wp_strip_all_tags( mtl_agreement_excerpt( $mtl_missed->agreement_text ) );
+				}
+				$agreement_errors[] = __( 'You must agree to:', 'my-tool-library' ) . ' ' . implode( '; ', $mtl_names );
+			} else {
+				// One row per ticked agreement; earlier rows are untouched.
+				//
+				// No rollback here, unlike signup: whatever failed stays
+				// outstanding and the member is shown what remains.
+				//
+				// Ids are kept as written rather than re-derived afterwards --
+				// accepted_at has one-second resolution, so a member agreeing in
+				// the same second staff record something would be emailed both.
+				$written     = 0;
+				$written_ids = array();
+				foreach ( $outstanding as $mtl_agreement ) {
+					$aid = (int) $mtl_agreement->agreement_id;
+					if ( ! in_array( $aid, $agreement_ticked, true ) ) {
+						continue;
+					}
+					$seen          = isset( $posted['versions'][ $aid ] ) ? (int) $posted['versions'][ $aid ] : null;
+					$acceptance_id = mtl_record_agreement_acceptance( (int) $member->member_id, $aid, 'agree_page', $seen );
+					if ( $acceptance_id > 0 ) {
+						++$written;
+						$written_ids[] = $acceptance_id;
+					}
+				}
+
+				// Covers only the agreements just accepted, not the whole set
+				// again. Sent after the rows are committed, and its result
+				// changes nothing here.
+				if ( $written_ids ) {
+					mtl_send_agreement_confirmation_email( (int) $member->member_id, $written_ids );
+				}
+
+				if ( $written > 0 && count( $agreement_ticked ) === $written ) {
+					// Confirm on screen. The form vanishing and its items
+					// reappearing further down reads as a failed reload, and
+					// the emailed copy may arrive late or not at all.
+					$agreement_recorded = true;
+				} elseif ( $written > 0 ) {
+					$agreement_recorded = true;
+					$agreement_errors[] = 'Some of your agreements could not be recorded. Anything still outstanding is shown below &mdash; please try again.';
+				} else {
+					$agreement_errors[] = 'Sorry, your agreement could not be recorded. Please try again.';
+				}
+				$agreement_ticked = array();
+			}
+		}
+	}
+
 	// --- Handle profile update (POST + nonce), then PRG-redirect. ---
 	if ( mtl_is_post_request() && isset( $_POST['mtl_update_account'] ) ) {
 		if ( ! isset( $_POST['mtl_account_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_account_nonce'] ) ), 'mtl_account_action' ) ) {
@@ -1910,6 +2547,7 @@ function mtl_render_account_page() {
 		<a class="mtl-member-back" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a>
 
 		<?php echo mtl_front_notice_html(); ?>
+		<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 
 		<?php if ( ! empty( $errors ) ) : ?>
 			<div class="mtl-front-notice mtl-front-notice-error">
@@ -1946,6 +2584,98 @@ function mtl_render_account_page() {
 				</div>
 			</div>
 		<?php else : ?>
+
+			<?php
+			// --- Member agreements ---
+			//
+			// Computed once for the outstanding block here and the receipt at
+			// the foot of the page, then partitioned between them. A superseded
+			// acceptance is still an acceptance row, so listing it unfiltered
+			// would show the same agreement twice: once to agree to, once as
+			// already agreed.
+			$mtl_ag_outstanding     = mtl_agreements_online() ? mtl_member_outstanding_agreements( (int) $member->member_id ) : array();
+			$mtl_ag_acceptances     = mtl_agreements_tracking() ? mtl_get_member_acceptances( (int) $member->member_id ) : array();
+			$mtl_ag_outstanding_ids = array_map( 'intval', wp_list_pluck( $mtl_ag_outstanding, 'agreement_id' ) );
+
+			// An outstanding agreement never also appears as a plain tick. Its
+			// earlier acceptance becomes the "you agreed to an earlier version"
+			// line on that row, next to the thing being asked for.
+			$mtl_ag_superseded  = array();
+			$mtl_ag_receipt     = array();
+			$mtl_ag_retired_rec = array();
+			foreach ( $mtl_ag_acceptances as $mtl_acceptance ) {
+				$mtl_aid = (int) $mtl_acceptance->agreement_id;
+				if ( in_array( $mtl_aid, $mtl_ag_outstanding_ids, true ) ) {
+					$mtl_ag_superseded[ $mtl_aid ] = sprintf(
+						/* translators: %s: date the member agreed to the earlier version. */
+						__( 'You agreed to an earlier version of this on %s.', 'my-tool-library' ),
+						wp_strip_all_tags( mtl_format_utc_datetime( $mtl_acceptance->accepted_at, 'j F Y' ) )
+					);
+					continue;
+				}
+
+				// Retired ones stay in the receipt, sorted after the active ones
+				// and labelled, so their absence elsewhere on the site is
+				// explained.
+				$mtl_live = mtl_get_agreement( $mtl_aid );
+				if ( $mtl_live && null !== $mtl_live->retired_at ) {
+					$mtl_ag_retired_rec[] = $mtl_acceptance;
+				} else {
+					$mtl_ag_receipt[] = $mtl_acceptance;
+				}
+			}
+			$mtl_ag_retired_ids = array_map( 'intval', wp_list_pluck( $mtl_ag_retired_rec, 'agreement_id' ) );
+			$mtl_ag_receipt     = array_merge( $mtl_ag_receipt, $mtl_ag_retired_rec );
+			?>
+
+			<?php if ( $mtl_ag_outstanding ) : ?>
+				<!-- Above the account detail rows: members arrive here from the
+					reserve gate or an email to do this one thing, and a notice
+					pointing at a form further down the page is easy to miss. -->
+				<div class="mtl-member-card" id="mtl-agreements">
+					<h2>Member agreements</h2>
+
+					<?php if ( ! empty( $agreement_errors ) ) : ?>
+						<div class="mtl-front-notice mtl-front-notice-error" style="max-width:none;">
+							<?php foreach ( $agreement_errors as $mtl_ag_err ) : ?>
+								<div><?php echo wp_kses_post( $mtl_ag_err ); ?></div>
+							<?php endforeach; ?>
+						</div>
+					<?php endif; ?>
+
+					<?php echo mtl_render_agreements_error_summary( $agreement_missing, 'mtl-ac-agreement' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer. ?>
+
+					<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>#mtl-agreements">
+						<?php wp_nonce_field( 'mtl_agreements_agree_action', 'mtl_agreements_agree_nonce' ); ?>
+						<?php
+						echo mtl_render_agreements_fieldset( // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer.
+							$mtl_ag_outstanding,
+							array(
+								'context'    => 'agree_page',
+								'id_prefix'  => 'mtl-ac-agreement',
+								'legend'     => 'Please agree to the following',
+								'intro'      => $agreement_changed
+									? 'These have changed since you opened this page. Please read them again.'
+									: 'Before you can reserve a tool, please read these and tick each box.',
+								'checked'    => $agreement_ticked,
+								'invalid'    => $agreement_invalid,
+								'superseded' => $mtl_ag_superseded,
+							)
+						);
+						?>
+						<p style="margin: 0;">
+							<button type="submit" name="mtl_agree" value="1" class="mtl-member-btn">Agree</button>
+						</p>
+					</form>
+				</div>
+			<?php elseif ( $agreement_recorded ) : ?>
+				<!-- role="status" so the change is announced: the form vanishing
+					and its items reappearing further down the page is otherwise
+					a purely visual cue, and reads as a failed reload. -->
+				<div class="mtl-front-notice mtl-front-notice-success" role="status">
+					Thank you. Your agreement has been recorded.
+				</div>
+			<?php endif; ?>
 
 			<div class="mtl-member-card">
 				<h2>My Account</h2>
@@ -2166,6 +2896,50 @@ function mtl_render_account_page() {
 				<?php endif; ?>
 				</div>
 			</details>
+
+			<?php if ( $mtl_ag_receipt ) : ?>
+				<div class="mtl-member-card">
+					<!-- Not tied to account creation: a re-accepted agreement
+						carries a date later than the member's signup date, so a
+						heading naming signup would be wrong on those rows. -->
+					<h3 style="margin-top:0;">You have agreed to the following:</h3>
+					<ul class="mtl-agreement-receipt">
+						<?php foreach ( $mtl_ag_receipt as $mtl_acceptance ) : ?>
+							<?php
+							// Every value shown here comes from the acceptance
+							// row. Reading the live agreement instead would show
+							// the member wording they never saw, which is the
+							// one thing this table's design exists to prevent.
+							$mtl_is_retired = in_array( (int) $mtl_acceptance->agreement_id, $mtl_ag_retired_ids, true );
+
+							// Drop the link where the attachment has since been
+							// deleted, so the member gets the text rather than
+							// a 404. One lookup per attached document, on one
+							// member's own page.
+							$mtl_file_live = ! empty( $mtl_acceptance->file_url )
+								&& attachment_url_to_postid( $mtl_acceptance->file_url ) > 0;
+							?>
+							<li>
+								<span class="mtl-agreement-tick" aria-hidden="true">&#10003;</span>
+								<div>
+									<div><?php echo nl2br( esc_html( $mtl_acceptance->agreement_text ) ); ?></div>
+									<p class="mtl-agreement-meta">
+										Agreed <?php echo wp_kses_post( mtl_format_utc_datetime( $mtl_acceptance->accepted_at, 'j F Y' ) ); ?>
+										<?php if ( $mtl_file_live ) : ?>
+											&middot;
+											<a href="<?php echo esc_url( $mtl_acceptance->file_url ); ?>" target="_blank" rel="noopener noreferrer"
+												aria-label="<?php echo esc_attr( 'View the document you agreed to for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $mtl_acceptance->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>"><?php esc_html_e( 'View the attached document', 'my-tool-library' ); ?> \&#8599;</a>
+										<?php endif; ?>
+										<?php if ( $mtl_is_retired ) : ?>
+											&middot; <span class="mtl-agreement-retired-note"><?php esc_html_e( 'no longer required', 'my-tool-library' ); ?></span>
+										<?php endif; ?>
+									</p>
+								</div>
+							</li>
+						<?php endforeach; ?>
+					</ul>
+				</div>
+			<?php endif; ?>
 
 			<div class="mtl-member-card">
 				<h3 style="margin-top:0;">Danger Zone</h3>

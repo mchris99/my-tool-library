@@ -74,9 +74,24 @@
     <!-- These plugin-defined helpers escape every interpolated value internally
          (see each function's docblock) and are safe to echo directly; this tells
          the EscapeOutput sniff not to flag their call sites. -->
+    <rule ref="WordPress.Security.ValidatedSanitizedInput">
+        <properties>
+            <property name="customSanitizingFunctions" type="array">
+                <!-- Runs sanitize_hex_color() and falls back to a known-good
+                     colour, so its return is always a valid #rrggbb. -->
+                <element value="mtl_color_or_default"/>
+            </property>
+        </properties>
+    </rule>
+
     <rule ref="WordPress.Security.EscapeOutput">
         <properties>
             <property name="customEscapingFunctions" type="array">
+                <!-- Escapes for a CSS context, not an HTML one: it strips every
+                     character that could end a declaration or the <style>
+                     element. HTML escaping is unsafe to substitute here, since
+                     it corrupts quoted font stacks. -->
+                <element value="mtl_css_value"/>
                 <element value="mtl_format_date"/>
                 <element value="mtl_shop_status_badges"/>
                 <element value="mtl_shop_pills"/>
