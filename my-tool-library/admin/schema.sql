@@ -61,6 +61,19 @@ DROP TABLE IF EXISTS {{prefix}}members;
 -- member_training_mappings and member_verifications both cascade off it.
 -- Their WordPress account is a separate matter and IS deleted outright
 -- (wp_users plus wp_usermeta). See mtl_delete_or_anonymize_member().
+--
+-- phone_number is always stored pre-formatted as "+<calling code> <national
+-- number>" (e.g. "+1 (414) 555-0123"), the canonical form every write path
+-- produces via mtl_format_phone_number() in my-tool-library.php -- Signup,
+-- Account edit, Add/Edit Member, and CSV import all funnel through it, so
+-- every phone number in this column is guaranteed to be in the same format.
+-- 32 chars comfortably covers the longest realistic value (a 3-digit calling
+-- code plus a 14-digit national number grouped with spaces). See the "PHONE
+-- NUMBERS" block comment in my-tool-library.php for the full design.
+--
+-- private_notes is staff-only, like tool_inventory.private_notes below: it is
+-- never selected by any public-facing or member-self-service query and is
+-- shown only in the admin Membership page's detail view.
 CREATE TABLE {{prefix}}members (
     member_id INT AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(50) NOT NULL,
@@ -71,24 +84,12 @@ CREATE TABLE {{prefix}}members (
     state VARCHAR(10) NOT NULL,
     zip_code VARCHAR(20) NOT NULL,
     country VARCHAR(100) NOT NULL DEFAULT 'United States',
-    -- Always stored pre-formatted as "+<calling code> <national number>"
-    -- (e.g. "+1 (414) 555-0123"), the canonical form every write path
-    -- produces via mtl_format_phone_number() in my-tool-library.php --
-    -- Signup, Account edit, Add/Edit Member, and CSV import all funnel
-    -- through it, so every phone number in this column is guaranteed to be
-    -- in the same format. 32 chars comfortably covers the longest realistic
-    -- value (a 3-digit calling code plus a 14-digit national number grouped
-    -- with spaces). See the "PHONE NUMBERS" block comment in
-    -- my-tool-library.php for the full design.
     phone_number VARCHAR(32) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     signup_date DATE NOT NULL,
     recurring_donation_amount DECIMAL(10, 2) DEFAULT 0.00,
     has_donated_tools CHAR(1) DEFAULT 'N',
     anonymized_at TIMESTAMP NULL DEFAULT NULL,
-    -- private_notes is staff-only, like tool_inventory.private_notes below: it
-    -- is never selected by any public-facing or member-self-service query and
-    -- is shown only in the admin Membership page's detail view.
     private_notes TEXT DEFAULT NULL
 );
 
@@ -325,6 +326,12 @@ CREATE TABLE {{prefix}}member_agreements (
 -- makes "agreements are retired, never deleted" a rule the database enforces,
 -- and it is spelled out rather than left to MySQL's default because a
 -- guarantee that depends on an implicit server setting is not one.
+--
+-- KEY member_agreement is two columns, not three. The status query selects
+-- MAX(acceptance_id), and in InnoDB every secondary index already carries the
+-- primary key as its row locator, so this behaves as (member_id, agreement_id,
+-- acceptance_id) for free. Its leftmost column also satisfies InnoDB's index
+-- requirement for the member_id foreign key.
 CREATE TABLE {{prefix}}member_agreement_acceptances (
     acceptance_id INT AUTO_INCREMENT PRIMARY KEY,
     member_id INT NOT NULL,
@@ -341,11 +348,6 @@ CREATE TABLE {{prefix}}member_agreement_acceptances (
     member_name VARCHAR(101) NOT NULL DEFAULT '',
     member_email VARCHAR(100) NOT NULL DEFAULT '',
 
-    -- Two columns, not three. The status query selects MAX(acceptance_id), and
-    -- in InnoDB every secondary index already carries the primary key as its
-    -- row locator, so this behaves as (member_id, agreement_id, acceptance_id)
-    -- for free. Its leftmost column also satisfies InnoDB's index requirement
-    -- for the member_id foreign key.
     KEY member_agreement (member_id, agreement_id),
     -- Required for the agreement_id foreign key; also serves Advanced Search's
     -- "who accepted agreement X at version Y".
