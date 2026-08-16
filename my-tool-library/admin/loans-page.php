@@ -86,7 +86,7 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 		if ( '' !== $rec['current_loan_due'] ) {
 			$html .= mtl_lr_field( 'Tool status', 'On loan to another member, due ' . mtl_lr_fmt( $rec['current_loan_due'] ) );
 		} else {
-			$html .= mtl_lr_field( 'Tool status', 'Available &mdash; not currently on loan' );
+			$html .= mtl_lr_field( 'Tool status', 'Available, not currently on loan' );
 		}
 		// Only a collectable reservation has a hold period running; anyone
 		// still queued behind a loan has no deadline yet.
@@ -130,7 +130,7 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 
 		if ( '' === $rec['current_loan_due'] ) {
 			// Available tools can be checked out to this member even if they
-			// aren't first in line -- the admin decides in person.
+			// are not first in line; the admin decides in person.
 			$html .= '<form method="post" action="" class="mtl-lr-action-form">';
 			$html .= $nonce_field;
 			$html .= '<input type="hidden" name="mtl_lr_action" value="checkout">';
@@ -238,7 +238,7 @@ function mtl_lr_handle_actions() {
 		}
 
 		// Derive tool + member from the reservation itself (authoritative), and
-		// only if it is still active -- never trust posted tool/member ids.
+		// only if it is still active; never trust posted tool/member ids.
 		$res = $wpdb->get_row(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
@@ -251,7 +251,7 @@ function mtl_lr_handle_actions() {
 		}
 
 		// Retiring a tool auto-cancels its active reservations (see Inventory's
-		// Retire action), so this should be unreachable in normal use -- kept
+		// Retire action), so this should be unreachable in normal use, kept
 		// as a defense-in-depth check, same as the tool-existence checks
 		// elsewhere in this plugin.
 		$is_retired = $wpdb->get_var(
@@ -368,7 +368,7 @@ function mtl_lr_handle_actions() {
 				$loan_id
 			)
 		);
-		// Today unless the form backdated it -- validated (and, if backdated,
+		// Today unless the form backdated it, validated (and, if backdated,
 		// dated) by the shared helper.
 		$end_return = mtl_resolve_return_timestamp(
 			$loan_id,
@@ -743,7 +743,7 @@ function mtl_render_loans_page() {
 		}
 
 		/*
-		 * Table on the left, detail box on the right -- resizable with pure
+		 * Table on the left, detail box on the right, resizable with pure
 		 * CSS. The table uses the native `resize: horizontal` handle; the
 		 * detail column is a plain flex-fill sibling (`flex: 1 1 auto`) that
 		 * automatically takes up whatever space the table doesn't.
@@ -781,7 +781,7 @@ function mtl_render_loans_page() {
 			}
 
 			.mtl-lr-main {
-				/* Stacked full width -- there is nothing to trade width with. */
+				/* Stacked full width, since there is nothing to trade width with. */
 				width: 100%;
 				max-width: none;
 				resize: none;
@@ -1033,7 +1033,7 @@ function mtl_render_loans_page() {
 			margin: 10px 0 0 0;
 		}
 
-		/* Destructive action -- red outline, matching the admin danger style. */
+		/* Destructive action, so a red outline matching the admin danger style. */
 		.mtl-admin-wrapper .button.mtl-lr-danger {
 			border-color: #d63638;
 			color: #d63638;
@@ -1360,7 +1360,7 @@ function mtl_render_loans_page() {
 
 				// d.loan/d.reserved carry a full timestamp, so range-filtering
 				// compares just the date portion (first 10 chars) against the
-				// plain-date From/To inputs -- otherwise a loan later in the day
+				// plain-date From/To inputs; otherwise a loan later in the day
 				// on the boundary date would wrongly compare as past it.
 				const loanFrom = advFields.loanFrom.value;
 				const loanTo = advFields.loanTo.value;
@@ -1522,7 +1522,7 @@ function mtl_render_loans_page() {
 						}
 						// Values are ISO (YYYY-MM-DD, or YYYY-MM-DD HH:MM:SS for
 						// "Reserved"/"On Loan"), so text order is chronological
-						// order either way -- this sorts reserved/loan by their
+						// order either way, so this sorts reserved/loan by their
 						// full timestamp, even though the visible cell shows only
 						// the date.
 						return av.localeCompare(bv) * dir;
@@ -1567,7 +1567,7 @@ function mtl_render_loans_page() {
 			});
 
 			// Panel resizing is handled entirely by CSS `resize: horizontal` on
-			// .mtl-lr-main (see the stylesheet above) -- no pointer handlers
+			// .mtl-lr-main (see the stylesheet above), so no pointer handlers
 			// needed; the detail column is a plain flex-fill sibling.
 
 			// Establish the initial paginated view (all rows matched, page 1).

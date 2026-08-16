@@ -33,7 +33,7 @@ function mtl_render_pill_list( $csv ) {
 /**
  * Resolves the Add/Edit forms' two separate annual-depreciation inputs (a
  * dollar amount OR a percentage of the tool's initial value) into a single
- * dollar figure for storage. Exactly one of the two may be filled in --
+ * dollar figure for storage. Exactly one of the two may be filled in;
  * filling both is a validation error, since it's ambiguous which one wins.
  *
  * @param string $dollar_display  Raw (sticky) dollar-amount field value.
@@ -50,7 +50,7 @@ function mtl_resolve_depreciation_amount( $dollar_display, $percent_display, $in
 	if ( '' !== $dollar_display && '' !== $percent_display ) {
 		return array(
 			'amount' => 0.0,
-			'error'  => 'Please enter the annual depreciation as either a dollar amount or a percentage of the initial value &mdash; not both.',
+			'error'  => 'Please enter the annual depreciation as either a dollar amount or a percentage of the initial value, not both.',
 		);
 	}
 
@@ -87,10 +87,10 @@ function mtl_resolve_depreciation_csv_value( $raw_value, $initial_value ) {
 }
 
 /**
- * If $donated_by matches an existing member's email -- their WP username,
+ * If $donated_by matches an existing member's email (their WP username),
  * since members sign in with their email (see mtl_render_tool_form_fields()'s
  * donor autocomplete, which fills this field with a selected member's email;
- * Bulk Import checks the plain-text donated_by column the same way) -- flags
+ * Bulk Import checks the plain-text donated_by column the same way) flags
  * that member as having donated tools. A donated_by that matches no member
  * (a non-member donor, stored as plain free text) or is blank is a no-op.
  *
@@ -117,7 +117,7 @@ function mtl_maybe_flag_donor_as_donated( $donated_by ) {
  *
  * Runs on admin_init (before any HTML is sent) rather than inside
  * mtl_render_inventory_page(), since by the time that render callback runs
- * WordPress has already output the page's <head> -- too late for download headers.
+ * WordPress has already output the page's <head>, too late for download headers.
  */
 add_action( 'admin_init', 'mtl_maybe_serve_csv_template' );
 
@@ -161,7 +161,7 @@ function mtl_maybe_serve_csv_template() {
 			'private_notes',
 		)
 	);
-	// Clearly-fake example row so admins can see the expected format -- delete/overwrite before uploading real data.
+	// Clearly-fake example row so admins can see the expected format; delete/overwrite before uploading real data.
 	fputcsv(
 		$out,
 		array(
@@ -178,7 +178,7 @@ function mtl_maybe_serve_csv_template() {
 			gmdate( 'm/d/Y' ),
 			'Woodworking;General Hand Tools',
 			'Cordless;Heavy-Duty',
-			'Staff-only -- never shown publicly.',
+			'Staff-only, never shown publicly.',
 		)
 	);
 	fclose( $out );
@@ -214,7 +214,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = 
 		<th scope="row"><label for="<?php echo $field_id( 'barcode' ); ?>">Barcode *</label></th>
 		<td>
 			<input type="text" name="barcode" id="<?php echo $field_id( 'barcode' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['barcode'] ); ?>" required>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Scan or type the barcode printed on the tool&rsquo;s label (usually numbers, but letters are allowed). Each barcode must be unique &mdash; no two tools can share the same one.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Scan or type the barcode printed on the tool&rsquo;s label (usually numbers, but letters are allowed). Each barcode must be unique, so no two tools can share the same one.</p>
 		</td>
 	</tr>
 	<tr>
@@ -232,7 +232,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = 
 					<option value="<?php echo esc_attr( $cat->category_id ); ?>" <?php echo in_array( (int) $cat->category_id, $values['category_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $cat->category_name ); ?></option>
 				<?php endforeach; ?>
 			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every category that applies &mdash; a tool can belong to more than one. Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to select or unselect multiple. Drag the bottom-right corner to resize the box. Leave blank if none apply.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every category that applies, since a tool can belong to more than one. Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to select or unselect multiple. Drag the bottom-right corner to resize the box. Leave blank if none apply.</p>
 		</td>
 	</tr>
 	<tr>
@@ -243,7 +243,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = 
 					<option value="<?php echo esc_attr( $tag->tag_id ); ?>" <?php echo in_array( (int) $tag->tag_id, $values['tag_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $tag->tag_name ); ?></option>
 				<?php endforeach; ?>
 			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every tag that applies &mdash; a tool can have more than one. Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to select or unselect multiple. Drag the bottom-right corner to resize the box. Leave blank if none apply.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every tag that applies, since a tool can have more than one. Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to select or unselect multiple. Drag the bottom-right corner to resize the box. Leave blank if none apply.</p>
 		</td>
 	</tr>
 	<tr>
@@ -268,7 +268,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = 
 			<br>
 			<label for="<?php echo $field_id( 'annual_depreciation_percent' ); ?>" style="display:inline-block; min-width: 100px; margin-top: 6px;">Percent (%)</label>
 			<input type="number" step="0.01" min="0" max="100" name="annual_depreciation_percent" id="<?php echo $field_id( 'annual_depreciation_percent' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['annual_depreciation_percent'] ); ?>" placeholder="0.00" style="max-width: 150px;">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Enter <strong>either</strong> a dollar amount <strong>or</strong> a percentage of the Initial Cash Value above &mdash; not both. A percentage is converted to a dollar amount and stored as one, same as if you&rsquo;d typed it directly. Leave both blank or enter 0 if unknown.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Enter <strong>either</strong> a dollar amount <strong>or</strong> a percentage of the Initial Cash Value above, not both. A percentage is converted to a dollar amount and stored as one, same as if you&rsquo;d typed it directly. Leave both blank or enter 0 if unknown.</p>
 		</td>
 	</tr>
 	<tr>
@@ -285,7 +285,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = 
 				<input type="text" name="donated_by" id="<?php echo $field_id( 'donated_by' ); ?>" class="regular-text mtl-donor-search" autocomplete="off" value="<?php echo esc_attr( $values['donated_by'] ); ?>" placeholder="Name, or type to search members...">
 				<div class="mtl-ql-dropdown" style="display: none;"></div>
 			</div>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Type a member&rsquo;s name or email to find and select them &mdash; selecting one stores their email so they&rsquo;re automatically credited as a donor. Or just type any name for a non-member donor. Leave blank if unknown.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Type a member&rsquo;s name or email to find and select them. Selecting one stores their email so they&rsquo;re automatically credited as a donor. Or just type any name for a non-member donor. Leave blank if unknown.</p>
 		</td>
 	</tr>
 	<tr>
@@ -306,7 +306,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = 
 		<th scope="row"><label for="<?php echo $field_id( 'private_notes' ); ?>">Private Notes</label></th>
 		<td>
 			<textarea name="private_notes" id="<?php echo $field_id( 'private_notes' ); ?>" rows="4" style="width: 100%; max-width: 400px;"><?php echo esc_textarea( $values['private_notes'] ); ?></textarea>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Staff-only.</strong> Never shown on the public catalog or anywhere a member can see it &mdash; visible only here and in this tool&rsquo;s detail view on this page. Leave blank if none.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Staff-only.</strong> Never shown on the public catalog or anywhere a member can see it. It is visible only here and in this tool&rsquo;s detail view on this page. Leave blank if none.</p>
 		</td>
 	</tr>
 	<?php
@@ -361,13 +361,13 @@ function mtl_render_inventory_page() {
 	$keep_form_open = false;
 
 	// State for the "Edit Tool" panel, which renders only when $editing is true
-	// -- either a GET "Edit" link, or a submitted edit that failed validation
+	// Either a GET "Edit" link, or a submitted edit that failed validation
 	// and needs to be redisplayed with the admin's input intact.
 	$editing      = false;
 	$edit_tool_id = 0;
 	$edit_values  = null;
 
-	// Lookup data for the Category/Tag multi-selects -- fetched up front because
+	// Lookup data for the Category/Tag multi-selects, fetched up front because
 	// the Bulk CSV Import handler below also needs to resolve category/tag
 	// names from the uploaded file against these same lists.
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
@@ -430,7 +430,7 @@ function mtl_render_inventory_page() {
 				);
 				if ( $barcode_in_use ) {
 					$error         = true;
-					$error_message = 'That barcode is already being used by another tool in the inventory. The tool was not added &mdash; please enter a different, unique barcode.';
+					$error_message = 'That barcode is already being used by another tool in the inventory. The tool was not added. Please enter a different, unique barcode.';
 				}
 			}
 
@@ -523,7 +523,7 @@ function mtl_render_inventory_page() {
 	}
 
 	// 1B. HANDLE BULK CSV IMPORT SUBMISSION
-	// Each row is validated and inserted independently -- one bad row (missing
+	// Each row is validated and inserted independently, so one bad row (missing
 	// barcode, duplicate barcode, etc.) is skipped and reported, it doesn't
 	// abort the rest of the file. tool_id is never read from the CSV; every
 	// row goes through the same auto-increment insert as the single Add form.
@@ -553,7 +553,7 @@ function mtl_render_inventory_page() {
 			} elseif ( 'csv' !== strtolower( pathinfo( $csv_name, PATHINFO_EXTENSION ) ) ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please upload a .csv file.</p></div>';
 			} elseif ( ! is_uploaded_file( $csv_tmp_name ) ) {
-				// Standard defensive check for file uploads -- confirms
+				// Standard defensive check for file uploads; confirms
 				// tmp_name genuinely came from this request's file upload.
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The upload could not be verified. Please try again.</p></div>';
 			} elseif (
@@ -574,7 +574,7 @@ function mtl_render_inventory_page() {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Could not read the uploaded file.</p></div>';
 				} else {
 					// Strip a UTF-8 byte-order-mark some spreadsheet apps
-					// prepend -- left in place, it corrupts the first header
+					// prepend. Left in place, it corrupts the first header
 					// name (e.g. "tool_name" becomes an unmatched
 					// "\xEF\xBB\xBFtool_name" and the required-column check
 					// below fails even though the column is really there).
@@ -608,7 +608,7 @@ function mtl_render_inventory_page() {
 								$tag_lookup[ strtolower( $tag->tag_name ) ] = (int) $tag->tag_id;
 							}
 
-							// Barcodes claimed earlier in THIS file -- the DB
+							// Barcodes claimed earlier in THIS file; the DB
 							// uniqueness check alone can't catch two rows in
 							// the same upload both claiming the same barcode,
 							// since neither exists in the DB yet when checked.
@@ -693,7 +693,7 @@ function mtl_render_inventory_page() {
 									continue;
 								}
 
-								// Unknown category/tag names don't fail the row -- they're just
+								// Unknown category/tag names do not fail the row; they are just
 								// skipped and reported as notes, since categories/tags are optional.
 								// sanitize_text_field() runs here (not just at output) as defense
 								// in depth alongside the esc_html() applied when warnings render.
@@ -741,7 +741,7 @@ function mtl_render_inventory_page() {
 									continue;
 								}
 
-								// tool_id is AUTO_INCREMENT -- never taken from the CSV.
+								// tool_id is AUTO_INCREMENT, never taken from the CSV.
 								$row_tool_id = $wpdb->insert_id;
 
 								foreach ( $row_category_ids as $cid ) {
@@ -793,7 +793,7 @@ function mtl_render_inventory_page() {
 
 				if ( $bulk_fail_count > 0 ) {
 					echo '<details open style="background: #fdf2f2; border: 1px solid #e6b3b3; border-radius: 4px; padding: 10px 15px; margin-bottom: 15px; max-width: 800px;">';
-					echo '<summary style="cursor: pointer; font-weight: 600; color: #b32d2e;">' . intval( $bulk_fail_count ) . ' row(s) failed &mdash; click to view details</summary>';
+					echo '<summary style="cursor: pointer; font-weight: 600; color: #b32d2e;">' . intval( $bulk_fail_count ) . ' row(s) failed. Click to view details</summary>';
 					echo '<ul style="margin: 10px 0 0 20px;">';
 					foreach ( $bulk_failed_rows as $f ) {
 						echo '<li>Row ' . intval( $f['row'] ) . ': ' . esc_html( $f['reason'] ) . '</li>';
@@ -803,7 +803,7 @@ function mtl_render_inventory_page() {
 
 				if ( ! empty( $bulk_warnings ) ) {
 					echo '<details style="background: #fff8e5; border: 1px solid #f0dca0; border-radius: 4px; padding: 10px 15px; margin-bottom: 15px; max-width: 800px;">';
-					echo '<summary style="cursor: pointer; font-weight: 600; color: #8a6d00;">' . count( $bulk_warnings ) . ' note(s) &mdash; click to view details</summary>';
+					echo '<summary style="cursor: pointer; font-weight: 600; color: #8a6d00;">' . count( $bulk_warnings ) . ' note(s). Click to view details</summary>';
 					echo '<ul style="margin: 10px 0 0 20px;">';
 					foreach ( $bulk_warnings as $w ) {
 						echo '<li>' . esc_html( $w ) . '</li>';
@@ -871,7 +871,7 @@ function mtl_render_inventory_page() {
 			}
 
 			if ( ! $error ) {
-				// tool_id is intentionally excluded from this array -- it is the
+				// tool_id is intentionally excluded from this array, since it is the
 				// primary key and is never editable.
 				$updated = $wpdb->update(
 					$tbl_inventory,
@@ -894,14 +894,14 @@ function mtl_render_inventory_page() {
 				);
 
 				// $wpdb->update() returns the number of rows changed, which is
-				// legitimately 0 when nothing actually differed -- only `false`
+				// legitimately 0 when nothing actually differed; only `false`
 				// means a real failure.
 				if ( false === $updated ) {
 					$error         = true;
 					$error_message = 'Failed to update tool. Please verify the database connection and try again.';
 				} else {
 					// Re-sync the category/tag mappings by clearing and re-inserting
-					// the current selections -- simplest way to add AND remove
+					// the current selections, the simplest way to add AND remove
 					// mappings in one step without diffing old vs. new.
 					$wpdb->delete( $tbl_cat_map, array( 'tool_id' => $edit_tool_id ), array( '%d' ) );
 					$wpdb->delete( $tbl_tag_map, array( 'tool_id' => $edit_tool_id ), array( '%d' ) );
@@ -967,7 +967,7 @@ function mtl_render_inventory_page() {
 
 	// 3. HANDLE "DELETE" FORM SUBMISSION
 	// Administrators only (mtl_can_delete_tools), unlike every other action on
-	// this page. Hiding the button is presentation; this is the enforcement --
+	// this page. Hiding the button is presentation; this is the enforcement;
 	// without it an Editor could still post the form. Nothing about what a
 	// delete DOES changes below: same FK guard, same messages.
 	if ( isset( $_POST['mtl_delete_tool'] ) && mtl_can_delete_tools() ) {
@@ -1000,7 +1000,7 @@ function mtl_render_inventory_page() {
 		}
 	}
 
-	// 3B. HANDLE "QUICK LOAN" SUBMISSION -- loan a tool directly to a member who
+	// 3B. HANDLE "QUICK LOAN" SUBMISSION: loan a tool directly to a member who
 	// has no reservation (a walk-in). Creates a loan row straight away, with the
 	// admin-entered due date, after confirming the tool isn't already out.
 	// Every {$tbl_*} fragment interpolated in the queries through the end of
@@ -1033,7 +1033,7 @@ function mtl_render_inventory_page() {
 			} elseif ( ! $ql_member_ok ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please pick a member from the list before creating the loan.</p></div>';
 			} else {
-				// A tool is one physical item -- it can't go out twice at once.
+				// A tool is one physical item, so it cannot go out twice at once.
 				$ql_on_loan = $wpdb->get_var( $wpdb->prepare( "SELECT loan_id FROM {$tbl_loans} WHERE tool_id = %d AND return_date IS NULL LIMIT 1", $ql_tool_id ) );
 				if ( $ql_on_loan ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot loan this tool.</strong> It is already checked out. End the current loan first.</p></div>';
@@ -1062,11 +1062,11 @@ function mtl_render_inventory_page() {
 		}
 	}
 
-	// 3B2. HANDLE "QUICK RESERVE" SUBMISSION -- the admin-side counterpart to a
+	// 3B2. HANDLE "QUICK RESERVE" SUBMISSION: the admin-side counterpart to a
 	// member's self-service reserve (see mtl_handle_reserve_action() in
 	// public/member-pages.php), for a member who wants to reserve in person
 	// rather than online. Uses the same shared Quick Loan modal/nonce, with
-	// the due-date field hidden -- reservations don't have one.
+	// the due-date field hidden, since reservations do not have one.
 	if ( isset( $_POST['mtl_quick_reserve'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_quick_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_quick_loan_nonce'] ) ), 'mtl_quick_loan_action' ) ) {
 
@@ -1132,7 +1132,7 @@ function mtl_render_inventory_page() {
 	}
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-	// 3C. HANDLE "MARK RETURNED" SUBMISSION -- the admin drop-off flow: scan the
+	// 3C. HANDLE "MARK RETURNED" SUBMISSION: the admin drop-off flow: scan the
 	// barcode, expand that tool's row, click Mark Returned. Sets the current
 	// moment as return_date on the tool's active loan, which is what puts it
 	// back "in inventory" everywhere else on this page (return_date IS NULL
@@ -1148,7 +1148,7 @@ function mtl_render_inventory_page() {
 					$mr_loan_id
 				)
 			);
-			// Today unless the form backdated it -- validated (and, if
+			// Today unless the form backdated it, validated (and, if
 			// backdated, dated) by the shared helper.
 			$mr_return = mtl_resolve_return_timestamp(
 				$mr_loan_id,
@@ -1169,7 +1169,7 @@ function mtl_render_inventory_page() {
 				if ( $mr_done ) {
 					// Back on the shelf: the front of the queue is now
 					// collectable. Their hold period starts from this moment
-					// even on a backdated return -- nobody could collect the
+					// even on a backdated return, since nobody could collect the
 					// tool while it sat unprocessed.
 					mtl_sync_reservation_readiness( $mr_tool_id );
 					$mr_note = $mr_return['backdated']
@@ -1185,11 +1185,11 @@ function mtl_render_inventory_page() {
 		}
 	}
 
-	// 3D. HANDLE "RETIRE" SUBMISSION -- the soft-delete counterpart to Delete,
+	// 3D. HANDLE "RETIRE" SUBMISSION: the soft-delete counterpart to Delete,
 	// for a tool with loan/reservation history (Delete stays blocked at the
 	// FK constraint for those; see the DELETE handler above). Hides the tool
 	// from the public catalog and blocks new loans/reservations, but keeps
-	// the row and its full history intact -- and is reversible via Reactivate,
+	// the row and its full history intact, and is reversible via Reactivate,
 	// unlike a member delete/anonymize.
 	if ( isset( $_POST['mtl_retire_tool'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_retire_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_retire_tool_nonce'] ) ), 'mtl_retire_tool_action' ) ) {
@@ -1204,7 +1204,7 @@ function mtl_render_inventory_page() {
 			);
 			if ( $rt_done ) {
 				// A retired tool can't be reserved going forward, so any
-				// reservations already queued for it no longer make sense --
+				// reservations already queued for it no longer make sense, so
 				// close them out the same way a cancellation does. A currently
 				// open LOAN is deliberately left alone; it can still be ended
 				// normally whenever it's actually resolved.
@@ -1226,7 +1226,7 @@ function mtl_render_inventory_page() {
 		}
 	}
 
-	// 3E. HANDLE "REACTIVATE" SUBMISSION -- clears a Retire, unlike a member
+	// 3E. HANDLE "REACTIVATE" SUBMISSION: clears a Retire, unlike a member
 	// delete/anonymize this is fully and safely reversible.
 	if ( isset( $_POST['mtl_reactivate_tool'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_reactivate_tool_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_reactivate_tool_nonce'] ) ), 'mtl_reactivate_tool_action' ) ) {
@@ -1248,7 +1248,7 @@ function mtl_render_inventory_page() {
 		}
 	}
 
-	// 4. HANDLE "EDIT" LINK (GET) -- load the requested tool into the Edit panel.
+	// 4. HANDLE "EDIT" LINK (GET): load the requested tool into the Edit panel.
 	// Skipped if a submitted edit above already failed validation, since that
 	// block already populated $editing/$edit_values with the admin's input.
 	$get_mtl_action = isset( $_GET['mtl_action'] ) ? sanitize_key( wp_unslash( $_GET['mtl_action'] ) ) : '';
@@ -1344,7 +1344,7 @@ function mtl_render_inventory_page() {
 		}
 
 		/* table-layout: fixed (from the "fixed" class) sizes any column with
-			no explicit width from that column's FIRST data row -- so one tool
+			no explicit width from that column's FIRST data row, so one tool
 			with a long name or a long list of categories/tags would otherwise
 			silently force that column (and the whole table) wider than the
 			screen, on every screen size, for every row. Every column below
@@ -1858,12 +1858,12 @@ function mtl_render_inventory_page() {
 			</p>
 			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
 				<li><code>tool_name</code> and <code>barcode</code> are required for every row; each barcode must be unique.</li>
-				<li>Do not include a <code>tool_id</code> column &mdash; it is assigned automatically when each tool is added.</li>
-				<li>For <code>categories</code> and <code>tags</code>, separate multiple values with a semicolon (e.g. &ldquo;Woodworking;General Hand Tools&rdquo;). Names must match existing categories/tags exactly &mdash; add new ones on the Setup page first if needed.</li>
-				<li><code>annual_depreciation_amount</code> accepts either a plain dollar amount (e.g. &ldquo;5.00&rdquo;) or a percentage of that row&rsquo;s <code>initial_cash_value</code> (e.g. &ldquo;5%&rdquo;) &mdash; any value containing a % sign is converted to a dollar amount before it&rsquo;s stored.</li>
-				<li><code>donated_by</code> is plain text. If it exactly matches an existing member&rsquo;s email address (their sign-in username), that member is automatically credited as a donor &mdash; otherwise it&rsquo;s just stored as-is (e.g. for a non-member donor).</li>
-				<li><code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form &mdash; but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
-				<li>Leave a cell blank to skip that field. If a row fails, the rest of the file still gets processed &mdash; failures are listed after upload.</li>
+				<li>Do not include a <code>tool_id</code> column, as it is assigned automatically when each tool is added.</li>
+				<li>For <code>categories</code> and <code>tags</code>, separate multiple values with a semicolon (e.g. &ldquo;Woodworking;General Hand Tools&rdquo;). Names must match existing categories/tags exactly, so add new ones on the Setup page first if needed.</li>
+				<li><code>annual_depreciation_amount</code> accepts either a plain dollar amount (e.g. &ldquo;5.00&rdquo;) or a percentage of that row&rsquo;s <code>initial_cash_value</code> (e.g. &ldquo;5%&rdquo;). Any value containing a % sign is converted to a dollar amount before it&rsquo;s stored.</li>
+				<li><code>donated_by</code> is plain text. If it exactly matches an existing member&rsquo;s email address (their sign-in username), that member is automatically credited as a donor. Otherwise it is just stored as-is (e.g. for a non-member donor).</li>
+				<li><code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form, but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
+				<li>Leave a cell blank to skip that field. If a row fails, the rest of the file still gets processed, and failures are listed after upload.</li>
 			</ul>
 			<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
 				<?php wp_nonce_field( 'mtl_bulk_import_action', 'mtl_bulk_import_nonce' ); ?>
@@ -1902,7 +1902,7 @@ function mtl_render_inventory_page() {
 	<?php
 	// 5. FETCH ALL INVENTORY DATA FIELDS
 	// Categories/tags are many-to-many, so GROUP_CONCAT + GROUP BY collapses each
-	// tool's names into one comma-separated cell -- without it, the joins would
+	// tool's names into one comma-separated cell. Without it, the joins would
 	// return one row per mapping. DISTINCT keeps the category and tag joins from
 	// multiplying each other's values.
 	// Every {$tbl_*} fragment interpolated through the end of this
@@ -2003,7 +2003,7 @@ function mtl_render_inventory_page() {
 	// name/email filter is instant with no AJAX. Each entry carries a display
 	// label ("Name (email)"), a lowercased search string covering both the
 	// name and the email so typing part of either matches, and whether the
-	// member is fully verified (both scan URLs on file -- one alone doesn't
+	// member is fully verified (both scan URLs on file; one alone does not
 	// count, see mtl_verification_urls_complete()) so the admin can see at a
 	// glance whether a walk-in has provided their documents yet.
 	$tbl_verifications = $wpdb->prefix . 'member_verifications';
@@ -2281,7 +2281,7 @@ function mtl_render_inventory_page() {
 						$t_queue   = isset( $tool_res_by_tool[ $tid ] ) ? $tool_res_by_tool[ $tid ] : array();
 						$t_res     = count( $t_queue );
 
-						// Straight-line depreciated value, floored at zero -- the
+						// Straight-line depreciated value, floored at zero; the
 						// same calculation the dashboard's asset panels use.
 						$age_years  = max( 0, ( time() - strtotime( $item->date_acquired ) ) / 31557600 );
 						$t_curvalue = max( 0, (float) $item->initial_cash_value - ( (float) $item->annual_depreciation_amount * $age_years ) );
@@ -2351,7 +2351,7 @@ function mtl_render_inventory_page() {
 									// Deleting a tool is administrators-only, so Editors get no
 									// Delete button. The handler checks the same thing, so hiding
 									// it here is presentation, not the enforcement. Retire stays
-									// available to Editors above -- it is the reversible way to
+									// available to Editors above, being the reversible way to
 									// take a tool out of circulation.
 								if ( mtl_can_delete_tools() ) :
 									?>
@@ -2399,7 +2399,7 @@ function mtl_render_inventory_page() {
 														due <?php echo mtl_format_date( $active_loan->due_date ); ?>.
 													</span>
 												<?php else : ?>
-													<span class="mtl-detail-actions-hint mtl-detail-actions-out">This tool is currently on loan &mdash; it must be returned before it can be loaned again.</span>
+													<span class="mtl-detail-actions-hint mtl-detail-actions-out">This tool is currently on loan, so it must be returned before it can be loaned again.</span>
 												<?php endif; ?>
 											<?php endif; ?>
 											<button type="button" class="button mtl-ql-open"
@@ -2451,7 +2451,7 @@ function mtl_render_inventory_page() {
 													// so its presence is what separates "waiting their turn"
 													// from "we are holding this for them". Keyed off the column
 													// itself rather than mtl_reservation_collect_by(), which
-													// returns blank when the hold period is set to 0 -- the tool
+													// returns blank when the hold period is set to 0, in which case the tool
 													// is still being held in that case, just with no deadline.
 													$res_ready = trim( (string) $res->ready_since );
 													?>
@@ -2488,10 +2488,10 @@ function mtl_render_inventory_page() {
 											if ( '' === $item_donor ) {
 												$item_donor_display = '<span style="color:#999;">Not donated</span>';
 											} elseif ( isset( $donor_name_by_email[ strtolower( $item_donor ) ] ) ) {
-												// Matches a member's email (their username) -- show "Name, username" instead of the raw email.
+												// Matches a member's email (their username), so show "Name, username" instead of the raw email.
 												$item_donor_display = esc_html( $donor_name_by_email[ strtolower( $item_donor ) ] . ', ' . $item_donor );
 											} else {
-												// No matching member -- plain text as entered (e.g. a non-member donor).
+												// No matching member, so plain text as entered (e.g. a non-member donor).
 												$item_donor_display = esc_html( stripslashes( $item_donor ) );
 											}
 											?>
@@ -2604,7 +2604,7 @@ function mtl_render_inventory_page() {
 
 			tbody.addEventListener('click', function(e) {
 				// Ignore clicks on interactive controls (Edit link, Delete
-				// button/form) -- only plain cell clicks toggle the row.
+				// button/form), so only plain cell clicks toggle the row.
 				if (e.target.closest('a, button, form, input, select, textarea')) {
 					return;
 				}
@@ -2704,7 +2704,7 @@ function mtl_render_inventory_page() {
 					retired: advFields.retired.value,
 				};
 
-				// Only real tool rows are filtered -- detail rows follow their
+				// Only real tool rows are filtered; detail rows follow their
 				// parent row's visibility instead of being matched directly, and
 				// the "No tools found" placeholder has no dataset to match on.
 				tbody.querySelectorAll('tr.mtl-tool-row').forEach(function(row) {
@@ -2750,7 +2750,7 @@ function mtl_render_inventory_page() {
 					if (visible && f.hasPhoto && d.hasphoto !== f.hasPhoto) visible = false;
 					if (visible && f.hasNotes && d.hasnotes !== f.hasNotes) visible = false;
 
-					// Retired tools are hidden unless explicitly included --
+					// Retired tools are hidden unless explicitly included,
 					// the one filter that isn't a plain "Any" 3-state, since
 					// the default view should always exclude them.
 					if (visible && f.retired === '' && d.retired === '1') visible = false;
@@ -2835,7 +2835,7 @@ function mtl_render_inventory_page() {
 			clearBtn.addEventListener('click', function() {
 				searchInput.value = '';
 				Object.values(advFields).forEach(function(el) {
-					// A multi-select has no "empty" value to assign -- clearing
+					// A multi-select has no "empty" value to assign, so clearing
 					// it means unselecting every option.
 					if (el.multiple) {
 						Array.from(el.options).forEach(function(opt) {
@@ -2979,7 +2979,7 @@ function mtl_render_inventory_page() {
 			});
 
 			// The rows already arrive in tool-id-descending order, so only the
-			// sort indicators need syncing -- no need to re-sort on load.
+			// sort indicators need syncing; no need to re-sort on load.
 			syncSortUI();
 
 			// Establish the initial paginated view (all rows matched, page 1).

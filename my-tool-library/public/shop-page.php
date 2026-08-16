@@ -6,7 +6,7 @@
  * links; selecting a tool for the detail box uses a same-page URL fragment
  * (e.g. "#tool-45") revealed via the CSS :target pseudo-class, so selection
  * is instant with no reload. Every selectable tool's detail content is
- * pre-rendered (hidden) so :target has something to reveal -- see
+ * pre-rendered (hidden) so :target has something to reveal; see
  * mtl_shop_panel_id() and mtl_shop_render_detail_panel(). A tool can be
  * deep-linked reliably via mtl_shop_tool_share_url(), which pairs the
  * fragment with a matching ?mtl_tool= query string so the link works
@@ -135,7 +135,7 @@ function mtl_shop_panel_id( $tool_id ) {
 /**
  * Shareable URL for a tool: the query string makes the server render this
  * tool's panel regardless of the recipient's filters/pagination, and the
- * matching fragment makes the browser apply :target on load -- reliable
+ * matching fragment makes the browser apply :target on load, and reliable
  * deep-linking with no JS.
  *
  * @param int    $tool_id Tool row ID.
@@ -356,11 +356,11 @@ function mtl_render_shop_page() {
 	// %s / %d placeholders; $args holds the matching values, run through
 	// $wpdb->prepare() below. Every {$tbl_*} / {$sub_*} / {$from} fragment
 	// interpolated below is a table name or safe SQL fragment built only
-	// from $wpdb->prefix and this whitelist array, never request data --
+	// from $wpdb->prefix and this whitelist array, never request data;
 	// phpcs can't verify that across this many lines, hence the disable
 	// block through the end of the query-building section.
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
-	// Retired tools are never shown publicly -- see admin/schema.sql's note
+	// Retired tools are never shown publicly; see admin/schema.sql's note
 	// on tool_inventory.retired_at.
 	$where = array( 't.retired_at IS NULL' );
 	$args  = array();
@@ -380,7 +380,7 @@ function mtl_render_shop_page() {
 		$where[] = 't.brand LIKE %s';
 		$args[]  = '%' . $wpdb->esc_like( $a_brand ) . '%';
 	}
-	// Several categories (or tags) match ANY of them -- picking Woodworking and
+	// Several categories (or tags) match ANY of them, so picking Woodworking and
 	// Plumbing widens the results rather than narrowing them to tools filed
 	// under both. The two filters still combine with each other, and with
 	// everything else here, as AND.
@@ -407,7 +407,7 @@ function mtl_render_shop_page() {
 		$having = 'HAVING active_res = 0';
 	}
 
-	// Scalar subqueries reused for both status and display -- no placeholders.
+	// Scalar subqueries reused for both status and display, with no placeholders.
 	$sub_loans = "(SELECT COUNT(*) FROM {$tbl_loans} l WHERE l.tool_id = t.tool_id AND l.return_date IS NULL)";
 	$sub_res   = "(SELECT COUNT(*) FROM {$tbl_res} r WHERE r.tool_id = t.tool_id AND r.expiry_date IS NULL)";
 
@@ -632,7 +632,7 @@ function mtl_render_shop_page() {
 			box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
 		}
 
-		/* Native <details> account menu -- zero-JS disclosure. */
+		/* Native <details> account menu, a zero-JS disclosure. */
 		.mtl-shop-account-menu {
 			position: relative;
 		}
@@ -841,7 +841,7 @@ function mtl_render_shop_page() {
 				below a possibly long list of tiles/rows. position:fixed is
 				anchored to the viewport, not the page, so there's nothing in
 				page flow for the browser's native fragment-scroll to jump to.
-				Relies on :has() -- browsers without it simply keep the detail
+				Relies on :has(); browsers without it simply keep the detail
 				box in normal flow below the grid (a functional, if less
 				convenient, fallback). */
 			.mtl-shop-detail-col:has(.mtl-shop-detail-panel:target) {
@@ -1315,7 +1315,7 @@ function mtl_render_shop_page() {
 			</div>
 		</div>
 
-		<p class="mtl-shop-count"><strong><?php echo esc_html( number_format( $total ) ); ?></strong> <?php echo esc_html( $result_word ); ?> found<?php echo ( $total > 0 ) ? ' &mdash; page ' . esc_html( $page_no ) . ' of ' . esc_html( $total_pages ) : ''; ?></p>
+		<p class="mtl-shop-count"><strong><?php echo esc_html( number_format( $total ) ); ?></strong> <?php echo esc_html( $result_word ); ?> found<?php echo ( $total > 0 ) ? ' (page ' . esc_html( $page_no ) . ' of ' . esc_html( $total_pages ) : ''; ?></p>
 
 		<div class="mtl-shop-layout">
 			<div class="mtl-shop-main">

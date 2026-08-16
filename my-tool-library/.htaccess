@@ -1,5 +1,5 @@
 # Block direct HTTP access to the .sql files bundled with this plugin
-# (admin/schema.sql, documentation/dummy-data.sql) -- serving them as plain
+# (admin/schema.sql, documentation/dummy-data.sql); serving them as plain
 # text would disclose the database structure to anyone who guesses the URL.
 # Applies to subdirectories too, so this also covers dummy-data.sql. Apache
 # only; Nginx-hosted sites need an equivalent rule in their server block.

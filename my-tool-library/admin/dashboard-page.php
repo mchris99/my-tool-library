@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Registry of every dashboard panel, in default order, with its default size.
  *
  * The saved per-user layout (user_meta 'mtl_dashboard_layout') is validated
- * against this whitelist -- unknown panel ids in saved/posted data are
+ * against this whitelist; unknown panel ids in saved/posted data are
  * discarded, so a tampered layout JSON can never inject markup or resurrect
  * removed panels. Sizes map to grid spans: small = 1/3 row, medium = 1/2 row,
  * large = full row.
@@ -307,11 +307,11 @@ function mtl_render_dashboard_page() {
 	// ==========================================
 
 	// --- Membership stats ---
-	// Anonymized members are excluded from headcounts -- they've deleted
+	// Anonymized members are excluded from headcounts, having deleted
 	// their account, so they're no longer a current member.
 	$member_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$tbl_members} WHERE anonymized_at IS NULL" );
 	// A row can exist with only one scan URL on file (a member with just one
-	// form of ID so far) -- only count it here once BOTH are present.
+	// form of ID so far), so only count it here once BOTH are present.
 	$verified_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$tbl_verifications} WHERE photo_id_scan_url IS NOT NULL AND address_proof_scan_url IS NOT NULL" );
 	$new_members_90 = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$tbl_members} WHERE anonymized_at IS NULL AND signup_date >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)" );
 
@@ -319,7 +319,7 @@ function mtl_render_dashboard_page() {
 	// The LEFT JOIN keys on return_date IS NULL so l.loan_id is non-null only
 	// when the tool is currently checked out. Depreciated value and age are
 	// computed in PHP from these rows so one query feeds four panels.
-	// Retired tools are excluded -- they're no longer active holdings, so
+	// Retired tools are excluded, being no longer active holdings, so
 	// counting them would overstate current inventory/asset value.
 	$inventory_rows = $wpdb->get_results(
 		"
@@ -391,7 +391,7 @@ function mtl_render_dashboard_page() {
 	$value_retained_pct     = $total_initial > 0 ? round( $total_current / $total_initial * 100 ) : 0;
 
 	// --- Member areas (by ZIP code) ---
-	// Excludes anonymized members -- their real address is gone, and this
+	// Excludes anonymized members, since their real address is gone, and this
 	// panel is identity-adjacent (it's about where members live).
 	$zip_rows   = $wpdb->get_results( "SELECT zip_code FROM {$tbl_members} WHERE anonymized_at IS NULL" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name only, no request-derived data.
 	$zip_counts = array();
@@ -446,7 +446,7 @@ function mtl_render_dashboard_page() {
 
 	// --- Tool popularity (loan counts per tool, optionally date-filtered) ---
 	// The range conditions live in the LEFT JOIN's ON clause (not WHERE) so
-	// never-borrowed tools still appear with a count of 0 -- essential for
+	// never-borrowed tools still appear with a count of 0, which is essential for
 	// the "least popular" panel.
 	$pop_on     = 'l.tool_id = t.tool_id';
 	$pop_params = array();
@@ -461,7 +461,7 @@ function mtl_render_dashboard_page() {
 		$pop_on      .= ' AND DATE(l.loan_date) <= %s';
 		$pop_params[] = $date_to;
 	}
-	// Retired tools are excluded -- a retired tool showing up as "least
+	// Retired tools are excluded, since a retired tool showing up as "least
 	// popular" would be misleading (it's retired, not unpopular).
 	$pop_sql = "
         SELECT t.tool_id, t.tool_name, t.barcode, t.brand, COUNT(l.loan_id) AS loan_count
@@ -538,13 +538,13 @@ function mtl_render_dashboard_page() {
 	// Both panels are search-first: staff type a name into an autocomplete
 	// box (preloaded below, same client-side pattern as Quick Loan on the
 	// Inventory page) and the page reloads with the picked id in the query
-	// string. The actual detail queries only run once something is picked --
+	// string. The actual detail queries only run once something is picked;
 	// there is no reason to compute a full history for every tool/member on
 	// every dashboard load.
 	$th_tool_id   = isset( $_GET['mtl_th_tool'] ) ? intval( $_GET['mtl_th_tool'] ) : 0;
 	$mh_member_id = isset( $_GET['mtl_mh_member'] ) ? intval( $_GET['mtl_mh_member'] ) : 0;
 
-	// Tools are intentionally not filtered by retired_at here -- a retired
+	// Tools are intentionally not filtered by retired_at here, because a retired
 	// tool's rental history is exactly the kind of thing this lookup is for.
 	$dash_tool_options = array();
 	foreach ( $wpdb->get_results( "SELECT tool_id, tool_name, barcode FROM {$tbl_inventory} ORDER BY tool_name ASC" ) as $t ) {
@@ -558,7 +558,7 @@ function mtl_render_dashboard_page() {
 		);
 	}
 
-	// Anonymized members are excluded -- they no longer have a real name to
+	// Anonymized members are excluded, since they no longer have a real name to
 	// search by. Their history can still be found via a tool's own lookup
 	// (it will just show as "Former Member").
 	$dash_member_options = array();
@@ -623,7 +623,7 @@ function mtl_render_dashboard_page() {
 	}
 
 	// --- Selected member's detail: full loan history, plus reservation
-	// history (including past/expired ones -- Membership's own detail panel
+	// history (including past/expired ones, which Membership's own detail panel
 	// only shows currently-active reservations, not the full record). ---
 	$mh_member       = null;
 	$mh_loans        = array();
@@ -803,7 +803,7 @@ function mtl_render_dashboard_page() {
 			cursor: grab;
 		}
 
-		/* Card titles must stay compact -- the theme's h4 header size (often
+		/* Card titles must stay compact, since the theme's h4 header size (often
 			2em) is meant for section headings, not card chrome. Higher
 			specificity than the injected .mtl-admin-wrapper h4 rule. */
 		.mtl-admin-wrapper .mtl-panel-head h4 {
@@ -1308,7 +1308,7 @@ function mtl_render_dashboard_page() {
 			case 'stat_avg_age':
 				?>
 				<div class="mtl-stat-number"><?php echo esc_html( number_format( $avg_age, 1 ) ); ?></div>
-				<div class="mtl-stat-sub">years &mdash; average tool age</div>
+				<div class="mtl-stat-sub">years (average tool age)</div>
 				<?php if ( $oldest_tool && $newest_tool ) : ?>
 					<div class="mtl-stat-facts">
 						<span><strong><?php echo esc_html( number_format( $oldest_tool['age'], 1 ) ); ?>y</strong> oldest: <?php echo esc_html( stripslashes( $oldest_tool['name'] ) ); ?><br><span style="color:#999;"><?php echo esc_html( stripslashes( $oldest_tool['barcode'] ) ); ?></span></span>
@@ -1386,7 +1386,7 @@ function mtl_render_dashboard_page() {
 
 			case 'popular':
 				// $range_label already carries pre-escaped, formatted dates
-				// (mtl_format_date()) plus plain literal text -- not re-escaped
+				// (mtl_format_date()) plus plain literal text, not re-escaped
 				// here, since esc_html() would corrupt the em dash entity.
 				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $range_label is built from mtl_format_date() (self-escaping) plus literal text; esc_html() here would corrupt the &mdash;/&ndash; entities.
 				echo '<p class="mtl-panel-sub">' . $range_label . '</p>';
@@ -1554,10 +1554,10 @@ function mtl_render_dashboard_page() {
 							foreach ( $donor_rows as $i => $row ) :
 								$row_donor = trim( (string) $row->donated_by );
 								if ( isset( $donor_name_by_email[ strtolower( $row_donor ) ] ) ) {
-									// Matches a member's email (their username) -- show "Name, username" instead of the raw email.
+									// Matches a member's email (their username), so show "Name, username" instead of the raw email.
 									$row_donor_display = $donor_name_by_email[ strtolower( $row_donor ) ] . ', ' . $row_donor;
 								} else {
-									// No matching member -- plain text as entered (e.g. a non-member donor).
+									// No matching member, so plain text as entered (e.g. a non-member donor).
 									$row_donor_display = stripslashes( $row_donor );
 								}
 								?>
@@ -1608,14 +1608,14 @@ function mtl_render_dashboard_page() {
 					}
 					?>
 					<div class="mtl-dash-lookup-header">
-						<h5><?php echo esc_html( stripslashes( $th_tool->tool_name ) ); ?> <span style="color:#999; font-weight:400;">(<?php echo esc_html( $th_tool->barcode ); ?>)</span><?php echo ! empty( $th_tool->retired_at ) ? ' <span style="color:#999; font-weight:400;">&mdash; retired</span>' : ''; ?></h5>
+						<h5><?php echo esc_html( stripslashes( $th_tool->tool_name ) ); ?> <span style="color:#999; font-weight:400;">(<?php echo esc_html( $th_tool->barcode ); ?>)</span><?php echo ! empty( $th_tool->retired_at ) ? ' <span style="color:#999; font-weight:400;">(retired)</span>' : ''; ?></h5>
 						<span><strong><?php echo esc_html( $th_total ); ?></strong> total loan<?php echo 1 === $th_total ? '' : 's'; ?></span>
 					</div>
 
 					<?php if ( empty( $th_by_member ) ) : ?>
 						<p class="mtl-empty">This tool has never been rented.</p>
 					<?php else : ?>
-						<p class="mtl-panel-sub">Rented by, grouped by member &mdash; how many times each person has rented this specific tool.</p>
+						<p class="mtl-panel-sub">Rented by, grouped by member: how many times each person has rented this specific tool.</p>
 						<div class="mtl-scroll-table">
 							<table>
 								<thead>
@@ -1777,7 +1777,7 @@ function mtl_render_dashboard_page() {
 						}
 					}
 					?>
-					<p class="mtl-panel-sub" style="margin-top: 16px;">Reservations &mdash; <strong><?php echo esc_html( count( $mh_reservations ) ); ?></strong> on record<?php echo $mh_active_res > 0 ? ', <strong>' . esc_html( $mh_active_res ) . '</strong> active' : ''; ?>.</p>
+					<p class="mtl-panel-sub" style="margin-top: 16px;">Reservations: <strong><?php echo esc_html( count( $mh_reservations ) ); ?></strong> on record<?php echo $mh_active_res > 0 ? ', <strong>' . esc_html( $mh_active_res ) . '</strong> active' : ''; ?>.</p>
 					<?php if ( empty( $mh_reservations ) ) : ?>
 						<p class="mtl-empty">This member has no reservations on record.</p>
 					<?php else : ?>

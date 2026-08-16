@@ -59,7 +59,7 @@ function mtl_maybe_serve_member_csv_template() {
 		)
 	);
 	// One clearly-fake example row so admins can see the expected format at a
-	// glance -- delete/overwrite it before uploading real member data.
+	// glance, so delete/overwrite it before uploading real member data.
 	fputcsv(
 		$out,
 		array(
@@ -103,7 +103,7 @@ add_action( 'admin_init', 'mtl_maybe_serve_agreement_record' );
  * member agreed to, in a form I can hand to a lawyer" is "ask an administrator
  * to export the database and open it in a spreadsheet".
  *
- * Administrators only -- assembling one person's complete history into a
+ * Administrators only, because assembling one person's complete history into a
  * portable file is a different act from reading a status on screen, and belongs
  * with whoever already controls the data exports. Editors see the agreement
  * block and the badges but not this.
@@ -139,7 +139,7 @@ function mtl_maybe_serve_agreement_record() {
 	}
 
 	// The identity shown is the SNAPSHOT from the acceptance rows, not the live
-	// member row -- so it is correct for somebody who has since changed their
+	// member row, so it is correct for somebody who has since changed their
 	// name, and it still works for a deleted member. That is the reason the
 	// identity is retained through deletion at all.
 	$snapshot_name  = '';
@@ -165,14 +165,14 @@ function mtl_maybe_serve_agreement_record() {
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="robots" content="noindex, nofollow">
-	<title>Member agreement record &mdash; <?php echo esc_html( $snapshot_name ); ?></title>
+	<title>Member agreement record: <?php echo esc_html( $snapshot_name ); ?></title>
 	<style>
 		/* Deliberately self-contained and free of the admin theme: this page is
 			printed to PDF or saved, and must stay readable either way.
 
 			color-scheme and an explicit background are both required. Without
 			them a browser in dark mode paints its own dark ground behind the
-			text colour set below, and the record comes out near-unreadable --
+			text colour set below, and the record comes out near-unreadable,
 			on screen and in the PDF. */
 		html { color-scheme: light; background: #fff; }
 		body { background: #fff; font-family: Georgia, 'Times New Roman', serif; color: #111; max-width: 46em; margin: 2em auto; padding: 0 1.5em; line-height: 1.5; }
@@ -306,7 +306,7 @@ function mtl_maybe_serve_agreement_record() {
  *
  * With scripting it goes in a native <dialog>; without, it renders inline on
  * the detail panel from the `?mtl_record_agreement=<id>` link. Not two
- * implementations -- a staff member who cannot open the dialog would otherwise
+ * implementations. A staff member who cannot open the dialog would otherwise
  * have NO way at all to record a signature, and this is the screen where the
  * plugin's progressive-enhancement stance is load-bearing.
  *
@@ -344,7 +344,7 @@ function mtl_render_record_agreement_form( $member, $acceptances, $changed = fal
 		<div class="notice notice-warning inline" style="margin: 0 0 14px 0;">
 			<p style="margin: 6px 0;">
 				<strong>&#9888; Only tick these once you have the member&rsquo;s signed form in hand.</strong>
-				You are recording that this person agreed, and that record is permanent &mdash; it cannot be removed or corrected afterwards.
+				You are recording that this person agreed, and that record is permanent and cannot be removed or corrected afterwards.
 			</p>
 		</div>
 
@@ -449,7 +449,7 @@ function mtl_render_record_agreement_form( $member, $acceptances, $changed = fal
  * rather than silently recording a training the member doesn't hold.
  *
  * A ticked training with a missing or unparseable date falls back to today
- * rather than failing the whole save -- start_date is NOT NULL, and a
+ * rather than failing the whole save: start_date is NOT NULL, and a
  * best-guess date the admin can correct beats rejecting an otherwise good
  * member record over one blank field.
  *
@@ -588,7 +588,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 		<th scope="row"><label for="<?php echo $field_id( 'phone_national' ); ?>">Phone Number *</label></th>
 		<td>
 			<?php mtl_render_phone_input( $values['phone_country'], $values['phone_national'], $id_prefix ); ?>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Pick the country, then type the number &mdash; it&rsquo;s formatted automatically.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Pick the country, then type the number, which is formatted automatically.</p>
 		</td>
 	</tr>
 	<tr>
@@ -667,7 +667,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 		<td>
 			<?php mtl_render_trainings_picker( $trainings, $values['training_starts'], $id_prefix ); ?>
 			<?php if ( $trainings ) : ?>
-				<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Tick every training this member has completed and set the date they completed it &mdash; that date is what the certification length runs from. It shows staff which tools they&rsquo;re qualified to use, and the member sees their own on their account page.</p>
+				<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Tick every training this member has completed and set the date they completed it. That date is what the certification length runs from. It shows staff which tools they&rsquo;re qualified to use, and the member sees their own on their account page.</p>
 			<?php endif; ?>
 		</td>
 	</tr>
@@ -675,7 +675,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 		<th scope="row"><label for="<?php echo $field_id( 'photo_id_scan_url' ); ?>">Photo ID Scan URL</label></th>
 		<td>
 			<input type="url" name="photo_id_scan_url" id="<?php echo $field_id( 'photo_id_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['photo_id_scan_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Link to the scan of the member&rsquo;s photo ID. Store scans in a private location &mdash; do not use a publicly listed folder. It&rsquo;s fine to save just this one if that&rsquo;s all the member has provided so far; provide BOTH this and the proof-of-address scan below to mark them verified.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Link to the scan of the member&rsquo;s photo ID. Store scans in a private location, never a publicly listed folder. It&rsquo;s fine to save just this one if that&rsquo;s all the member has provided so far; provide BOTH this and the proof-of-address scan below to mark them verified.</p>
 		</td>
 	</tr>
 	<tr>
@@ -734,7 +734,7 @@ function mtl_render_membership_page() {
 
 	// Set by the loan/reservation action handlers below when they succeed, so
 	// the affected member's detail row can be reopened automatically after
-	// the page reloads (this page has no PRG redirect -- see the Add/Edit/
+	// the page reloads (this page has no PRG redirect; see the Add/Edit/
 	// Delete handlers above/below, which follow the same plain-POST pattern).
 	$reopen_member_id = 0;
 
@@ -771,7 +771,7 @@ function mtl_render_membership_page() {
 	$keep_form_open = false;
 
 	// State for the "Edit Member" panel. It only renders when $editing is true
-	// -- either because a GET link ("Edit" in the table) asked to edit a
+	// Either because a GET link ("Edit" in the table) asked to edit a
 	// specific member, or because a submitted edit failed validation and needs
 	// to be redisplayed with the admin's (invalid) input intact.
 	$editing        = false;
@@ -787,7 +787,7 @@ function mtl_render_membership_page() {
 
 	// 0a. HANDLE "RECORD AGREEMENT" SUBMISSION
 	//
-	// Administrators and Editors -- this is desk work. Behaves identically in
+	// Administrators and Editors, since this is desk work. Behaves identically in
 	// paper and full mode: a library that collects signatures at the desk and
 	// one that also lets members agree online record a desk signature in exactly
 	// the same way, and switching modes never changes how staff do this job.
@@ -815,11 +815,11 @@ function mtl_render_membership_page() {
 				// with the new wording, unticked.
 				$record_agreement_changed = true;
 			} elseif ( ! $ticked ) {
-				// Ticking nothing and pressing Record is not an error -- staff
+				// Ticking nothing and pressing Record is not an error. Staff
 				// open this dialog to look as often as to act.
 				$record_agreement_id = 0;
 			} else {
-				// Ids kept as written, not re-derived from the timestamp --
+				// Ids kept as written, not re-derived from the timestamp;
 				// accepted_at has one-second resolution and cannot separate two
 				// events that land in the same second.
 				$recorded     = 0;
@@ -837,7 +837,7 @@ function mtl_render_membership_page() {
 					$record_agreement_id = 0;
 
 					// Their copy of what was recorded, sent because it is
-					// theirs -- not because anything is being asked of them.
+					// theirs, not because anything is being asked of them.
 					// Ticked by default, following the existing setup-email
 					// checkbox on the Add form; an unticked box posts nothing,
 					// so absence is a deliberate "don't email them".
@@ -851,7 +851,7 @@ function mtl_render_membership_page() {
 						// Reported rather than swallowed: the record stands
 						// either way, but silence would mean nobody finds out
 						// the member never got their copy until a dispute.
-						echo ' <strong>Their emailed copy could not be sent</strong> &mdash; use <em>Resend agreement email</em> on their detail panel to try again.';
+						echo ' <strong>Their emailed copy could not be sent</strong>. Use <em>Resend agreement email</em> on their detail panel to try again.';
 					}
 					echo '</p></div>';
 				} else {
@@ -876,7 +876,7 @@ function mtl_render_membership_page() {
 	//
 	// A confirmation that failed to send has no other remedy: the acceptance is
 	// committed and correct, but the member has no copy of it. This re-sends the
-	// LATEST acceptance event, regenerating the list from those rows -- never an
+	// LATEST acceptance event, regenerating the list from those rows, never an
 	// older event, and it never writes a new acceptance row.
 	if ( isset( $_POST['mtl_resend_agreement_email'] ) && mtl_agreements_tracking() && mtl_can_manage_library() ) {
 		if ( ! isset( $_POST['mtl_resend_agreement_email_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_resend_agreement_email_nonce'] ) ), 'mtl_resend_agreement_email_action' ) ) {
@@ -899,7 +899,7 @@ function mtl_render_membership_page() {
 	//
 	// mtl_agreements_online() only: a request email tells the member to agree on
 	// the website, and there is nowhere to do that in paper mode. This is part
-	// of what gives paper mode its defining property -- the plugin never asks a
+	// of what gives paper mode its defining property: the plugin never asks a
 	// member for anything in it.
 	if ( isset( $_POST['mtl_send_agreement_request'] ) && mtl_agreements_online() && mtl_can_manage_library() ) {
 		if ( ! isset( $_POST['mtl_send_agreement_request_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_send_agreement_request_nonce'] ) ), 'mtl_send_agreement_request_action' ) ) {
@@ -908,7 +908,7 @@ function mtl_render_membership_page() {
 			$target_id = isset( $_POST['agreement_member_id'] ) ? absint( $_POST['agreement_member_id'] ) : 0;
 
 			// mtl_find_wp_user_id_by_member_id() needs the email as well as the
-			// id -- it refuses to guess a link from the id alone.
+			// id, and refuses to guess a link from the id alone.
 			$mtl_req_email = '';
 			if ( $target_id > 0 ) {
 				$mtl_req_members = $wpdb->prefix . 'members';
@@ -966,7 +966,7 @@ function mtl_render_membership_page() {
 			$donation_display = isset( $_POST['recurring_donation_amount'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['recurring_donation_amount'] ) ) ) : '';
 			$donation         = floatval( $donation_display );
 
-			// CHAR(1) 'Y'/'N' column -- whitelist rather than trust the posted value.
+			// CHAR(1) 'Y'/'N' column, so whitelist rather than trust the posted value.
 			$has_donated = ( isset( $_POST['has_donated_tools'] ) && 'Y' === $_POST['has_donated_tools'] ) ? 'Y' : 'N';
 
 			// Ticked by default in the form. An unchecked box posts nothing at
@@ -979,7 +979,7 @@ function mtl_render_membership_page() {
 			}
 
 			// country is NOT NULL with a DB default, but that default only
-			// applies when the column is omitted from the INSERT entirely --
+			// applies when the column is omitted from the INSERT entirely;
 			// this form always supplies the field, so an emptied-out input
 			// needs its own fallback to the same default.
 			if ( '' === $country ) {
@@ -1017,12 +1017,12 @@ function mtl_render_membership_page() {
 				if ( $email_in_use ) {
 					$error                = true;
 					$clear_email_on_error = true;
-					$error_message        = 'That email address already belongs to another member. The member was not added &mdash; please enter a different email address.';
+					$error_message        = 'That email address already belongs to another member. The member was not added. Please enter a different email address.';
 				} elseif ( mtl_email_taken_by_non_member( $email ) ) {
 					// A member's email doubles as their WordPress sign-in, so it
 					// has to be free on that side too. Checked here rather than
 					// after the INSERT so a clash cannot leave a member record
-					// behind that can never be given a login -- the same
+					// behind that can never be given a login, the same
 					// pre-flight the Edit handler does further down.
 					//
 					// Note this asks specifically about NON-member accounts. A
@@ -1032,7 +1032,7 @@ function mtl_render_membership_page() {
 					// says to reconnect those.
 					$error                = true;
 					$clear_email_on_error = true;
-					$error_message        = 'That email address is already used by another WordPress account, so it cannot also be this member&rsquo;s sign-in. The member was not added &mdash; please enter a different email address.';
+					$error_message        = 'That email address is already used by another WordPress account, so it cannot also be this member&rsquo;s sign-in. The member was not added. Please enter a different email address.';
 				}
 			}
 
@@ -1069,7 +1069,7 @@ function mtl_render_membership_page() {
 
 					// Agreements ticked on the form, recorded against the paper
 					// the member signed at the desk. A shortfall warns but keeps
-					// the member -- same handling as a failed login below, since
+					// the member, the same handling as a failed login below, since
 					// staff can finish from the detail panel.
 					if ( mtl_agreements_staff_recording() ) {
 						$posted_agreements  = mtl_read_agreements_post();
@@ -1097,7 +1097,7 @@ function mtl_render_membership_page() {
 
 					// Verification documents live in their own table, separated
 					// for security compliance. Insert a row as soon as at least
-					// one scan is provided -- staff can save whatever the member
+					// one scan is provided, since staff can save whatever the member
 					// currently has on hand, one form of ID at a time. The member
 					// only counts as verified once both are present.
 					if ( '' !== $photo_id_url || '' !== $addr_proof_url ) {
@@ -1122,7 +1122,7 @@ function mtl_render_membership_page() {
 					// Give them a way to actually get online. Without this the
 					// member exists in the library's records but has no WordPress
 					// account, which used to leave them unable to sign in, sign up
-					// or reset a password -- see mtl_create_member_login().
+					// or reset a password; see mtl_create_member_login().
 					//
 					// A failure here does NOT undo the member row. That is a
 					// deliberate difference from the public signup flow, which
@@ -1135,18 +1135,18 @@ function mtl_render_membership_page() {
 					if ( is_wp_error( $new_login ) ) {
 						$success_message .= ' <strong>Their online sign-in could not be created:</strong> '
 							. esc_html( $new_login->get_error_message() )
-							. ' Their record is saved &mdash; use <em>Create logins</em> under Member Logins below to try again once that is resolved.';
+							. ' Their record is saved. Use <em>Create logins</em> under Member Logins below to try again once that is resolved.';
 					} elseif ( ! mtl_is_setup_pending( $new_login ) ) {
 						// Not a new account: mtl_create_member_login() found this
 						// member's own sign-in already on the address and pointed
 						// it at the new record. They kept their password, so there
 						// is nothing to invite them to.
-						$success_message .= ' They already had a website sign-in, which has been reconnected to this record &mdash; their existing password still works, and no email was sent.';
+						$success_message .= ' They already had a website sign-in, which has been reconnected to this record, so their existing password still works, and no email was sent.';
 					} elseif ( $send_setup_email ) {
 						if ( mtl_send_member_setup_email( $new_login ) ) {
 							$success_message .= ' They have been emailed a link to choose their password.';
 						} else {
-							$success_message .= ' Their online sign-in was created, but the setup email could not be sent &mdash; use <em>Send setup emails</em> under Member Logins below to retry.';
+							$success_message .= ' Their online sign-in was created, but the setup email could not be sent. Use <em>Send setup emails</em> under Member Logins below to retry.';
 						}
 					} else {
 						$success_message .= ' Their online sign-in was created. No setup email was sent, so they will need one before they can sign in.';
@@ -1185,7 +1185,7 @@ function mtl_render_membership_page() {
 				$form_values['private_notes']             = $private_notes;
 				$form_values['training_starts']           = $training_starts;
 				// On a duplicate-email error the email is intentionally
-				// cleared -- it is the field that must change.
+				// cleared, since it is the field that must change.
 			}
 		} else {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
@@ -1193,7 +1193,7 @@ function mtl_render_membership_page() {
 	}
 
 	// 1B. HANDLE BULK CSV IMPORT SUBMISSION
-	// Each row is validated and inserted independently -- one bad row (missing
+	// Each row is validated and inserted independently, so one bad row (missing
 	// required field, duplicate/invalid email, etc.) is skipped and reported;
 	// it does not abort the rest of the file. member_id is never read from the
 	// CSV; every row goes through the same auto-increment insert as the single
@@ -1273,7 +1273,7 @@ function mtl_render_membership_page() {
 
 						if ( ! empty( $missing_cols ) ) {
 							// Escape each column name individually, THEN glue with the
-							// <code> markup -- escaping the already-imploded string would
+							// <code> markup, and escaping the already-imploded string would
 							// encode the glue's own <code>/</code> tags too, showing them
 							// as literal text instead of styling the column names.
 							echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The CSV is missing required column(s): <code>' . implode( '</code>, <code>', array_map( 'esc_html', $missing_cols ) ) . '</code>. Please use the downloadable template.</p></div>';
@@ -1286,7 +1286,7 @@ function mtl_render_membership_page() {
 								$training_lookup[ strtolower( $mtl_training->training_name ) ] = (int) $mtl_training->training_id;
 							}
 
-							// Emails already claimed earlier in THIS file -- the
+							// Emails already claimed earlier in THIS file, the
 							// DB uniqueness check can't catch two rows in the same
 							// upload sharing an email, since neither exists yet.
 							$seen_emails = array();
@@ -1324,7 +1324,7 @@ function mtl_render_membership_page() {
 								// mtl_parse_stored_phone_number() reads a bare 10-digit
 								// number as U.S./+1 (no leading "+" required), and a
 								// "+<code> ..." value as whichever country that code
-								// belongs to -- the same handling as re-editing an
+								// belongs to, the same handling as re-editing an
 								// already-stored value, since a CSV cell is just another
 								// external representation of the same kind of text.
 								$row_phone_parsed = mtl_parse_stored_phone_number( $row_phone );
@@ -1376,14 +1376,14 @@ function mtl_render_membership_page() {
 								if ( ! array_key_exists( $row_state, mtl_get_state_options() ) ) {
 									$bulk_failed_rows[] = array(
 										'row'    => $row_number,
-										'reason' => 'Invalid state "' . $row_state . '" -- must be a valid 2-letter U.S. state/territory or Canadian province code, or "N/A".',
+										'reason' => 'Invalid state "' . $row_state . '". Must be a valid 2-letter U.S. state/territory or Canadian province code, or "N/A".',
 									);
 									continue;
 								}
 								if ( ! in_array( $row_country, mtl_get_country_options(), true ) ) {
 									$bulk_failed_rows[] = array(
 										'row'    => $row_number,
-										'reason' => 'Invalid country "' . $row_country . '" -- must exactly match one of the supported country names.',
+										'reason' => 'Invalid country "' . $row_country . '". Must exactly match one of the supported country names.',
 									);
 									continue;
 								}
@@ -1425,7 +1425,7 @@ function mtl_render_membership_page() {
 								}
 
 								// The members-table check above cannot see a
-								// WordPress account that has no member row -- an
+								// WordPress account that has no member row, an
 								// administrator, or a leftover from an earlier
 								// delete. Importing over one would create a member
 								// who can never be given a sign-in, because their
@@ -1448,7 +1448,7 @@ function mtl_render_membership_page() {
 								// "Name: date" pairs, semicolon-separated, e.g.
 								// "Ladder Safety: 8/4/2026; Welding Basics: 8/3/2026".
 								// Unknown training names and unreadable dates don't fail
-								// the row -- they're skipped and reported as notes, since
+								// the row; they are skipped and reported as notes, since
 								// trainings are optional. Parsed here, after the validation
 								// continues above, so a row that gets skipped entirely never
 								// emits a training warning. sanitize_text_field() runs here
@@ -1508,7 +1508,7 @@ function mtl_render_membership_page() {
 									continue;
 								}
 
-								// member_id is AUTO_INCREMENT -- never from the CSV.
+								// member_id is AUTO_INCREMENT, never from the CSV.
 								$new_member_id = $wpdb->insert_id;
 
 								// --- Insert into member_training_mappings ---
@@ -1554,7 +1554,7 @@ function mtl_render_membership_page() {
 				// under Member Logins instead, which this points staff at.
 				$bulk_next_step = '';
 				if ( $bulk_success_count > 0 ) {
-					$bulk_next_step = ' They cannot sign in yet &mdash; use <strong>Member Logins</strong> below to create their sign-ins, then send everyone a link to set a password.';
+					$bulk_next_step = ' They cannot sign in yet. Use <strong>Member Logins</strong> below to create their sign-ins, then send everyone a link to set a password.';
 				}
 
 				if ( $bulk_success_count > 0 && 0 === $bulk_fail_count ) {
@@ -1569,7 +1569,7 @@ function mtl_render_membership_page() {
 
 				if ( $bulk_fail_count > 0 ) {
 					echo '<details open style="background: #fdf2f2; border: 1px solid #e6b3b3; border-radius: 4px; padding: 10px 15px; margin-bottom: 15px; max-width: 800px;">';
-					echo '<summary style="cursor: pointer; font-weight: 600; color: #b32d2e;">' . intval( $bulk_fail_count ) . ' row(s) failed &mdash; click to view details</summary>';
+					echo '<summary style="cursor: pointer; font-weight: 600; color: #b32d2e;">' . intval( $bulk_fail_count ) . ' row(s) failed. Click to view details</summary>';
 					echo '<ul style="margin: 10px 0 0 20px;">';
 					foreach ( $bulk_failed_rows as $f ) {
 						echo '<li>Row ' . intval( $f['row'] ) . ': ' . esc_html( $f['reason'] ) . '</li>';
@@ -1579,7 +1579,7 @@ function mtl_render_membership_page() {
 
 				if ( ! empty( $bulk_warnings ) ) {
 					echo '<details style="background: #fff8e5; border: 1px solid #f0dca0; border-radius: 4px; padding: 10px 15px; margin-bottom: 15px; max-width: 800px;">';
-					echo '<summary style="cursor: pointer; font-weight: 600; color: #8a6d00;">' . count( $bulk_warnings ) . ' note(s) &mdash; click to view details</summary>';
+					echo '<summary style="cursor: pointer; font-weight: 600; color: #8a6d00;">' . count( $bulk_warnings ) . ' note(s). Click to view details</summary>';
 					echo '<ul style="margin: 10px 0 0 20px;">';
 					foreach ( $bulk_warnings as $w ) {
 						echo '<li>' . esc_html( $w ) . '</li>';
@@ -1615,7 +1615,7 @@ function mtl_render_membership_page() {
 				. intval( $batch['created'] ) . ' sign-in(s) created or reconnected.';
 
 			if ( $batch['remaining'] > 0 ) {
-				$login_batch_notice .= ' ' . intval( $batch['remaining'] ) . ' member(s) still need one &mdash; press the button again to continue.';
+				$login_batch_notice .= ' ' . intval( $batch['remaining'] ) . ' member(s) still need one. Press the button again to continue.';
 			} else {
 				$login_batch_notice .= ' Every member now has one.';
 			}
@@ -1643,10 +1643,10 @@ function mtl_render_membership_page() {
 				. intval( $batch['sent'] ) . ' setup email(s) sent.';
 
 			if ( $batch['failed'] > 0 ) {
-				$login_batch_notice .= ' ' . intval( $batch['failed'] ) . ' could not be sent &mdash; they stay on the list, so try again once mail delivery is working.';
+				$login_batch_notice .= ' ' . intval( $batch['failed'] ) . ' could not be sent. They stay on the list, so try again once mail delivery is working.';
 			}
 			if ( $batch['remaining'] > 0 ) {
-				$login_batch_notice .= ' ' . intval( $batch['remaining'] ) . ' still to go &mdash; press the button again to continue.';
+				$login_batch_notice .= ' ' . intval( $batch['remaining'] ) . ' still to go. Press the button again to continue.';
 			}
 			$login_batch_notice .= ' ' . intval( $batch['pending'] ) . ' member(s) have still not chosen a password.</p></div>';
 		} else {
@@ -1654,7 +1654,7 @@ function mtl_render_membership_page() {
 		}
 	}
 
-	// Bulk agreement requests. Administrators only -- one click here mails the
+	// Bulk agreement requests. Administrators only, since one click here mails the
 	// whole membership. Editors keep the per-member action above.
 	$agreement_batch_notice = '';
 	if ( isset( $_POST['mtl_send_agreement_requests'] ) && mtl_agreements_online() && mtl_can_manage_settings() ) {
@@ -1668,13 +1668,13 @@ function mtl_render_membership_page() {
 			$agreement_batch    = mtl_run_agreement_request_batch( $agreement_audience, isset( $_POST['mtl_agreement_resend_all'] ) );
 
 			$agreement_batch_notice = '<div class="notice notice-success is-dismissible"><p><strong>Member Agreements:</strong> '
-				. intval( $agreement_batch['sent'] ) . ' request(s) sent. Nobody&rsquo;s agreement status has changed &mdash; this only asks.';
+				. intval( $agreement_batch['sent'] ) . ' request(s) sent. Nobody&rsquo;s agreement status has changed, because this only asks.';
 
 			if ( $agreement_batch['failed'] > 0 ) {
-				$agreement_batch_notice .= ' ' . intval( $agreement_batch['failed'] ) . ' could not be sent &mdash; they stay on the list, so try again once mail delivery is working.';
+				$agreement_batch_notice .= ' ' . intval( $agreement_batch['failed'] ) . ' could not be sent. They stay on the list, so try again once mail delivery is working.';
 			}
 			if ( $agreement_batch['remaining'] > 0 ) {
-				$agreement_batch_notice .= ' ' . intval( $agreement_batch['remaining'] ) . ' still to go &mdash; press the button again to continue.';
+				$agreement_batch_notice .= ' ' . intval( $agreement_batch['remaining'] ) . ' still to go. Press the button again to continue.';
 			}
 			if ( $agreement_batch['excluded'] > 0 ) {
 				$agreement_batch_notice .= ' ' . intval( $agreement_batch['excluded'] ) . ' were left out because they cannot sign in yet.';
@@ -1703,7 +1703,7 @@ function mtl_render_membership_page() {
 			} else {
 				$one_user_id = mtl_find_wp_user_id_by_member_id( $one_row->member_id, (string) $one_row->email );
 
-				// No proven sign-in yet -- a member added before this existed, one
+				// No proven sign-in yet: a member added before this existed, one
 				// whose creation failed, or one whose own account outlived a
 				// database rebuild. Sort that out first, so the button does what
 				// it says rather than reporting a state staff cannot act on.
@@ -1747,7 +1747,7 @@ function mtl_render_membership_page() {
 	if ( 'off' !== mtl_agreements_mode() && ! mtl_agreements_tracking() ) {
 		echo '<div class="notice notice-warning is-dismissible"><p><strong>Member agreements are switched on, but no agreement is active.</strong> Nothing is tracked and nothing is shown on this page until at least one is in use';
 		if ( mtl_can_manage_settings() ) {
-			echo ' &mdash; add or un-retire one under <a href="' . esc_url( admin_url( 'admin.php?page=mtl-setup' ) ) . '">Setup &rarr; Member Agreements</a>.';
+			echo '. Add or un-retire one under <a href="' . esc_url( admin_url( 'admin.php?page=mtl-setup' ) ) . '">Setup &rarr; Member Agreements</a>.';
 		} else {
 			echo '. An administrator can add one under Setup.';
 		}
@@ -1844,7 +1844,7 @@ function mtl_render_membership_page() {
 
 					// A member's email is also their WordPress sign-in, so it
 					// has to be free on that side too. The members-table check
-					// above cannot see accounts that have no member row -- an
+					// above cannot see accounts that have no member row, an
 					// administrator, or a leftover account from an earlier
 					// delete. Checked BEFORE anything is written, so a clash
 					// can never leave the record and the sign-in out of step.
@@ -1859,7 +1859,7 @@ function mtl_render_membership_page() {
 			}
 
 			if ( ! $error ) {
-				// member_id is intentionally excluded from this array -- it is
+				// member_id is intentionally excluded from this array, since it is
 				// the primary key and is never editable.
 				$updated = $wpdb->update(
 					$tbl_members,
@@ -1885,7 +1885,7 @@ function mtl_render_membership_page() {
 				);
 
 				// $wpdb->update() returns the number of rows changed, which is
-				// legitimately 0 when nothing actually differed -- only `false`
+				// legitimately 0 when nothing actually differed; only `false`
 				// means a real failure.
 				if ( false === $updated ) {
 					$error         = true;
@@ -1921,7 +1921,7 @@ function mtl_render_membership_page() {
 								$error         = true;
 								$error_message = 'Every other change was saved, but the email address was left as it was, because their WordPress sign-in could not be updated to match: ' . esc_html( $synced->get_error_message() );
 							} else {
-								$email_sync_note = ' Their WordPress sign-in email was updated to match &mdash; their original username still works for signing in, and WordPress has emailed them about the change.';
+								$email_sync_note = ' Their WordPress sign-in email was updated to match. Their original username still works for signing in, and WordPress has emailed them about the change.';
 							}
 						} elseif ( ! empty( mtl_find_wp_user_ids_claiming_member_id( $edit_member_id ) ) ) {
 							$email_sync_note = ' Note: this member has an online account, but its email no longer matches this record, so it was left alone. Set this member&rsquo;s email to the address shown on their WordPress user (under Users) to reconnect them.';
@@ -1933,7 +1933,7 @@ function mtl_render_membership_page() {
 					mtl_sync_member_trainings( $edit_member_id, $training_starts );
 
 					// Sync the verification row with the submitted scan URLs.
-					// Either field can be blank -- a member may have only one
+					// Either field can be blank, since a member may have only one
 					// form of ID on file so far; they're only "verified" once
 					// both are present (mtl_verification_urls_complete()).
 					// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
@@ -2027,8 +2027,8 @@ function mtl_render_membership_page() {
 	// 3. HANDLE "DELETE" FORM SUBMISSION. mtl_delete_or_anonymize_member()
 	// strips the member's identifying details, deletes their verification
 	// documents and their WordPress sign-in outright, and keeps everything
-	// that records what they did with the library -- loans, reservations and
-	// completed trainings -- attached to a "Former Member" row.
+	// that records what they did with the library (loans, reservations and
+	// completed trainings) attached to a "Former Member" row.
 	if ( isset( $_POST['mtl_delete_member'] ) && mtl_can_delete_members() ) {
 		if ( isset( $_POST['mtl_delete_member_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_member_nonce'] ) ), 'mtl_delete_member_action' ) ) {
 
@@ -2042,18 +2042,18 @@ function mtl_render_membership_page() {
 					: '';
 				// An account whose stored member id no longer matches this
 				// record can't be confirmed as theirs, so it is left in place
-				// rather than deleted on a guess -- staff need to know it is
+				// rather than deleted on a guess, because staff need to know it is
 				// still there.
 				$orphan_note = ! empty( $result['wp_user_orphaned'] )
-					? ' Their online sign-in could not be matched to this record, so it was left in place &mdash; remove it under Users if it is no longer needed.'
+					? ' Their online sign-in could not be matched to this record, so it was left in place. Remove it under Users if it is no longer needed.'
 					: '';
 
 				// The administrator's copy is the library's only record of the
 				// deleted details, and the only thing still pointing at the
-				// verification files -- so a failure has to be loud, not silent.
+				// verification files, so a failure has to be loud, not silent.
 				$cleanup_note = ! empty( $result['cleanup_email_sent'] )
 					? ' Their record, and a request to delete their stored verification files, has been emailed to the site administrator.'
-					: ' <strong>Their record could not be emailed to the site administrator</strong> &mdash; nothing now points at their verification files, so delete those manually from wherever the library stores them.';
+					: ' <strong>Their record could not be emailed to the site administrator</strong>. Nothing now points at their verification files, so delete those manually from wherever the library stores them.';
 
 				if ( 'anonymized' === $result['outcome'] ) {
 					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $display_name is esc_html()'d above.
@@ -2081,7 +2081,7 @@ function mtl_render_membership_page() {
 			$mr_tool_id = (int) $wpdb->get_var(
 				$wpdb->prepare( "SELECT tool_id FROM {$tbl_loans} WHERE loan_id = %d", $mr_loan_id )
 			);
-			// Today unless the modal backdated it -- validated (and, if
+			// Today unless the modal backdated it, validated (and, if
 			// backdated, dated) by the shared helper.
 			$mr_return = mtl_resolve_return_timestamp(
 				$mr_loan_id,
@@ -2120,7 +2120,7 @@ function mtl_render_membership_page() {
 	}
 
 	// 3C. HANDLE "EXTEND LOAN" FROM THE MEMBER DETAIL PANEL'S MANAGE-LOAN
-	// MODAL -- same effect as the Loans & Reservations "renew loan" action.
+	// MODAL, same effect as the Loans & Reservations "renew loan" action.
 	if ( isset( $_POST['mtl_member_extend_loan'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_member_loan_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_loan_nonce'] ) ), 'mtl_member_loan_action' ) ) {
 			$ext_loan_id = isset( $_POST['loan_id'] ) ? intval( $_POST['loan_id'] ) : 0;
@@ -2130,7 +2130,7 @@ function mtl_render_membership_page() {
 			} elseif ( $ext_due < gmdate( 'Y-m-d' ) ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The due date can&rsquo;t be in the past. Please pick today or a later date.</p></div>';
 			} else {
-				// Confirm the loan is still active before reporting success --
+				// Confirm the loan is still active before reporting success;
 				// $wpdb->query()'s affected-rows return is 0 both when nothing
 				// matched AND when the posted date equals the existing one, so
 				// it can't distinguish "no such active loan" from "no-op save".
@@ -2159,7 +2159,7 @@ function mtl_render_membership_page() {
 		}
 	}
 
-	// 3D. HANDLE "CANCEL RESERVATION" FROM THE MEMBER DETAIL PANEL -- same
+	// 3D. HANDLE "CANCEL RESERVATION" FROM THE MEMBER DETAIL PANEL, same
 	// effect as the Loans & Reservations "cancel reservation" action.
 	if ( isset( $_POST['mtl_member_cancel_reservation'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_member_cancel_reservation_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_cancel_reservation_nonce'] ) ), 'mtl_member_cancel_reservation_action' ) ) {
@@ -2187,7 +2187,7 @@ function mtl_render_membership_page() {
 		}
 	}
 
-	// 3E. HANDLE "START LOAN" FROM A MEMBER'S RESERVATION MODAL -- only
+	// 3E. HANDLE "START LOAN" FROM A MEMBER'S RESERVATION MODAL, only
 	// offered in the UI when the member is first in that tool's queue, but
 	// re-verified authoritatively here (queue order, and tool availability,
 	// can both change between page load and submit), same pattern as the
@@ -2203,7 +2203,7 @@ function mtl_render_membership_page() {
 				$sl_due_error = true;
 			}
 
-			// Derive tool + member from the reservation itself -- never trust
+			// Derive tool + member from the reservation itself, never trust
 			// posted tool/member ids.
 			$sl_res = $wpdb->get_row(
 				$wpdb->prepare(
@@ -2236,11 +2236,11 @@ function mtl_render_membership_page() {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> This member is no longer first in line for that tool.</p></div>';
 				} elseif ( $wpdb->get_var( $wpdb->prepare( "SELECT retired_at FROM {$tbl_inventory} WHERE tool_id = %d", (int) $sl_res->tool_id ) ) ) {
 					// Retiring a tool auto-cancels its active reservations, so
-					// this should be unreachable in normal use -- kept as
+					// this should be unreachable in normal use, kept as
 					// defense-in-depth, same as the checkout action's check.
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That tool is retired and can&rsquo;t be checked out.</p></div>';
 				} else {
-					// A tool is a single physical item -- it can't be checked
+					// A tool is a single physical item, so it cannot be checked
 					// out while it is already out on another loan.
 					$sl_on_loan = $wpdb->get_var(
 						$wpdb->prepare(
@@ -2287,7 +2287,7 @@ function mtl_render_membership_page() {
 	}
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-	// 4. HANDLE "EDIT" LINK (GET) -- load the requested member into the Edit
+	// 4. HANDLE "EDIT" LINK (GET): load the requested member into the Edit
 	// panel. Skipped if a submitted edit above already failed validation, since
 	// that block already populated $editing/$edit_values with the admin's input.
 	$get_mtl_action = isset( $_GET['mtl_action'] ) ? sanitize_key( wp_unslash( $_GET['mtl_action'] ) ) : '';
@@ -2357,7 +2357,7 @@ function mtl_render_membership_page() {
 			overflow: auto;
 		}
 
-		/* Training chips in the detail panel -- matches the Inventory page's
+		/* Training chips in the detail panel, matching the Inventory page's
 			category/tag badges. */
 		.mtl-badge {
 			display: inline-block;
@@ -2371,7 +2371,7 @@ function mtl_render_membership_page() {
 			white-space: nowrap;
 		}
 
-		/* Members table appearance -- mirrors the Inventory page styling. */
+		/* Members table appearance, mirroring the Inventory page styling. */
 		.mtl-table-wrap {
 			overflow-x: auto;
 			border: 1px solid #ccd0d4;
@@ -2878,7 +2878,7 @@ function mtl_render_membership_page() {
 			margin-top: 3px;
 		}
 
-		/* The collapsed line is a count, not a heading -- kept at the same
+		/* The collapsed line is a count, not a heading, so kept at the same
 			scale as the training table so the two read as peers. */
 		.mtl-agreement-details > summary {
 			cursor: pointer;
@@ -3003,7 +3003,7 @@ function mtl_render_membership_page() {
 				<?php
 				// Inline rather than behind the Record Agreement dialog, since
 				// there is no detail panel to launch one from yet. Optional too,
-				// unlike signup -- staff add walk-ins whose paperwork is not
+				// unlike signup, because staff add walk-ins whose paperwork is not
 				// signed, and saving them flagged beats refusing to save them.
 				if ( mtl_agreements_staff_recording() ) {
 					$mtl_add_agreements = mtl_get_active_agreements();
@@ -3012,7 +3012,7 @@ function mtl_render_membership_page() {
 						<fieldset class="mtl-record-group" style="max-width: 640px;">
 							<legend>Member agreements</legend>
 							<div class="notice notice-warning inline" style="margin: 0 0 12px 0;">
-								<p style="margin: 6px 0;"><strong>&#9888; Only tick these once you have the member&rsquo;s signed form in hand.</strong> You are recording that this person agreed, and that record is permanent. Leave them blank if the paperwork is not signed yet &mdash; you can record it later from their detail panel.</p>
+								<p style="margin: 6px 0;"><strong>&#9888; Only tick these once you have the member&rsquo;s signed form in hand.</strong> You are recording that this person agreed, and that record is permanent. Leave them blank if the paperwork is not signed yet, since you can record it later from their detail panel.</p>
 							</div>
 							<?php foreach ( $mtl_add_agreements as $mtl_add_ag ) : ?>
 								<?php
@@ -3068,16 +3068,16 @@ function mtl_render_membership_page() {
 			</p>
 			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
 				<li><strong>Required for every row:</strong> <code>first_name</code>, <code>last_name</code>, <code>email</code>, <code>phone_number</code>, <code>address_line1</code>, <code>city</code>, <code>state</code>, <code>zip_code</code>. Each email must be unique.</li>
-				<li><code>phone_number</code> with no <code>+</code> is read as a 10-digit U.S./Canada number (e.g. <code>(414) 555-0123</code> or just <code>4145550123</code>). For any other country, lead with <code>+</code> and the calling code (e.g. <code>+44 20 7946 0958</code>). Every number is reformatted automatically on import to match what Add/Edit Member produces &mdash; a row with a phone number that can&rsquo;t be read as a real number fails with a specific reason.</li>
+				<li><code>phone_number</code> with no <code>+</code> is read as a 10-digit U.S./Canada number (e.g. <code>(414) 555-0123</code> or just <code>4145550123</code>). For any other country, lead with <code>+</code> and the calling code (e.g. <code>+44 20 7946 0958</code>). Every number is reformatted automatically on import to match what Add/Edit Member produces, and a row with a phone number that can&rsquo;t be read as a real number fails with a specific reason.</li>
 				<li><code>state</code> must be a valid 2-letter U.S. state/territory or Canadian province code (e.g. <code>WI</code>, <code>ON</code>), or <code>N/A</code> for anywhere else.</li>
 				<li><code>country</code> is optional (defaults to <code>United States</code> if blank), but if provided must exactly match a supported country name (the same list the Add/Edit form's Country dropdown uses).</li>
 				<li><strong>Optional:</strong> <code>address_line2</code> (apartment/suite/unit), <code>signup_date</code> (defaults to today if blank; use <code>MM/DD/YYYY</code>), <code>recurring_donation_amount</code> (defaults to 0.00).</li>
 				<li><code>has_donated_tools</code> must be exactly <code>Y</code> or <code>N</code> (blank counts as <code>N</code>).</li>
-				<li>To mark a member <strong>verified</strong>, provide <em>both</em> <code>photo_id_scan_url</code> and <code>address_proof_scan_url</code>. Either can be left blank if the member only has one form of ID on file so far &mdash; the row still imports, just unverified until the other is added later via Edit.</li>
-				<li>Do not include a <code>member_id</code> column &mdash; it is assigned automatically.</li>
-				<li><strong>Optional:</strong> <code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form &mdash; but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
-				<li><strong>Optional:</strong> <code>trainings</code> takes <code>Name: completion date</code> pairs separated by semicolons &mdash; e.g. &ldquo;Ladder Safety: 8/4/2026; Welding Basics: 8/3/2026&rdquo;. Names must match existing trainings exactly (add new ones under <strong>Setup &rarr; Member Trainings</strong> first), and the date is when that member completed it, which is what their certification length counts from. A pair with an unknown name, a missing date, or an unreadable date is skipped and reported &mdash; it doesn&rsquo;t fail the row.</li>
-				<li>If a row fails, the rest of the file is still processed &mdash; failed rows are listed after upload.</li>
+				<li>To mark a member <strong>verified</strong>, provide <em>both</em> <code>photo_id_scan_url</code> and <code>address_proof_scan_url</code>. Either can be left blank if the member only has one form of ID on file so far. The row still imports, just unverified until the other is added later via Edit.</li>
+				<li>Do not include a <code>member_id</code> column, as it is assigned automatically.</li>
+				<li><strong>Optional:</strong> <code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form, but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
+				<li><strong>Optional:</strong> <code>trainings</code> takes <code>Name: completion date</code> pairs separated by semicolons, for example &ldquo;Ladder Safety: 8/4/2026; Welding Basics: 8/3/2026&rdquo;. Names must match existing trainings exactly (add new ones under <strong>Setup &rarr; Member Trainings</strong> first), and the date is when that member completed it, which is what their certification length counts from. A pair with an unknown name, a missing date, or an unreadable date is skipped and reported, and it does not fail the row.</li>
+				<li>If a row fails, the rest of the file is still processed, and failed rows are listed after upload.</li>
 			</ul>
 			<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
 				<?php wp_nonce_field( 'mtl_bulk_import_members_action', 'mtl_bulk_import_members_nonce' ); ?>
@@ -3092,7 +3092,7 @@ function mtl_render_membership_page() {
 	<?php
 	// --- Member Logins -------------------------------------------------------
 	// Administrators only. The counts come from mtl_count_*(), which all join
-	// through to a live member row rather than reading usermeta directly --
+	// through to a live member row rather than reading usermeta directly;
 	// otherwise a Setup > Set Up Database rebuild would leave this panel
 	// reporting, and offering to email, members who no longer exist.
 	if ( mtl_can_manage_settings() ) :
@@ -3107,7 +3107,7 @@ function mtl_render_membership_page() {
 			<summary style="font-size: 1.1em; font-weight: 600; cursor: pointer; outline: none; color: var(--mtl-header-color);">
 				Member Logins
 				<?php if ( $logins_missing > 0 || $logins_pending > 0 ) : ?>
-					<span style="font-weight: 400; color: #8a6d00;">&mdash; <?php echo intval( $logins_missing + $logins_pending ); ?> need attention</span>
+					<span style="font-weight: 400; color: #8a6d00;">(<?php echo intval( $logins_missing + $logins_pending ); ?> need attention)</span>
 				<?php endif; ?>
 			</summary>
 
@@ -3122,7 +3122,7 @@ function mtl_render_membership_page() {
 					<li><strong><?php echo intval( $logins_missing ); ?></strong> member(s) need a sign-in created or reconnected.</li>
 					<li><strong><?php echo intval( $logins_pending ); ?></strong> have a sign-in but have never chosen a password<?php echo $logins_to_send > 0 ? ' (' . intval( $logins_to_send ) . ' due an email now)' : ''; ?>.</li>
 					<?php if ( $logins_blocked > 0 ) : ?>
-						<li style="color: #b32d2e;"><strong><?php echo intval( $logins_blocked ); ?></strong> member(s) have an email address that belongs to a WordPress account which is not a member sign-in &mdash; usually a staff login, or one left behind by a member deleted earlier. These cannot be fixed automatically: free the address or give the member a different one under <em>Users</em>, then run <em>Create logins</em> again.</li>
+						<li style="color: #b32d2e;"><strong><?php echo intval( $logins_blocked ); ?></strong> member(s) have an email address that belongs to a WordPress account which is not a member sign-in, usually a staff login, or one left behind by a member deleted earlier. These cannot be fixed automatically: free the address or give the member a different one under <em>Users</em>, then run <em>Create logins</em> again.</li>
 					<?php endif; ?>
 				</ul>
 
@@ -3151,7 +3151,7 @@ function mtl_render_membership_page() {
 		</details>
 	<?php endif; ?>
 	<?php
-	// Bulk agreement requests. Administrators only, and absent in paper mode --
+	// Bulk agreement requests. Administrators only, and absent in paper mode;
 	// the panel sends members to a page where they agree online, which paper
 	// mode does not have.
 	if ( mtl_agreements_online() && mtl_can_manage_settings() ) :
@@ -3166,7 +3166,7 @@ function mtl_render_membership_page() {
 			<summary style="font-size: 1.1em; font-weight: 600; cursor: pointer; outline: none; color: var(--mtl-header-color);">
 				Member Agreements
 				<?php if ( $ag_outstanding > 0 ) : ?>
-					<span style="font-weight: 400; color: #8a6d00;">&mdash; <?php echo intval( $ag_outstanding ); ?> have not agreed</span>
+					<span style="font-weight: 400; color: #8a6d00;">(<?php echo intval( $ag_outstanding ); ?> have not agreed)</span>
 				<?php endif; ?>
 			</summary>
 
@@ -3203,7 +3203,7 @@ function mtl_render_membership_page() {
 						<label style="display: block;">
 							<input type="radio" name="mtl_agreement_audience" value="all">
 							All active members
-							<span style="color: #666; font-size: 0.9em;">&mdash; anyone already up to date is told there is nothing to do.</span>
+							<span style="color: #666; font-size: 0.9em;">(anyone already up to date is told there is nothing to do.)</span>
 						</label>
 					</fieldset>
 
@@ -3286,7 +3286,7 @@ function mtl_render_membership_page() {
 	);
 
 	// Completed trainings per member, as one whole-table query grouped into a
-	// member_id-keyed map -- same reasoning as the borrowing-activity maps
+	// member_id-keyed map, same reasoning as the borrowing-activity maps
 	// below, and the reason this isn't a GROUP_CONCAT joined onto the main
 	// member query above (which would need a GROUP BY across every selected
 	// column just to attach one list).
@@ -3317,7 +3317,7 @@ function mtl_render_membership_page() {
 	// Agreements per member, batched for the same reason: the detail panels all
 	// render inline, so the single-member helpers would be several queries per
 	// row. Three queries total, whatever the roster size. Live in paper mode as
-	// well as full -- the whole staff side is gated on tracking(), not online().
+	// well as full, since the whole staff side is gated on tracking(), not online().
 	$mtl_all_member_ids      = array_map( 'intval', wp_list_pluck( $members, 'member_id' ) );
 	$member_agreement_status = array();
 	$member_acceptances      = array();
@@ -3342,7 +3342,7 @@ function mtl_render_membership_page() {
 
 	// 5B. PER-MEMBER BORROWING ACTIVITY
 	// Fetched as three whole-table queries and grouped into member_id-keyed
-	// maps, rather than querying inside the render loop -- with hundreds of
+	// maps, rather than querying inside the render loop; with hundreds of
 	// members that would otherwise be hundreds of round trips per page load.
 
 	// Website sign-ins, keyed by lowercased email. One query for the whole
@@ -3507,7 +3507,7 @@ function mtl_render_membership_page() {
 						<div>
 							<?php
 							// The question that arrives on a bad day: which
-							// members accepted THAT version -- the one with the
+							// members accepted THAT version, the one with the
 							// error in it, the one the insurer is asking about.
 							// Without this the only route is a database query.
 							?>
@@ -3706,11 +3706,11 @@ function mtl_render_membership_page() {
 							data-donation="<?php echo esc_attr( $member->recurring_donation_amount ); ?>"
 							data-donated="<?php echo esc_attr( strtolower( $member->has_donated_tools ) ); ?>"
 							data-verified="<?php echo $is_verified ? 'yes' : 'no'; ?>"
-							<?php // Only whether notes exist -- the notes themselves stay in the detail panel. ?>
+							<?php // Only whether notes exist; the notes themselves stay in the detail panel. ?>
 							data-hasnotes="<?php echo trim( (string) $member->private_notes ) !== '' ? '1' : '0'; ?>"
 							<?php
 							// Agreement status, and every agreement/version pair
-							// this member has EVER accepted -- comma-wrapped
+							// this member has EVER accepted, comma-wrapped
 							// (",3:1,3:2,") so testing ",3:1," can never match
 							// agreement 13 or version 12. Deliberately not just
 							// the latest: somebody who accepted v2 and has since
@@ -3742,7 +3742,7 @@ function mtl_render_membership_page() {
 							// with a CURRENT certification, e.g. ",2,7,". The wrapping
 							// commas let the filter test ",7," and never match id 7
 							// inside id 17. Expired certifications are deliberately
-							// left out -- see the Trainings filter's comment above.
+							// left out; see the Trainings filter's comment above.
 							$mtl_current_ids = array();
 							if ( ! empty( $member_trainings[ $mid ] ) ) {
 								foreach ( $member_trainings[ $mid ] as $mtl_t ) {
@@ -3784,7 +3784,7 @@ function mtl_render_membership_page() {
 							<?php
 							// Sign-in state, read from the map built once above.
 							// A row only counts as linked when the account's
-							// mtl_member_id points back at it -- the same rule
+							// mtl_member_id points back at it, the same rule
 							// mtl_find_wp_user_id_by_member_id() applies, and
 							// skipping it is how a stale link would show one
 							// member another's account.
@@ -3814,7 +3814,7 @@ function mtl_render_membership_page() {
 									<a href="<?php echo esc_url( $edit_url ); ?>" class="button button-small">Edit</a>
 									<?php
 									// Offered whenever the member has not yet
-									// chosen a password -- including when they
+									// chosen a password, including when they
 									// have no account at all, in which case the
 									// handler creates one first, so the button
 									// does what it says rather than reporting a
@@ -3872,7 +3872,7 @@ function mtl_render_membership_page() {
 													<span style="color: #999;">Proof of Address Scan not on file</span>
 												<?php endif; ?>
 												<?php if ( $is_verified && ! empty( $member->verified_at ) ) : ?>
-													<span style="color: #666; font-size: 0.85em;">&mdash; verified on <?php echo mtl_format_date( $member->verified_at ); ?></span>
+													<span style="color: #666; font-size: 0.85em;">(verified on <?php echo mtl_format_date( $member->verified_at ); ?>)</span>
 												<?php endif; ?>
 											</p>
 											<?php if ( ! $is_verified ) : ?>
@@ -3984,7 +3984,7 @@ function mtl_render_membership_page() {
 														<?php endif; ?>
 
 														<?php if ( mtl_agreements_online() && ! $is_anonymized && $mtl_p_outstanding ) : ?>
-															<?php // Writes no status and changes nothing -- it asks. Absent in paper mode, where there is nowhere for the member to act. ?>
+															<?php // Writes no status and changes nothing; it only asks. Absent in paper mode, where there is nowhere for the member to act. ?>
 															<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display:inline;">
 																<?php wp_nonce_field( 'mtl_send_agreement_request_action', 'mtl_send_agreement_request_nonce' ); ?>
 																<input type="hidden" name="agreement_member_id" value="<?php echo esc_attr( $mid ); ?>">
@@ -4010,7 +4010,7 @@ function mtl_render_membership_page() {
 														<?php if ( mtl_can_manage_settings() ) : ?>
 															<?php
 															// Administrators only, and offered on Former Member
-															// rows too -- that is exactly when it is needed, and
+															// rows too, which is exactly when it is needed, and
 															// the reason the identity is retained through
 															// deletion at all.
 															$mtl_p_record_url = wp_nonce_url(
@@ -4024,7 +4024,7 @@ function mtl_render_membership_page() {
 
 													<?php
 													// The no-JavaScript container. Identical markup to the
-													// dialog below -- one form rendered in two places, not
+													// dialog below: one form rendered in two places, not
 													// two implementations.
 													if ( $mtl_p_open && $mtl_p_can_record ) {
 														echo '<div class="mtl-record-inline">';
@@ -4166,7 +4166,7 @@ function mtl_render_membership_page() {
 					<input type="hidden" name="loan_id" id="mtl-lm-extend-loan-id" value="">
 					<input type="hidden" name="member_id" id="mtl-lm-extend-member-id" value="">
 
-					<label class="mtl-lm-label" for="mtl-lm-due">Extend loan &mdash; new due date</label>
+					<label class="mtl-lm-label" for="mtl-lm-due">Extend loan: new due date</label>
 					<div class="mtl-lm-due-quick">
 						<?php foreach ( array( 7, 14, 21, 30 ) as $lm_days ) : ?>
 							<button type="button" class="button button-small mtl-lm-due-btn" data-days="<?php echo (int) $lm_days; ?>"><?php echo (int) $lm_days; ?> days</button>
@@ -4219,7 +4219,7 @@ function mtl_render_membership_page() {
 					<input type="hidden" name="reservation_id" id="mtl-rm-start-reservation-id" value="">
 					<input type="hidden" name="member_id" id="mtl-rm-start-member-id" value="">
 
-					<label class="mtl-lm-label" for="mtl-rm-due">Start loan &mdash; due date</label>
+					<label class="mtl-lm-label" for="mtl-rm-due">Start loan: due date</label>
 					<div class="mtl-lm-due-quick">
 						<?php foreach ( array( 7, 14, 21, 30 ) as $rm_days ) : ?>
 							<button type="button" class="button button-small mtl-rm-due-btn<?php echo $rm_days === $mtl_default_loan_days ? ' mtl-lm-due-active' : ''; ?>" data-days="<?php echo (int) $rm_days; ?>"><?php echo (int) $rm_days; ?> days</button>
@@ -4295,7 +4295,7 @@ function mtl_render_membership_page() {
 
 			tbody.addEventListener('click', function(e) {
 				// Ignore clicks on interactive controls (Edit link, Delete
-				// button/form) -- only plain cell clicks toggle the row.
+				// button/form), so only plain cell clicks toggle the row.
 				if (e.target.closest('a, button, form, input, select, textarea')) {
 					return;
 				}
@@ -4342,8 +4342,8 @@ function mtl_render_membership_page() {
 
 			// The three agreement selects are only rendered when agreement
 			// tracking is on, so advFields holds nulls in their place when it
-			// is off. Everything that treats the fields as a group -- wiring
-			// up listeners, clearing them -- works from this list instead, so
+			// is off. Everything that treats the fields as a group (wiring
+			// up listeners, clearing them) works from this list instead, so
 			// a missing select can't take the whole panel down with it.
 			const advFieldEls = Object.values(advFields).filter(Boolean);
 
@@ -4449,7 +4449,7 @@ function mtl_render_membership_page() {
 
 					// Nothing to choose between with no agreement picked, and
 					// nothing to choose between when only one version was ever
-					// accepted -- but left enabled in the second case so the
+					// accepted, but left enabled in the second case so the
 					// admin can still narrow to it deliberately.
 					sel.disabled = !chosen || versions.length === 0;
 					applyFilters();
@@ -4491,7 +4491,7 @@ function mtl_render_membership_page() {
 					trainings: selectedTrainingIds(),
 				};
 
-				// Only real member rows are filtered -- detail rows follow
+				// Only real member rows are filtered; detail rows follow
 				// their parent row's visibility instead of being matched
 				// directly, and the "No members found" placeholder has no
 				// dataset to match on.
@@ -4512,7 +4512,7 @@ function mtl_render_membership_page() {
 					if (visible && f.agreements && d.agreements !== f.agreements) visible = false;
 
 					// "Accepted agreement / version" reads EVERY acceptance, not
-					// just the newest -- a member who accepted v2 and has since
+					// just the newest, since a member who accepted v2 and has since
 					// accepted v3 must still be returned when searching for v2.
 					// data-agreement-vers is comma-wrapped (",3:1,3:2,") so
 					// testing ",3:1," cannot match agreement 13 or version 12.
@@ -4527,7 +4527,7 @@ function mtl_render_membership_page() {
 
 					// Borrowing-activity booleans. The selects use "1"/"0" and
 					// the rows carry matching flags, so an empty value ("Any")
-					// simply skips the check -- which lets the admin filter for
+					// simply skips the check, which lets the admin filter for
 					// either side of each question.
 					if (visible && f.hasActive && d.hasActive !== f.hasActive) visible = false;
 					if (visible && f.hasPrior && d.hasPrior !== f.hasPrior) visible = false;
@@ -4654,7 +4654,7 @@ function mtl_render_membership_page() {
 					header.classList.add(isAscending ? 'desc' : 'asc');
 
 					// Detail rows only have a single (colspan) cell, so they
-					// must be excluded from the comparison -- indexing into
+					// must be excluded from the comparison, since indexing into
 					// their children would break. Each is re-attached right
 					// after its own member row below so expand/collapse still
 					// works post-sort.
@@ -4986,7 +4986,7 @@ function mtl_render_membership_page() {
 		});
 	</script>
 	<?php
-	// Covers both the Add and Edit forms' phone widgets in one call --
+	// Covers both the Add and Edit forms' phone widgets in one call;
 	// mtl_phone_formatter_script() queries every .mtl-phone-widget on the page.
 	mtl_phone_formatter_script();
 	// Same one-call-covers-every-instance deal: the Add and Edit forms each

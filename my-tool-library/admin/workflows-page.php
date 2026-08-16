@@ -86,7 +86,7 @@ function mtl_markdown_table_cells( $row ) {
 }
 
 /**
- * Whether a line is a Markdown table's alignment row -- the "| --- | :---: |"
+ * Whether a line is a Markdown table's alignment row, the "| --- | :---: |"
  * separator that turns the line above it into a header.
  *
  * @param string $line Raw line.
@@ -106,9 +106,9 @@ function mtl_markdown_is_table_delimiter( $line ) {
 }
 
 /**
- * Converts a constrained subset of Markdown -- headings, horizontal rules,
+ * Converts a constrained subset of Markdown (headings, horizontal rules,
  * blockquotes, ordered/unordered lists (with basic nesting by indentation),
- * pipe tables, paragraphs, and inline bold/italic/code/links -- to HTML. This
+ * pipe tables, paragraphs, and inline bold/italic/code/links) to HTML. This
  * is NOT a general-purpose CommonMark parser; it's a small, dependency-free
  * renderer sized specifically for this plugin's own
  * documentation/staff-workflows.md (see mtl_render_workflows_page()),
@@ -295,7 +295,7 @@ function mtl_markdown_to_html( $markdown ) {
  * Renders the Workflows admin page: documentation/staff-workflows.md,
  * converted live to HTML on every page load (never cached or copied), so
  * editing that file is immediately reflected here. Nothing else is shown on
- * this page -- the rendered doc fills the whole admin content area.
+ * this page, since the rendered doc fills the whole admin content area.
  */
 function mtl_render_workflows_page() {
 	if ( ! mtl_can_manage_library() ) {

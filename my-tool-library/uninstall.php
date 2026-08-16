@@ -1,7 +1,7 @@
 <?php
 /**
  * If this file is called directly (or the plugin was only deactivated, not
- * deleted), WordPress never defines this constant -- bail out immediately.
+ * deleted), WordPress never defines this constant, so bail out immediately.
  *
  * @package My_Tool_Library
  */
@@ -13,7 +13,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 // Removes the plugin's own SETTINGS only (branding, appearance, and other
 // Setup-page values). Deliberately does NOT touch the custom database
 // tables (members, tool_inventory, loans, tool_reservations, etc.) or the
-// mtl_member_id user meta linking a WP account to a member record -- that
+// mtl_member_id user meta linking a WP account to a member record; that
 // is operational/financial history, not a "setting," and an accidental or
 // temporary plugin deletion should never silently destroy it. Use the
 // Setup page's export feature to back up that data before removing tables
@@ -21,7 +21,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 //
 // The four member-agreement options are in this list. THE TWO AGREEMENT TABLES
 // MUST NEVER BE ADDED: they hold the record of what each member agreed to, and
-// removing a plugin should not destroy it. Attached files are left alone too --
+// removing a plugin should not destroy it. Attached files are left alone too;
 // they are ordinary Media Library items the library may still want.
 $mtl_options = array(
 	'mtl_accent_color',
@@ -62,7 +62,7 @@ foreach ( $mtl_options as $mtl_option ) {
 	delete_option( $mtl_option );
 }
 
-// Per-admin dashboard panel layout preference -- a display setting, not
+// Per-admin dashboard panel layout preference, a display setting rather than
 // business data, so (unlike mtl_member_id) it's cleaned up like the options
 // above. $delete_all = true removes this meta key for every user, not just
 // one, without needing to know their individual user IDs.
@@ -78,7 +78,7 @@ delete_metadata( 'user', 0, 'mtl_agreement_requested_at', '', true );
 // this plugin's admin portal", so with the plugin gone it is dead weight on
 // every role that holds it. Removed from all roles, not just the two granted
 // by default, in case a site administrator copied it onto a custom role.
-// Nobody's role assignment changes -- only this one capability is dropped.
+// Nobody's role assignment changes; only this one capability is dropped.
 $mtl_roles = wp_roles();
 foreach ( array_keys( $mtl_roles->roles ) as $mtl_role_name ) {
 	$mtl_role = get_role( $mtl_role_name );

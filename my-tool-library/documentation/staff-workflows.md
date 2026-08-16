@@ -1,4 +1,4 @@
-# My Tool Library — Staff Workflow Guide
+# My Tool Library Staff Workflow Guide
 
 Reference steps for the most common jobs staff do in the plugin. It is written with system administrators as the audience, and some actions here need administrator privileges.
 
@@ -13,7 +13,7 @@ The admin pages require a WordPress account with the **Administrator** or **Edit
 5. [Adding a New Member In-Person & Verifying Their Identity](#4-adding-a-new-member-in-person--verifying-their-identity)
 6. [Starting a Loan for a Member](#5-starting-a-loan-for-a-member)
 7. [Member Agreements](#6-member-agreements)
-8. [Additional Workflows](#7-additional-workflows) — [Members](#members), [Inventory](#inventory), [Other](#other)
+8. [Additional Workflows](#7-additional-workflows): [Members](#members), [Inventory](#inventory), [Other](#other)
 
 ---
 
@@ -41,11 +41,11 @@ Two staff roles, both standard WordPress roles. **Editor** is for anyone working
 | Delete a member's record                                                 |   ❌   |      ✅       |
 | Delete a tool from inventory                                             |   ❌   |      ✅       |
 | Open the Setup page (and everything on it)                               |   ❌   |      ✅       |
-| — Branding, colors, fonts, logo                                          |   ❌   |      ✅       |
-| — Categories, tags and trainings lists                                   |   ❌   |      ✅       |
-| — Member Agreements list                                                 |   ❌   |      ✅       |
-| — Export data (`.sql` / CSV)                                             |   ❌   |      ✅       |
-| — Run Database Setup                                                     |   ❌   |      ✅       |
+| ↳ Branding, colors, fonts, logo                                          |   ❌   |      ✅       |
+| ↳ Categories, tags and trainings lists                                   |   ❌   |      ✅       |
+| ↳ Member Agreements list                                                 |   ❌   |      ✅       |
+| ↳ Export data (`.sql` / CSV)                                             |   ❌   |      ✅       |
+| ↳ Run Database Setup                                                     |   ❌   |      ✅       |
 
 An Editor doesn't see a **Setup** tab at all.
 
@@ -71,18 +71,18 @@ Do this once, when the plugin is first installed on the site.
     - **Reservations & Loans**: the default loan length in days used when checking a reservation out, and the **Reservation Hold Period**, how long a tool is held once it's ready to collect (default 14 days; see [Reservations that expire on their own](#reservations-that-expire-on-their-own)).
     - **Categories & Tags**: the tool categories (e.g. Woodworking, Plumbing) and tags (e.g. Cordless, Requires PPE) staff pick from when adding inventory.
     - **Member Trainings**: the trainings you offer. Each has a **name**, an optional **Badge Image URL** (upload the image to the WordPress Media Library and paste its File URL), and **Valid For**, how many months it stays current after someone completes it, or blank if it never expires. All three are changeable later. See [Trainings and certifications](#trainings-and-certifications).
-    - **Member Agreements**: the statements a member must agree to before creating an account (e.g. a liability waiver). Choose a mode at the top of the section: **Off**, **Track signed paper only**, or **Full — members agree online**. See [Member Agreements](#6-member-agreements) for what each mode does.
+    - **Member Agreements**: the statements a member must agree to before creating an account (e.g. a liability waiver). Choose a mode at the top of the section: **Off**, **Track signed paper only**, or **Full: members agree online**. See [Member Agreements](#6-member-agreements) for what each mode does.
     - **Consider Giving Message** and **Consider Giving Link**: an optional fundraising ask. See [Asking members to give](#asking-members-to-give).
 6. **If you want agreement tracking, set it up now, before anyone joins.** This is the one part of Setup where doing it later means more work for members and staff. See [Member Agreements](#6-member-agreements).
 7. Configure outgoing email through an SMTP plugin (recommended: WP Mail SMTP, Post SMTP, or FluentSMTP). This is required to send emails to members. Set the from address to a mailbox on your domain. Add SPF and DKIM DNS records for whichever service you chose.
 8. Copy the **Public Page Link** from the Setup page into your site's navigation menu, or link to it from any page, post or button. This is the one link your community needs to browse the catalog, reserve tools, and sign up.
 9. Once categories/tags exist, move on to [Adding Inventory Items](#3-adding-inventory-items) and [Adding a New Member](#4-adding-a-new-member-in-person--verifying-their-identity). Both support **bulk import**, the fastest way to load an existing spreadsheet:
     - On the **Inventory** or **Membership** page, find the **Bulk Import from CSV** panel.
-    - Click **Download the CSV template** — it has the exact column headers and one example row. Fill in one tool or member per row and delete the example row. Column order doesn't matter as long as the header names match.
+    - Click **Download the CSV template**: it has the exact column headers and one example row. Fill in one tool or member per row and delete the example row. Column order doesn't matter as long as the header names match.
     - Upload the completed CSV and submit. The plugin reports how many rows succeeded and the reason for any that failed (a missing required field, an invalid category), so you can fix just those and re-upload.
     - On the members template, the **`trainings`** column takes a training name, a colon, and the completion date, several separated by semicolons: `Ladder Safety: 8/4/2026; Welding Basics: 8/3/2026`. Names must match your Setup page, though capitalization doesn't matter. A malformed entry, or one naming a training that doesn't exist, still imports the member without that training and lists the reason, so you can fix it on their record rather than re-running the file.
 10. Use **Export Data** on the Setup page any time you want a full backup: a SQL dump, or a ZIP of CSVs, one per table.
-11. **Set up accounts for the rest of your staff.** Everyone working the desk should get their own **Editor** account — see [Creating a New Staff Account](#2-creating-a-new-staff-account).
+11. **Set up accounts for the rest of your staff.** Everyone working the desk should get their own **Editor** account. See [Creating a New Staff Account](#2-creating-a-new-staff-account).
 
 ---
 
@@ -108,7 +108,7 @@ To change someone who already has an account, go to **Users**, click their name,
 
 Give **Administrator** only to the people who run the library, as it grants full control of the entire WordPress site. Follow the same steps, choosing **Administrator** at step 3.
 
-> **Note:** Both are full WordPress roles, so they grant access beyond this plugin: Editor can write and edit posts and pages, Administrator can do anything at all. Give out Administrator sparingly, and if you are an admin, consider a second Editor account for desk work — it simplifies the interface and prevents accidental data loss.
+> **Note:** Both are full WordPress roles, so they grant access beyond this plugin: Editor can write and edit posts and pages, Administrator can do anything at all. Give out Administrator sparingly, and if you are an admin, consider a second Editor account for desk work, which simplifies the interface and prevents accidental data loss.
 
 ---
 
@@ -123,7 +123,7 @@ Go to **My Tool Library > Inventory**.
 3. Add a **photo URL**, a link to an image hosted elsewhere (see [Hosting Photos and Documents](#hosting-photos-and-documents)). Optional but recommended; it's shown to the public on the catalog.
 4. Fill in the financial tracking fields: initial cash value, annual depreciation amount, who donated it, and date acquired.
 5. Select one or more **categories** and **tags**, set up during Initial Setup.
-6. Optionally, add **Private Notes** — see below.
+6. Optionally, add **Private Notes**: see below.
 7. Save. The tool immediately appears in the public catalog.
 
 ### Adding many tools at once
@@ -172,8 +172,8 @@ A CSV import deliberately creates no sign-ins and sends no email: hundreds of ac
 
 Once the import finishes, open the **Member Logins** panel below the import box (administrators only). It shows how many members have no sign-in and how many have never set a password, then gives you two buttons:
 
-1. **Create logins** — creates the missing accounts, sends nothing, safe to run whenever.
-2. **Send setup emails** — emails everyone who has not chosen a password.
+1. **Create logins**: creates the missing accounts, sends nothing, safe to run whenever.
+2. **Send setup emails**: emails everyone who has not chosen a password.
 
 Both work through the list a batch at a time so they cannot tie up the request, so press the button again if the panel says some remain. Nobody is emailed twice within 24 hours unless you tick the box to include them.
 
@@ -185,7 +185,7 @@ If the panel warns that some members' addresses **belong to a different WordPres
 
 Verification records that staff have checked the member's photo ID and a proof-of-address document. A member is verified only once **both** scan links are on file.
 
-**Recommended process — collect documents with a Google Form:**
+**Recommended process: collect documents with a Google Form**
 
 1. Create a Google Form with two **File upload** questions, "Photo ID" and "Proof of Address", pointing its uploads at a Google Drive folder created just for this purpose.
 2. **Lock down that folder's sharing permissions** so only the staff who need it, or a specific access-controlled staff group, can open it.
@@ -202,9 +202,9 @@ To remove a document, clear its URL field on Edit and save. Clearing just one do
 
 Every photo and document field **except an agreement's attached file** is a plain link. Host the file elsewhere (Google Drive recommended) and paste the resulting link into the plugin:
 
-- **Tool photos** and **Training Badges** are shown to the public — share them with "Anyone with the link."
-- **Member verification documents** (ID, proof of address) are sensitive — share them only with staff, never publicly.
-- **Agreement files** are the exception: they are uploaded into this site's own Media Library rather than hosted elsewhere, and they are **public** — see [Member Agreements](#6-member-agreements).
+- **Tool photos** and **Training Badges** are shown to the public, so share them with "Anyone with the link."
+- **Member verification documents** (ID, proof of address) are sensitive, so share them only with staff and never publicly.
+- **Agreement files** are the exception: they are uploaded into this site's own Media Library rather than hosted elsewhere, and they are **public**: see [Member Agreements](#6-member-agreements).
 
 > **⚠ Note: never delete an agreement's attached file from the Media Library**, including old ones that look superseded.
 
@@ -263,9 +263,9 @@ Statements every member has to agree to: a liability waiver, a code of conduct, 
 
 Go to **Setup > Member Agreements**. The three options at the top of that section decide how much of the feature is live:
 
-- **Off** — nothing is tracked, recorded, or shown anywhere. Any agreement records you already have are kept in the database.
-- **Track signed paper only** — you collect signatures at the desk and the plugin keeps a ledger: who has signed what, who hasn't, and a record each member can see on their own account page. Members are never asked to agree on the website and are **never blocked from reserving**.
-- **Full — members agree online** — members tick every agreement to create an account, agree again whenever you revise one, and **cannot reserve a tool themselves until they have no outstanding agreements.**
+- **Off**: nothing is tracked, recorded, or shown anywhere. Any agreement records you already have are kept in the database.
+- **Track signed paper only**: you collect signatures at the desk and the plugin keeps a ledger: who has signed what, who hasn't, and a record each member can see on their own account page. Members are never asked to agree on the website and are **never blocked from reserving**.
+- **Full: members agree online.** Members tick every agreement to create an account, agree again whenever you revise one, and **cannot reserve a tool themselves until they have no outstanding agreements.**
 
 Underneath **Full** is a checkbox, **Allow paper tracking**, which decides whether staff can also record a signature at the desk. Tick it and **Record agreement** appears on each member's detail panel, along with the agreement checkboxes on Add New Member.
 
@@ -313,9 +313,9 @@ Navigate to **Membership > Member Agreements** and click _Send agreement request
 
 A CSV import records **no agreements at all**, so an imported roster arrives showing "No agreements" against every member. That is expected. Do these three jobs in this order:
 
-1. **Create logins** — Membership > Member Logins > _Create logins_.
-2. **Send setup emails** — same panel. Members choose a password.
-3. **Send agreement requests** — Membership > Member Agreements.
+1. **Create logins**: Membership > Member Logins > _Create logins_.
+2. **Send setup emails**: same panel. Members choose a password.
+3. **Send agreement requests**: Membership > Member Agreements.
 
 A member with no sign-in, or one who has never chosen a password, cannot agree online.
 
@@ -342,8 +342,8 @@ You can also cancel a reservation from **Loans & Reservations** by opening its d
 
 **Setup > General Details** has two optional fields that put a **Consider Giving** section in front of signed-in members, on their **Account** page above Your details and on **My Loans & Reservations** below My Reservations.
 
-- **Consider Giving Message** — your message to members asking for a donation.
-- **Consider Giving Link** — where the **Give Now** button sends people: your donation page, a fundraising platform, and so on.
+- **Consider Giving Message**: your message to members asking for a donation.
+- **Consider Giving Link**: where the **Give Now** button sends people: your donation page, a fundraising platform, and so on.
 
 **The message controls whether the section appears at all**, so clearing it removes the section from both pages. **The link only controls the button**, so leave it blank to hide the button but keep the message, if you'd rather people give in person.
 
@@ -419,11 +419,11 @@ Click **Delete** next to a member on the **Membership** page. Deleting a member 
 
 Their row stays on the Membership page as **Former Member** with a **Removed** badge in place of Verified/Not Verified, and Edit/Delete disappear.
 
-The WordPress account is only deleted when it can be confirmed as that member's, meaning its email still matches the record. If it can't — usually because a database reset renumbered the records — the account is left in place and the confirmation message says so. Remove it yourself under **Users** in that case.
+The WordPress account is only deleted when it can be confirmed as that member's, meaning its email still matches the record. If it cannot, usually because a database reset renumbered the records, the account is left in place and the confirmation message says so. Remove it yourself under **Users** in that case.
 
 Any reservation the member currently has is **cancelled** as part of the delete. A currently open loan is left alone, so end those manually, or mark the tools retired if they are missing. Deletion and anonymization are the two actions in this plugin that are **permanent and cannot be undone**, so export a backup first (see [Backing up your data](#backing-up-your-data)) if you're unsure.
 
-> **Note:** Every member delete sends **two emails** — one to the member confirming their account is gone, and one to the site administrator carrying the deleted record and asking them to delete the member's stored verification files. This happens whether staff or the member did the deleting.
+> **Note:** Every member delete sends **two emails**: one to the member confirming their account is gone, and one to the site administrator carrying the deleted record and asking them to delete the member's stored verification files. This happens whether staff or the member did the deleting.
 
 **Members can always do this themselves, without staff involvement.** Signed in on the public site, a member goes to their **Account** page and, under **Danger Zone**, clicks **Delete Account and Remove Personal Data**. That walks them through the same two-step confirmation and produces the same outcome described above.
 
@@ -433,8 +433,8 @@ Any reservation the member currently has is **cancelled** as part of the delete.
 
 On **Loans & Reservations**, open an active loan's detail panel:
 
-- **Renew loan** — pick a new due date (quick buttons or custom) and submit. The field pre-fills with the _current_ due date, so submitting without changing anything is safe.
-- **End loan (mark returned)** — marks the tool returned and available again for the next reservation or a new one.
+- **Renew loan**: pick a new due date (quick buttons or custom) and submit. The field pre-fills with the _current_ due date, so submitting without changing anything is safe.
+- **End loan (mark returned)**: marks the tool returned and available again for the next reservation or a new one.
 
 For a fast drop-off with no other changes needed, go to **Inventory** instead, find the tool, expand its row, and click **Mark Returned**. The search box accepts a barcode scanner for quick processing.
 
@@ -456,8 +456,8 @@ A tool isn't held forever. Once a reservation becomes **collectable**, meaning t
 
 Where you'll see it:
 
-- **Loans & Reservations** — open any reservation showing **Ready** and its detail panel shows a **Collect by** date.
-- **The member's own My Loans & Reservations page** — they see "Please collect by …" against anything waiting for them.
+- **Loans & Reservations**: open any reservation showing **Ready** and its detail panel shows a **Collect by** date.
+- **The member's own My Loans & Reservations page**: they see "Please collect by …" against anything waiting for them.
 
 To change the period, go to **Setup > Reservations & Loans** and set **Reservation Hold Period** to anything from 1 to 365 days, or tick **Never expires** to hold reservations indefinitely.
 
@@ -471,8 +471,8 @@ The **Dashboard**'s "Overdue Tools" panel lists every loan past its due date at 
 
 Retire a tool at the end of its useful life, or if it is stolen or missing. Deleting is usually for tools added in error.
 
-- **No loan or reservation history** — an administrator may click **Delete** on the **Inventory** page to remove it outright. Editors don't see this button and should either use **Retire** or ask an administrator.
-- **Has loan or reservation history** — click **Retire** instead. This hides the tool from the public catalog and blocks any new loan or reservation for it, cancelling any reservations already queued (with an on-screen note telling you how many), while keeping the tool's row and full history intact. A currently open loan is left alone and can still be ended normally. Document the reason under the tool's **private notes**.
+- **No loan or reservation history**: an administrator may click **Delete** on the **Inventory** page to remove it outright. Editors don't see this button and should either use **Retire** or ask an administrator.
+- **Has loan or reservation history**: click **Retire** instead. This hides the tool from the public catalog and blocks any new loan or reservation for it, cancelling any reservations already queued (with an on-screen note telling you how many), while keeping the tool's row and full history intact. A currently open loan is left alone and can still be ended normally. Document the reason under the tool's **private notes**.
 
 Unlike a member or tool delete, retiring is fully reversible: click **Reactivate** on a retired tool to bring it back into service. Retired tools drop out of the Inventory page's default list, so use the **Retired?** filter under Advanced Search, set to "Active + retired" or "Retired only", to find them.
 
@@ -495,7 +495,7 @@ Tool History Lookup's search box includes retired tools. Member History Lookup's
 
 Before any bulk import, plugin update, or major cleanup, go to **Setup > Export Data** and download either a full SQL dump or a ZIP of CSVs. Keep exports somewhere access-controlled: they include full member contact details and verification links, and the **agreement records** keep the name and email of members who have since been deleted (see [Deleting a member](#deleting-a-member)).
 
-**If you are keeping one as a real backup, keep the `.sql` dump.** It is the only export that can restore the library; the CSV export is for reading in a spreadsheet. The bulk importers always assign brand-new ID numbers, so re-importing `members.csv` creates fresh records rather than restoring the old ones, and there is no importer at all for loans or reservations. Restoring a `.sql` dump needs database access — phpMyAdmin, the `mysql` command line, or `wp db import` — as there is no restore button in the plugin.
+**If you are keeping one as a real backup, keep the `.sql` dump.** It is the only export that can restore the library; the CSV export is for reading in a spreadsheet. The bulk importers always assign brand-new ID numbers, so re-importing `members.csv` creates fresh records rather than restoring the old ones, and there is no importer at all for loans or reservations. Restoring a `.sql` dump needs database access (phpMyAdmin, the `mysql` command line, or `wp db import`), as there is no restore button in the plugin.
 
 #### Adjusting branding and appearance
 

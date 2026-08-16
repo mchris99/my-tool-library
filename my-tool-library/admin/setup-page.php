@@ -28,7 +28,7 @@ function mtl_sanitize_css_value( $value ) {
 
 /**
  * Quick-pick font stacks offered for the Header/Body/Link font fields.
- * Plain web-safe stacks only -- never a webfont from Google Fonts or any
+ * Plain web-safe stacks only, never a webfont from Google Fonts or any
  * other CDN, per the plugin's no-3rd-party-dependencies rule. The <select>
  * itself is never submitted; picking an option just fills in the adjacent
  * text field via JS, which remains the actual saved value.
@@ -52,7 +52,7 @@ function mtl_font_preset_options() {
  * Single source of truth for the Export Data feature: every My Tool Library
  * table, as bare names (no wp_ prefix), ordered parents-before-children so a
  * re-import with FK checks on still succeeds. `loan_returns` is intentionally
- * absent -- schema.sql drops that table but never creates it.
+ * absent, since schema.sql drops that table but never creates it.
  *
  * @return string[] Bare table names.
  */
@@ -106,8 +106,8 @@ function mtl_db_reset_confirmation_phrase() {
  * The "attach a file" control shared by the add and edit agreement forms.
  *
  * Renders a hidden attachment_id, a readout of the current choice and the two
- * buttons that drive the Media Library modal. The modal is unfiltered -- both
- * the Upload Files and Media Library tabs, any file type -- because a library
+ * buttons that drive the Media Library modal. The modal is unfiltered, offering both
+ * the Upload Files and Media Library tabs and any file type, because a library
  * may reasonably attach a PDF, a scanned form or an image.
  *
  * @param string $field_id      Unique DOM id prefix for this instance.
@@ -129,7 +129,7 @@ function mtl_render_agreement_file_picker( $field_id, $attachment_id ) {
 			<button type="button" class="button mtl-agreement-file-remove" data-target="<?php echo esc_attr( $field_id ); ?>" <?php echo $attachment_id > 0 ? '' : 'style="display:none;"'; ?>>Remove file</button>
 		</p>
 		<!-- A standing note, not a dismissible one, placed where the file is
-			chosen -- because that is the moment the mistake gets made. -->
+			chosen, because that is the moment the mistake gets made. -->
 		<p style="margin: 0; font-size: 0.85em; color: #8a6d3b; background: #fcf8e3; border-left: 4px solid #dba617; padding: 6px 10px;">
 			Anyone with the link can open this file, whether or not they have an account. Do not attach anything that should not be public.
 		</p>
@@ -144,7 +144,7 @@ add_action( 'admin_init', 'mtl_maybe_export_data' );
 
 /**
  * Serve the Export Data downloads (.sql dump or .zip of CSVs). Must run on
- * admin_init -- before any admin HTML is sent -- so it can emit
+ * admin_init, before any admin HTML is sent, so it can emit
  * file-download headers and a raw body.
  */
 function mtl_maybe_export_data() {
@@ -249,7 +249,7 @@ function mtl_export_as_sql( $bare_tables ) {
 /**
  * Stream a .zip containing one CSV per table (bare table name + ".csv").
  * Uses a small self-contained ZIP writer so it depends on nothing beyond
- * core PHP -- ZipArchive is not required.
+ * core PHP; ZipArchive is not required.
  *
  * @param string[] $bare_tables Bare table names, see mtl_export_table_names().
  */
@@ -387,7 +387,7 @@ function mtl_render_setup_page() {
 	// Administrators only. WordPress already refuses to route an Editor here
 	// (the page is registered against manage_options in
 	// mtl_register_admin_menus()), so this is defence in depth rather than the
-	// gate itself -- and it keeps the guarantee local to the file, where every
+	// gate itself, and it keeps the guarantee local to the file, where every
 	// handler below repeats it.
 	if ( ! mtl_can_manage_settings() ) {
 		return;
@@ -421,7 +421,7 @@ function mtl_render_setup_page() {
 			// Header Options.
 			// Colours resolve to their default rather than to '' when missing or
 			// malformed. An empty colour option renders a black swatch in
-			// <input type="color">, which the next save then persists -- see
+			// <input type="color">, which the next save then persists; see
 			// mtl_color_or_default().
 			update_option( 'mtl_header_color', mtl_color_or_default( isset( $_POST['mtl_header_color'] ) ? wp_unslash( $_POST['mtl_header_color'] ) : '', '#ff6600' ) );
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- mtl_sanitize_css_value() unslashes and sanitizes internally.
@@ -481,7 +481,7 @@ function mtl_render_setup_page() {
 			update_option( 'mtl_default_loan_days', in_array( $posted_loan_days, $allowed_loan_days, true ) ? $posted_loan_days : '21' );
 
 			// Reservation hold period. Stored as a plain integer, with 0
-			// meaning "never expires" -- the "Never expires" checkbox wins over
+			// meaning "never expires". The "Never expires" checkbox wins over
 			// whatever number the stepper happens to be showing, since that
 			// input is disabled (and so not submitted) while it is ticked.
 			// Anything outside 1-365 falls back to the 14-day default rather
@@ -505,7 +505,7 @@ function mtl_render_setup_page() {
 
 			// The giving link is stored normalized so the member-facing button
 			// can never point somewhere unexpected. mtl_normalize_giving_url()
-			// drops anything that isn't http/https -- a pasted "javascript:" or
+			// drops anything that is not http/https, so a pasted "javascript:" or
 			// "data:" URL saves as blank rather than becoming a button.
 			update_option(
 				'mtl_giving_url',
@@ -555,7 +555,7 @@ function mtl_render_setup_page() {
 				if ( $existing ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That category already exists.</p></div>';
 				} else {
-					// category_id is AUTO_INCREMENT -- MySQL assigns the next id.
+					// category_id is AUTO_INCREMENT, so MySQL assigns the next id.
 					$inserted = $wpdb->insert(
 						$tbl_categories,
 						array( 'category_name' => $new_category_name ),
@@ -597,7 +597,7 @@ function mtl_render_setup_page() {
 				if ( $existing ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That tag already exists.</p></div>';
 				} else {
-					// tag_id is AUTO_INCREMENT -- MySQL assigns the next id.
+					// tag_id is AUTO_INCREMENT, so MySQL assigns the next id.
 					$inserted = $wpdb->insert(
 						$tbl_tags,
 						array( 'tag_name' => $new_tag_name ),
@@ -634,7 +634,7 @@ function mtl_render_setup_page() {
 			} else {
 				// Deleting a category cascades to tool_category_mappings (see
 				// schema.sql), so any tool using it simply loses that category
-				// -- it does not fail or delete the tool itself.
+				// It does not fail or delete the tool itself.
 				$deleted_count = 0;
 				foreach ( $delete_category_ids as $id ) {
 					if ( $wpdb->delete( $tbl_categories, array( 'category_id' => $id ), array( '%d' ) ) ) {
@@ -665,7 +665,7 @@ function mtl_render_setup_page() {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> No tags were selected.</p></div>';
 			} else {
 				// Deleting a tag cascades to tool_tag_mappings (see
-				// schema.sql), so any tool using it simply loses that tag --
+				// schema.sql), so any tool using it simply loses that tag;
 				// it does not fail or delete the tool itself.
 				$deleted_count = 0;
 				foreach ( $delete_tag_ids as $id ) {
@@ -703,7 +703,7 @@ function mtl_render_setup_page() {
 				if ( $existing ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That training already exists.</p></div>';
 				} else {
-					// training_id is AUTO_INCREMENT -- MySQL assigns the next id.
+					// training_id is AUTO_INCREMENT, so MySQL assigns the next id.
 					$inserted = $wpdb->insert(
 						$tbl_trainings,
 						array( 'training_name' => $new_training_name ),
@@ -766,7 +766,7 @@ function mtl_render_setup_page() {
 	if ( isset( $_POST['mtl_save_trainings'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_save_trainings_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_save_trainings_nonce'] ) ), 'mtl_save_trainings_action' ) ) {
 			// Three parallel arrays keyed by training_id, one per table row
-			// below. Each is sanitized as it is read -- (string) first in case
+			// below. Each is sanitized as it is read, with (string) first in case
 			// a malformed request nests an array under one of the ids, since
 			// both sanitize_url() and sanitize_text_field() would misbehave on
 			// a non-string.
@@ -800,7 +800,7 @@ function mtl_render_setup_page() {
 			// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
 			// Names are UNIQUE in the schema, so a rename that collides has to
-			// be caught before any write -- otherwise the first few rows save
+			// be caught before any write; otherwise the first few rows save
 			// and the clashing one silently doesn't, leaving the admin looking
 			// at a half-applied form.
 			$seen_names   = array();
@@ -870,7 +870,7 @@ function mtl_render_setup_page() {
 	// are memoised per request and either can go stale the instant one runs.
 	//
 	// $mtl_agreement_edit_id / $mtl_agreement_conflict carry state down to the
-	// render section -- which agreement to open the edit form for, and whether
+	// render section: which agreement to open the edit form for, and whether
 	// the last save lost a race with another admin.
 	// ==========================================
 	$tbl_agreements  = $wpdb->prefix . 'member_agreements';
@@ -891,7 +891,7 @@ function mtl_render_setup_page() {
 			$posted_mode = isset( $_POST['mtl_agreements_mode'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_agreements_mode'] ) ) : '';
 
 			// Whitelisted server-side. An unrecognised value is not saved at
-			// all rather than coerced -- mtl_agreements_mode() would read it
+			// all rather than coerced. mtl_agreements_mode() would read it
 			// as `off`, but storing a value the plugin does not understand
 			// makes the Setup page disagree with the database.
 			if ( in_array( $posted_mode, array( 'off', 'paper', 'full' ), true ) ) {
@@ -899,7 +899,7 @@ function mtl_render_setup_page() {
 
 				// Saved in every mode, so the choice survives a trip through
 				// paper or off and comes back as it was set. Paper mode reads it
-				// but does not obey it -- see mtl_agreements_staff_recording().
+				// but does not obey it; see mtl_agreements_staff_recording().
 				$posted_allow_paper = isset( $_POST['mtl_agreements_allow_paper'] ) ? '1' : '';
 				update_option( 'mtl_agreements_allow_paper', $posted_allow_paper );
 
@@ -908,8 +908,8 @@ function mtl_render_setup_page() {
 				if ( 'full' === $posted_mode ) {
 					$mtl_desk_sentence = '1' === $posted_allow_paper
 						? ' Staff can also record signed paper at the desk.'
-						: ' Staff cannot record signed paper &mdash; tick <em>Allow paper tracking</em> if they need to.';
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Saved.</strong> Members now agree online. Anyone who is not up to date cannot reserve a tool until they agree. No one has been emailed &mdash; send agreement requests from the Membership page.' . wp_kses_post( $mtl_desk_sentence ) . '</p></div>';
+						: ' Staff cannot record signed paper. Tick <em>Allow paper tracking</em> if they need to.';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Saved.</strong> Members now agree online. Anyone who is not up to date cannot reserve a tool until they agree. No one has been emailed. Send agreement requests from the Membership page.' . wp_kses_post( $mtl_desk_sentence ) . '</p></div>';
 				} elseif ( 'paper' === $posted_mode ) {
 					echo '<div class="notice notice-success is-dismissible"><p><strong>Saved.</strong> Staff record signed paper agreements. Members are not asked to agree on the website and are never blocked from reserving.</p></div>';
 				} else {
@@ -942,8 +942,8 @@ function mtl_render_setup_page() {
 				$mtl_agreement_form_text = $new_text;
 			} else {
 				// sort_order is one past the current maximum, so a new
-				// agreement appends. Gaps are expected -- retiring never
-				// renumbers -- and the value is only ever used for relative
+				// agreement appends. Gaps are expected, since retiring never
+				// renumbers, and the value is only ever used for relative
 				// ordering, never as a position count.
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- table name only, built from $wpdb->prefix.
 				$next_sort = (int) $wpdb->get_var( "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM {$tbl_agreements}" );
@@ -1070,7 +1070,7 @@ function mtl_render_setup_page() {
 					} else {
 						mtl_agreements_flush_cache();
 						$new_version = (int) $existing->version_num + 1;
-						echo '<div class="notice notice-success is-dismissible"><p><strong>Saved as version ' . esc_html( number_format_i18n( $new_version ) ) . '.</strong> Everyone who had agreed to the previous version is now outstanding, and in full mode cannot reserve tools until they agree again. No email has been sent &mdash; send agreement requests from the Membership page.</p></div>';
+						echo '<div class="notice notice-success is-dismissible"><p><strong>Saved as version ' . esc_html( number_format_i18n( $new_version ) ) . '.</strong> Everyone who had agreed to the previous version is now outstanding, and in full mode cannot reserve tools until they agree again. No email has been sent. Send agreement requests from the Membership page.</p></div>';
 					}
 				}
 			}
@@ -1148,13 +1148,13 @@ function mtl_render_setup_page() {
 			$delete_id = isset( $_POST['agreement_id'] ) ? absint( $_POST['agreement_id'] ) : 0;
 
 			// Delete is offered only for an agreement nobody has ever accepted
-			// -- checked here again, not just when the button was rendered,
+			// Checked here again, not just when the button was rendered,
 			// because someone could have accepted it in between. The
 			// ON DELETE RESTRICT foreign key is the real guarantee; this check
 			// exists so the admin gets an explanation instead of a database
 			// error.
 			if ( $delete_id > 0 && mtl_count_agreement_acceptances( $delete_id ) > 0 ) {
-				echo '<div class="notice notice-error is-dismissible"><p><strong>Not deleted.</strong> Someone has agreed to this, so the record has to be kept. Retire it instead &mdash; that stops it being required without destroying anyone&rsquo;s record.</p></div>';
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Not deleted.</strong> Someone has agreed to this, so the record has to be kept. Retire it instead, which stops it being required without destroying anyone&rsquo;s record.</p></div>';
 			} elseif ( $delete_id > 0 && $wpdb->delete( $tbl_agreements, array( 'agreement_id' => $delete_id ), array( '%d' ) ) ) {
 				mtl_agreements_flush_cache();
 				echo '<div class="notice notice-success is-dismissible"><p><strong>Deleted.</strong> No one had agreed to it, so nothing was lost.</p></div>';
@@ -1176,8 +1176,8 @@ function mtl_render_setup_page() {
 			if ( in_array( $move_direction, array( 'up', 'down' ), true ) && $move_id > 0 && $active_list ) {
 				// Find the row's position in the rendered order and swap
 				// sort_order with its neighbour. Working from the same ordered
-				// list the admin is looking at -- rather than comparing
-				// sort_order values directly -- means the swap still does the
+				// list the admin is looking at, rather than comparing
+				// sort_order values directly, means the swap still does the
 				// obvious thing when two rows share a value.
 				$position = null;
 				foreach ( $active_list as $index => $candidate ) {
@@ -1220,7 +1220,7 @@ function mtl_render_setup_page() {
 	if ( isset( $_POST['mtl_save_agreement_emails'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_agreement_emails_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_agreement_emails_nonce'] ) ), 'mtl_agreement_emails_action' ) ) {
 			// The subject is a mail header, so line breaks come out of it.
-			// A subject containing CR or LF is classic header injection --
+			// A subject containing CR or LF is classic header injection;
 			// everything after the break is read as a new header, which is how
 			// a Bcc: gets added to every agreement email the site sends. It is
 			// stripped again at send time, since the option could be written
@@ -1247,7 +1247,7 @@ function mtl_render_setup_page() {
 			// browser prompt: this is the one irreversible action in the
 			// plugin, so a submission with JavaScript disabled (or a
 			// hand-crafted POST) must not be able to skip past it.
-			// Only surrounding whitespace is forgiven -- wording and case
+			// Only surrounding whitespace is forgiven; wording and case
 			// have to match exactly.
 			$mtl_typed_phrase = isset( $_POST['mtl_reset_confirmation'] )
 				? trim( sanitize_text_field( wp_unslash( $_POST['mtl_reset_confirmation'] ) ) )
@@ -1269,7 +1269,7 @@ function mtl_render_setup_page() {
 				// statement (no semicolon between them) would otherwise be
 				// bundled into the same chunk once the file is exploded on
 				// ";", and a naive "starts with --" filter would then skip
-				// the whole chunk -- including the real SQL. Inline trailing
+				// the whole chunk, including the real SQL. Inline trailing
 				// comments (e.g. "-- 'Y' or 'N'") are left alone since MySQL parses those natively.
 				$lines        = explode( "\n", $sql_contents );
 				$lines        = array_filter(
@@ -1345,7 +1345,7 @@ function mtl_render_setup_page() {
 	// only covers absent. That distinction is destructive here: <input
 	// type="color"> rejects anything that is not #rrggbb and falls back to
 	// #000000, so an empty option renders a black swatch, and the next Save
-	// Settings -- for any reason at all -- writes that black into the option and
+	// Settings, for any reason at all, writes that black into the option and
 	// turns every page black. Colour pickers cannot express "unset", so an empty
 	// value must resolve to the documented default before it reaches the field.
 	$h_color      = mtl_color_or_default( $h_color, '#ff6600' );
@@ -1618,7 +1618,7 @@ function mtl_render_setup_page() {
 			color: #1d2327;
 		}
 
-		/* Editable setting, unlike the readonly Public Page Link -- plain
+		/* Editable setting, unlike the readonly Public Page Link, so plain
 			(non-monospace) text on a white background, so it doesn't read
 			as disabled. */
 		.mtl-home-link-input {
@@ -1763,7 +1763,7 @@ function mtl_render_setup_page() {
 						<td>
 							<input type="email" name="mtl_contact_email" id="mtl_contact_email" class="regular-text" value="<?php echo esc_attr( $contact_email ); ?>" placeholder="hello@example.org">
 							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown to the public in the footer of every member-facing page, and in the confirmation email sent after a password change, so members have a way to reach staff. Use a shared staff address rather than a personal one. Leave blank to show no contact details anywhere.</p>
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">This address is for members to write <em>to</em> &mdash; automated email is not sent from it. Outgoing mail uses whatever WordPress or your SMTP plugin is configured to send from.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">This address is for members to write <em>to</em>, and automated email is not sent from it. Outgoing mail uses whatever WordPress or your SMTP plugin is configured to send from.</p>
 						</td>
 					</tr>
 					<tr>
@@ -1983,12 +1983,12 @@ function mtl_render_setup_page() {
 	<!-- Band 1b: Member Agreements, full width. Sits directly below General
 		Details because the mode selector at its head is a settings-level
 		decision, and because the agreement list needs the full width to show
-		each agreement's text in full rather than truncated -- editing is
+		each agreement's text in full rather than truncated. Editing is
 		expensive here, so the page pushes admins to get it right first time. -->
 	<div class="mtl-setup-row">
 		<div class="mtl-setup-tile mtl-setup-tile-full">
 			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Member Agreements</h3>
-			<p style="font-size: 0.9em; color: #666;">Statements every member has to agree to &mdash; a liability waiver, a code of conduct, a fee schedule. Members see all of them, in this order, and what they agreed to is recorded exactly as it was worded at the time.</p>
+			<p style="font-size: 0.9em; color: #666;">Statements every member has to agree to: a liability waiver, a code of conduct, a fee schedule. Members see all of them, in this order, and what they agreed to is recorded exactly as it was worded at the time.</p>
 
 			<?php
 			$mtl_stored_mode      = (string) get_option( 'mtl_agreements_mode', 'off' );
@@ -2027,11 +2027,11 @@ function mtl_render_setup_page() {
 
 					<label style="display: block; margin-bottom: 10px;">
 						<input type="radio" name="mtl_agreements_mode" value="full" <?php checked( 'full', $mtl_stored_mode ); ?>>
-						<strong>Full &mdash; members agree online</strong><br>
+						<strong>Full: members agree online</strong><br>
 						<span style="color: #666; margin-left: 24px; display: block;">Members must tick every agreement to create an account, and must agree again whenever you revise one. Anyone outstanding cannot reserve a tool until they do.</span>
 					</label>
 
-					<?php // Indented under Full because that is the mode it qualifies. Paper mode ignores it -- staff recording is the whole of that mode. ?>
+					<?php // Indented under Full because that is the mode it qualifies. Paper mode ignores it, since staff recording is the whole of that mode. ?>
 					<label style="display: block; margin: 0 0 10px 24px;">
 						<input type="checkbox" name="mtl_agreements_allow_paper" value="1" <?php checked( '1', $mtl_allow_paper ); ?>>
 						<strong>Allow paper tracking</strong><br>
@@ -2098,14 +2098,14 @@ function mtl_render_setup_page() {
 										<?php // Printed in full: this is the value somebody compares against a file they have been sent, and a truncated one cannot be compared. ?>
 										Fingerprint <code style="word-break: break-all; user-select: all;"><?php echo esc_html( (string) $mtl_agreement->file_sha256 ); ?></code>
 										<?php if ( mtl_agreement_file_hash( $mtl_file_id ) !== (string) $mtl_agreement->file_sha256 ) : ?>
-											<span style="color: #b32d2e;"><strong>&mdash; the file has changed since this was recorded.</strong> Members who agreed earlier saw a different document. Open the agreement and save it to record the new file, which asks everyone to agree again.</span>
+											<span style="color: #b32d2e;"><strong>The file has changed since this was recorded.</strong> Members who agreed earlier saw a different document. Open the agreement and save it to record the new file, which asks everyone to agree again.</span>
 										<?php endif; ?>
 									<?php elseif ( 'missing_file' === $mtl_hash_status ) : ?>
-										<span style="color: #b32d2e;">No fingerprint &mdash; the file is missing from the Media Library. Members cannot open it.</span>
+										<span style="color: #b32d2e;">No fingerprint. The file is missing from the Media Library. Members cannot open it.</span>
 									<?php elseif ( 'not_an_attachment' === $mtl_hash_status ) : ?>
-										<span style="color: #b32d2e;">No fingerprint &mdash; the attachment no longer exists.</span>
+										<span style="color: #b32d2e;">No fingerprint. The attachment no longer exists.</span>
 									<?php elseif ( 'too_large' === $mtl_hash_status ) : ?>
-										No fingerprint &mdash; the file is too large to fingerprint. It still works normally.
+										No fingerprint. The file is too large to fingerprint. It still works normally.
 									<?php else : ?>
 										No fingerprint recorded.
 									<?php endif; ?>
@@ -2147,7 +2147,7 @@ function mtl_render_setup_page() {
 
 									<?php if ( $mtl_agreement_conflict && (int) $mtl_agreement_conflict['agreement_id'] === $mtl_agreement_id ) : ?>
 										<div class="notice notice-error inline" style="margin: 0 0 12px 0;">
-											<p><strong>Nothing was saved.</strong> Someone else saved a change to this agreement while you had it open, so your version was not applied on top of theirs. Their wording is in the box below. Your unsaved wording is kept underneath &mdash; copy anything you still need from it, then edit and save again.</p>
+											<p><strong>Nothing was saved.</strong> Someone else saved a change to this agreement while you had it open, so your version was not applied on top of theirs. Their wording is in the box below. Your unsaved wording is kept underneath, so copy anything you still need from it, then edit and save again.</p>
 										</div>
 									<?php endif; ?>
 
@@ -2259,7 +2259,7 @@ function mtl_render_setup_page() {
 						<th scope="row"><label for="mtl_agreement_email_body">Confirmation body</label></th>
 						<td>
 							<textarea name="mtl_agreement_email_body" id="mtl_agreement_email_body" rows="4" class="large-text" placeholder="<?php echo esc_attr( $mtl_agreement_emails['body'] ); ?>"><?php echo esc_textarea( (string) get_option( 'mtl_agreement_email_body', '' ) ); ?></textarea>
-							<p class="description">Sent to a member after they agree, with the agreed wording listed and any attached files included. Do not list the agreements here &mdash; the plugin does that.</p>
+							<p class="description">Sent to a member after they agree, with the agreed wording listed and any attached files included. Do not list the agreements here, because the plugin does that.</p>
 						</td>
 					</tr>
 					<tr>
@@ -2278,7 +2278,7 @@ function mtl_render_setup_page() {
 	</div>
 
 	<!-- Band 2: the lookup lists. Two up on a wide screen, stacking on a
-		narrow one -- the responsive behaviour the page already had. -->
+		narrow one, the responsive behaviour the page already had. -->
 	<div class="mtl-setup-row">
 
 		<!-- Categories & Tags Management -->
@@ -2377,7 +2377,7 @@ function mtl_render_setup_page() {
 						</tbody>
 					</table>
 					<p style="font-size: 0.85em; color: #666; margin: 0 0 10px 0;">
-						<strong>Badge Image URL</strong> is optional &mdash; upload the badge to the WordPress Media Library and paste its File URL. It replaces the plain green pill on a member&rsquo;s own account page, and only shows while their certification is still current.<br>
+						<strong>Badge Image URL</strong> is optional. Upload the badge to the WordPress Media Library and paste its File URL. It replaces the plain green pill on a member&rsquo;s own account page, and only shows while their certification is still current.<br>
 						<strong>Valid For</strong> is how many months a completed training stays current, counted from the date that member completed it. Leave it blank for a training that never expires. Changing it re-dates every member who holds that training straight away.
 					</p>
 					<p class="submit" style="margin: 0;">
@@ -2417,7 +2417,7 @@ function mtl_render_setup_page() {
 	</div>
 
 	<!-- Band 3: Export Data, full width. Directly above Database
-		Configuration on purpose -- taking a backup is the step that makes
+		Configuration on purpose, because taking a backup is the step that makes
 		a reset recoverable, so an admin heading for the reset button has
 		to pass it first. -->
 	<div class="mtl-setup-row">
@@ -2426,15 +2426,15 @@ function mtl_render_setup_page() {
 		<div class="mtl-setup-tile mtl-setup-tile-full">
 			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Export Data</h3>
 
-			<p>Download a complete copy of all My Tool Library data &mdash; members, verifications, inventory, categories, tags, loans and reservations.</p>
+			<p>Download a complete copy of all My Tool Library data: members, verifications, inventory, categories, tags, loans and reservations.</p>
 
 			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
-				<li><strong>.sql dump</strong> &mdash; a single SQL file (DROP + CREATE + INSERT) you can import into any MySQL/MariaDB database. Table names <strong>keep</strong> the <code><?php echo esc_html( $wpdb->prefix ); ?></code> prefix (e.g. <code><?php echo esc_html( $wpdb->prefix ); ?>members</code>), matching how the plugin creates them. <strong>This is the one to keep as a backup:</strong> it preserves every record&rsquo;s ID, so restoring it puts members, loans, reservations and members&rsquo; online sign-ins back exactly as they were.</li>
-				<li><strong>.zip of CSVs</strong> &mdash; one <code>.csv</code> file per table, named after the table without the prefix (e.g. <code>members.csv</code>), handy for spreadsheets and for reading in Excel.</li>
+				<li><strong>.sql dump</strong>: a single SQL file (DROP + CREATE + INSERT) you can import into any MySQL/MariaDB database. Table names <strong>keep</strong> the <code><?php echo esc_html( $wpdb->prefix ); ?></code> prefix (e.g. <code><?php echo esc_html( $wpdb->prefix ); ?>members</code>), matching how the plugin creates them. <strong>This is the one to keep as a backup:</strong> it preserves every record&rsquo;s ID, so restoring it puts members, loans, reservations and members&rsquo; online sign-ins back exactly as they were.</li>
+				<li><strong>.zip of CSVs</strong>: one <code>.csv</code> file per table, named after the table without the prefix (e.g. <code>members.csv</code>), handy for spreadsheets and for reading in Excel.</li>
 			</ul>
 
 			<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
-				<strong>A CSV export is not a backup.</strong> The Membership and Inventory bulk importers always assign new IDs, so re-importing <code>members.csv</code> after a reset creates fresh member records that no longer match members&rsquo; existing sign-ins &mdash; and there is no importer at all for loans or reservations. To restore a library, use the <strong>.sql dump</strong> with phpMyAdmin, the <code>mysql</code> command line, or <code>wp db import</code>.
+				<strong>A CSV export is not a backup.</strong> The Membership and Inventory bulk importers always assign new IDs, so re-importing <code>members.csv</code> after a reset creates fresh member records that no longer match members&rsquo; existing sign-ins, and there is no importer at all for loans or reservations. To restore a library, use the <strong>.sql dump</strong> with phpMyAdmin, the <code>mysql</code> command line, or <code>wp db import</code>.
 			</div>
 
 			<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
@@ -2478,7 +2478,7 @@ function mtl_render_setup_page() {
 				<label class="mtl-lock-toggle">
 					<input type="checkbox" required>
 					<span class="mtl-lock-slider"></span>
-					<span class="mtl-lock-label">Slide to unlock &mdash; I understand this will erase existing data</span>
+					<span class="mtl-lock-label">Slide to unlock. I understand this will erase existing data</span>
 				</label>
 				<p class="submit">
 					<input type="submit" name="mtl_run_db_setup" class="button button-secondary mtl-danger-btn" value="Run Database Setup">
@@ -2503,7 +2503,7 @@ function mtl_render_setup_page() {
 
 					form.addEventListener('submit', function(event) {
 						var typed = window.prompt(
-							'This permanently deletes ALL My Tool Library data — members, tools, ' +
+							'This permanently deletes ALL My Tool Library data: members, tools, ' +
 							'loans, reservations and everything else. It cannot be undone.\n\n' +
 							'To confirm, type this phrase exactly:\n\n' + phrase
 						);
@@ -2586,7 +2586,7 @@ function mtl_render_setup_page() {
 		// Member Agreements: the Media Library picker, and the one mode change
 		// that needs confirming before it happens.
 		(function() {
-			// The picker. Unfiltered on purpose -- a library may reasonably
+			// The picker. Unfiltered on purpose, since a library may reasonably
 			// attach a PDF, a scanned form or an image, so nothing here
 			// restricts the type.
 			var frames = {};
@@ -2647,7 +2647,7 @@ function mtl_render_setup_page() {
 				var message = 'Switching to full mode will immediately require ' + count +
 					(count === 1 ? ' member' : ' members') +
 					' to agree online, and block them from reserving tools until they do.\n\n' +
-					'They will not be emailed automatically — send agreement requests from the Membership page.\n\n' +
+					'They will not be emailed automatically. Send agreement requests from the Membership page.\n\n' +
 					'Switching back to "Track signed paper only" releases everyone again straight away.';
 				if (!window.confirm(message)) {
 					event.preventDefault();

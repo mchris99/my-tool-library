@@ -29,7 +29,7 @@ if ( ! defined( 'MTL_PLUGIN_DIR' ) ) {
  *
  * ESCAPING FOR HTML IS THE WRONG TOOL HERE, and using it silently breaks the
  * setting. esc_html()/esc_attr() turn the apostrophes in a font stack into
- * &#039;, and a browser parsing CSS does not decode HTML entities -- so
+ * &#039;, and a browser parsing CSS does not decode HTML entities, so
  * `font-family: 'Segoe UI', sans-serif` arrives as
  * `font-family: &#039;Segoe UI&#039;, sans-serif`, the declaration is invalid,
  * and the font is dropped with no error anywhere. Every quoted font stack the
@@ -38,7 +38,7 @@ if ( ! defined( 'MTL_PLUGIN_DIR' ) ) {
  * So values are made safe by ALLOWLIST instead: letters, digits, space, comma,
  * period, hyphen, percent, quotes and hash. That covers font stacks, sizes
  * (1.2em, 120%), hex colours, weights, transforms and scales, while excluding
- * every character needed to escape the declaration or the element -- no
+ * every character needed to escape the declaration or the element. No
  * semicolon, braces, parentheses, colon, backslash or angle bracket, so
  * neither `</style>`, a second declaration, `url(...)` nor a CSS comment can be
  * smuggled through.
@@ -108,7 +108,7 @@ function mtl_format_utc_datetime( $utc, $format = 'm/d/Y' ) {
  * Builds a member's postal address as two lines: street (plus unit, if any)
  * on line 1, "City, State ZIP, Country" on line 2 (see readme.txt's
  * "Assumptions and intended use"). Returns raw, unescaped, stripslashes()'d
- * strings -- callers decide how to escape/join them for their context.
+ * strings; callers decide how to escape/join them for their context.
  *
  * @param object $member A $wpdb member row (or anything with the same address_* properties).
  * @return string[] [line1, line2]
@@ -467,9 +467,9 @@ function mtl_valid_country( $value ) {
 // ==========================================================================
 // PHONE NUMBERS
 //
-// Every phone number in this plugin is collected as two pieces -- a country
+// Every phone number in this plugin is collected as two pieces, a country
 // (an ISO 3166-1 alpha-2 code, picked from a <select>) and a national number
-// (free-typed digits) -- and stored as ONE canonical string:
+// (free-typed digits), and stored as ONE canonical string:
 // "+<calling code> <national number, grouped for readability>", e.g.
 // "+1 (414) 555-0123" or "+44 20 7946 0958". There is no separate "country"
 // column; the stored string is self-describing, and every existing display
@@ -478,7 +478,7 @@ function mtl_valid_country( $value ) {
 //
 // This is deliberately NOT a full international validator (that is what
 // libphonenumber exists for, and this plugin takes no third-party
-// dependencies -- see readme.txt's FAQ). NANP numbers (country code 1: the
+// dependencies; see readme.txt's FAQ). NANP numbers (country code 1: the
 // US, Canada, and the Caribbean nations that share the same numbering plan)
 // get real formatting, because that is this library's primary audience and
 // the format is simple and fixed (10 digits, NXX-NXX-XXXX). Every other
@@ -491,8 +491,8 @@ function mtl_valid_country( $value ) {
 /**
  * Country, ISO code, and calling code for every phone-number country
  * selector in the plugin (Signup, My Account, Add/Edit Member). Same country
- * set and order as mtl_get_country_options() -- United States pinned first,
- * everything else alphabetical -- so the two dropdowns read consistently,
+ * set and order as mtl_get_country_options(): United States pinned first,
+ * everything else alphabetical, so the two dropdowns read consistently,
  * keyed by ISO 3166-1 alpha-2 for O(1) lookup by mtl_format_phone_number()
  * and mtl_parse_stored_phone_number().
  *
@@ -1299,12 +1299,12 @@ function mtl_get_phone_country_options() {
 /**
  * Whitelists a phone-country ISO code against mtl_get_phone_country_options(),
  * same purpose as mtl_valid_state()/mtl_valid_country(). Falls back to "US"
- * rather than '' -- there is no blank option in the phone country <select>
+ * rather than '', because there is no blank option in the phone country <select>
  * (it always has a real selection, U.S. pinned first/default), so an invalid
  * or tampered value should behave exactly like nothing was selected at all.
  *
  * @param string $value Posted ISO code.
- * @return string A valid ISO code -- $value if it was one, else 'US'.
+ * @return string A valid ISO code: $value if it was one, else 'US'.
  */
 function mtl_valid_phone_country( $value ) {
 	$value = strtoupper( trim( (string) $value ) );
@@ -1334,14 +1334,14 @@ function mtl_group_digits_generic( $digits ) {
  * Validates and formats a phone number into this plugin's canonical stored
  * form: "+<calling code> <national number>". This is the single source of
  * truth for every phone_number write in the plugin (Signup, Account edit,
- * Add/Edit Member, CSV import) -- the client-side live formatter
+ * Add/Edit Member, CSV import). The client-side live formatter
  * (mtl_phone_formatter_script()) is cosmetic only; this is what actually
  * gets validated and stored, regardless of what the browser sent.
  *
  * @param string $iso          Country ISO code from the phone <select> (see
  *                              mtl_get_phone_country_options()); coerced to
  *                              "US" if invalid via mtl_valid_phone_country().
- * @param string $national_raw Raw national-number text -- any punctuation,
+ * @param string $national_raw Raw national-number text. Any punctuation,
  *                              spaces, or a habitually-typed leading "+code"
  *                              / NANP "1" are stripped before formatting.
  * @return array{value:string,error:string} value is '' on failure; error is
@@ -1382,7 +1382,7 @@ function mtl_format_phone_number( $iso, $national_raw ) {
 		$formatted = '(' . substr( $digits, 0, 3 ) . ') ' . substr( $digits, 3, 3 ) . '-' . substr( $digits, 6, 4 );
 	} else {
 		// No per-country metadata to check against (see the PHONE NUMBERS
-		// block comment) -- just a loose sanity range. 4 is short enough to
+		// block comment), just a loose sanity range. 4 is short enough to
 		// cover small nations' shortest lines; 14 is the longest a national
 		// number can be and still fit an E.164 total of 15 digits alongside
 		// a 1-digit calling code.
@@ -1403,12 +1403,12 @@ function mtl_format_phone_number( $iso, $national_raw ) {
 
 /**
  * Splits a stored phone_number value back into (ISO country, raw national
- * digits) for redisplaying in the two-part editor -- Edit Member's prefill,
+ * digits) for redisplaying in the two-part editor: Edit Member's prefill,
  * and CSV bulk import's per-row parsing (a CSV cell is just another external
  * representation of the same "maybe has a country prefix, maybe doesn't"
  * text this function already has to handle).
  *
- * A value with no leading "+" is read as a legacy NANP number -- every
+ * A value with no leading "+" is read as a legacy NANP number, since every
  * phone_number in this plugin was stored as plain NANP text before this
  * feature existed, with no country code at all.
  *
@@ -1417,7 +1417,7 @@ function mtl_format_phone_number( $iso, $national_raw ) {
  * which of them was originally selected, so this always resolves a shared
  * code to whichever of those countries is listed first in
  * mtl_get_phone_country_options() (the United States). That only affects
- * which country name is pre-selected on re-edit -- formatting and storage
+ * which country name is pre-selected on re-edit; formatting and storage
  * are identical for all of them either way.
  *
  * @param string $stored Raw phone_number value (from the DB or a CSV cell).
@@ -1463,8 +1463,8 @@ function mtl_parse_stored_phone_number( $stored ) {
 
 /**
  * Renders the two-part phone number control (country <select> + national
- * number text input) shared by every place a phone number is collected --
- * Signup, My Account, and the admin Add/Edit Member form -- so the option
+ * number text input) shared by every place a phone number is collected:
+ * Signup, My Account, and the admin Add/Edit Member form, so the option
  * list, markup, and JS hook (.mtl-phone-widget) can never drift between
  * them. Echoes directly (matches mtl_render_member_form_fields()'s own
  * style); every value is escaped inline, so no customEscapingFunctions entry
@@ -1472,7 +1472,7 @@ function mtl_parse_stored_phone_number( $stored ) {
  *
  * Both inputs are named phone_country / phone_national in every caller.
  * That's safe even when two instances of this widget are on the same PAGE at
- * once (the admin Membership page's Add and Edit forms both call this) --
+ * once (the admin Membership page's Add and Edit forms both call this);
  * each instance lives inside its own <form>, so only that form's own fields
  * are ever submitted together. $id_prefix only needs to keep the *ids*
  * unique page-wide, same purpose as everywhere else that pattern is used.
@@ -1499,7 +1499,7 @@ function mtl_render_phone_input( $iso, $national, $id_prefix = '' ) {
 
 /**
  * Live-formatting <script> for every .mtl-phone-widget on the current page
- * (there can be more than one -- e.g. the admin Membership page's Add and
+ * (there can be more than one, e.g. the admin Membership page's Add and
  * Edit forms are both in the DOM at once; one call here covers all of them).
  * Purely cosmetic: mtl_format_phone_number() always re-derives the canonical
  * value from scratch server-side on submit, using only the digits, so
@@ -1577,7 +1577,7 @@ function mtl_phone_formatter_script() {
 // optional certification_length_months. A member holds a training via
 // member_training_mappings, which records the start_date they completed it.
 //
-// Expiry is always DERIVED from those two, never stored -- see
+// Expiry is always DERIVED from those two, never stored; see
 // mtl_training_expiry_date(). That means an admin editing a training's
 // certification length on the Setup page instantly re-dates every member who
 // holds it, with no backfill step and no stale copies to go wrong.
@@ -1613,7 +1613,7 @@ function mtl_training_expiry_date( $start_date, $months ) {
 	// PHP's relative month arithmetic OVERFLOWS a short month rather than
 	// clamping to its last day: 31 Jan + 1 month is 3 March (not 28 Feb),
 	// and a 29 Feb start + 12 months is 1 March (not 28 Feb). Left as-is
-	// deliberately -- the drift is at most a few days, it always lands in the
+	// deliberately: the drift is at most a few days, it always lands in the
 	// member's favour (certification lasts slightly longer, never cut short),
 	// and hand-rolled clamping is more date arithmetic to get wrong than the
 	// problem is worth for a tool-library certification.
@@ -1624,7 +1624,7 @@ function mtl_training_expiry_date( $start_date, $months ) {
  * Whether a member's training certification is still current today.
  *
  * A training with no certification length never expires and is always
- * current. Expiry day itself still counts as current -- the certification
+ * current. Expiry day itself still counts as current, since the certification
  * lapses at the END of that day, which is what "valid for 12 months" means
  * to the person holding it.
  *
@@ -1647,7 +1647,7 @@ function mtl_training_is_current( $start_date, $months ) {
  *
  * This replaced a plain <select multiple>, which could record WHICH
  * trainings a member held but had nowhere to put the date each was
- * completed on -- and without a date there is nothing to expire.
+ * completed on, and without a date there is nothing to expire.
  *
  * Posts two parallel fields: training_id[] (the ticked ids) and
  * training_start[<id>] (that training's date). The handler only reads a
@@ -1706,8 +1706,8 @@ function mtl_render_trainings_picker( $trainings, $selected, $id_prefix = '' ) {
  * invites the admin to fill in a date for a training the member doesn't
  * hold; ticking the box enables it.
  *
- * Emitted once per page (the admin Membership page has two pickers -- Add
- * and Edit -- in the DOM at once), same pairing as
+ * Emitted once per page (the admin Membership page has two pickers, Add
+ * and Edit, in the DOM at once), same pairing as
  * mtl_render_phone_input()/mtl_phone_formatter_script().
  */
 function mtl_trainings_picker_script() {
@@ -1799,7 +1799,7 @@ function mtl_verification_urls_complete( $photo_id_scan_url, $address_proof_scan
 }
 
 /**
- * Finds the WordPress account linked to a member row -- but only when that
+ * Finds the WordPress account linked to a member row, but only when that
  * account still proves the link: its email must match the member row AND its
  * mtl_member_id must still point back at that row. A member added by staff
  * with no online account has none, and returns 0.
@@ -1807,7 +1807,7 @@ function mtl_verification_urls_complete( $photo_id_scan_url, $address_proof_scan
  * Resolving by email FIRST (rather than by the mtl_member_id meta value) is
  * deliberate. member_id is AUTO_INCREMENT and restarts at 1 whenever the
  * Setup page rebuilds the tables, so after a reset several surviving accounts
- * can carry the same stale mtl_member_id -- one already repaired by
+ * can carry the same stale mtl_member_id: one already repaired by
  * mtl_current_member(), one not. A meta-first lookup would return an
  * arbitrary one of them. Email is unique in wp_users and in the members
  * table, so it identifies the person unambiguously.
@@ -1837,7 +1837,7 @@ function mtl_find_wp_user_id_by_member_id( $member_id, $member_email = '' ) {
  * Every WordPress account still claiming a member id through usermeta,
  * whether or not its email matches the member row.
  *
- * Diagnostics only -- this is how the plugin notices a link it can no longer
+ * Diagnostics only. This is how the plugin notices a link it can no longer
  * vouch for (see the delete handler's "wp_user_orphaned" result). Never use
  * it to pick an account to delete or sign in as; use
  * mtl_find_wp_user_id_by_member_id() for that.
@@ -1890,7 +1890,7 @@ function mtl_member_account_id_by_email( $email ) {
  * The narrow question the Add and Import validators need. A plain
  * email_exists() is the wrong test there: it also catches a member's own
  * account surviving a database rebuild, and rejecting those would break the
- * documented way of reconnecting members afterwards -- re-adding them with the
+ * documented way of reconnecting members afterwards, by re-adding them with the
  * same address (see the staff guide, "Members' online accounts and the database
  * reset").
  *
@@ -1948,7 +1948,7 @@ function mtl_create_member_login( $member_id ) {
 
 	// An anonymized row is a deleted person. Their address has been rewritten to
 	// the reserved deleted-member-<id>@example.invalid form, which is_email()
-	// accepts quite happily because WordPress does not validate TLDs -- so
+	// accepts quite happily because WordPress does not validate TLDs, so
 	// without this guard a backfill would mint accounts for people who asked to
 	// be forgotten. See mtl_delete_or_anonymize_member().
 	if ( null !== $row->anonymized_at ) {
@@ -1960,7 +1960,7 @@ function mtl_create_member_login( $member_id ) {
 		return new WP_Error( 'mtl_bad_member_email', 'That member has no usable email address.' );
 	}
 
-	// A member's own account already on this address -- almost always one that
+	// A member's own account already on this address, almost always one that
 	// outlived a Setup > Set Up Database rebuild. Point it back at the new row
 	// rather than refusing: this is the documented way to reconnect members
 	// after a reset, and it is the same repair mtl_current_member() performs by
@@ -1988,7 +1988,7 @@ function mtl_create_member_login( $member_id ) {
 
 	// Belt and braces. The role registers on init and every caller runs later,
 	// but were it ever missing, wp_insert_user() would still succeed and write
-	// the role name with no capabilities behind it -- a whole batch of accounts
+	// the role name with no capabilities behind it, so a whole batch of accounts
 	// that cannot even read, and nothing in the output to say so.
 	mtl_register_member_role();
 
@@ -2042,7 +2042,7 @@ function mtl_create_member_login( $member_id ) {
 // its own. The Setup page's "Set Up Database" drops every plugin table while
 // WordPress accounts survive untouched, so mtl_member_id and mtl_setup_pending
 // can easily outlive the member they described. Counting raw meta would report
-// people who no longer exist -- and, worse, email them.
+// people who no longer exist, and worse, email them.
 // --------------------------------------------------------------------------
 
 /**
@@ -2088,7 +2088,7 @@ function mtl_member_login_map() {
  * database rebuild pointing at a stale id (relink it).
  *
  * Members whose address belongs to a NON-member account are excluded, because
- * no batch can fix those -- feeding them in would mean retrying the same
+ * no batch can fix those, and feeding them in would mean retrying the same
  * guaranteed failure on every run and never reaching zero. They are counted by
  * mtl_count_members_with_blocked_login() and need a person.
  *
@@ -2121,7 +2121,7 @@ function mtl_count_members_without_login() {
 
 /**
  * Live members whose address belongs to an account that is not a member
- * sign-in -- a staff login, or a leftover from a member deleted earlier.
+ * sign-in: a staff login, or a leftover from a member deleted earlier.
  *
  * Reported separately because it cannot be resolved automatically: the address
  * has to be freed, or the member given a different one, by hand under Users.
@@ -2199,7 +2199,7 @@ function mtl_setup_email_queue_from_where( $resend_all ) {
 
 	if ( ! $resend_all ) {
 		// Parenthesised deliberately. It is the only WHERE condition today, so
-		// the brackets change nothing -- but an unbracketed OR is precisely what
+		// the brackets change nothing, but an unbracketed OR is precisely what
 		// silently breaks the day somebody ANDs another condition onto this.
 		$sql .= $wpdb->prepare(
 			' WHERE ( i.umeta_id IS NULL OR CAST(i.meta_value AS UNSIGNED) < %d )',
@@ -2332,7 +2332,7 @@ add_action( 'profile_update', 'mtl_sync_member_email_from_wp_user', 10, 2 );
 
 /**
  * Keeps {prefix}members.email in step when a linked WordPress account's email
- * changes anywhere outside the Membership page -- the member's own
+ * changes anywhere outside the Membership page, including the member's own
  * /wp-admin/profile.php screen (the mtl_member role has the "read"
  * capability, so members can reach it), Users > Edit User, or WP-CLI.
  *
@@ -2341,7 +2341,7 @@ add_action( 'profile_update', 'mtl_sync_member_email_from_wp_user', 10, 2 );
  * hook the two would drift apart on any of those paths and the member would
  * be locked out of their own account page.
  *
- * The row is only rewritten when the OLD address still matched it -- i.e.
+ * The row is only rewritten when the OLD address still matched it, i.e.
  * when the link was provably good before the change. A row we cannot vouch
  * for is left alone rather than stamped with someone else's address.
  *
@@ -2376,7 +2376,7 @@ function mtl_sync_member_email_from_wp_user( $user_id, $old_user_data ) {
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	if ( '' === $row_email || 0 === strcasecmp( $row_email, $new_email ) ) {
-		// No such row, or the Membership page already moved both sides --
+		// No such row, or the Membership page already moved both sides;
 		// this is the guard that stops that handler's own wp_update_user()
 		// call from bouncing straight back through here.
 		return;
@@ -2429,8 +2429,8 @@ function mtl_sync_member_email_from_wp_user( $user_id, $old_user_data ) {
 /**
  * The default fundraising message, used until an admin saves their own.
  *
- * Kept in one function because it has to be identical in two places -- the
- * Setup page textarea's starting value and the member-facing fallback -- and
+ * Kept in one function because it has to be identical in two places, the
+ * Setup page textarea's starting value and the member-facing fallback, and
  * a copy-paste drift between them would show members different words than
  * the admin sees in the box they think they are editing.
  *
@@ -2449,7 +2449,7 @@ function mtl_default_giving_text() {
  * button that every signed-in member sees.
  *
  * A bare host like "example.org/donate" is assumed to be https rather than
- * rejected -- admins paste addresses without the scheme constantly, and
+ * rejected, since admins paste addresses without the scheme constantly, and
  * silently saving nothing would look like the field was broken.
  *
  * @param string $url Raw value from the Setup form.
@@ -2507,7 +2507,7 @@ function mtl_giving_section_html( $extra_class = '' ) {
 	$url = mtl_normalize_giving_url( get_option( 'mtl_giving_url', '' ) );
 
 	// The message is what carries the ask, so it decides whether the section
-	// exists at all -- a bare "Give Now" button with no explanation would be
+	// exists at all, because a bare "Give Now" button with no explanation would be
 	// worse than showing nothing. The link is independent: without it the
 	// message still stands on its own, just without a button.
 	if ( '' === $text ) {
@@ -2539,8 +2539,8 @@ function mtl_giving_section_html( $extra_class = '' ) {
 // ==========================================================================
 // RETURNS (CHECK-IN)
 //
-// A tool can be checked in from three places -- Loans & Reservations, a
-// tool's row on Inventory, and the Manage Loan modal on Membership -- and all
+// A tool can be checked in from three places (Loans & Reservations, a
+// tool's row on Inventory, and the Manage Loan modal on Membership), and all
 // three write loans.return_date the same way, through the two helpers below.
 //
 // Every one of those forms offers an optional return date so a check-in can
@@ -2554,7 +2554,7 @@ function mtl_giving_section_html( $extra_class = '' ) {
  * starts on today, is capped at today, and (when the loan's checkout date is
  * known) can't be taken back past it.
  *
- * The field is deliberately not `required` -- an empty value falls back to
+ * The field is deliberately not `required`, since an empty value falls back to
  * today in mtl_resolve_return_timestamp(), so a form posted with the field
  * cleared still behaves like the plain "mark returned" button it replaces.
  *
@@ -2583,7 +2583,7 @@ function mtl_return_date_field_html( $loan_date = '', $input_id = '' ) {
 	$html .= ' value="' . esc_attr( $today ) . '" max="' . esc_attr( $today ) . '"';
 	$html .= '' !== $min ? ' min="' . esc_attr( $min ) . '"' : '';
 	$html .= '>';
-	$html .= '<span class="mtl-return-date-hint">Leave as today for a normal drop-off. Backdate it if the tool actually came back earlier and you are catching up &mdash; the member is then not recorded as returning it late.</span>';
+	$html .= '<span class="mtl-return-date-hint">Leave as today for a normal drop-off. Backdate it if the tool actually came back earlier and you are catching up, so the member is not recorded as returning it late.</span>';
 	$html .= '</div>';
 
 	return $html;
@@ -2595,8 +2595,8 @@ function mtl_return_date_field_html( $loan_date = '', $input_id = '' ) {
  *
  * Blank or today's date is the ordinary same-day drop-off, and records the
  * exact current moment just as it did before backdating existed. An earlier
- * date is a catch-up entry -- the tool came back that day but was only
- * processed later -- and is stored at the start of that day, because the real
+ * date is a catch-up entry: the tool came back that day but was only
+ * processed later, and is stored at the start of that day, because the real
  * check-in time is not known. Recording the true date is the whole point:
  * "returned late" is a date-only comparison against due_date everywhere in
  * this plugin, so a backdated return that made the due date correctly counts
@@ -2609,7 +2609,7 @@ function mtl_return_date_field_html( $loan_date = '', $input_id = '' ) {
  *
  * @param int    $loan_id     Loan row ID, used to read loan_date for the
  *                            lower bound. An unknown or already-closed loan
- *                            simply has no lower bound to test here -- the
+ *                            simply has no lower bound to test here; the
  *                            caller's own "... AND return_date IS NULL"
  *                            UPDATE is what reports that case.
  * @param string $posted_date Raw $_POST['return_date'], or '' when the form
@@ -2740,7 +2740,7 @@ function mtl_reservation_collect_by( $ready_since ) {
  *
  * Only the front of the queue can be ready, and only while the tool is not
  * out on loan. This clears ready_since on everyone else and stamps the front
- * reservation the first time it becomes collectable -- an already-stamped
+ * reservation the first time it becomes collectable, and an already-stamped
  * reservation keeps its original timestamp, so the member's hold period is
  * never quietly restarted by unrelated activity on the same tool.
  *
@@ -2768,7 +2768,7 @@ function mtl_sync_reservation_readiness( $tool_id ) {
 		)
 	);
 
-	// Front of the queue: earliest reservation, ties broken by id -- the same
+	// Front of the queue: earliest reservation, ties broken by id, the same
 	// ordering the Loans & Reservations page uses to show queue position.
 	$front_id = (int) $wpdb->get_var(
 		$wpdb->prepare(
@@ -2815,7 +2815,7 @@ add_action( 'init', 'mtl_expire_stale_reservations' );
  * Closes out reservations that sat collectable for longer than the hold
  * period, stamping today's date as their expiry_date.
  *
- * Runs on init -- i.e. whenever anyone loads any page, admin or public --
+ * Runs on init, i.e. whenever anyone loads any page, admin or public.
  * rather than relying on WP-Cron alone. WP-Cron is triggered by traffic, not
  * by the clock, so on a quiet library site a nightly job would not actually
  * fire overnight; this way the data is correct the moment anybody looks at
@@ -2824,7 +2824,7 @@ add_action( 'init', 'mtl_expire_stale_reservations' );
  * that do get overnight traffic.
  *
  * Guarded to run at most once per request. It is a single UPDATE against an
- * indexed column, plus a readiness re-sync for each tool it touched -- when
+ * indexed column, plus a readiness re-sync for each tool it touched. When
  * the person at the front times out, the next member in line becomes
  * collectable and their own clock has to start.
  *
@@ -2839,7 +2839,7 @@ function mtl_expire_stale_reservations() {
 
 	$days = mtl_reservation_hold_days();
 	if ( 0 === $days ) {
-		// "Never expires" -- the library holds reservations indefinitely.
+		// "Never expires": the library holds reservations indefinitely.
 		return;
 	}
 
@@ -2889,7 +2889,7 @@ add_action( 'mtl_daily_reservation_sweep', 'mtl_expire_stale_reservations' );
  * Strictly a convenience: the sweep on init is what actually guarantees
  * correctness (see mtl_expire_stale_reservations()). WordPress's scheduler is
  * driven by incoming traffic rather than by the clock, so this event fires
- * "daily" only on a site that gets visited -- and on such a site the init
+ * "daily" only on a site that gets visited, and on such a site the init
  * sweep would have caught everything anyway. Its real value is on sites whose
  * host runs a genuine system cron against wp-cron.php, where it makes the
  * expiry timestamps land overnight instead of at whatever hour the first
@@ -2924,7 +2924,7 @@ function mtl_email_org_name() {
  * to a common width.
  *
  * The padding makes a real column in a fixed-width mail client and simply
- * reads as extra space in a proportional one -- which is why every row still
+ * reads as extra space in a proportional one, which is why every row still
  * carries its own "Label:" rather than relying on the alignment to convey
  * what it is. A multi-line value (an address, private notes) is indented to
  * hang under the first line.
@@ -2956,7 +2956,7 @@ function mtl_email_table_row( $label, $value ) {
  * details as the library's record of what was deleted.
  *
  * Deleting a member drops the member_verifications row, which destroys the
- * LINKS to their ID and proof-of-address scans -- but the files themselves live
+ * LINKS to their ID and proof-of-address scans, but the files themselves live
  * wherever the library uploaded them (a Drive folder, a media library, a share)
  * and nothing in this plugin can reach out and delete them. So the links are
  * mailed to the administrator before they are lost, together with the request
@@ -2965,10 +2965,10 @@ function mtl_email_table_row( $label, $value ) {
  * once the files are gone it is the last thing left to destroy.
  *
  * Sent even when no documents were on file, since the record of the deletion
- * is worth having either way -- it just says so plainly instead of listing
+ * is worth having either way, and just says so plainly instead of listing
  * links.
  *
- * Goes to the WordPress site administrator, NOT mtl_contact_email() -- that
+ * Goes to the WordPress site administrator, NOT mtl_contact_email(), because that
  * address is published on public pages, and a member's full contact details
  * and ID scans must not be handed to a shared inbox just because it happens
  * to be the one printed in the footer.
@@ -2991,7 +2991,7 @@ function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open
 
 	$org_name = mtl_email_org_name();
 
-	// "Last, First" -- this is a record to file and look up, not a greeting.
+	// "Last, First": a record to file and look up, not a greeting.
 	$last  = trim( stripslashes( (string) $row->last_name ) );
 	$first = trim( stripslashes( (string) $row->first_name ) );
 	$name  = trim( trim( $last . ', ' . $first ), ', ' );
@@ -3013,15 +3013,15 @@ function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open
 	$donated     = 'Y' === strtoupper( trim( (string) $row->has_donated_tools ) ) ? 'Yes' : 'No';
 
 	// Both the subject and the opening line promise action only when there is
-	// action to take -- an admin who reads "please delete their files" and
+	// action to take. An admin who reads "please delete their files" and
 	// finds none listed learns to skim the next one.
 	$subject = $doc_urls
-		? sprintf( '[%s] Member record deleted -- please delete their verification files', $org_name )
-		: sprintf( '[%s] Member record deleted -- no verification files to delete', $org_name );
+		? sprintf( '[%s] Member record deleted: please delete their verification files', $org_name )
+		: sprintf( '[%s] Member record deleted: no verification files to delete', $org_name );
 
 	$purpose = $doc_urls
 		? 'This email is the library\'s record of what was deleted, and of the request to remove the files listed at the end.'
-		: 'This email is the library\'s record of what was deleted. There are no verification files to remove -- see the end.';
+		: 'This email is the library\'s record of what was deleted. There are no verification files to remove. See the end.';
 
 	$lines = array(
 		sprintf( 'The library record below was deleted on %s.', $deleted_at ),
@@ -3045,13 +3045,13 @@ function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open
 		'',
 	);
 
-	// Outstanding loans. Deleting a record does not end a loan -- the member
-	// still physically has the tool -- so whoever reads this needs to know
+	// Outstanding loans. Deleting a record does not end a loan, because the member
+	// still physically has the tool, so whoever reads this needs to know
 	// which items are still out and who is no longer reachable through the
 	// system to chase them.
 	if ( $open_loans ) {
 		$lines[] = sprintf(
-			'OUTSTANDING LOANS (%d) -- still out, and this member can no longer be contacted through the library:',
+			'OUTSTANDING LOANS (%d), still out, and this member can no longer be contacted through the library:',
 			count( $open_loans )
 		);
 		foreach ( $open_loans as $loan ) {
@@ -3080,7 +3080,7 @@ function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open
 			$lines[] = sprintf( '  %s: %s', $label, $url );
 		}
 		$lines[] = '';
-		$lines[] = 'Once the files are gone, please delete this email too -- after them, it is the last copy of those links.';
+		$lines[] = 'Once the files are gone, please delete this email too, because after them it is the last copy of those links.';
 	} else {
 		$lines[] = 'VERIFICATION FILES TO DELETE: none.';
 		$lines[] = '';
@@ -3147,7 +3147,7 @@ function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $canc
 	}
 
 	$lines[] = '';
-	$lines[] = 'You are welcome back any time -- signing up again simply starts a new record.';
+	$lines[] = 'You are welcome back any time, and signing up again simply starts a new record.';
 	$lines[] = '';
 	$lines[] = sprintf( '-- %s', $org_name );
 
@@ -3155,14 +3155,14 @@ function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $canc
 }
 
 /**
- * Honors a member delete request -- self-service (Account page) or
+ * Honors a member delete request, either self-service (Account page) or
  * admin-initiated (Membership page).
  *
  * The member's row is always ANONYMIZED, never dropped: their identifying
  * fields are overwritten with placeholders, anonymized_at is stamped, and
  * they read as "Former Member" everywhere afterwards. Everything that records
- * what they did with the library is deliberately kept -- loans, reservations,
- * and the trainings they completed -- so tool-level statistics, borrowing
+ * what they did with the library is deliberately kept: loans, reservations,
+ * and the trainings they completed, so tool-level statistics, borrowing
  * counts and training records all stay accurate. Keeping the row is what
  * makes that possible: loans and tool_reservations reference member_id, and
  * member_training_mappings would be swept away by ON DELETE CASCADE if the
@@ -3170,14 +3170,14 @@ function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $canc
  *
  * What IS destroyed is the personal, identifying material: the row's own
  * name/address/contact fields, the member_verifications row holding their ID
- * and proof-of-address scans, and -- fully, not anonymized -- their WordPress
+ * and proof-of-address scans, and, fully rather than anonymized, their WordPress
  * account, which wp_delete_user() removes from both wp_users and wp_usermeta.
  *
  * Any still-active reservation is cancelled first, otherwise a departed
  * member would keep occupying a spot in a tool's queue indefinitely; this
  * mirrors how retiring a tool auto-cancels its own reservations (see the
  * Retire handler in admin/inventory-page.php). A currently open loan is
- * deliberately left alone, same as a retired tool's loan -- the member still
+ * deliberately left alone, same as a retired tool's loan, since the member still
  * physically has the item, so it can still be ended normally when returned.
  *
  * The WordPress account is only deleted when it still proves the link (see
@@ -3190,7 +3190,7 @@ function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $canc
  * the site administrator, asking them to delete the verification FILES this
  * plugin cannot reach (see mtl_send_verification_cleanup_email()), and a
  * confirmation to the member that their account has been deleted. Neither is
- * sent when the record was already anonymized -- that deletion, and its
+ * sent when the record was already anonymized, since that deletion, and its
  * emails, happened the first time.
  *
  * @param int    $member_id    Member row ID.
@@ -3218,7 +3218,7 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 		)
 	);
 	if ( ! $row ) {
-		// Already gone (double-submit, stale page) -- nothing to do.
+		// Already gone (double-submit, stale page), so nothing to do.
 		return array(
 			'outcome'                => 'not_found',
 			'name'                   => '',
@@ -3247,8 +3247,8 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 		)
 	);
 	if ( $verif_urls ) {
-		// Either scan can stand alone -- a member may have provided only one
-		// so far (see schema.sql) -- so each is listed only if it is on file.
+		// Either scan can stand alone, since a member may have provided only one
+		// so far (see schema.sql), so each is listed only if it is on file.
 		if ( '' !== trim( (string) $verif_urls->photo_id_scan_url ) ) {
 			$doc_urls['Photo ID scan'] = trim( (string) $verif_urls->photo_id_scan_url );
 		}
@@ -3280,14 +3280,14 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 
 	// Resolved BEFORE the row is anonymized, while its email still identifies
 	// the person. Only an account that proves the link is deleted: if the link
-	// is stale -- e.g. a database reset renumbered member ids out from under
-	// the surviving sign-ins -- the account is left alone rather than risk
+	// is stale, e.g. a database reset renumbered member ids out from under
+	// the surviving sign-ins, the account is left alone rather than risk
 	// deleting an unrelated person's WordPress login, which is irreversible.
 	$wp_user_id       = mtl_find_wp_user_id_by_member_id( $member_id, (string) $row->email );
 	$wp_user_orphaned = ( 0 === $wp_user_id && ! empty( mtl_find_wp_user_ids_claiming_member_id( $member_id ) ) );
 
 	// Captured before the cancel, since afterwards these rows no longer match
-	// -- each of those tools needs the next member in line promoting.
+	// Each of those tools needs the next member in line promoting.
 	$freed_tool_ids = $wpdb->get_col(
 		$wpdb->prepare(
 			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
@@ -3321,7 +3321,7 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 			'zip_code'      => '00000',
 			'country'       => 'United States',
 			'phone_number'  => '(removed)',
-			// .invalid is the IANA-reserved, never-resolving TLD (RFC 2606) --
+			// .invalid is the IANA-reserved, never-resolving TLD (RFC 2606),
 			// guaranteed unique against the UNIQUE constraint without risking a
 			// real mailbox, and it frees their real address for a future signup.
 			'email'         => 'deleted-member-' . $member_id . '@example.invalid',
@@ -3336,7 +3336,7 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 	);
 
 	// Their ID and proof-of-address scans: identifying material, so removed
-	// outright. Their training records are NOT touched -- those are library
+	// outright. Their training records are NOT touched, because those are library
 	// history, and the anonymized row keeps them attached to a "Former Member"
 	// rather than to a name.
 	$wpdb->delete( $tbl_verif, array( 'member_id' => $member_id ), array( '%d' ) );
@@ -3539,16 +3539,16 @@ function mtl_apply_custom_admin_styles() {
 }
 
 // ==========================================================================
-// MEMBER AGREEMENTS -- MODE AND CACHING
+// MEMBER AGREEMENTS: MODE AND CACHING
 //
 // Three modes, held in the mtl_agreements_mode option:
 //
-// off   -- nothing recorded, computed or shown anywhere but the mode control
+// off   : nothing recorded, computed or shown anywhere but the mode control
 // itself. The default.
-// paper -- staff record signatures against paper copies and the plugin tracks
+// paper : staff record signatures against paper copies and the plugin tracks
 // who is outstanding. Members are never asked to agree online and are
 // never blocked, but can see their own record.
-// full  -- members agree online at signup, agree again after a revision, and
+// full  : members agree online at signup, agree again after a revision, and
 // cannot self-serve a reservation until they do.
 //
 // Every surface asks mtl_agreements_tracking() (paper OR full),
@@ -3564,7 +3564,7 @@ function mtl_apply_custom_admin_styles() {
  *
  * Both values must be readable by the predicates below AND clearable by the
  * Setup handlers within the same request, which rules out a function-local
- * static -- nothing outside the function can reset one. A global rather than a
+ * static, since nothing outside the function can reset one. A global rather than a
  * class property because this file is entirely procedural, and mixing the two
  * trips Universal.Files.SeparateFunctionsFromOO.
  *
@@ -3586,7 +3586,7 @@ function &mtl_agreements_cache() {
  * Call at the END of EVERY handler that writes mtl_agreements_mode or changes a
  * row in member_agreements: add, edit, retire, un-retire, move up, move down,
  * and the mode save. The same request then re-renders the page, so a missed
- * call does not crash -- it shows the admin the state from a moment ago.
+ * call does not crash; it shows the admin the state from a moment ago.
  *
  * @return void
  */
@@ -3624,7 +3624,7 @@ function mtl_count_active_agreements() {
  *
  * THIS IS THE ADMINISTRATOR'S SETTING AND NOTHING ELSE. It changes only when
  * somebody picks a different option on Setup and saves it. Do not fold "is
- * there anything to enforce" in here -- retiring the last agreement would then
+ * there anything to enforce" in here, because retiring the last agreement would then
  * appear to switch the feature off by itself, which reads as the plugin
  * losing the setting. That question belongs to the two gates below.
  *
@@ -3661,7 +3661,7 @@ function mtl_agreements_tracking() {
 	// The active-agreement check lives here rather than in mtl_agreements_mode()
 	// so that having nothing to track never rewrites the administrator's
 	// setting. With no agreement active there is nothing to record against, so
-	// every surface stays hidden -- but Setup still shows the chosen mode, and
+	// every surface stays hidden, but Setup still shows the chosen mode, and
 	// adding an agreement brings it all straight back.
 	return 'off' !== mtl_agreements_mode() && 0 < mtl_count_active_agreements();
 }
@@ -3694,7 +3694,7 @@ function mtl_agreements_online() {
  *
  * Always true in paper mode: staff recording IS that mode, so honouring the
  * option there would leave a mode switched on that can record nothing. In full
- * mode it is the administrator's choice, and it is off by default -- a library
+ * mode it is the administrator's choice, and it is off by default. A library
  * whose members all agree online never wants a desk button that writes an
  * attestation on their behalf.
  *
@@ -3709,7 +3709,7 @@ function mtl_agreements_staff_recording() {
 }
 
 // ==========================================================================
-// MEMBER AGREEMENTS -- CONTEXTS AND ASSENT LANGUAGE
+// MEMBER AGREEMENTS: CONTEXTS AND ASSENT LANGUAGE
 //
 // An acceptance row records not just WHAT the member agreed to but HOW they
 // were asked. The context is the only thing a caller of
@@ -3721,7 +3721,7 @@ function mtl_agreements_staff_recording() {
  * The four contexts in which an acceptance can be recorded, and what each one
  * means.
  *
- * MUST build the array on every call -- never a file-scope constant or a static
+ * MUST build the array on every call, never a file-scope constant or a static
  * cache. The assent strings are wrapped in __(), and WordPress does not load a
  * plugin's text domain until `init`, so an array built at file scope would
  * resolve them to English permanently. Since these strings are snapshotted into
@@ -3764,7 +3764,7 @@ function mtl_agreement_contexts() {
  * Whether a context is a recognised one.
  *
  * The writer refuses to insert a row for anything else, because both the assent
- * wording and the staff/member distinction are looked up from the context -- an
+ * wording and the staff/member distinction are looked up from the context. An
  * unrecognised value has no honest answer for either.
  *
  * @param string $context Context key.
@@ -3778,7 +3778,7 @@ function mtl_agreement_context_is_valid( $context ) {
  * The words that frame the tick, for one context.
  *
  * This is the ONLY source of the assent wording. The screen that asks and the
- * row that records must show the same sentence, so both read it from here --
+ * row that records must show the same sentence, so both read it from here,
  * never a literal typed into a template.
  *
  * @param string $context One of the keys of mtl_agreement_contexts().
@@ -3802,7 +3802,7 @@ function mtl_acceptance_is_staff( $context ) {
 }
 
 // ==========================================================================
-// MEMBER AGREEMENTS -- READING THE AGREEMENT LIST
+// MEMBER AGREEMENTS: READING THE AGREEMENT LIST
 // ==========================================================================
 
 /**
@@ -3810,7 +3810,7 @@ function mtl_acceptance_is_staff( $context ) {
  *
  * The column is TEXT and would take far more. The cap is a usability limit, not
  * a storage one: every active agreement appears in full on the signup form, and
- * six long ones stacked together is a wall of text nobody reads -- which is the
+ * six long ones stacked together is a wall of text nobody reads, which is the
  * failure mode this whole feature exists to avoid.
  */
 define( 'MTL_AGREEMENT_TEXT_MAXLENGTH', 2000 );
@@ -3821,7 +3821,7 @@ define( 'MTL_AGREEMENT_TEXT_MAXLENGTH', 2000 );
  * ALWAYS ordered by sort_order then agreement_id. Two rows can end up sharing a
  * sort_order through concurrent reordering, and without the tiebreak the signup
  * form and the account page could list them differently on different page
- * loads -- which looks like a bug in the record.
+ * loads, which looks like a bug in the record.
  *
  * @return object[] Rows from member_agreements, retired ones excluded.
  */
@@ -3861,7 +3861,7 @@ function mtl_get_agreement( $agreement_id ) {
  * How many acceptance rows exist for an agreement.
  *
  * Decides whether Setup offers Delete or Retire: an agreement nobody has ever
- * accepted can be deleted outright, and this is how that is established --
+ * accepted can be deleted outright, and this is how that is established:
  * counted, not guessed from how recently it was created. The ON DELETE RESTRICT
  * foreign key is the real guarantee; this only decides which button to show.
  *
@@ -3882,7 +3882,7 @@ function mtl_count_agreement_acceptances( $agreement_id ) {
  * since those are the ones a version bump knocks back out of agreement. Anyone
  * who had not agreed yet is already outstanding.
  *
- * Anonymized members are excluded -- they have no account to be prompted on.
+ * Anonymized members are excluded, since they have no account to be prompted on.
  *
  * @param int $agreement_id Agreement ID.
  * @param int $version_num  Version to measure against.
@@ -3916,8 +3916,8 @@ function mtl_count_members_agreed_to( $agreement_id, $version_num ) {
  * SQL predicate for "this member is outstanding", as a WHERE fragment.
  *
  * The definition of outstanding lives here and nowhere else. Three queries need
- * it -- the paper-to-full count, the request queue's audience filter, and the
- * excluded count -- and if it were written out in each, changing what
+ * it: the paper-to-full count, the request queue's audience filter, and the
+ * excluded count. If it were written out in each, changing what
  * outstanding means would mean finding all three and keeping them in step.
  *
  * Expects the members table aliased as `m` in the surrounding query. Contains no
@@ -3953,7 +3953,7 @@ function mtl_agreements_outstanding_sql() {
  * Used for one thing: the count in the paper-to-full confirmation, so an admin
  * is told how many people that switch is about to block before they make it.
  *
- * Returns 0 when no agreement is active, which is correct -- with nothing to
+ * Returns 0 when no agreement is active, which is correct, because with nothing to
  * agree to, nobody is outstanding.
  *
  * @return int
@@ -3975,7 +3975,7 @@ function mtl_count_members_not_in_agreement() {
 }
 
 // ==========================================================================
-// MEMBER AGREEMENTS -- EMAIL COPY
+// MEMBER AGREEMENTS: EMAIL COPY
 //
 // Three admin-editable strings, each shipped with a working default so no email
 // this feature sends is ever blank or subject-less.
@@ -4001,7 +4001,7 @@ function mtl_agreement_email_defaults() {
  * Subject line for the confirmation email, admin-set or shipped default.
  *
  * Line breaks are stripped HERE as well as on save. A subject containing CR or
- * LF is classic mail-header injection -- everything after the break becomes a
+ * LF is classic mail-header injection, since everything after the break becomes a
  * new header, which is how a Bcc: gets added to every agreement email the site
  * sends. The option could have been written by anything (WP-CLI, a migration, a
  * hand-edited database), so the value is never trusted just because a save
@@ -4051,7 +4051,7 @@ function mtl_agreement_request_email_body() {
  * rather than two to keep in step.
  *
  * WRITES USER META ONLY. Sending a request never changes a member's agreement
- * status -- status is derived from version comparison and nothing else. The
+ * status, which is derived from version comparison and nothing else. The
  * meta is a send-throttle, not a state.
  *
  * The generated part varies by what the recipient actually needs, which is what
@@ -4114,7 +4114,7 @@ function mtl_send_agreement_request_email( $member_id ) {
 		// No task, and it must not invent one. No anchor either: there is no
 		// agreement form on that page for a member who is up to date, so an
 		// anchor would point at nothing.
-		$lines[] = __( 'You have already agreed to everything currently required -- there is nothing you need to do. You can see what you agreed to here:', 'my-tool-library' );
+		$lines[] = __( 'You have already agreed to everything currently required, so there is nothing you need to do. You can see what you agreed to here:', 'my-tool-library' );
 		$lines[] = mtl_front_page_url( 'account' );
 	}
 
@@ -4180,8 +4180,8 @@ define( 'MTL_AGREEMENT_MAIL_MAX_BYTES', 10 * 1024 * 1024 );
  * Sends a member their record of what they just agreed to.
  *
  * The generated list comes from the ACCEPTANCE ROWS just written, not from a
- * fresh read of member_agreements. At send time the two are identical -- the
- * rows were snapshotted moments earlier -- but reading the snapshot means the
+ * fresh read of member_agreements. At send time the two are identical, since the
+ * rows were snapshotted moments earlier, but reading the snapshot means the
  * email can never disagree with the record it is confirming, even if an admin
  * saves an edit in the same second.
  *
@@ -4263,7 +4263,7 @@ function mtl_send_agreement_confirmation_email( $member_id, $acceptance_ids ) {
 		__( 'You agreed to the following:', 'my-tool-library' ),
 	);
 
-	// Numbered from 1 within THIS email -- these are not agreement ids and not
+	// Numbered from 1 within THIS email; these are not agreement ids and not
 	// positions in the full list. A member re-accepting only agreement 3 gets a
 	// single item numbered 1.
 	$number = 1;
@@ -4290,7 +4290,7 @@ function mtl_send_agreement_confirmation_email( $member_id, $acceptance_ids ) {
 		$attachment_id = attachment_url_to_postid( $row->file_url );
 		$path          = $attachment_id > 0 ? get_attached_file( $attachment_id ) : '';
 
-		// A file missing from disk is skipped rather than failing the send --
+		// A file missing from disk is skipped rather than failing the send;
 		// the member still gets their record.
 		if ( ! $path || ! is_file( $path ) || ! is_readable( $path ) ) {
 			continue;
@@ -4350,7 +4350,7 @@ function mtl_send_agreement_confirmation_email( $member_id, $acceptance_ids ) {
  * The acceptance rows written to a member most recently, as ids.
  *
  * "Most recently" means every row sharing the highest accepted_at for that
- * member. That is the newest acceptance event -- never an older one.
+ * member. That is the newest acceptance event, never an older one.
  *
  * ONE-SECOND RESOLUTION IS THE LIMIT OF THIS. accepted_at is a DATETIME, so two
  * separate events in the same second come back together. Only safe where that
@@ -4390,7 +4390,7 @@ function mtl_latest_acceptance_event_ids( $member_id ) {
 }
 
 // --------------------------------------------------------------------------
-// AGREEMENT REQUESTS -- THE BULK QUEUE
+// AGREEMENT REQUESTS: THE BULK QUEUE
 //
 // Mirrors the setup-email queue directly above: one shared FROM/WHERE fragment
 // so the count and the fetch can never disagree about who is due, and a runner
@@ -4402,7 +4402,7 @@ function mtl_latest_acceptance_event_ids( $member_id ) {
  *
  * THE JOINS ARE THE CORRECTNESS, not an optimisation. The email tells the
  * member to agree on the website, and the Account page sends anyone not signed
- * in to a login form -- so a member with no account, or one who has never set a
+ * in to a login form, so a member with no account, or one who has never set a
  * password, gets an instruction they cannot follow. That is the default state
  * of the population this panel serves: staff-added and CSV-imported members.
  *
@@ -4508,7 +4508,7 @@ function mtl_members_awaiting_agreement_request( $limit, $audience = 'outstandin
  * How many of the members due a request have never agreed to anything.
  *
  * A subset of mtl_count_members_awaiting_agreement_request( 'outstanding' ),
- * built from the same shared fragment so the two populations cannot drift --
+ * built from the same shared fragment so the two populations cannot drift;
  * the panel reports this as "N of those", and it has to be true of that N.
  *
  * @param bool $resend_all Include people emailed in the last day.
@@ -4607,7 +4607,7 @@ function mtl_run_agreement_request_batch( $audience = 'outstanding', $resend_all
 }
 
 // ==========================================================================
-// MEMBER AGREEMENTS -- FILE FINGERPRINTS
+// MEMBER AGREEMENTS: FILE FINGERPRINTS
 //
 // Attached files are Media Library items, so fingerprinting one is a plain
 // filesystem read of a path WordPress computed: no network call, no
@@ -4628,7 +4628,7 @@ define( 'MTL_AGREEMENT_HASH_MAX_BYTES', 64 * 1024 * 1024 );
  * SHA-256 of an attachment's file.
  *
  * Single return contract: a 64-character lowercase hex hash, or '' meaning "not
- * recorded". Never throws, never fatals, and never blocks anything -- a member
+ * recorded". Never throws, never fatals, and never blocks anything. A member
  * must still be able to agree when a fingerprint could not be taken.
  *
  * Takes an attachment ID, not a URL, because the ID is what the plugin stores.
@@ -4671,7 +4671,7 @@ function mtl_agreement_file_hash_status( $attachment_id ) {
 }
 
 // ==========================================================================
-// MEMBER AGREEMENTS -- THE WRITE PATH
+// MEMBER AGREEMENTS: THE WRITE PATH
 //
 // One writer. Its four call sites (signup, the account page, Add New Member,
 // Edit Member) state only who, which agreement, which context and what version
@@ -4701,12 +4701,12 @@ function mtl_agreement_file_hash_status( $attachment_id ) {
  * @param int      $agreement_id Agreement being accepted.
  * @param string   $context      One of the keys of mtl_agreement_contexts().
  * @param int|null $seen_version The version_num the form displayed. Null skips
- *                               the check, which every real caller supplies --
+ *                               the check, which every real caller supplies;
  *                               nothing writes an acceptance without having
  *                               shown somebody something first.
  * @return int The new acceptance_id, or 0 if nothing was written. Truthy on
  *             success either way, so a caller that only asks "did it write?"
- *             reads correctly -- but a caller that needs to email exactly the
+ *             reads correctly, but a caller that needs to email exactly the
  *             rows it just wrote should keep the ids rather than re-deriving
  *             them from the timestamp, which has one-second resolution and
  *             cannot separate two events in the same second.
@@ -4750,7 +4750,7 @@ function mtl_record_agreement_acceptance( $member_id, $agreement_id, $context, $
 	// Deriving acted_by from the session rather than accepting it is what makes
 	// accepted_context and acted_by impossible to contradict. A staff context
 	// with nobody logged in would be an unattributed attestation, which is the
-	// exact thing that derivation exists to prevent -- so it is refused rather
+	// exact thing that derivation exists to prevent, so it is refused rather
 	// than recorded as user 0.
 	$acted_by = $is_staff ? get_current_user_id() : 0;
 	if ( $is_staff && $acted_by <= 0 ) {
@@ -4823,7 +4823,7 @@ function mtl_record_agreement_acceptance( $member_id, $agreement_id, $context, $
  * others.
  *
  * PARTIAL FAILURE IS A FAILURE. Compare the return value against the number you
- * expected to write -- not against zero. A member left with three of five rows
+ * expected to write, not against zero. A member left with three of five rows
  * written reads as somebody who has not got round to it, which is the worst
  * available outcome because it looks like ordinary member behaviour rather than
  * a bug. Signup and Add New Member must roll the whole thing back on a
@@ -4849,7 +4849,7 @@ function mtl_record_all_outstanding_agreements( $member_id, $context, $seen_vers
 }
 
 // ==========================================================================
-// MEMBER AGREEMENTS -- READING A MEMBER'S POSITION
+// MEMBER AGREEMENTS: READING A MEMBER'S POSITION
 //
 // Status is derived from version comparison and nothing else. There is no
 // per-member override, no reset column and no deadline anybody can set: a
@@ -4870,7 +4870,7 @@ function mtl_record_all_outstanding_agreements( $member_id, $context, $seen_vers
  * backwards and re-prompted for something they have already agreed to.
  *
  * `outdated` and `none` stay distinct because they mean different things to
- * staff -- one member was caught by a revision, the other never agreed to
+ * staff: one member was caught by a revision, the other never agreed to
  * anything.
  *
  * Delegates to the map so there is exactly one implementation of the rule. Use
@@ -4888,7 +4888,7 @@ function mtl_member_agreements_status( $member_id ) {
 /**
  * The same answer for many members, in one query.
  *
- * The Membership list must never call the single-member function per row --
+ * The Membership list must never call the single-member function per row;
  * that is a query per member on a paginated table. This is a batching wrapper
  * around the same comparison, not a second implementation of it.
  *
@@ -4901,7 +4901,7 @@ function mtl_member_agreements_status_map( $member_ids ) {
 		return array();
 	}
 
-	// A mode of off already covers "no agreement is active" --
+	// A mode of off already covers "no agreement is active";
 	// mtl_agreements_tracking() is false when no agreement is active, so
 	// this one check answers both halves of `disabled`.
 	if ( ! mtl_agreements_tracking() ) {
@@ -4924,7 +4924,7 @@ function mtl_member_agreements_status_map( $member_ids ) {
 	// somebody whose only record is against a retired agreement.
 	//
 	// The %d placeholders are a counted run built from $member_ids, which the
-	// placeholder sniff cannot see through -- hence the disable below covering
+	// placeholder sniff cannot see through, hence the disable below covering
 	// it as well as the table names.
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
 	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- status is derived per request; there is no cache to invalidate.
@@ -5132,7 +5132,7 @@ function mtl_get_member_acceptance_history( $member_id ) {
  *
  * Shared by the Membership detail panel, the Edit form, the account page and
  * the agreement record download, so none of them can disagree about which row
- * is current. Retired agreements are included -- the member did agree to them,
+ * is current. Retired agreements are included, since the member did agree to them,
  * and that does not stop being true.
  *
  * EVERY DISPLAYED VALUE COMES FROM THE ACCEPTANCE ROW. The join below exists
@@ -5181,15 +5181,15 @@ function mtl_get_member_acceptances( $member_id ) {
 //
 // Two levels of library staff:
 //
-// Administrator -- everything, including the Setup page (branding, database
+// Administrator: everything, including the Setup page (branding, database
 // setup, exports) and deleting a member's record.
-// Editor        -- the day-to-day desk role: members, inventory, loans and
+// Editor runs the day-to-day desk: members, inventory, loans and
 // reservations, dashboard and workflows. No Setup page and
 // no member deletion.
 //
 // Editor is WordPress's own built-in role, so no custom role is created here;
 // the plugin only adds one capability to it. Anything a member can do to
-// their OWN account (including deleting it) is unaffected by all of this --
+// their OWN account (including deleting it) is unaffected by all of this;
 // that runs on the public site and is gated by mtl_current_member(), never by
 // these capabilities.
 // ==========================================================================
@@ -5219,7 +5219,7 @@ function mtl_register_staff_capabilities() {
 }
 
 /**
- * Whether the current user may use the plugin's admin portal at all --
+ * Whether the current user may use the plugin's admin portal at all:
  * Dashboard, Membership, Inventory, Loans & Reservations, and Workflows.
  * True for Editors and Administrators.
  *
@@ -5237,7 +5237,7 @@ function mtl_can_manage_library() {
 /**
  * Whether the current user may open the Setup page and run the actions on it
  * (branding and appearance, category/tag/training lists, database setup, and
- * the data exports). Administrators only -- these change how the whole
+ * the data exports). Administrators only, because these change how the whole
  * library behaves, or hand over a file containing every member's details.
  *
  * @return bool
@@ -5253,7 +5253,7 @@ function mtl_can_manage_settings() {
  * mtl_delete_or_anonymize_member()).
  *
  * Members deleting their OWN account from the public Account page do not go
- * through this -- see mtl_render_account_page() in public/member-pages.php.
+ * through this; see mtl_render_account_page() in public/member-pages.php.
  * That right is theirs regardless of who is on staff.
  *
  * @return bool
@@ -5267,7 +5267,7 @@ function mtl_can_delete_members() {
  * only, matching mtl_can_delete_members(): it is irreversible and drops the
  * record of an asset the library owns.
  *
- * Editors keep every other tool action, including Retire -- which is the
+ * Editors keep every other tool action, including Retire, which is the
  * reversible way to take something out of circulation, and the right answer
  * for almost every case Delete used to be reached for.
  *
@@ -5283,7 +5283,7 @@ function mtl_can_delete_tools() {
 
 // ADMIN MENUS: Register the portal pages.
 // add_submenu_page() both places a sidebar link AND registers the page's
-// routing/render callback/capability check -- so all six must stay
+// routing/render callback/capability check, so all six must stay
 // registered here even though their sidebar links are hidden below; only
 // the top-level "My Tool Library" button stays visible, and navigation
 // happens through the portal tab bar.
@@ -5294,7 +5294,7 @@ add_action( 'admin_menu', 'mtl_register_admin_menus' );
  *
  * Every page except Setup is registered against MTL_STAFF_CAP, so Editors
  * reach them and WordPress itself refuses anyone else. Setup keeps
- * manage_options, which is what stops an Editor opening it by URL -- core
+ * manage_options, which is what stops an Editor opening it by URL. Core
  * returns "Sorry, you are not allowed to access this page" before the render
  * callback ever runs (mtl_render_setup_page() re-checks anyway).
  */
@@ -5314,7 +5314,7 @@ function mtl_register_admin_menus() {
 //
 // TIMING IS LOAD-BEARING: this runs on admin_head, not admin_menu. WordPress
 // resolves the requested page's hook name, capability check and title by
-// searching the $submenu registration DURING routing -- removing the entries
+// searching the $submenu registration DURING routing, because removing the entries
 // before that search would make every one of these pages die with "Sorry, you
 // are not allowed to access this page", even for administrators. admin_head
 // fires after all routing decisions are made but just before the sidebar menu
@@ -5339,7 +5339,7 @@ function mtl_hide_portal_sidebar_links() {
 // ADMIN PORTAL TAB BAR
 // Renders a horizontal Dashboard / Membership / Inventory / Loans / Workflows
 // / Setup tab strip across the top of all six plugin admin pages, plus
-// "View Main Page" and "Log Out" links -- so the six separate page files
+// "View Main Page" and "Log Out" links, so the six separate page files
 // read as one tabbed portal without merging them into a single file.
 // ==========================================================================
 add_action( 'admin_notices', 'mtl_render_admin_portal_tabs' );
@@ -5385,7 +5385,7 @@ function mtl_render_admin_portal_tabs() {
 	echo '<a href="' . esc_url( mtl_front_page_url( 'main' ) ) . '" style="text-decoration: none;">View Main Page</a>';
 	// wp_logout_url() carries WordPress's logout nonce, so core validates the
 	// request before clearing the auth cookies, then sends the user back to
-	// the public main page -- where admin pages are no longer accessible.
+	// the public main page, where admin pages are no longer accessible.
 	echo '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '" style="text-decoration: none; color: #b32d2e;">Log Out</a>';
 	echo '</div>';
 
@@ -5469,17 +5469,17 @@ function mtl_register_query_vars( $vars ) {
 //
 // Lightweight standalone pages served via the mtl_page query var, handled
 // on template_redirect:
-// mtl_page=main         -- public tool catalog (shop-page.php); also
+// mtl_page=main: public tool catalog (shop-page.php); also
 // processes the "reserve a tool" POST.
-// mtl_page=login        -- branded sign-in for members AND admins, via
-// core's wp_login_form() -- WordPress handles all
+// mtl_page=login: branded sign-in for members AND admins, via
+// core's wp_login_form(). WordPress handles all
 // credential/cookie/session security.
-// mtl_page=signup       -- member self-registration (member-pages.php):
+// mtl_page=signup: member self-registration (member-pages.php):
 // creates a WP user + a {prefix}members row.
-// mtl_page=reservations -- a member's queue, place in line, cancel.
-// mtl_page=account      -- a member's profile, verification status, loan
+// mtl_page=reservations: a member's queue, place in line, cancel.
+// mtl_page=account: a member's profile, verification status, loan
 // history, and profile edits.
-// mtl_page=admin        -- gate: routes a signed-in admin into the admin
+// mtl_page=admin: gate: routes a signed-in admin into the admin
 // portal, any other signed-in user (a member)
 // back to the catalog. Admin capability checks
 // remain the real enforcement.
@@ -5554,7 +5554,7 @@ function mtl_handle_front_pages() {
  *
  * Deliberately has no admin_email fallback. This address is printed on pages
  * anybody can read, and the site administrator's personal mailbox is not
- * something to publish because a setting was left blank -- an unset value
+ * something to publish because a setting was left blank; an unset value
  * means "show no contact line", never "guess one".
  *
  * @return string Valid email address, or '' when unset or unusable.
@@ -5590,10 +5590,10 @@ function mtl_contact_line_html() {
  *
  * @param string $title       Page title.
  * @param string $body_html   Fills the centered main area. Built internally
- *                             from escaped pieces -- never from raw user input.
+ *                             from escaped pieces, never from raw user input.
  * @param string $footer_html Fills the discreet footer link row at the bottom.
  *                             The public contact line is appended below it
- *                             automatically, so callers never pass it in --
+ *                             automatically, so callers never pass it in;
  *                             that is what puts the address on every one of
  *                             these pages from this single place.
  * @return void Outputs the page directly and exits.
@@ -5705,7 +5705,7 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 			}
 
 			/* Contact line: its own row under the footer links. Kept in the
-				footer's quiet grey, but underlined -- it is the one thing down
+				footer's quiet grey, but underlined, since it is the one thing down
 				here a member may actively need, and it should not read as
 				body text. */
 			.mtl-front-contact {
@@ -5814,7 +5814,7 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 }
 
 /**
- * The public main page -- the customer-facing shopping catalog, with a
+ * The public main page: the customer-facing shopping catalog, with a
  * small, discreet Admin Sign In link at the bottom of the page. The
  * catalog itself is built (server-side, no JavaScript) in
  * public/shop-page.php.
@@ -5858,7 +5858,7 @@ function mtl_render_front_login_page() {
 	}
 
 	// Tag this form so a failed attempt can be told apart from one made at
-	// /wp-login.php directly -- see mtl_handle_failed_front_login(). Added and
+	// /wp-login.php directly; see mtl_handle_failed_front_login(). Added and
 	// removed around the one call so the filter never affects another plugin's
 	// login form elsewhere on the site.
 	add_filter( 'login_form_bottom', 'mtl_front_login_marker' );
@@ -5901,7 +5901,7 @@ function mtl_render_front_login_page() {
 // The security-relevant work is all core's: get_password_reset_key() and the
 // email are produced by retrieve_password(), the key is verified by
 // check_password_reset_key(), and the new password is written by
-// reset_password(). Nothing here re-implements any of that -- these two pages
+// reset_password(). Nothing here re-implements any of that; these two pages
 // supply the branding and the copy, and hand off.
 // ==========================================================================
 
@@ -5922,7 +5922,7 @@ function mtl_reset_cookie_name() {
  *
  * These pages live at the site root (?mtl_page=resetpass), so the cookie is
  * root-scoped too. Kept in one function so the set and the clear can never
- * disagree -- a mismatched path silently fails to delete the cookie.
+ * disagree, and a mismatched path silently fails to delete the cookie.
  *
  * @return string
  */
@@ -5949,7 +5949,7 @@ add_filter( 'retrieve_password_message', 'mtl_reset_email_message', 10, 3 );
  *
  * Core's retrieve_password() hardcodes a wp-login.php?action=rp URL into the
  * message body, so the only way to redirect members to this plugin's page is
- * to rewrite the message here. Only the URL is swapped -- core's surrounding
+ * to rewrite the message here. Only the URL is swapped, so core's surrounding
  * copy, including its "if this was a mistake, ignore this email" line, is left
  * exactly as it is.
  *
@@ -6005,7 +6005,7 @@ function mtl_send_member_setup_email( $user_id ) {
 		return false;
 	}
 
-	// Note this invalidates any key already sent to this member -- a resend
+	// Note this invalidates any key already sent to this member, so a resend
 	// silently kills the link in the earlier email, which is why the Membership
 	// page says so before staff press the button.
 	$key = get_password_reset_key( $user );
@@ -6026,7 +6026,7 @@ function mtl_send_member_setup_email( $user_id ) {
 		$greeting_name = (string) $user->user_login;
 	}
 
-	$subject = sprintf( '[%s] Your account is ready -- choose a password', $org_name );
+	$subject = sprintf( '[%s] Your account is ready: choose a password', $org_name );
 
 	$lines = array(
 		sprintf( 'Hi %s,', $greeting_name ),
@@ -6066,7 +6066,7 @@ function mtl_send_member_setup_email( $user_id ) {
  * WordPress sign-in, given whatever they typed into the lost-password form.
  *
  * Does nothing at all unless the submitted text is an email address matching a
- * live member row that has no account -- so an unrecognised address, a
+ * live member row that has no account, so an unrecognised address, a
  * username, an anonymized record, or a member who already has a sign-in all
  * fall straight through and leave the page's response unchanged.
  *
@@ -6081,7 +6081,7 @@ function mtl_setup_login_for_unclaimed_member( $submitted ) {
 		return;
 	}
 
-	// If any account already owns this address there is nothing to repair --
+	// If any account already owns this address there is nothing to repair;
 	// retrieve_password() failing for some other reason is not our business.
 	if ( email_exists( $email ) ) {
 		return;
@@ -6200,7 +6200,7 @@ function mtl_render_lost_password_page() {
 
 /**
  * Whether this account was created for a member who has never chosen a
- * password -- i.e. the next reset is a first-time setup, not a change.
+ * password, i.e. the next reset is a first-time setup, not a change.
  *
  * @param int $user_id WP user ID.
  * @return bool
@@ -6231,7 +6231,7 @@ function mtl_suppress_setup_notifications( $user ) {
 
 	// remove_action() reports whether anything was actually removed. Recording
 	// that is what stops the restore below from ADDING core's notification to a
-	// site where another plugin had deliberately taken it off -- putting it back
+	// site where another plugin had deliberately taken it off, since putting it back
 	// would be us switching on behaviour the site owner turned off.
 	if ( remove_action( 'after_password_reset', 'wp_password_change_notification' ) ) {
 		mtl_password_notification_suppressed( true );
@@ -6288,7 +6288,7 @@ function mtl_finish_password_setup( $user ) {
 add_action( 'wp_login', 'mtl_clear_setup_pending_on_login', 10, 2 );
 
 /**
- * Clears the pending flag for a member who got a password some other way --
+ * Clears the pending flag for a member who got a password some other way:
  * staff setting one from Users > Edit User, or WP-CLI. Neither fires
  * after_password_reset, so without this they would sit on the outstanding list
  * forever and collect invitations they do not need.
@@ -6315,8 +6315,8 @@ add_action( 'after_password_reset', 'mtl_send_password_changed_email', 10, 1 );
  * WordPress does not send this. reset_password() writes the password with
  * wp_set_password() rather than wp_update_user(), so core's own
  * "Notice of Password Change" email never fires on the reset path, and the
- * only thing core does send here -- wp_password_change_notification() on this
- * same action -- goes to the site administrator, not the member.
+ * only thing core does send here, wp_password_change_notification() on this
+ * same action, goes to the site administrator, not the member.
  *
  * Its real job is the sentence at the end: if the member did not do this, the
  * email is how they find out someone else did, while there is still time to
@@ -6326,8 +6326,8 @@ add_action( 'after_password_reset', 'mtl_send_password_changed_email', 10, 1 );
  * completed any other way still produces the confirmation.
  *
  * Skipped entirely for a first-time setup: a member who has just chosen their
- * opening password did not have one changed, and telling them it was -- for an
- * account they may not have known existed until the invitation arrived -- reads
+ * opening password did not have one changed, and telling them it was, for an
+ * account they may not have known existed until the invitation arrived, reads
  * as exactly the compromise this email exists to warn about.
  *
  * @param WP_User $user The user whose password was just reset.
@@ -6344,7 +6344,7 @@ function mtl_send_password_changed_email( $user ) {
 
 	$org_name = mtl_email_org_name();
 
-	// A name if we have one, otherwise the sign-in address -- never a bare
+	// A name if we have one, otherwise the sign-in address, never a bare
 	// "Hi," which reads like the spam this email needs to be trusted over.
 	$greeting_name = trim( (string) $user->display_name );
 	if ( '' === $greeting_name ) {
@@ -6352,7 +6352,7 @@ function mtl_send_password_changed_email( $user ) {
 	}
 
 	// wp_date(), not gmdate(), so the timestamp is in the library's own
-	// timezone -- "at 3:14 pm" is only useful if it matches the member's clock.
+	// timezone, since "at 3:14 pm" is only useful if it matches the member's clock.
 	$changed_at = wp_date( 'F j, Y \a\t g:i a' );
 
 	$subject = sprintf( '[%s] Your password has been changed', $org_name );
@@ -6362,8 +6362,8 @@ function mtl_send_password_changed_email( $user ) {
 	// Falls back to the unaddressed wording when no contact email is set.
 	$contact_email = mtl_contact_email();
 	$alarm_line    = '' !== $contact_email
-		? sprintf( 'If you did not make this change, please contact library staff at %s as soon as you can -- somebody else may have access to your account.', $contact_email )
-		: 'If you did not make this change, please contact library staff as soon as you can -- somebody else may have access to your account.';
+		? sprintf( 'If you did not make this change, please contact library staff at %s as soon as you can, because somebody else may have access to your account.', $contact_email )
+		: 'If you did not make this change, please contact library staff as soon as you can, because somebody else may have access to your account.';
 
 	$lines = array(
 		sprintf( 'Hi %s,', $greeting_name ),
@@ -6497,7 +6497,7 @@ function mtl_render_reset_password_page() {
 
 			// Passwords are read RAW, on purpose. sanitize_text_field() strips
 			// tags and collapses whitespace, so it would silently mangle a
-			// perfectly good password -- the member would set one thing and be
+			// perfectly good password, because the member would set one thing and be
 			// unable to sign in with it. wp_unslash() undoes WordPress's magic
 			// quotes and nothing else; the value is never echoed, and
 			// reset_password() hashes it rather than storing it. Core reads
@@ -6563,7 +6563,7 @@ function mtl_front_login_marker( $content ) {
  * wp_login_form() has no argument for this, hence patching its returned markup.
  *
  * Purely an enhancement. If core ever changes these attributes the replacement
- * simply does not match and the form still works -- mtl_block_empty_front_login()
+ * simply does not match and the form still works; mtl_block_empty_front_login()
  * is what actually guarantees the behaviour.
  *
  * @param string $form Markup returned by wp_login_form().
@@ -6583,7 +6583,7 @@ function mtl_require_login_fields( $form ) {
 add_action( 'wp_login_failed', 'mtl_handle_failed_front_login', 100, 2 );
 
 // Empty credentials never reach the action above. wp_authenticate() keeps an
-// $ignore_codes list -- empty_username and empty_password -- and skips firing
+// $ignore_codes list (empty_username and empty_password) and skips firing
 // wp_login_failed for them (wp-includes/pluggable.php), on the reasoning that a
 // blank form is not a real login attempt worth logging. The result is that
 // clicking Sign In with both boxes empty fell straight through to wp-login.php.
@@ -6631,7 +6631,7 @@ function mtl_block_empty_front_login( $user ) {
  * at /wp-login.php (an admin signing in the usual way, or another plugin's
  * form) is left completely alone.
  *
- * @param string        $username Submitted username. Unused -- deliberately
+ * @param string        $username Submitted username. Unused, deliberately
  *                                not echoed back through the URL, which would
  *                                put a member's email address into browser
  *                                history, server logs and referer headers.
@@ -6639,8 +6639,8 @@ function mtl_block_empty_front_login( $user ) {
  *                                one (WordPress 5.4+).
  */
 function mtl_handle_failed_front_login( $username, $error = null ) {
-	// No nonce here by design. wp-login.php's sign-in POST does not carry one
-	// -- knowing the password IS the proof -- so there is nothing to verify.
+	// No nonce here by design. wp-login.php's sign-in POST does not carry one.
+	// Knowing the password IS the proof, so there is nothing to verify.
 	// This flag is read only to decide which page to redirect to, and is never
 	// trusted for anything else.
 	// phpcs:ignore WordPress.Security.NonceVerification.Missing -- see above; no state is changed here.
@@ -6653,7 +6653,7 @@ function mtl_handle_failed_front_login( $username, $error = null ) {
 	// A blank box is a different problem from a wrong password, and saying so
 	// gives nothing away. Everything else collapses into one generic message.
 	//
-	// In practice the empty codes never arrive here -- core excludes them from
+	// In practice the empty codes never arrive here, since core excludes them from
 	// this action, which is why mtl_block_empty_front_login() exists and is
 	// what actually handles them. Kept as a fallback so this stays correct if
 	// core's $ignore_codes list ever changes.
@@ -6669,7 +6669,7 @@ function mtl_handle_failed_front_login( $username, $error = null ) {
  * Post-login router. Library staff (Editors and Administrators) continue into
  * the admin portal; any other signed-in user (i.e. a member) is sent back to
  * the public catalog, where their reservation and account tools live. (This
- * gate is a courtesy router -- the real enforcement is WordPress's own
+ * gate is a courtesy router; the real enforcement is WordPress's own
  * capability check on every admin page and form handler.)
  */
 function mtl_handle_admin_gate() {
@@ -6683,7 +6683,7 @@ function mtl_handle_admin_gate() {
 		exit;
 	}
 
-	// Signed in, but not staff -- a member. Send them to the shop.
+	// Signed in, but not staff, so a member. Send them to the shop.
 	wp_safe_redirect( mtl_front_page_url( 'main' ) );
 	exit;
 }

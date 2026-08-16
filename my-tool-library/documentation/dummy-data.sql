@@ -28,7 +28,7 @@
 -- ==========================================
 -- 0. CLEAR EXISTING DATA (so this file is safe to re-run)
 --    Ordered children-first to satisfy FK constraints.
---    Categories/tags/trainings are left alone -- schema.sql seeds those.
+--    Categories/tags/trainings are left alone; schema.sql seeds those.
 -- ==========================================
 DELETE FROM wp_tool_reservations;
 DELETE FROM wp_loans;
@@ -114,9 +114,9 @@ INSERT INTO wp_members
 -- never shown to members (see the Membership page's detail view).
 UPDATE wp_members SET private_notes = 'Prefers pickup after 5pm on weekdays; called ahead twice to arrange it.' WHERE member_id = 3;
 UPDATE wp_members SET private_notes = 'Returned the table saw with a chipped blade in March 2026 and paid for the replacement without being asked. Good standing.' WHERE member_id = 24;
-UPDATE wp_members SET private_notes = 'Two overdue returns in a row -- reminded about the 3-week limit on 2026-06-02. No issues since.' WHERE member_id = 39;
+UPDATE wp_members SET private_notes = 'Two overdue returns in a row. Reminded about the 3-week limit on 2026-06-02. No issues since.' WHERE member_id = 39;
 UPDATE wp_members SET private_notes = 'Runs a neighborhood repair cafe; often borrows in bulk for events. Coordinate ahead for large pickups.' WHERE member_id = 44;
-UPDATE wp_members SET private_notes = 'Phone number on file is a shared household line -- ask for Mason by name.' WHERE member_id = 58;
+UPDATE wp_members SET private_notes = 'Phone number on file is a shared household line, so ask for Mason by name.' WHERE member_id = 58;
 
 -- ==========================================
 -- 2. MEMBER VERIFICATIONS (45 of 60 verified)
@@ -180,24 +180,24 @@ INSERT INTO wp_tool_inventory
     (tool_id, tool_name, barcode, brand, description, components, photo_url, initial_cash_value, annual_depreciation_amount, donated_by, date_acquired, private_notes) VALUES
 (1, 'Cordless Drill Driver', 'MTL-000001', 'DeWalt', 'Drilling holes and driving screws. Keyless chuck, battery-powered, comes with a bit set.', 'Battery, Charger, Bit Set, Carrying Case', 'https://picsum.photos/seed/tool-1/600/400', 103.99, 15.00, NULL, '2024-01-10', NULL),
 (2, 'Circular Saw', 'MTL-000002', 'Makita', 'Corded 7-1/4 inch circular saw for straight cuts in lumber and plywood.', 'Rip Fence, Blade Wrench', 'https://picsum.photos/seed/tool-2/600/400', 136.00, 20.00, NULL, '2024-01-17', NULL),
-(3, 'Table Saw', 'MTL-000003', 'DeWalt', '10-inch jobsite table saw. In-person orientation required before first checkout.', 'Miter Gauge, Push Stick, Blade Guard, Stand', 'https://picsum.photos/seed/tool-3/600/400', 389.99, 45.00, 'Priya Reed', '2024-01-24', 'Blade wobbles slightly above 6000 RPM -- flagged to maintenance 2026-03-01, not yet resolved. Warn borrowers and inspect before checkout.'),
+(3, 'Table Saw', 'MTL-000003', 'DeWalt', '10-inch jobsite table saw. In-person orientation required before first checkout.', 'Miter Gauge, Push Stick, Blade Guard, Stand', 'https://picsum.photos/seed/tool-3/600/400', 389.99, 45.00, 'Priya Reed', '2024-01-24', 'Blade wobbles slightly above 6000 RPM. Flagged to maintenance 2026-03-01, not yet resolved. Warn borrowers and inspect before checkout.'),
 (4, 'Random Orbit Sander', 'MTL-000004', 'Bosch', '5-inch random orbit sander for smooth finishes. Bring your own sanding discs.', 'Dust Canister', 'https://picsum.photos/seed/tool-4/600/400', 61.00, 10.00, NULL, '2024-01-31', NULL),
 (5, 'Cordless Impact Driver', 'MTL-000005', 'Milwaukee', 'Compact impact driver for driving long screws and lag bolts.', 'Battery, Charger, Belt Clip', 'https://picsum.photos/seed/tool-5/600/400', 185.99, 20.00, NULL, '2024-02-07', NULL),
 (6, 'Hedge Trimmer', 'MTL-000006', 'Ryobi', 'Cordless 22-inch hedge trimmer for shrubs and bushes.', 'Battery, Charger, Blade Cover', 'https://picsum.photos/seed/tool-6/600/400', 97.00, 14.00, 'Grace Perez', '2024-02-14', NULL),
 (7, 'Gas Lawn Mower', 'MTL-000007', 'Honda', 'Self-propelled 21-inch gas mower. Drain fuel before returning.', 'Grass Bag, Side Discharge Chute', 'https://picsum.photos/seed/tool-7/600/400', 441.99, 56.00, NULL, '2024-02-21', NULL),
-(8, 'Chainsaw', 'MTL-000008', 'Stihl', '16-inch chainsaw. In-person orientation and PPE required for checkout.', 'Bar Cover, Chain Oil Bottle, Scrench Tool', 'https://picsum.photos/seed/tool-8/600/400', 354.00, 42.00, NULL, '2024-02-28', 'Chain tension loosens after about 20 minutes of continuous use -- remind borrowers to check it partway through a job, not just at pickup.'),
+(8, 'Chainsaw', 'MTL-000008', 'Stihl', '16-inch chainsaw. In-person orientation and PPE required for checkout.', 'Bar Cover, Chain Oil Bottle, Scrench Tool', 'https://picsum.photos/seed/tool-8/600/400', 354.00, 42.00, NULL, '2024-02-28', 'Chain tension loosens after about 20 minutes of continuous use, so remind borrowers to check it partway through a job, not just at pickup.'),
 (9, 'Pipe Wrench Set', 'MTL-000009', 'Ridgid', 'Pair of 14-inch and 18-inch pipe wrenches for plumbing work.', NULL, 'https://picsum.photos/seed/tool-9/600/400', 60.99, 5.00, 'Olivia Martinez', '2024-03-06', NULL),
 (10, 'Drain Auger', 'MTL-000010', 'Ridgid', 'Hand-crank drain auger for clearing sink and tub clogs.', NULL, 'https://picsum.photos/seed/tool-10/600/400', 79.00, 7.00, NULL, '2024-03-13', NULL),
 (11, 'Digital Multimeter', 'MTL-000011', 'Klein', 'Auto-ranging multimeter for AC/DC voltage, current and resistance.', 'Test Leads, Carrying Pouch', 'https://picsum.photos/seed/tool-11/600/400', 193.99, 10.00, NULL, '2024-03-20', NULL),
 (12, 'OBD-II Code Reader', 'MTL-000012', 'Innova', 'Reads and clears check-engine codes on 1996+ vehicles.', 'USB Cable, Quick Reference Card', 'https://picsum.photos/seed/tool-12/600/400', 85.00, 10.00, 'Isabella Ramirez', '2024-03-27', NULL),
 (13, 'Paint Sprayer', 'MTL-000013', 'Wagner', 'HVLP paint sprayer for walls, fences and furniture. Clean thoroughly before returning.', 'Two Nozzles, Viscosity Cup, Cleaning Brush', 'https://picsum.photos/seed/tool-13/600/400', 108.99, 17.00, NULL, '2024-04-03', NULL),
 (14, 'Drywall Sander', 'MTL-000014', 'Porter-Cable', 'Corded drywall sander with a dust collection hose.', 'Dust Hose, Sanding Head', 'https://picsum.photos/seed/tool-14/600/400', 191.00, 24.00, NULL, '2024-04-10', NULL),
-(15, 'Concrete Mixer', 'MTL-000015', 'Kushlan', 'Portable 3.5 cu ft electric concrete mixer on wheels. Very heavy -- bring a truck.', NULL, 'https://picsum.photos/seed/tool-15/600/400', 334.99, 40.00, 'Mia Campbell', '2024-04-17', 'Takes two people to load into most trunks/hatchbacks. Keep the loading dolly from the back room paired with this one at pickup.'),
+(15, 'Concrete Mixer', 'MTL-000015', 'Kushlan', 'Portable 3.5 cu ft electric concrete mixer on wheels. Very heavy, so bring a truck.', NULL, 'https://picsum.photos/seed/tool-15/600/400', 334.99, 40.00, 'Mia Campbell', '2024-04-17', 'Takes two people to load into most trunks/hatchbacks. Keep the loading dolly from the back room paired with this one at pickup.'),
 (16, 'Pressure Washer', 'MTL-000016', 'Ryobi', 'Electric pressure washer for decks, siding and driveways.', 'Spray Wand, Three Nozzle Tips, Detergent Tank', 'https://picsum.photos/seed/tool-16/600/400', 358.00, 26.00, NULL, '2024-04-24', NULL),
 (17, 'Angle Grinder', 'MTL-000017', 'Makita', '4-1/2 inch corded angle grinder for cutting and grinding metal. PPE required.', 'Side Handle, Wheel Guard, Spanner Wrench', 'https://picsum.photos/seed/tool-17/600/400', 68.99, 11.00, NULL, '2024-05-01', NULL),
 (18, 'Socket Wrench Set', 'MTL-000018', 'Craftsman', '120-piece SAE/metric socket set with ratchets.', 'Carrying Case', 'https://picsum.photos/seed/tool-18/600/400', 132.00, 6.00, 'Amelia Young', '2024-05-08', NULL),
 (19, 'Appliance Dolly', 'MTL-000019', 'Milwaukee', 'Heavy-duty appliance hand truck with straps and stair skids. Rated 800 lbs.', 'Ratchet Strap', 'https://picsum.photos/seed/tool-19/600/400', 145.99, 13.00, NULL, '2024-05-15', NULL),
-(20, 'Extension Ladder', 'MTL-000020', 'Werner', 'Aluminum extension ladder. Two-person carry recommended.', NULL, 'https://picsum.photos/seed/tool-20/600/400', 289.00, 17.00, NULL, '2024-05-22', 'Missing a rubber foot cap on the left rail as of 2026-05. Replacement ordered but not in yet -- mention it to whoever borrows this.'),
+(20, 'Extension Ladder', 'MTL-000020', 'Werner', 'Aluminum extension ladder. Two-person carry recommended.', NULL, 'https://picsum.photos/seed/tool-20/600/400', 289.00, 17.00, NULL, '2024-05-22', 'Missing a rubber foot cap on the left rail as of 2026-05. Replacement ordered but not in yet; mention it to whoever borrows this.'),
 (21, 'Tile Saw', 'MTL-000021', 'DeWalt', 'Wet tile saw for cutting ceramic and porcelain. Requires a water supply.', 'Water Tray, Rip Guide, Blade', 'https://picsum.photos/seed/tool-21/600/400', 212.99, 24.00, 'Evelyn Nowak', '2024-05-29', NULL),
 (22, 'Stud Finder', 'MTL-000022', 'Zircon', 'Electronic stud finder for locating studs and joists behind drywall.', NULL, 'https://picsum.photos/seed/tool-22/600/400', 65.00, 4.00, NULL, '2024-06-05', NULL),
 (23, 'Reciprocating Saw', 'MTL-000023', 'Milwaukee', 'Cordless reciprocating saw for demolition and pruning cuts.', 'Battery, Charger, Wood Blade, Metal Blade', 'https://picsum.photos/seed/tool-23/600/400', 126.99, 18.00, NULL, '2024-06-12', NULL),
@@ -213,15 +213,15 @@ INSERT INTO wp_tool_inventory
 (33, 'Cordless Impact Driver', 'MTL-000033', 'DeWalt', 'Compact impact driver for driving long screws and lag bolts.', 'Battery, Charger, Belt Clip', 'https://picsum.photos/seed/tool-33/600/400', 123.99, 18.00, 'Priya Reed', '2024-08-21', NULL),
 (34, 'Hedge Trimmer', 'MTL-000034', 'EGO', 'Cordless 22-inch hedge trimmer for shrubs and bushes.', 'Battery, Charger, Blade Cover', 'https://picsum.photos/seed/tool-34/600/400', 106.00, 15.00, NULL, '2024-08-28', NULL),
 (35, 'Gas Lawn Mower', 'MTL-000035', 'Toro', 'Self-propelled 21-inch gas mower. Drain fuel before returning.', 'Grass Bag, Side Discharge Chute', 'https://picsum.photos/seed/tool-35/600/400', 463.99, 57.00, NULL, '2024-09-04', NULL),
-(36, 'Chainsaw', 'MTL-000036', 'Husqvarna', '16-inch chainsaw. In-person orientation and PPE required for checkout.', 'Bar Cover, Chain Oil Bottle, Scrench Tool', 'https://picsum.photos/seed/tool-36/600/400', 376.00, 40.00, 'Grace Perez', '2024-09-11', 'Donor asked to be told before this one is ever sold or scrapped, even after end of life -- has sentimental value, was her late husband''s.'),
+(36, 'Chainsaw', 'MTL-000036', 'Husqvarna', '16-inch chainsaw. In-person orientation and PPE required for checkout.', 'Bar Cover, Chain Oil Bottle, Scrench Tool', 'https://picsum.photos/seed/tool-36/600/400', 376.00, 40.00, 'Grace Perez', '2024-09-11', 'Donor asked to be told before this one is ever sold or scrapped, even after end of life; it has sentimental value, was her late husband''s.'),
 (37, 'Pipe Wrench Set', 'MTL-000037', 'Craftsman', 'Pair of 14-inch and 18-inch pipe wrenches for plumbing work.', NULL, 'https://picsum.photos/seed/tool-37/600/400', 67.99, 6.00, NULL, '2024-09-18', NULL),
 (38, 'Drain Auger', 'MTL-000038', 'Ryobi', 'Hand-crank drain auger for clearing sink and tub clogs.', NULL, 'https://picsum.photos/seed/tool-38/600/400', 79.00, 8.00, NULL, '2024-09-25', NULL),
 (39, 'Digital Multimeter', 'MTL-000039', 'Fluke', 'Auto-ranging multimeter for AC/DC voltage, current and resistance.', 'Test Leads, Carrying Pouch', 'https://picsum.photos/seed/tool-39/600/400', 74.99, 8.00, 'Olivia Martinez', '2024-10-02', NULL),
 (40, 'OBD-II Code Reader', 'MTL-000040', 'Autel', 'Reads and clears check-engine codes on 1996+ vehicles.', 'USB Cable, Quick Reference Card', 'https://picsum.photos/seed/tool-40/600/400', 167.00, 11.00, NULL, '2024-10-09', NULL),
 (41, 'Paint Sprayer', 'MTL-000041', 'Graco', 'HVLP paint sprayer for walls, fences and furniture. Clean thoroughly before returning.', 'Two Nozzles, Viscosity Cup, Cleaning Brush', 'https://picsum.photos/seed/tool-41/600/400', 150.99, 18.00, NULL, '2024-10-16', NULL),
 (42, 'Drywall Sander', 'MTL-000042', 'WEN', 'Corded drywall sander with a dust collection hose.', 'Dust Hose, Sanding Head', 'https://picsum.photos/seed/tool-42/600/400', 222.00, 22.00, 'Isabella Ramirez', '2024-10-23', NULL),
-(43, 'Concrete Mixer', 'MTL-000043', 'YARDMAX', 'Portable 3.5 cu ft electric concrete mixer on wheels. Very heavy -- bring a truck.', NULL, 'https://picsum.photos/seed/tool-43/600/400', 376.99, 41.00, NULL, '2024-10-30', NULL),
-(44, 'Pressure Washer', 'MTL-000044', 'Sun Joe', 'Electric pressure washer for decks, siding and driveways.', 'Spray Wand, Three Nozzle Tips, Detergent Tank', 'https://picsum.photos/seed/tool-44/600/400', 300.00, 27.00, NULL, '2024-11-06', 'Detergent tank cap does not seal well -- always hose it down and let it dry upside-down before shelving, or it drips in storage.'),
+(43, 'Concrete Mixer', 'MTL-000043', 'YARDMAX', 'Portable 3.5 cu ft electric concrete mixer on wheels. Very heavy, so bring a truck.', NULL, 'https://picsum.photos/seed/tool-43/600/400', 376.99, 41.00, NULL, '2024-10-30', NULL),
+(44, 'Pressure Washer', 'MTL-000044', 'Sun Joe', 'Electric pressure washer for decks, siding and driveways.', 'Spray Wand, Three Nozzle Tips, Detergent Tank', 'https://picsum.photos/seed/tool-44/600/400', 300.00, 27.00, NULL, '2024-11-06', 'Detergent tank cap does not seal well, so always hose it down and let it dry upside-down before shelving, or it drips in storage.'),
 (45, 'Angle Grinder', 'MTL-000045', 'DeWalt', '4-1/2 inch corded angle grinder for cutting and grinding metal. PPE required.', 'Side Handle, Wheel Guard, Spanner Wrench', 'https://picsum.photos/seed/tool-45/600/400', 77.99, 9.00, 'Alice Schmidt', '2024-11-13', NULL),
 (46, 'Socket Wrench Set', 'MTL-000046', 'GearWrench', '120-piece SAE/metric socket set with ratchets.', 'Carrying Case', 'https://picsum.photos/seed/tool-46/600/400', 132.00, 7.00, NULL, '2024-11-20', NULL),
 (47, 'Appliance Dolly', 'MTL-000047', 'Harper', 'Heavy-duty appliance hand truck with straps and stair skids. Rated 800 lbs.', 'Ratchet Strap', 'https://picsum.photos/seed/tool-47/600/400', 176.99, 14.00, NULL, '2024-11-27', NULL),
@@ -248,7 +248,7 @@ INSERT INTO wp_tool_inventory
 (68, 'OBD-II Code Reader', 'MTL-000068', 'Innova', 'Reads and clears check-engine codes on 1996+ vehicles.', 'USB Cable, Quick Reference Card', 'https://picsum.photos/seed/tool-68/600/400', 108.00, 12.00, NULL, '2025-04-23', NULL),
 (69, 'Paint Sprayer', 'MTL-000069', 'Wagner', 'HVLP paint sprayer for walls, fences and furniture. Clean thoroughly before returning.', 'Two Nozzles, Viscosity Cup, Cleaning Brush', 'https://picsum.photos/seed/tool-69/600/400', 192.99, 16.00, 'Ella Collins', '2025-04-30', NULL),
 (70, 'Drywall Sander', 'MTL-000070', 'Porter-Cable', 'Corded drywall sander with a dust collection hose.', 'Dust Hose, Sanding Head', 'https://picsum.photos/seed/tool-70/600/400', 142.00, 23.00, NULL, '2025-05-07', NULL),
-(71, 'Concrete Mixer', 'MTL-000071', 'Kushlan', 'Portable 3.5 cu ft electric concrete mixer on wheels. Very heavy -- bring a truck.', NULL, 'https://picsum.photos/seed/tool-71/600/400', 418.99, 42.00, NULL, '2025-05-14', 'Motor runs noticeably louder than our other mixer (tool #15) -- still within spec per the manual, but worth a heads-up for noise-sensitive neighborhoods.'),
+(71, 'Concrete Mixer', 'MTL-000071', 'Kushlan', 'Portable 3.5 cu ft electric concrete mixer on wheels. Very heavy, so bring a truck.', NULL, 'https://picsum.photos/seed/tool-71/600/400', 418.99, 42.00, NULL, '2025-05-14', 'Motor runs noticeably louder than our other mixer (tool #15), still within spec per the manual, but worth a heads-up for noise-sensitive neighborhoods.'),
 (72, 'Pressure Washer', 'MTL-000072', 'Simpson', 'Electric pressure washer for decks, siding and driveways.', 'Spray Wand, Three Nozzle Tips, Detergent Tank', 'https://picsum.photos/seed/tool-72/600/400', 242.00, 25.00, 'Aiden Torres', '2025-05-21', NULL),
 (73, 'Angle Grinder', 'MTL-000073', 'Milwaukee', '4-1/2 inch corded angle grinder for cutting and grinding metal. PPE required.', 'Side Handle, Wheel Guard, Spanner Wrench', 'https://picsum.photos/seed/tool-73/600/400', 86.99, 10.00, NULL, '2025-05-28', NULL),
 (74, 'Socket Wrench Set', 'MTL-000074', 'Craftsman', '120-piece SAE/metric socket set with ratchets.', 'Carrying Case', 'https://picsum.photos/seed/tool-74/600/400', 132.00, 8.00, NULL, '2025-06-04', NULL),
@@ -264,7 +264,7 @@ INSERT INTO wp_tool_inventory
 (84, 'Wheelbarrow', 'MTL-000084', 'Jackson', '6 cu ft steel-tray wheelbarrow for hauling soil, mulch and concrete.', NULL, 'https://picsum.photos/seed/tool-84/600/400', 80.00, 8.00, 'Olivia Martinez', '2025-08-13', NULL),
 (85, 'Cordless Drill Driver', 'MTL-000085', 'Ryobi', 'Drilling holes and driving screws. Keyless chuck, battery-powered, comes with a bit set.', 'Battery, Charger, Bit Set, Carrying Case', 'https://picsum.photos/seed/tool-85/600/400', 130.99, 15.00, NULL, '2025-08-20', NULL),
 (86, 'Circular Saw', 'MTL-000086', 'Bosch', 'Corded 7-1/4 inch circular saw for straight cuts in lumber and plywood.', 'Rip Fence, Blade Wrench', 'https://picsum.photos/seed/tool-86/600/400', 175.00, 20.00, NULL, '2025-08-27', NULL),
-(87, 'Table Saw', 'MTL-000087', 'DeWalt', '10-inch jobsite table saw. In-person orientation required before first checkout.', 'Miter Gauge, Push Stick, Blade Guard, Stand', 'https://picsum.photos/seed/tool-87/600/400', 397.99, 45.00, 'Isabella Ramirez', '2025-09-03', 'Donated barely used, still has the original blade guard sticker on it. Donor runs a woodworking shop downtown and offered to sharpen/service blades for us at cost -- see Setup page contacts.'),
+(87, 'Table Saw', 'MTL-000087', 'DeWalt', '10-inch jobsite table saw. In-person orientation required before first checkout.', 'Miter Gauge, Push Stick, Blade Guard, Stand', 'https://picsum.photos/seed/tool-87/600/400', 397.99, 45.00, 'Isabella Ramirez', '2025-09-03', 'Donated barely used, still has the original blade guard sticker on it. Donor runs a woodworking shop downtown and offered to sharpen/service blades for us at cost; see Setup page contacts.'),
 (88, 'Random Orbit Sander', 'MTL-000088', 'Bosch', '5-inch random orbit sander for smooth finishes. Bring your own sanding discs.', 'Dust Canister', 'https://picsum.photos/seed/tool-88/600/400', 82.00, 10.00, NULL, '2025-09-10', NULL),
 (89, 'Cordless Impact Driver', 'MTL-000089', 'Ryobi', 'Compact impact driver for driving long screws and lag bolts.', 'Battery, Charger, Belt Clip', 'https://picsum.photos/seed/tool-89/600/400', 141.99, 20.00, NULL, '2025-09-17', NULL),
 (90, 'Hedge Trimmer', 'MTL-000090', 'Ryobi', 'Cordless 22-inch hedge trimmer for shrubs and bushes.', 'Battery, Charger, Blade Cover', 'https://picsum.photos/seed/tool-90/600/400', 124.00, 14.00, 'Alice Schmidt', '2025-09-24', NULL),
@@ -276,7 +276,7 @@ INSERT INTO wp_tool_inventory
 (96, 'OBD-II Code Reader', 'MTL-000096', 'Autel', 'Reads and clears check-engine codes on 1996+ vehicles.', 'USB Cable, Quick Reference Card', 'https://picsum.photos/seed/tool-96/600/400', 190.00, 10.00, 'Grace Perez', '2025-11-05', NULL),
 (97, 'Paint Sprayer', 'MTL-000097', 'Graco', 'HVLP paint sprayer for walls, fences and furniture. Clean thoroughly before returning.', 'Two Nozzles, Viscosity Cup, Cleaning Brush', 'https://picsum.photos/seed/tool-97/600/400', 234.99, 17.00, NULL, '2025-11-12', NULL),
 (98, 'Drywall Sander', 'MTL-000098', 'WEN', 'Corded drywall sander with a dust collection hose.', 'Dust Hose, Sanding Head', 'https://picsum.photos/seed/tool-98/600/400', 173.00, 24.00, NULL, '2025-11-19', NULL),
-(99, 'Concrete Mixer', 'MTL-000099', 'YARDMAX', 'Portable 3.5 cu ft electric concrete mixer on wheels. Very heavy -- bring a truck.', NULL, 'https://picsum.photos/seed/tool-99/600/400', 460.99, 40.00, 'Olivia Martinez', '2025-11-26', NULL),
+(99, 'Concrete Mixer', 'MTL-000099', 'YARDMAX', 'Portable 3.5 cu ft electric concrete mixer on wheels. Very heavy, so bring a truck.', NULL, 'https://picsum.photos/seed/tool-99/600/400', 460.99, 40.00, 'Olivia Martinez', '2025-11-26', NULL),
 (100, 'Pressure Washer', 'MTL-000100', 'Ryobi', 'Electric pressure washer for decks, siding and driveways.', 'Spray Wand, Three Nozzle Tips, Detergent Tank', 'https://picsum.photos/seed/tool-100/600/400', 184.00, 26.00, NULL, '2025-12-03', NULL),
 (101, 'Angle Grinder', 'MTL-000101', 'Makita', '4-1/2 inch corded angle grinder for cutting and grinding metal. PPE required.', 'Side Handle, Wheel Guard, Spanner Wrench', 'https://picsum.photos/seed/tool-101/600/400', 95.99, 11.00, NULL, '2025-12-10', NULL),
 (102, 'Socket Wrench Set', 'MTL-000102', 'GearWrench', '120-piece SAE/metric socket set with ratchets.', 'Carrying Case', 'https://picsum.photos/seed/tool-102/600/400', 132.00, 6.00, 'Isabella Ramirez', '2025-12-17', NULL),
@@ -297,7 +297,7 @@ INSERT INTO wp_tool_inventory
 (117, 'Cordless Impact Driver', 'MTL-000117', 'Milwaukee', 'Compact impact driver for driving long screws and lag bolts.', 'Battery, Charger, Belt Clip', 'https://picsum.photos/seed/tool-117/600/400', 150.99, 18.00, 'Aiden Torres', '2026-04-01', NULL),
 (118, 'Hedge Trimmer', 'MTL-000118', 'EGO', 'Cordless 22-inch hedge trimmer for shrubs and bushes.', 'Battery, Charger, Blade Cover', 'https://picsum.photos/seed/tool-118/600/400', 133.00, 15.00, NULL, '2026-04-08', NULL),
 (119, 'Gas Lawn Mower', 'MTL-000119', 'Toro', 'Self-propelled 21-inch gas mower. Drain fuel before returning.', 'Grass Bag, Side Discharge Chute', 'https://picsum.photos/seed/tool-119/600/400', 358.99, 57.00, NULL, '2026-04-15', NULL),
-(120, 'Chainsaw', 'MTL-000120', 'Husqvarna', '16-inch chainsaw. In-person orientation and PPE required for checkout.', 'Bar Cover, Chain Oil Bottle, Scrench Tool', 'https://picsum.photos/seed/tool-120/600/400', 271.00, 40.00, 'Alice Schmidt', '2026-04-22', 'Newest of our three chainsaws -- prioritize this one for first-time borrowers since the safety guard is easiest to see clearly.'),
+(120, 'Chainsaw', 'MTL-000120', 'Husqvarna', '16-inch chainsaw. In-person orientation and PPE required for checkout.', 'Bar Cover, Chain Oil Bottle, Scrench Tool', 'https://picsum.photos/seed/tool-120/600/400', 271.00, 40.00, 'Alice Schmidt', '2026-04-22', 'Newest of our three chainsaws, so prioritize this one for first-time borrowers since the safety guard is easiest to see clearly.'),
 (121, 'Pipe Wrench Set', 'MTL-000121', 'Ridgid', 'Pair of 14-inch and 18-inch pipe wrenches for plumbing work.', NULL, 'https://picsum.photos/seed/tool-121/600/400', 88.99, 6.00, NULL, '2026-04-29', NULL),
 (122, 'Drain Auger', 'MTL-000122', 'Ridgid', 'Hand-crank drain auger for clearing sink and tub clogs.', NULL, 'https://picsum.photos/seed/tool-122/600/400', 79.00, 8.00, NULL, '2026-05-06', NULL),
 (123, 'Digital Multimeter', 'MTL-000123', 'Klein', 'Auto-ranging multimeter for AC/DC voltage, current and resistance.', 'Test Leads, Carrying Pouch', 'https://picsum.photos/seed/tool-123/600/400', 200.99, 8.00, 'Priya Reed', '2026-05-13', NULL),
@@ -877,11 +877,11 @@ INSERT INTO wp_loans (loan_id, tool_id, member_id, loan_date, due_date, return_d
 --        reservations are collectable now ("Ready").
 --    No member ever reserves a tool they already have checked out. Every row
 --    here is an ACTIVE reservation, so expiry_date is NULL (it is only set when
---    a reservation is cancelled or fulfilled by a loan -- see schema.sql).
+--    a reservation is cancelled or fulfilled by a loan; see schema.sql).
 --
 --    ready_since is set ONLY on a reservation that is collectable right now:
 --    front of its queue with the tool on the shelf. Everything queued behind a
---    loan, or behind another member, keeps NULL -- their hold period has not
+--    loan, or behind another member, keeps NULL, since their hold period has not
 --    started, which is exactly the case that must never auto-expire. The dates
 --    used are recent enough to sit inside the default 14-day hold period, so
 --    loading this file does not immediately expire anything; see
@@ -906,10 +906,10 @@ INSERT INTO wp_tool_reservations (reservation_id, tool_id, member_id, reservatio
 (10, 35, 5,  '2026-07-25 15:10:00', '2026-08-02 10:30:00', NULL),
 -- Tool 43 (available): single reservation
 (11, 43, 13, '2026-07-26 14:00:00', '2026-07-30 16:45:00', NULL),
--- Tool 51 (available): 2-member queue -- only the front of it is ready
+-- Tool 51 (available): 2-member queue, of which only the front is ready
 (12, 51, 26, '2026-07-22 11:00:00', '2026-08-03 08:15:00', NULL),
 (13, 51, 60, '2026-07-25 10:15:00', NULL, NULL),
--- Tool 59 (available): 2-member queue -- only the front of it is ready
+-- Tool 59 (available): 2-member queue, of which only the front is ready
 (14, 59, 39, '2026-07-23 08:30:00', '2026-07-31 12:00:00', NULL),
 (15, 59, 44, '2026-07-26 17:45:00', NULL, NULL),
 -- Tool 75 (available): single reservation
@@ -926,14 +926,14 @@ INSERT INTO wp_tool_reservations (reservation_id, tool_id, member_id, reservatio
 --    start_date is when that member completed the training; the certification
 --    lapses that many months later (mtl_training_expiry_date()). Dates here
 --    are chosen so BOTH states are represented without editing anything:
---    6 of the 41 records are deliberately expired as of mid-2026 --
---    (12,5) (30,6) (39,4) (47,3) (55,4) (58,7) -- and members 39, 55 and 58
+--    6 of the 41 records are deliberately expired as of mid-2026:
+--    (12,5) (30,6) (39,4) (47,3) (55,4) (58,7), and members 39, 55 and 58
 --    each hold a mix of current and expired, which is what exercises the
 --    "badges show current only, the table shows everything" split on the My
 --    Account page.
 --
 --    Kept consistent with the loan/reservation history above: ten tools are
---    tagged "Requires Training" (tag 11) -- Table Saws 3, 31, 59, 87, 115 and
+--    tagged "Requires Training" (tag 11): Table Saws 3, 31, 59, 87, 115 and
 --    Chainsaws 8, 36, 64, 92, 120. Every member who has borrowed or reserved
 --    one of those Table Saws (21, 22, 23, 24, 39, 44) holds Table Saw Safety
 --    below AND it is still current, so no row in this file shows a member
@@ -966,7 +966,7 @@ INSERT INTO wp_member_training_mappings (member_id, training_id, start_date) VAL
 (30, 6, '2022-01-15'),
 (33, 1, '2026-06-18'), (33, 7, '2026-06-18'),
 (35, 2, '2026-02-25'), (35, 5, '2026-04-30'),
--- Members 39 and 44 are both in the reservation queue for Table Saw 59 --
+-- Members 39 and 44 are both in the reservation queue for Table Saw 59;
 -- Table Saw Safety current for both. Member 39's Chainsaw ticket has lapsed,
 -- giving one member a deliberate current/expired mix.
 (39, 2, '2025-07-07'), (39, 4, '2025-05-13'),
