@@ -283,7 +283,7 @@ Two things that do **not** stop a batch:
 
 ## 6. Member Agreements
 
-Statements every member has to agree to: a liability waiver, a code of conduct, a fee schedule. The plugin records what each member agreed to **exactly as it was worded at the time**, and how. It is **Off** by default, and nothing on this page happens until you turn it on.
+Statements every member has to agree to: a liability waiver, a code of conduct, a fee schedule. The plugin records what each member agreed to **exactly as it was worded at the time**, and how. It is **Off** by default.
 
 ### Choosing a mode
 
