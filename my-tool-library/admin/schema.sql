@@ -1,9 +1,8 @@
 -- MyToolLibrary Database
 -- NOTE: table names use a {{prefix}} placeholder, which setup-page.php
--- replaces with $wpdb->prefix (e.g. "wp_") before executing this file.
--- This keeps the plugin's tables namespaced per-site, per WordPress
--- table naming conventions, instead of colliding with other plugins
--- or other sites on a multisite install.
+-- replaces with $wpdb->prefix (e.g. "wp_") before executing this file. This
+-- keeps the plugin's tables namespaced per-site per WordPress convention,
+-- instead of colliding with other plugins or other sites on a multisite install.
 
 
 -- ==========================================
@@ -20,8 +19,7 @@ DROP TABLE IF EXISTS {{prefix}}tool_categories;
 DROP TABLE IF EXISTS {{prefix}}member_training_mappings;
 DROP TABLE IF EXISTS {{prefix}}member_trainings;
 DROP TABLE IF EXISTS {{prefix}}member_verifications;
--- Acceptances hold foreign keys into BOTH member_agreements and members, so
--- they drop first; member_agreements then drops before members.
+-- Acceptances key into both member_agreements and members, so they drop first.
 DROP TABLE IF EXISTS {{prefix}}member_agreement_acceptances;
 DROP TABLE IF EXISTS {{prefix}}member_agreements;
 DROP TABLE IF EXISTS {{prefix}}tool_inventory;
@@ -32,48 +30,41 @@ DROP TABLE IF EXISTS {{prefix}}members;
 -- ==========================================
 
 -- Members Table
--- Address is split into structured fields (rather than one free-text line)
--- so city/state/zip/country are each independently usable: e.g. the
--- Dashboard's member-areas-by-ZIP panel reads zip_code directly instead of
--- regex-parsing a combined string. address_line2 (apartment/suite/unit) is
--- nullable since not every address has one; every other address field is
--- required.
+-- Address is split into structured fields rather than one free-text line, so
+-- city/state/zip/country are each independently usable: the Dashboard's
+-- member-areas-by-ZIP panel reads zip_code directly instead of regex-parsing a
+-- combined string. address_line2 (apartment/suite/unit) is nullable; every
+-- other address field is required.
 --
--- state and country are both short codes/names drawn from a fixed list
--- (mtl_get_state_options() / mtl_get_country_options() in
--- my-tool-library.php), rendered as <select> dropdowns and validated
--- server-side on every write, not arbitrary free text. state covers the
--- U.S. and Canada (both use short, standardized subdivision codes); every
--- other country's members use the 'N/A' entry, since region/province
--- systems vary too much per-country to model generally here. country is the
--- full ISO 3166-1 country name (not the alpha-2 code) so it displays
--- correctly with no separate lookup elsewhere in the plugin. country
--- defaults to 'United States' since that's this plugin's primary audience,
--- but any member, admin-entered or self-signed-up, can select a
--- different one; this plugin is not restricted to U.S. libraries.
+-- state and country are short codes/names drawn from fixed lists
+-- (mtl_get_state_options() / mtl_get_country_options() in my-tool-library.php),
+-- rendered as <select> dropdowns and validated server-side on every write.
+-- state covers the U.S. and Canada, which both use short standardized
+-- subdivision codes; members elsewhere take the 'N/A' entry, since
+-- region/province systems vary too much per-country to model generally here.
+-- country is the full ISO 3166-1 name, not the alpha-2 code, so it displays
+-- with no separate lookup, and defaults to 'United States' as this plugin's
+-- primary audience without being restricted to it.
 --
 -- Deleting a member never drops this row. The request is honored by
 -- anonymizing it: identifying fields are overwritten with placeholders,
 -- anonymized_at is stamped, and the member reads as "Former Member"
--- afterwards. Their loans, reservations and completed trainings all stay
--- attached to it so tool histories, borrowing counts and training records
--- remain accurate, and keeping the row is what makes that possible, since
--- member_training_mappings and member_verifications both cascade off it.
--- Their WordPress account is a separate matter and IS deleted outright
--- (wp_users plus wp_usermeta). See mtl_delete_or_anonymize_member().
+-- afterwards. Keeping the row is what lets their loans, reservations and
+-- completed trainings stay attached and accurate, since
+-- member_training_mappings and member_verifications both cascade off it. Their
+-- WordPress account is a separate matter and is deleted outright (wp_users
+-- plus wp_usermeta). See mtl_delete_or_anonymize_member().
 --
 -- phone_number is always stored pre-formatted as "+<calling code> <national
 -- number>" (e.g. "+1 (414) 555-0123"), the canonical form every write path
--- produces via mtl_format_phone_number() in my-tool-library.php: Signup,
--- Account edit, Add/Edit Member, and CSV import all funnel through it, so
--- every phone number in this column is guaranteed to be in the same format.
--- 32 chars comfortably covers the longest realistic value (a 3-digit calling
--- code plus a 14-digit national number grouped with spaces). See the "PHONE
--- NUMBERS" block comment in my-tool-library.php for the full design.
+-- produces via mtl_format_phone_number() in my-tool-library.php. 32 chars
+-- comfortably covers the longest realistic value: a 3-digit calling code plus
+-- a 14-digit national number grouped with spaces. See the "PHONE NUMBERS"
+-- block comment in my-tool-library.php for the full design.
 --
--- private_notes is staff-only, like tool_inventory.private_notes below: it is
--- never selected by any public-facing or member-self-service query and is
--- shown only in the admin Membership page's detail view.
+-- private_notes is staff-only: never selected by any public-facing or
+-- member-self-service query, and shown only in the admin Membership page's
+-- detail view.
 CREATE TABLE {{prefix}}members (
     member_id INT AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(50) NOT NULL,
@@ -96,12 +87,11 @@ CREATE TABLE {{prefix}}members (
 -- Sensitive Member Data (Separated for security compliance)
 -- NOTE: member_id here is intentionally NOT AUTO_INCREMENT, since it is a 1:1
 -- mirror of the owning row in the members table, never generated on its own.
--- Both scan URLs are nullable, since a member may have provided only one form of
--- ID so far, and staff should be able to save whatever they currently have on
--- hand rather than being forced to withhold it until the other arrives. A
--- member only counts as fully verified (mtl_member_is_verified() in
--- member-pages.php, mtl_verification_urls_complete() in my-tool-library.php)
--- once BOTH are on file; one alone still leaves them unverified.
+-- Both scan URLs are nullable, since a member may have provided only one form
+-- of ID so far and staff should be able to save what they have on hand. Full
+-- verification requires both on file (mtl_member_is_verified() in
+-- member-pages.php, mtl_verification_urls_complete() in my-tool-library.php);
+-- one alone still leaves them unverified.
 CREATE TABLE {{prefix}}member_verifications (
     member_id INT PRIMARY KEY,
     photo_id_scan_url VARCHAR(255) DEFAULT NULL,
@@ -112,16 +102,14 @@ CREATE TABLE {{prefix}}member_verifications (
 
 -- Tool Inventory Table
 -- Like members, a tool with loans/tool_reservations history can't be deleted
--- outright (same missing ON DELETE CASCADE). retired_at is the counterpart
--- to a member's anonymized_at: NULL means active/lendable; once set, the
--- tool is hidden from the public catalog and blocked from new loans or
--- reservations, but the row and its full history stay intact and reversible
--- (retired_at can simply be cleared again), unlike a member delete, which
--- irreversibly discards personal data.
--- private_notes is staff-only, unlike description/components: it is never
--- selected by any public-facing query (see public/shop-page.php, which lists
--- its columns explicitly rather than using SELECT *) and is shown only in
--- the admin Inventory page's detail view.
+-- outright (same missing ON DELETE CASCADE). retired_at is the counterpart to
+-- a member's anonymized_at, except reversible: NULL means active/lendable;
+-- once set, the tool is hidden from the public catalog and blocked from new
+-- loans or reservations, but the row and its full history stay intact and
+-- retired_at can simply be cleared again.
+-- private_notes is staff-only, like members.private_notes above and unlike
+-- description/components; see public/shop-page.php, which lists its columns
+-- explicitly rather than using SELECT *.
 CREATE TABLE {{prefix}}tool_inventory (
     tool_id INT AUTO_INCREMENT PRIMARY KEY,
     tool_name VARCHAR(100) NOT NULL,
@@ -173,27 +161,24 @@ CREATE TABLE {{prefix}}tool_tag_mappings (
 );
 
 -- Member Trainings (e.g., Table Saw Safety, Welding Basics)
--- Managed by admins on the Setup page, exactly like categories and tags,
--- except that all three columns are editable in place there (categories and
--- tags are add-or-delete only), because a badge image or certification length can
--- reasonably change long after the training itself was created.
--- These record which safety/skill trainings a member has completed, so staff
--- can tell at a glance which tools that member is qualified to check out --
--- the counterpart to the 'Requires Training' tool tag below.
+-- Which safety/skill trainings a member has completed, so staff can tell at a
+-- glance which tools that member is qualified to check out; the counterpart to
+-- the 'Requires Training' tool tag below. Managed by admins on the Setup page
+-- like categories and tags, except that all three columns are editable in
+-- place there (categories and tags are add-or-delete only), since a badge
+-- image or certification length can change long after the training was created.
 --
--- badge_image_url is optional and admin-set: when present, the member's own
--- My Account page shows this image (with the training name as alt/hover
--- text) instead of the plain green pill, and ONLY for trainings that are
--- still current. Public-facing only; the staff-side admin pages always
--- show trainings as plain names, never as images.
+-- badge_image_url is optional and admin-set: when present, the member's own My
+-- Account page shows this image (with the training name as alt/hover text)
+-- instead of the plain green pill, and only for trainings that are still
+-- current. Staff-side admin pages always show trainings as plain names.
 --
 -- certification_length_months is how long a completed training stays valid,
--- counted from that member's start_date below. NULL means it never expires.
--- Expiry is always DERIVED (start_date + certification_length_months, see
--- mtl_training_expiry_date() in my-tool-library.php), never stored: editing
--- the length here has to re-date every member who holds that training, and
--- deriving it means that happens automatically instead of needing a
--- backfill.
+-- counted from that member's start_date below; NULL means it never expires.
+-- Expiry is always derived (start_date + certification_length_months, see
+-- mtl_training_expiry_date() in my-tool-library.php), never stored, so editing
+-- the length here re-dates every member who holds that training automatically
+-- instead of needing a backfill.
 CREATE TABLE {{prefix}}member_trainings (
     training_id INT AUTO_INCREMENT PRIMARY KEY,
     training_name VARCHAR(50) UNIQUE NOT NULL,
@@ -202,17 +187,17 @@ CREATE TABLE {{prefix}}member_trainings (
 );
 
 -- Junction table for Member <-> Trainings (Many-to-Many)
--- start_date is the day that member completed this training; combined with
--- the training's certification_length_months it determines whether their
--- certification is still current. A plain DATE, not a TIMESTAMP:
--- certification is granted for a day, not a moment, and comparing whole
--- days avoids an off-by-a-few-hours expiry.
+-- start_date is the day that member completed this training; with the
+-- training's certification_length_months it determines whether their
+-- certification is still current. A plain DATE, not a TIMESTAMP: certification
+-- is granted for a day, not a moment, and comparing whole days avoids an
+-- off-by-a-few-hours expiry.
 --
--- ON DELETE CASCADE on member_id is a safety net for a row that is genuinely
--- removed (a manual cleanup, or the whole table being rebuilt). It is NOT the
--- path a member deletion takes: mtl_delete_or_anonymize_member() anonymizes
--- the members row rather than dropping it, precisely so these training
--- records survive as library history, re-attached to a "Former Member".
+-- ON DELETE CASCADE on member_id is a safety net for a row genuinely removed
+-- by hand, not the path a member deletion takes:
+-- mtl_delete_or_anonymize_member() anonymizes the members row rather than
+-- dropping it, precisely so these training records survive as library history,
+-- re-attached to a "Former Member".
 CREATE TABLE {{prefix}}member_training_mappings (
     member_id INT,
     training_id INT,
@@ -224,46 +209,35 @@ CREATE TABLE {{prefix}}member_training_mappings (
 
 -- Member Agreements
 -- The statements a member must agree to before an account is created, written
--- and maintained by admins on the Setup page, exactly like member_trainings
--- above, and edited in place there in the same way.
+-- and maintained by admins on the Setup page like member_trainings above.
 --
--- agreement_text is the wording the member reads next to the checkbox. It is
--- REQUIRED; an agreement with no text is not an agreement. Stored as plain
--- text and escaped on output, and no HTML is permitted, because this string is
--- snapshotted into a legal record and replayed on public pages.
+-- agreement_text is the wording the member reads next to the checkbox: plain
+-- text, no HTML, escaped on output, since it is snapshotted into a legal
+-- record and replayed on public pages. attachment_id is an optional supporting
+-- file (a policy PDF, a fee schedule, a safety sheet) in the WordPress Media
+-- Library, and file_sha256 fingerprints its bytes so a record identifies the
+-- exact file attached; the two are NULL together.
 --
--- attachment_id is an OPTIONAL supporting file (a policy PDF, a fee schedule,
--- a safety sheet) held in the WordPress Media Library. file_sha256
--- fingerprints the file's bytes so a record identifies the exact file that was
--- attached; both are NULL together when no file is attached.
+-- There is deliberately no file_url column here. Every read calls
+-- wp_get_attachment_url( attachment_id ), so a site changing domain cannot
+-- strand a stale copy. Acceptance rows do snapshot the URL, to freeze what it
+-- was at that moment rather than stay current.
 --
--- There is deliberately NO file_url column here. An earlier design cached the
--- resolved URL and it was wrong twice over: it went stale the moment a site
--- changed domain, and it was a second copy of a value with a single source.
--- Every read calls wp_get_attachment_url( attachment_id ) instead. Acceptance
--- rows still SNAPSHOT the URL, because there the point is to freeze what it
--- was at that moment; here the point is to always be current.
---
--- version_num starts at 1 and is incremented on EVERY save that changes the
--- wording or the attached file. There is no "minor edit" exemption, by
--- decision. Every member whose latest acceptance of THIS agreement is on a
--- lower number reads as outstanding and is asked again.
---
--- version_published_at is when the CURRENT version took effect, stamped on
--- creation and re-stamped on every version bump. It is what the Setup panel's
--- "in use since" reads, and it is the date on which this obligation began.
+-- version_num is incremented on every save that changes the wording or the
+-- attached file, with no "minor edit" exemption; a member whose latest
+-- acceptance of this agreement sits on a lower number reads as outstanding and
+-- is asked again. version_published_at is re-stamped on each bump and is what
+-- the Setup panel's "in use since" reads.
 --
 -- retired_at mirrors tool_inventory.retired_at: NULL means active and
 -- required; once set, the agreement stops appearing at signup and stops being
 -- enforced, but the row stays so existing acceptance records keep resolving.
--- Agreements are NEVER hard-deleted once accepted: the foreign key on the
--- acceptances table is explicitly RESTRICT, so the database refuses it.
+-- The acceptances table's RESTRICT foreign key blocks deleting it outright.
 --
--- All DATETIMEs in these two tables hold UTC and are written explicitly from
--- PHP with gmdate(). They are deliberately NOT TIMESTAMP: TIMESTAMP converts
--- on read using the session timezone, so its meaning would depend on who was
--- asking, and it cannot represent dates after 2038, which is unacceptable for records
--- meant to outlive the staff who created them.
+-- DATETIMEs in these two tables hold UTC, written from PHP with gmdate(), and
+-- are deliberately not TIMESTAMP: that converts on read using the session
+-- timezone, so its meaning would depend on who was asking, and it cannot
+-- represent dates after 2038.
 CREATE TABLE {{prefix}}member_agreements (
     agreement_id INT AUTO_INCREMENT PRIMARY KEY,
     agreement_text TEXT NOT NULL,
@@ -276,58 +250,45 @@ CREATE TABLE {{prefix}}member_agreements (
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Junction table for Member <-> Agreements
--- Append-only. One row per acceptance EVENT, so (member_id, agreement_id) is
--- deliberately NOT a primary key and no row is ever updated in place. This
--- is the one place the pattern departs from member_training_mappings above,
--- which keys on the pair. A member who accepts v1 and later v2 of the same
--- agreement has two rows, and the v1 row stays exactly as it was.
+-- Append-only: one row per acceptance event, so (member_id, agreement_id) is
+-- deliberately not a primary key and no row is ever updated in place. This
+-- differs from member_training_mappings above, which keys on the pair. A
+-- member who accepts v1 and later v2 of the same agreement has two rows, and
+-- the v1 row stays exactly as it was.
 --
 -- agreement_text, assent_text, agreement_version_num,
--- agreement_version_published_at, file_url and file_sha256 are all SNAPSHOTS
--- copied in at insert time, never live lookups. That is the whole point: an
--- admin editing the wording afterwards leaves existing rows describing what
--- was actually agreed to. Reading the current wording through the foreign key
--- would silently rewrite history.
+-- agreement_version_published_at, file_url and file_sha256 are snapshots
+-- copied in at insert time, never live lookups, so an admin editing the
+-- wording afterwards leaves existing rows describing what was actually agreed
+-- to. They preserve mistakes too: a member who corrects a typo the next day
+-- leaves the typo here, and no backfill should "fix" it.
 --
--- assent_text is the wording that framed the tick: "By ticking this box I
--- agree to the statement above", or the staff attestation equivalent. In a
--- clickwrap dispute the contested question is frequently whether the interface
--- conveyed assent at all, not what the clause said; a record of the clause
--- without the assent wording answers only half of it. It comes from
--- mtl_assent_language( $context ), the SAME function that renders it on
--- screen, and only that function may supply it.
+-- assent_text is the wording that framed the tick ("By ticking this box I
+-- agree to the statement above", or the staff attestation equivalent), since a
+-- clickwrap dispute is frequently about whether the interface conveyed assent
+-- at all, not about what the clause said. It comes from mtl_assent_language(
+-- $context ), the same function that renders it on screen, and only from there.
 --
--- accepted_context is one of 'signup', 'agree_page', 'staff_add',
--- 'staff_edit'. NO DEFAULT: every possible value is a factual claim about how
--- the member agreed, so there is no inert value to fall back to.
---
--- THIS TABLE CONTAINS PERSONAL DATA, namely member_name and member_email, held
--- deliberately and RETAINED even when the member is deleted, so the library
--- can still show who agreed to what. That is a considered retention decision.
--- Consequently NO ROW IN THIS TABLE IS EVER UPDATED AFTER INSERT, by anything,
--- including a member deletion. There is no exception and no carve-out. Any
--- future code that writes an UPDATE against this table is a bug.
---
--- There is deliberately no IP address, user agent or device column here.
--- acted_by identifies a member of STAFF, not the member the row is about: it
--- is set only for staff-recorded acceptances, so
+-- accepted_context is one of 'signup', 'agree_page', 'staff_add' or
+-- 'staff_edit', with no default: every value is a factual claim about how the
+-- member agreed, so there is no inert one to fall back to. acted_by is the
+-- staff account that recorded it, not the member the row is about, so
 --   acted_by IS NOT NULL  <=>  accepted_context IN ('staff_add','staff_edit')
--- It is NOT a foreign key, because wp_users is core's table, and that staff account
--- may be deleted long before this row stops mattering.
+-- It is not a foreign key, because wp_users is core's table and that account
+-- may be deleted long before this row stops mattering. There is deliberately
+-- no IP address, user agent or device column.
 --
--- member_name is 101 = members.first_name(50) + a space + last_name(50).
--- Being snapshots, these preserve mistakes: a member who corrects a typo the
--- next day leaves the typo here forever, which is correct and must never be
--- "fixed" by a backfill.
+-- member_name (101 = members.first_name(50) + a space + last_name(50)) and
+-- member_email are personal data, retained deliberately even when the member
+-- is deleted so the library can still show who agreed to what. Nothing may
+-- UPDATE a row here, member deletion included.
 --
--- ON DELETE CASCADE on member_id matches member_training_mappings: a safety
--- net for a row genuinely removed by hand, not the path a member deletion
--- takes. ON DELETE RESTRICT on agreement_id is the opposite on purpose: it
--- makes "agreements are retired, never deleted" a rule the database enforces,
--- and it is spelled out rather than left to MySQL's default because a
--- guarantee that depends on an implicit server setting is not one.
+-- ON DELETE CASCADE on member_id is a safety net for a row removed by hand, as
+-- in member_training_mappings; RESTRICT on agreement_id is the opposite on
+-- purpose, making "agreements are retired, never deleted" a rule the database
+-- enforces rather than one left to MySQL's default.
 --
--- KEY member_agreement is two columns, not three. The status query selects
+-- KEY member_agreement is two columns, not three: the status query selects
 -- MAX(acceptance_id), and in InnoDB every secondary index already carries the
 -- primary key as its row locator, so this behaves as (member_id, agreement_id,
 -- acceptance_id) for free. Its leftmost column also satisfies InnoDB's index
@@ -349,8 +310,7 @@ CREATE TABLE {{prefix}}member_agreement_acceptances (
     member_email VARCHAR(100) NOT NULL DEFAULT '',
 
     KEY member_agreement (member_id, agreement_id),
-    -- Required for the agreement_id foreign key; also serves Advanced Search's
-    -- "who accepted agreement X at version Y".
+    -- Required for the agreement_id foreign key; also serves Advanced Search.
     KEY agreement (agreement_id),
     FOREIGN KEY (member_id) REFERENCES {{prefix}}members(member_id) ON DELETE CASCADE,
     FOREIGN KEY (agreement_id) REFERENCES {{prefix}}member_agreements(agreement_id) ON DELETE RESTRICT
@@ -361,16 +321,15 @@ CREATE TABLE {{prefix}}member_agreement_acceptances (
 -- ==========================================
 
 -- Historical and Active Loans
--- loan_date and return_date are full TIMESTAMPs (not just DATEs) so the exact
--- checkout/check-in moment is on record; every list/table still DISPLAYS just
--- the date (see mtl_format_date() in my-tool-library.php), with the full
--- timestamp available in each admin page's detail view. due_date stays a
--- plain DATE, being a hand-picked calendar date (via a date picker), not a
--- moment the system stamps.
--- One exception to "the exact moment": a return can be BACKDATED by staff who
--- are processing a backlog of drop-offs, in which case return_date holds the
--- start of the day the tool actually came back, since the real check-in time
--- is not known (see mtl_resolve_return_timestamp() in my-tool-library.php).
+-- loan_date and return_date are full TIMESTAMPs, not DATEs, so the exact
+-- checkout/check-in moment is on record; lists still display just the date
+-- (mtl_format_date() in my-tool-library.php), with the full timestamp in each
+-- admin page's detail view. due_date stays a plain DATE, being a hand-picked
+-- calendar date, not a moment the system stamps.
+-- One exception to "the exact moment": staff processing a backlog of drop-offs
+-- can backdate a return, in which case return_date holds the start of the day
+-- the tool actually came back, since the real check-in time is not known (see
+-- mtl_resolve_return_timestamp() in my-tool-library.php).
 CREATE TABLE {{prefix}}loans (
     loan_id INT AUTO_INCREMENT PRIMARY KEY,
     tool_id INT NOT NULL,
@@ -383,26 +342,23 @@ CREATE TABLE {{prefix}}loans (
 );
 
 -- Tool Reservations
--- A tool may have MANY concurrent reservations, forming a waiting queue.
--- reservation_date is a full TIMESTAMP (not just a DATE) so the queue can be
--- ordered precisely: for a given tool, the earliest reservation_date is queue
--- position 1, the next is 2, and so on. Queue position is derived on the fly
--- (see the Loans & Reservations admin page), never stored.
+-- A tool may have many concurrent reservations, forming a waiting queue.
+-- reservation_date is a full TIMESTAMP so the queue can be ordered precisely:
+-- for a given tool the earliest reservation_date is position 1, the next is 2,
+-- and so on. Position is derived on the fly (see the Loans & Reservations
+-- admin page), never stored.
 --
--- expiry_date is NULL while a reservation is active/waiting. It is stamped
--- (also a full TIMESTAMP, for the same reason as loan_date/return_date above)
--- only when the reservation ENDS, whether cancelled (by the member or an admin) or
--- fulfilled by a loan, so "active reservation" everywhere means
--- "expiry_date IS NULL", and a non-NULL expiry_date is when it closed.
--- ready_since is when this reservation became collectable: the member reached
--- the front of the queue AND the tool was back on the shelf. NULL means they
--- are still waiting their turn. It exists so an unclaimed reservation can
--- expire on its own after the hold period set on the Setup page
--- (mtl_reservation_hold_days) without penalising anyone who is simply queued
--- behind a long loan, since their clock has not started yet. Kept in step by
--- mtl_sync_reservation_readiness(), which runs after every event that can
--- change a tool's queue: a loan starting or ending, a reservation being
--- placed, cancelled or fulfilled, and a tool being retired.
+-- expiry_date is NULL while a reservation is active and is stamped only when
+-- it ends, whether cancelled or fulfilled by a loan, so "active reservation"
+-- everywhere means "expiry_date IS NULL" and a non-NULL value is when it
+-- closed. ready_since is when the reservation became collectable: the member
+-- reached the front of the queue and the tool was back on the shelf. NULL
+-- means they are still waiting their turn. It exists so an unclaimed
+-- reservation can expire on its own after the hold period set on the Setup
+-- page (mtl_reservation_hold_days) without penalising anyone simply queued
+-- behind a long loan, whose clock has not started yet.
+-- mtl_sync_reservation_readiness() keeps it in step, running after every event
+-- that can change a tool's queue.
 CREATE TABLE {{prefix}}tool_reservations (
     reservation_id INT AUTO_INCREMENT PRIMARY KEY,
     tool_id INT NOT NULL,
@@ -445,12 +401,11 @@ INSERT INTO {{prefix}}tool_tags (tag_id, tag_name) VALUES
 (11, 'Requires Training'),
 (12, 'Large/Bulky');
 
--- Starting set of trainings; admins add, edit and remove their own on the
--- Setup page, including changing any of these renewal periods.
--- certification_length_months is a plausible starting point rather than a
--- recommendation: a general introduction that does not lapse, and shorter
--- renewals on the higher-risk machines. Badge images are left unset; each
--- library uploads its own.
+-- Starting set of trainings; admins add, edit and remove their own on the Setup
+-- page, including changing any of these renewal periods. The lengths are a
+-- plausible starting point rather than a recommendation: a general
+-- introduction that does not lapse, shorter renewals on the higher-risk
+-- machines. Badge images are left unset; each library uploads its own.
 INSERT INTO {{prefix}}member_trainings (training_id, training_name, certification_length_months) VALUES
 (1, 'Power Tool Basics', NULL),
 (2, 'Table Saw Safety', 24),
