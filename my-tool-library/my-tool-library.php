@@ -2736,6 +2736,333 @@ function mtl_reservation_collect_by( $ready_since ) {
 }
 
 /**
+ * The member list behind every "type a name or email" picker: Quick Loan,
+ * Quick Reserve, the donor field on Inventory, and Bulk Checkout.
+ *
+ * `search` is what the client-side filter matches against, pre-lowercased so
+ * the browser does not redo that on every keystroke, and it carries the name
+ * and the email together so typing part of either finds the member.
+ *
+ * `verified` needs BOTH scan URLs on file, per mtl_verification_urls_complete().
+ * One document alone leaves a member unverified, and the pickers show that so
+ * staff can see at a glance whether a walk-in has produced their papers.
+ *
+ * @return array<int, array{id:int, verified:bool, name:string, email:string, label:string, search:string}>
+ */
+function mtl_get_member_picker_list() {
+	global $wpdb;
+
+	$tbl_members       = $wpdb->prefix . 'members';
+	$tbl_verifications = $wpdb->prefix . 'member_verifications';
+
+	// A one-line ignore covers only its own line, and this query spans several.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	$out = array();
+	foreach (
+		$wpdb->get_results(
+			"SELECT m.member_id, m.first_name, m.last_name, m.email,
+                    (v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS verified
+             FROM {$tbl_members} m
+             LEFT JOIN {$tbl_verifications} v ON v.member_id = m.member_id
+             ORDER BY m.last_name ASC, m.first_name ASC"
+		) as $row
+	) {
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$name  = trim( stripslashes( (string) $row->first_name ) . ' ' . stripslashes( (string) $row->last_name ) );
+		$out[] = array(
+			'id'       => (int) $row->member_id,
+			'verified' => (bool) $row->verified,
+			'name'     => $name,
+			'email'    => (string) $row->email,
+			'label'    => $name . ' (' . $row->email . ')',
+			'search'   => strtolower( $name . ' ' . $row->email ),
+		);
+	}
+
+	return $out;
+}
+
+/**
+ * Everything one tool/member pair needs for a checkout decision.
+ *
+ * Returns a record rather than a single verdict because loaning and reserving
+ * disagree about what counts as a problem. A tool out on loan to somebody else
+ * cannot be loaned but can perfectly well be queued for, so a caller asking
+ * "is this tool okay" would get an answer that is wrong half the time.
+ *
+ * Three outcomes per action, not two. Beyond can/cannot there is SKIP: ticking
+ * Reserve on a tool the member already holds or has already queued for is a
+ * harmless mistake, so it writes nothing and reports nothing rather than
+ * refusing a batch of five other tools over it.
+ *
+ * The two skip cases are the same pair Quick Reserve refuses outright
+ * (admin/inventory-page.php) and the same pair the member's own reserve button
+ * refuses (public/member-pages.php). Bulk Checkout treats them more gently but
+ * never more permissively, so no path can create a duplicate reservation.
+ *
+ * @param int $tool_id   Tool row ID.
+ * @param int $member_id Member the row is for; 0 before one is picked, which
+ *                       leaves the self/other distinctions unresolved.
+ * @return array{found:bool, tool_id:int, tool_name:string, barcode:string,
+ *               retired:bool, on_loan_by:int, reserved_by_self:bool,
+ *               queue_size:int, display:string, can_loan:bool,
+ *               loan_blocker:string, loan_warning:string, can_reserve:bool,
+ *               reserve_blocker:string, reserve_skip:string}
+ */
+function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
+	global $wpdb;
+
+	$tool_id   = (int) $tool_id;
+	$member_id = (int) $member_id;
+
+	$status = array(
+		'found'            => false,
+		'tool_id'          => $tool_id,
+		'tool_name'        => '',
+		'barcode'          => '',
+		'retired'          => false,
+		'on_loan_by'       => 0,
+		'reserved_by_self' => false,
+		'queue_size'       => 0,
+		'display'          => 'unknown',
+		'can_loan'         => false,
+		'loan_blocker'     => __( 'No tool matches that barcode.', 'my-tool-library' ),
+		'loan_warning'     => '',
+		'can_reserve'      => false,
+		'reserve_blocker'  => __( 'No tool matches that barcode.', 'my-tool-library' ),
+		'reserve_skip'     => '',
+	);
+
+	if ( $tool_id <= 0 ) {
+		return $status;
+	}
+
+	$tbl_inventory = $wpdb->prefix . 'tool_inventory';
+	$tbl_loans     = $wpdb->prefix . 'loans';
+	$tbl_res       = $wpdb->prefix . 'tool_reservations';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	$tool = $wpdb->get_row(
+		$wpdb->prepare( "SELECT tool_id, tool_name, barcode, retired_at FROM {$tbl_inventory} WHERE tool_id = %d", $tool_id )
+	);
+	if ( ! $tool ) {
+		return $status;
+	}
+
+	$status['found']     = true;
+	$status['tool_name'] = stripslashes( (string) $tool->tool_name );
+	$status['barcode']   = (string) $tool->barcode;
+	$status['retired']   = ! empty( $tool->retired_at );
+
+	// Who holds it, not merely whether somebody does: reserving is legal behind
+	// another member's loan and illegal behind your own.
+	$status['on_loan_by'] = (int) $wpdb->get_var(
+		$wpdb->prepare( "SELECT member_id FROM {$tbl_loans} WHERE tool_id = %d AND return_date IS NULL LIMIT 1", $tool_id )
+	);
+	$status['queue_size'] = (int) $wpdb->get_var(
+		$wpdb->prepare( "SELECT COUNT(*) FROM {$tbl_res} WHERE tool_id = %d AND expiry_date IS NULL", $tool_id )
+	);
+	if ( $member_id > 0 ) {
+		$status['reserved_by_self'] = (bool) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT reservation_id FROM {$tbl_res} WHERE tool_id = %d AND member_id = %d AND expiry_date IS NULL LIMIT 1",
+				$tool_id,
+				$member_id
+			)
+		);
+	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	$on_loan_self  = ( $member_id > 0 && $status['on_loan_by'] === $member_id );
+	$on_loan_other = ( $status['on_loan_by'] > 0 && ! $on_loan_self );
+	$queued_other  = ( $status['queue_size'] > ( $status['reserved_by_self'] ? 1 : 0 ) );
+
+	// Precedence is what staff need to read first, so being out beats being
+	// queued for: a tool on loan with three people waiting reads "On loan".
+	if ( $status['retired'] ) {
+		$status['display'] = 'retired';
+	} elseif ( $on_loan_self ) {
+		$status['display'] = 'on_loan_self';
+	} elseif ( $on_loan_other ) {
+		$status['display'] = 'on_loan_other';
+	} elseif ( $status['reserved_by_self'] ) {
+		$status['display'] = 'reserved_self';
+	} elseif ( $queued_other ) {
+		$status['display'] = 'reserved_other';
+	} else {
+		$status['display'] = 'available';
+	}
+
+	if ( $status['retired'] ) {
+		$status['loan_blocker']    = __( 'Retired. Reactivate it before lending it.', 'my-tool-library' );
+		$status['reserve_blocker'] = __( 'Retired, so it cannot be reserved.', 'my-tool-library' );
+		return $status;
+	}
+
+	if ( $on_loan_self ) {
+		$status['loan_blocker'] = __( 'This member already has it on loan.', 'my-tool-library' );
+		$status['reserve_skip'] = __( 'Already on loan to this member.', 'my-tool-library' );
+	} elseif ( $on_loan_other ) {
+		$status['loan_blocker'] = __( 'On loan to another member. End that loan first.', 'my-tool-library' );
+		$status['can_reserve']  = true;
+	} else {
+		$status['can_loan']     = true;
+		$status['loan_blocker'] = '';
+		if ( $status['reserved_by_self'] ) {
+			$status['reserve_skip'] = __( 'This member has already reserved it.', 'my-tool-library' );
+		} else {
+			$status['can_reserve'] = true;
+		}
+		if ( $queued_other ) {
+			// Allowed on purpose: staff at the desk know things the queue does
+			// not. It warns rather than blocks, because the member in front of
+			// them is real and the queue position is a policy.
+			$status['loan_warning'] = __( 'Reserved by another member.', 'my-tool-library' );
+		}
+	}
+
+	if ( $status['can_reserve'] ) {
+		$status['reserve_blocker'] = '';
+	} elseif ( '' !== $status['reserve_skip'] ) {
+		$status['reserve_blocker'] = '';
+	}
+
+	return $status;
+}
+
+/**
+ * Writes one loan and settles what the loan implies.
+ *
+ * The insert is the easy part. What every caller kept forgetting is the pair of
+ * follow-ups: a member handed a tool they had queued for should not still be
+ * queued for it, and the rest of that queue needs its readiness recomputed now
+ * the tool is off the shelf. Both live here so no call site can omit them.
+ *
+ * Validation is the CALLER's job, via mtl_tool_row_status(). This refuses only
+ * what would corrupt the table, since a second open loan on one physical tool
+ * is unrecoverable from the data alone.
+ *
+ * @param int    $tool_id   Tool row ID.
+ * @param int    $member_id Member row ID.
+ * @param string $due_date  Due date as Y-m-d.
+ * @return int The new loan_id, or 0 if nothing was written.
+ */
+function mtl_create_loan( $tool_id, $member_id, $due_date ) {
+	global $wpdb;
+
+	$tool_id   = (int) $tool_id;
+	$member_id = (int) $member_id;
+	$due_date  = trim( (string) $due_date );
+
+	if ( $tool_id <= 0 || $member_id <= 0 || ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $due_date ) ) {
+		return 0;
+	}
+
+	$tbl_loans = $wpdb->prefix . 'loans';
+	$tbl_res   = $wpdb->prefix . 'tool_reservations';
+	$now       = current_time( 'mysql' );
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	$already_out = $wpdb->get_var(
+		$wpdb->prepare( "SELECT loan_id FROM {$tbl_loans} WHERE tool_id = %d AND return_date IS NULL LIMIT 1", $tool_id )
+	);
+	if ( $already_out ) {
+		return 0;
+	}
+
+	$inserted = $wpdb->insert(
+		$tbl_loans,
+		array(
+			'tool_id'   => $tool_id,
+			'member_id' => $member_id,
+			'loan_date' => $now,
+			'due_date'  => $due_date,
+		),
+		array( '%d', '%d', '%s', '%s' )
+	);
+	if ( ! $inserted ) {
+		return 0;
+	}
+	$loan_id = (int) $wpdb->insert_id;
+
+	// Their own reservation for this tool is now satisfied, so close it the same
+	// way the Loans page checkout does, by stamping today's expiry.
+	$wpdb->query(
+		$wpdb->prepare(
+			"UPDATE {$tbl_res} SET expiry_date = %s WHERE tool_id = %d AND member_id = %d AND expiry_date IS NULL",
+			$now,
+			$tool_id,
+			$member_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	mtl_sync_reservation_readiness( $tool_id );
+
+	return $loan_id;
+}
+
+/**
+ * Writes one reservation at the back of a tool's queue.
+ *
+ * Queue order is reservation_date with ties broken by reservation_id, so a row
+ * written now sorts last with no position to calculate or store.
+ *
+ * Validation is the CALLER's job, via mtl_tool_row_status(). This refuses only
+ * a duplicate active reservation, which no path should ever produce and which
+ * would give one member two places in the same queue.
+ *
+ * @param int $tool_id   Tool row ID.
+ * @param int $member_id Member row ID.
+ * @return int The new reservation_id, or 0 if nothing was written.
+ */
+function mtl_create_reservation( $tool_id, $member_id ) {
+	global $wpdb;
+
+	$tool_id   = (int) $tool_id;
+	$member_id = (int) $member_id;
+	if ( $tool_id <= 0 || $member_id <= 0 ) {
+		return 0;
+	}
+
+	$tbl_res = $wpdb->prefix . 'tool_reservations';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	$duplicate = $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT reservation_id FROM {$tbl_res} WHERE tool_id = %d AND member_id = %d AND expiry_date IS NULL LIMIT 1",
+			$tool_id,
+			$member_id
+		)
+	);
+	if ( $duplicate ) {
+		return 0;
+	}
+
+	$inserted = $wpdb->insert(
+		$tbl_res,
+		array(
+			'tool_id'          => $tool_id,
+			'member_id'        => $member_id,
+			'reservation_date' => current_time( 'mysql' ),
+		),
+		array( '%d', '%d', '%s' )
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	if ( ! $inserted ) {
+		return 0;
+	}
+	// Read before the sync below, which runs its own queries and would leave
+	// $wpdb->insert_id describing one of those instead.
+	$reservation_id = (int) $wpdb->insert_id;
+
+	// A tool already on the shelf makes a sole reservation collectable at once.
+	mtl_sync_reservation_readiness( $tool_id );
+
+	return $reservation_id;
+}
+
+/**
  * Recomputes ready_since for one tool's active reservations.
  *
  * Only the front of the queue can be ready, and only while the tool is not

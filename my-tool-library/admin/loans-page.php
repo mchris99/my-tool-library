@@ -193,6 +193,214 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 }
 
 /**
+ * Request-scoped state passed from the Bulk Checkout handler to the renderer,
+ * held in a prefixed global.
+ *
+ * The page renders straight after handling the POST rather than redirecting, so
+ * a refused batch has to reopen the modal with every cell as the staff member
+ * left it. `rows` carries the per-row complaint, keyed by row index, so the
+ * offending rows can be marked rather than just counted.
+ *
+ * @return array{open:bool, rows:array<int,string>}
+ */
+function &mtl_bulk_checkout_state() {
+	if ( ! isset( $GLOBALS['mtl_bulk_checkout_state'] ) ) {
+		$GLOBALS['mtl_bulk_checkout_state'] = array(
+			'open' => false,
+			'rows' => array(),
+		);
+	}
+	return $GLOBALS['mtl_bulk_checkout_state'];
+}
+
+/**
+ * Loans or reserves a column of tools to one member in a single action.
+ *
+ * Validates EVERY row before writing ANY of them. A batch is one decision by
+ * the staff member, so committing three of five tools and reporting a failure
+ * would leave them reconciling what actually happened against a counter.
+ * Nothing is written unless the whole batch passes.
+ *
+ * Three outcomes per row, not two: act, block, or skip. A skip is a row that
+ * asks for something the member already has, and it neither writes nor refuses.
+ * See mtl_tool_row_status() for which state produces which.
+ *
+ * Between validating and writing, another staff member could take one of these
+ * tools. The window is milliseconds and both writers re-check the condition
+ * that would corrupt the table, so the worst case is a partial batch reported
+ * honestly rather than a bad row.
+ *
+ * @return string Admin-notice HTML.
+ */
+function mtl_lr_handle_bulk_checkout() {
+	global $wpdb;
+
+	$state         = &mtl_bulk_checkout_state();
+	$state['open'] = true;
+
+	// The nonce and the capability are both verified by mtl_lr_handle_actions()
+	// before it dispatches here, which phpcs cannot follow across the call. Each
+	// array's members are sanitized individually below, since sanitizing a whole
+	// posted array in one call is not something the sniff recognises either.
+	// phpcs:disable WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+	$member_id = isset( $_POST['bulk_member_id'] ) ? (int) $_POST['bulk_member_id'] : 0;
+	$barcodes  = isset( $_POST['bulk_barcode'] ) ? (array) wp_unslash( $_POST['bulk_barcode'] ) : array();
+	$reserves  = isset( $_POST['bulk_reserve'] ) ? (array) wp_unslash( $_POST['bulk_reserve'] ) : array();
+	$dues      = isset( $_POST['bulk_due'] ) ? (array) wp_unslash( $_POST['bulk_due'] ) : array();
+	// phpcs:enable WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+	$tbl_members   = $wpdb->prefix . 'members';
+	$tbl_inventory = $wpdb->prefix . 'tool_inventory';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	$member = $member_id > 0 ? $wpdb->get_row( $wpdb->prepare( "SELECT member_id, first_name, last_name FROM {$tbl_members} WHERE member_id = %d", $member_id ) ) : null;
+	if ( ! $member ) {
+		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was checked out.</strong> Pick a member from the list first.</p></div>';
+	}
+
+	$today   = gmdate( 'Y-m-d' );
+	$plan    = array();
+	$errors  = array();
+	$seen    = array();
+	$jumped  = array();
+	$skipped = 0;
+
+	foreach ( $barcodes as $index => $raw_barcode ) {
+		$row_no  = (int) $index + 1;
+		$barcode = sanitize_text_field( (string) $raw_barcode );
+		if ( '' === $barcode ) {
+			continue;
+		}
+
+		$reserve = ! empty( $reserves[ $index ] );
+		$tool_id = (int) $wpdb->get_var( $wpdb->prepare( "SELECT tool_id FROM {$tbl_inventory} WHERE barcode = %s", $barcode ) );
+		$status  = mtl_tool_row_status( $tool_id, $member_id );
+
+		if ( ! $status['found'] ) {
+			$errors[]                = sprintf( 'Row %1$d: no tool matches barcode &ldquo;%2$s&rdquo;.', $row_no, esc_html( $barcode ) );
+			$state['rows'][ $index ] = 'No tool matches that barcode.';
+			continue;
+		}
+
+		// One physical tool cannot be handled twice in one batch, whichever
+		// action each row asks for.
+		if ( isset( $seen[ $tool_id ] ) ) {
+			$errors[]                = sprintf( 'Row %1$d: %2$s is already on row %3$d.', $row_no, esc_html( $status['tool_name'] ), (int) $seen[ $tool_id ] );
+			$state['rows'][ $index ] = 'Already entered on another row.';
+			continue;
+		}
+		$seen[ $tool_id ] = $row_no;
+
+		if ( $reserve ) {
+			if ( '' !== $status['reserve_skip'] ) {
+				++$skipped;
+				continue;
+			}
+			if ( ! $status['can_reserve'] ) {
+				$errors[]                = sprintf( 'Row %1$d: %2$s cannot be reserved. %3$s', $row_no, esc_html( $status['tool_name'] ), esc_html( $status['reserve_blocker'] ) );
+				$state['rows'][ $index ] = $status['reserve_blocker'];
+				continue;
+			}
+			$plan[] = array(
+				'act'  => 'reserve',
+				'tool' => $tool_id,
+				'name' => $status['tool_name'],
+			);
+			continue;
+		}
+
+		if ( ! $status['can_loan'] ) {
+			$errors[]                = sprintf( 'Row %1$d: %2$s cannot be loaned. %3$s', $row_no, esc_html( $status['tool_name'] ), esc_html( $status['loan_blocker'] ) );
+			$state['rows'][ $index ] = $status['loan_blocker'];
+			continue;
+		}
+
+		// A malformed date falls back to the configured length, matching the
+		// single-reservation checkout above; a past one is refused outright.
+		$due = isset( $dues[ $index ] ) ? sanitize_text_field( (string) $dues[ $index ] ) : '';
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $due ) || ! strtotime( $due ) ) {
+			$due = gmdate( 'Y-m-d', strtotime( '+' . (int) get_option( 'mtl_default_loan_days', 21 ) . ' days' ) );
+		} elseif ( $due < $today ) {
+			$errors[]                = sprintf( 'Row %1$d: the due date for %2$s is in the past.', $row_no, esc_html( $status['tool_name'] ) );
+			$state['rows'][ $index ] = 'The due date cannot be in the past.';
+			continue;
+		}
+
+		if ( '' !== $status['loan_warning'] ) {
+			$jumped[] = $status['tool_name'];
+		}
+
+		$plan[] = array(
+			'act'  => 'loan',
+			'tool' => $tool_id,
+			'name' => $status['tool_name'],
+			'due'  => $due,
+		);
+	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	if ( $errors ) {
+		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was checked out.</strong> Fix the rows below and try again.</p><ul style="list-style: disc; margin-left: 20px;"><li>'
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- each message is assembled from literals and esc_html()'d values above.
+			. implode( '</li><li>', $errors ) . '</li></ul></div>';
+	}
+
+	if ( ! $plan ) {
+		$nothing = $skipped > 0
+			? 'Every row asked for something this member already has, so nothing needed doing.'
+			: 'Enter at least one barcode first.';
+		return '<div class="notice notice-warning is-dismissible"><p><strong>Nothing was checked out.</strong> ' . esc_html( $nothing ) . '</p></div>';
+	}
+
+	$loaned   = 0;
+	$reserved = 0;
+	$failed   = array();
+	foreach ( $plan as $item ) {
+		if ( 'loan' === $item['act'] ) {
+			if ( mtl_create_loan( $item['tool'], $member_id, $item['due'] ) > 0 ) {
+				++$loaned;
+			} else {
+				$failed[] = $item['name'];
+			}
+		} elseif ( mtl_create_reservation( $item['tool'], $member_id ) > 0 ) {
+			++$reserved;
+		} else {
+			$failed[] = $item['name'];
+		}
+	}
+
+	$state['open'] = false;
+
+	$member_name = trim( stripslashes( (string) $member->first_name ) . ' ' . stripslashes( (string) $member->last_name ) );
+	$parts       = array();
+	if ( $loaned > 0 ) {
+		/* translators: %s: number of tools. */
+		$parts[] = sprintf( _n( '%s tool loaned', '%s tools loaned', $loaned, 'my-tool-library' ), number_format_i18n( $loaned ) );
+	}
+	if ( $reserved > 0 ) {
+		/* translators: %s: number of tools. */
+		$parts[] = sprintf( _n( '%s tool reserved', '%s tools reserved', $reserved, 'my-tool-library' ), number_format_i18n( $reserved ) );
+	}
+	if ( $skipped > 0 ) {
+		/* translators: %s: number of table rows. */
+		$parts[] = sprintf( _n( '%s row skipped', '%s rows skipped', $skipped, 'my-tool-library' ), number_format_i18n( $skipped ) );
+	}
+
+	$notice = '<div class="notice notice-' . ( $failed ? 'warning' : 'success' ) . ' is-dismissible"><p><strong>'
+		. esc_html( implode( ', ', $parts ) ) . '</strong> for ' . esc_html( $member_name ) . '.';
+
+	if ( $jumped ) {
+		$notice .= ' Reserved by another member at the time: ' . esc_html( implode( ', ', $jumped ) ) . '.';
+	}
+	if ( $failed ) {
+		$notice .= ' <strong>Could not be recorded:</strong> ' . esc_html( implode( ', ', $failed ) )
+			. '. Somebody else may have taken these while the batch was being entered.';
+	}
+
+	return $notice . '</p></div>';
+}
+
+/**
  * Handles the admin actions on this page: checking a reservation out as a
  * loan, cancelling a reservation, and ending (returning) a loan. Processes
  * the POST inline (before the page's data is queried) and returns a
@@ -225,6 +433,10 @@ function mtl_lr_handle_actions() {
 	// re-formats it to a plain Y-m-d via strtotime().
 	$today        = current_time( 'mysql' );
 	$default_days = (int) get_option( 'mtl_default_loan_days', 21 );
+
+	if ( 'bulk' === $action ) {
+		return mtl_lr_handle_bulk_checkout();
+	}
 
 	if ( 'checkout' === $action ) {
 		$reservation_id = isset( $_POST['reservation_id'] ) ? (int) $_POST['reservation_id'] : 0;
@@ -278,33 +490,11 @@ function mtl_lr_handle_actions() {
 			return '<div class="notice notice-error is-dismissible"><p>That tool is already checked out to someone else. End the current loan first.</p></div>';
 		}
 
-		$inserted = $wpdb->insert(
-			$tbl_loans,
-			array(
-				'tool_id'   => (int) $res->tool_id,
-				'member_id' => (int) $res->member_id,
-				'loan_date' => $today,
-				'due_date'  => $due_date,
-			),
-			array( '%d', '%d', '%s', '%s' )
-		);
-		if ( ! $inserted ) {
+		// Closing this member's reservation and re-syncing the rest of the queue
+		// both happen inside the writer, which is why it is shared.
+		if ( mtl_create_loan( (int) $res->tool_id, (int) $res->member_id, $due_date ) <= 0 ) {
 			return '<div class="notice notice-error is-dismissible"><p>Sorry, the loan could not be recorded. Please try again.</p></div>';
 		}
-
-		// End this member's reservation for the tool (stamp today's expiry), so
-		// it drops off their My Reservations list.
-		$wpdb->query(
-			$wpdb->prepare(
-				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-				"UPDATE {$tbl_reservations} SET expiry_date = %s WHERE reservation_id = %d AND expiry_date IS NULL",
-				$today,
-				$reservation_id
-			)
-		);
-
-		// The tool is now on loan, so nobody left in the queue is collectable.
-		mtl_sync_reservation_readiness( (int) $res->tool_id );
 
 		return '<div class="notice notice-success is-dismissible"><p><strong>Checked out.</strong> The tool is on loan, due ' . mtl_format_date( $due_date ) . ', and the member&rsquo;s reservation has been closed.</p></div>';
 	}
@@ -422,6 +612,7 @@ function mtl_render_loans_page() {
 
 	echo '<div class="wrap mtl-admin-wrapper">';
 	echo '<h2>Loans &amp; Reservations</h2>';
+	echo '<p style="margin: 0 0 6px 0;"><button type="button" class="button button-primary" id="mtl-bc-open">Bulk checkout</button></p>';
 	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-built, escaped HTML from mtl_lr_handle_actions().
 	echo $action_notice;
 
@@ -1043,6 +1234,198 @@ function mtl_render_loans_page() {
 			background: #d63638;
 			color: #fff;
 		}
+
+		/* Bulk Checkout. Same overlay/modal proportions as the Inventory page's
+			Quick Loan, so the two read as one component; the class names are
+			local because each admin page ships its own stylesheet. */
+		.mtl-bc-overlay {
+			position: fixed;
+			inset: 0;
+			background: rgba(0, 0, 0, 0.5);
+			z-index: 100000;
+			display: flex;
+			align-items: flex-start;
+			justify-content: center;
+			padding: 40px 16px;
+			overflow-y: auto;
+		}
+
+		.mtl-bc-modal {
+			background: #fff;
+			border-radius: 4px;
+			padding: 22px 26px;
+			width: 100%;
+			max-width: 760px;
+			position: relative;
+			box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+		}
+
+		.mtl-bc-close {
+			position: absolute;
+			top: 10px;
+			right: 12px;
+			border: 0;
+			background: none;
+			font-size: 22px;
+			line-height: 1;
+			cursor: pointer;
+			color: #646970;
+		}
+
+		.mtl-bc-close:hover { color: #d63638; }
+
+		.mtl-bc-label {
+			display: block;
+			font-weight: 600;
+			margin: 14px 0 4px;
+		}
+
+		/* The picker. These rules exist on the Inventory page too, for the
+		   Quick Loan version; each admin page carries its own stylesheet, so
+		   they are duplicated rather than shared. Without them the results
+		   render as unstyled text and do not read as a list you can click. */
+		.mtl-bc-picker {
+			position: relative;
+			width: 100%;
+		}
+
+		.mtl-bc-picker input[type="text"] {
+			width: 100%;
+			padding: 7px 10px;
+			font-size: 1em;
+		}
+
+		.mtl-bc-dropdown {
+			position: absolute;
+			left: 0;
+			right: 0;
+			top: 100%;
+			z-index: 10;
+			background: #fff;
+			border: 1px solid #ccd0d4;
+			border-top: none;
+			border-radius: 0 0 4px 4px;
+			box-shadow: 0 6px 14px rgba(0, 0, 0, .12);
+			max-height: 240px;
+			overflow-y: auto;
+		}
+
+		.mtl-bc-option {
+			padding: 7px 10px;
+			cursor: pointer;
+			font-size: 0.9em;
+			border-top: 1px solid #f0f1f2;
+			display: flex;
+			justify-content: space-between;
+			gap: 10px;
+		}
+
+		.mtl-bc-option:first-child { border-top: none; }
+
+		.mtl-bc-option:hover,
+		.mtl-bc-option.mtl-bc-option-active { background: #f0f7fb; }
+
+		.mtl-bc-option-email {
+			color: #787c82;
+			font-size: 0.92em;
+			white-space: nowrap;
+		}
+
+		.mtl-bc-empty {
+			padding: 8px 10px;
+			color: #787c82;
+			font-size: 0.9em;
+		}
+
+		/* What staff need to know about the member before handing tools over. */
+		.mtl-bc-member-info {
+			margin: 8px 0 0 0;
+			padding: 10px 12px;
+			background: #f6f7f7;
+			border-radius: 4px;
+			font-size: 0.9em;
+			display: none;
+		}
+
+		.mtl-bc-member-info dl {
+			margin: 0;
+			display: grid;
+			grid-template-columns: max-content 1fr;
+			gap: 3px 12px;
+		}
+
+		.mtl-bc-member-info dt {
+			color: #646970;
+			font-weight: 600;
+		}
+
+		.mtl-bc-member-info dd { margin: 0; }
+
+		.mtl-bc-tool-name {
+			font-size: 0.9em;
+			color: #1d2327;
+		}
+
+		/* No rules anywhere in the grid: the pills carry the structure. */
+		.mtl-bc-table {
+			width: 100%;
+			border-collapse: collapse;
+			margin-top: 6px;
+		}
+
+		.mtl-bc-table th {
+			text-align: left;
+			font-size: 0.85em;
+			color: #646970;
+			font-weight: 600;
+			padding: 4px 8px 4px 0;
+		}
+
+		.mtl-bc-table td {
+			padding: 3px 8px 3px 0;
+			border: 0;
+			vertical-align: middle;
+		}
+
+		.mtl-bc-table input[type="text"] { width: 100%; }
+		.mtl-bc-table input[type="date"] { width: 100%; }
+
+		.mtl-bc-due-cell { white-space: nowrap; }
+		.mtl-bc-due-cell .button { margin-left: 2px; }
+		.mtl-bc-due-cell input[type="date"] { width: 140px; }
+
+		.mtl-bc-due-active {
+			border-color: #2271b1;
+			box-shadow: 0 0 0 1px #2271b1;
+		}
+
+		.mtl-bc-pill {
+			display: inline-block;
+			padding: 1px 9px;
+			border-radius: 10px;
+			font-size: 0.82em;
+			font-weight: 600;
+			white-space: nowrap;
+		}
+
+		.mtl-bc-pill-ok     { background: #edfaef; color: #1c7c33; }
+		.mtl-bc-pill-warn   { background: #fcf5e6; color: #8a6d00; }
+		.mtl-bc-pill-bad    { background: #fcf0f1; color: #b32d2e; }
+		.mtl-bc-pill-skip   { background: #f0f0f1; color: #646970; }
+		.mtl-bc-row-note    { font-size: 0.82em; color: #b32d2e; }
+
+		.mtl-bc-actions {
+			margin-top: 18px;
+			display: flex;
+			gap: 8px;
+			align-items: center;
+		}
+
+		.mtl-bc-summary {
+			margin-left: auto;
+			font-size: 0.9em;
+			color: #646970;
+		}
 	</style>
 
 	<div class="mtl-lr-toolbar">
@@ -1572,6 +1955,547 @@ function mtl_render_loans_page() {
 
 			// Establish the initial paginated view (all rows matched, page 1).
 			applyFilters();
+		});
+	</script>
+
+	<?php
+	// ---- Bulk Checkout ------------------------------------------------
+	//
+	// Members and tools are both embedded rather than fetched, matching the
+	// Quick Loan picker: the whole point is a desk worker scanning barcodes
+	// without waiting on a round trip per row. The status shown is therefore a
+	// snapshot from page load, which is why the handler revalidates everything
+	// server-side before it writes anything.
+	$bc_state   = mtl_bulk_checkout_state();
+	$bc_members = mtl_get_member_picker_list();
+	$bc_days    = (int) get_option( 'mtl_default_loan_days', 21 );
+	$bc_due     = gmdate( 'Y-m-d', strtotime( '+' . $bc_days . ' days' ) );
+	// Only read back when the handler above already ran, which means it already
+	// verified the nonce and the capability; phpcs cannot see that from here.
+	// phpcs:disable WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+	$bc_posted   = $bc_state['open'];
+	$bc_barcodes = $bc_posted && isset( $_POST['bulk_barcode'] ) ? array_map( 'sanitize_text_field', (array) wp_unslash( $_POST['bulk_barcode'] ) ) : array();
+	$bc_reserves = $bc_posted && isset( $_POST['bulk_reserve'] ) ? array_map( 'sanitize_text_field', (array) wp_unslash( $_POST['bulk_reserve'] ) ) : array();
+	$bc_dues     = $bc_posted && isset( $_POST['bulk_due'] ) ? array_map( 'sanitize_text_field', (array) wp_unslash( $_POST['bulk_due'] ) ) : array();
+	$bc_member   = $bc_posted && isset( $_POST['bulk_member_id'] ) ? (int) $_POST['bulk_member_id'] : 0;
+	// phpcs:enable WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+	// Five to start with. A refused batch keeps however many rows were
+	// submitted, so nothing the staff member typed is lost on the way back.
+	$bc_base_rows = 5;
+	$bc_rows      = max( $bc_base_rows, count( $bc_barcodes ) );
+
+	// What staff should know before handing over an armful: what the member is
+	// trained on, whether they are already late with something, and whether
+	// they owe an agreement. Three batched queries for the whole membership
+	// rather than three per selection, since the list is embedded anyway.
+	$bc_info = array();
+	foreach ( $bc_members as $bc_m ) {
+		$bc_info[ $bc_m['id'] ] = array(
+			'trainings' => array(),
+			'overdue'   => 0,
+			'agreement' => '',
+		);
+	}
+
+	$tbl_training_map = $wpdb->prefix . 'member_training_mappings';
+	$tbl_trainings    = $wpdb->prefix . 'member_trainings';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	foreach (
+		$wpdb->get_results(
+			"SELECT tm.member_id, t.training_name, tm.start_date, t.certification_length_months
+             FROM {$tbl_training_map} tm
+             JOIN {$tbl_trainings} t ON t.training_id = tm.training_id
+             ORDER BY t.training_name ASC"
+		) as $bc_tr
+	) {
+		$bc_mid = (int) $bc_tr->member_id;
+		if ( ! isset( $bc_info[ $bc_mid ] ) ) {
+			continue;
+		}
+		// Current ones only. A lapsed certification is not a qualification, and
+		// listing it here would read as one.
+		if ( mtl_training_is_current( $bc_tr->start_date, $bc_tr->certification_length_months ) ) {
+			$bc_info[ $bc_mid ]['trainings'][] = stripslashes( (string) $bc_tr->training_name );
+		}
+	}
+
+	foreach (
+		$wpdb->get_results(
+			"SELECT member_id, COUNT(*) AS overdue
+             FROM {$tbl_loans}
+             WHERE return_date IS NULL AND due_date < CURDATE()
+             GROUP BY member_id"
+		) as $bc_od
+	) {
+		$bc_mid = (int) $bc_od->member_id;
+		if ( isset( $bc_info[ $bc_mid ] ) ) {
+			$bc_info[ $bc_mid ]['overdue'] = (int) $bc_od->overdue;
+		}
+	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	// Silent unless agreements are switched on, which the status map already
+	// answers by returning 'disabled' for every member.
+	foreach ( mtl_member_agreements_status_map( array_keys( $bc_info ) ) as $bc_mid => $bc_ag ) {
+		if ( isset( $bc_info[ $bc_mid ] ) && in_array( $bc_ag, array( 'none', 'outdated' ), true ) ) {
+			$bc_info[ $bc_mid ]['agreement'] = ( 'none' === $bc_ag )
+				? __( 'Has not agreed to the member agreements', 'my-tool-library' )
+				: __( 'Needs to agree again to a revised agreement', 'my-tool-library' );
+		}
+	}
+
+	// Barcode => status, for the client to resolve a typed barcode without a
+	// query. Only what the pill needs; nothing here is authoritative.
+	$bc_tools = array();
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	foreach (
+		$wpdb->get_results(
+			"SELECT t.tool_id, t.barcode, t.tool_name, t.retired_at,
+                    (SELECT l.member_id FROM {$tbl_loans} l WHERE l.tool_id = t.tool_id AND l.return_date IS NULL LIMIT 1) AS on_loan_by,
+                    (SELECT COUNT(*) FROM {$tbl_reservations} r WHERE r.tool_id = t.tool_id AND r.expiry_date IS NULL) AS queue_size,
+                    (SELECT GROUP_CONCAT(r2.member_id) FROM {$tbl_reservations} r2 WHERE r2.tool_id = t.tool_id AND r2.expiry_date IS NULL) AS queue_members
+             FROM {$tbl_inventory} t"
+		) as $bc_tool
+	) {
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$bc_tools[ (string) $bc_tool->barcode ] = array(
+			'id'      => (int) $bc_tool->tool_id,
+			'name'    => stripslashes( (string) $bc_tool->tool_name ),
+			'retired' => ! empty( $bc_tool->retired_at ),
+			'loanBy'  => (int) $bc_tool->on_loan_by,
+			'queue'   => array_map( 'intval', array_filter( explode( ',', (string) $bc_tool->queue_members ) ) ),
+		);
+	}
+	?>
+
+	<div id="mtl-bc-overlay" class="mtl-bc-overlay" style="display: none;">
+		<div class="mtl-bc-modal" role="dialog" aria-modal="true" aria-labelledby="mtl-bc-title">
+			<button type="button" class="mtl-bc-close" id="mtl-bc-close" aria-label="Close">&times;</button>
+			<h3 id="mtl-bc-title" style="margin-top: 0;">Bulk checkout</h3>
+			<p style="color: #646970; margin-top: 0;">Pick a member, then scan or type one barcode per row. Tick <strong>Reserve?</strong> to put the member in a tool&rsquo;s queue instead of lending it.</p>
+
+			<form method="post" action="" id="mtl-bc-form">
+				<?php wp_nonce_field( 'mtl_lr_action', 'mtl_lr_nonce' ); ?>
+				<input type="hidden" name="mtl_lr_action" value="bulk">
+				<input type="hidden" name="bulk_member_id" id="mtl-bc-member-id" value="<?php echo esc_attr( $bc_member ); ?>">
+
+				<label class="mtl-bc-label" for="mtl-bc-member-search">Member</label>
+				<div class="mtl-bc-picker">
+					<input type="text" id="mtl-bc-member-search" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="mtl-bc-dropdown" aria-autocomplete="list" placeholder="Start typing a name or email, then pick from the list">
+					<div class="mtl-bc-dropdown" id="mtl-bc-dropdown" role="listbox" style="display: none;"></div>
+				</div>
+				<div class="mtl-bc-member-info" id="mtl-bc-member-info">
+					<dl>
+						<dt>Verification</dt><dd id="mtl-bc-info-verified"></dd>
+						<dt>Trainings</dt><dd id="mtl-bc-info-trainings"></dd>
+						<dt>Overdue</dt><dd id="mtl-bc-info-overdue"></dd>
+						<dt id="mtl-bc-info-agreement-label">Agreements</dt><dd id="mtl-bc-info-agreement"></dd>
+					</dl>
+				</div>
+
+				<table class="mtl-bc-table">
+					<thead>
+						<tr>
+							<th style="width: 22%;">Tool Barcode</th>
+							<th style="width: 24%;">Tool</th>
+							<th style="width: 8%;">Reserve?</th>
+							<th style="width: 20%;">Loan Status</th>
+							<th style="width: 26%;">Due Date</th>
+						</tr>
+					</thead>
+					<tbody id="mtl-bc-rows">
+						<?php for ( $bc_i = 0; $bc_i < $bc_rows; $bc_i++ ) : ?>
+							<?php
+							$bc_row_barcode = isset( $bc_barcodes[ $bc_i ] ) ? $bc_barcodes[ $bc_i ] : '';
+							$bc_row_due     = isset( $bc_dues[ $bc_i ] ) && '' !== $bc_dues[ $bc_i ] ? $bc_dues[ $bc_i ] : $bc_due;
+							$bc_row_note    = isset( $bc_state['rows'][ $bc_i ] ) ? $bc_state['rows'][ $bc_i ] : '';
+							?>
+							<tr>
+								<td>
+									<input type="text" name="bulk_barcode[<?php echo (int) $bc_i; ?>]" class="mtl-bc-barcode" autocomplete="off" value="<?php echo esc_attr( $bc_row_barcode ); ?>">
+									<?php if ( '' !== $bc_row_note ) : ?>
+										<span class="mtl-bc-row-note"><?php echo esc_html( $bc_row_note ); ?></span>
+									<?php endif; ?>
+								</td>
+								<td class="mtl-bc-tool-name"></td>
+								<td style="text-align: center;">
+									<input type="checkbox" name="bulk_reserve[<?php echo (int) $bc_i; ?>]" value="1" class="mtl-bc-reserve" <?php checked( ! empty( $bc_reserves[ $bc_i ] ) ); ?>>
+								</td>
+								<td class="mtl-bc-status"></td>
+								<td class="mtl-bc-due-cell">
+									<input type="date" name="bulk_due[<?php echo (int) $bc_i; ?>]" class="mtl-bc-due" value="<?php echo esc_attr( $bc_row_due ); ?>" min="<?php echo esc_attr( gmdate( 'Y-m-d' ) ); ?>">
+									<?php foreach ( array( 7, 14, 21, 30 ) as $bc_quick ) : ?>
+										<button type="button" class="button button-small mtl-bc-due-btn<?php echo $bc_quick === $bc_days ? ' mtl-bc-due-active' : ''; ?>" data-days="<?php echo (int) $bc_quick; ?>"><?php echo (int) $bc_quick; ?></button>
+									<?php endforeach; ?>
+								</td>
+							</tr>
+						<?php endfor; ?>
+					</tbody>
+				</table>
+
+				<div class="mtl-bc-actions">
+					<button type="submit" class="button button-primary" id="mtl-bc-submit" disabled>Loan</button>
+					<button type="button" class="button" id="mtl-bc-clear">Clear</button>
+					<span class="mtl-bc-summary" id="mtl-bc-summary"></span>
+				</div>
+			</form>
+		</div>
+	</div>
+
+	<script>
+		// Bulk Checkout. Mirrors the status rules in mtl_tool_row_status(); the
+		// server reruns all of them before writing, so anything wrong here costs
+		// a refused batch rather than a bad row.
+		document.addEventListener('DOMContentLoaded', function() {
+			const overlay = document.getElementById('mtl-bc-overlay');
+			if (!overlay) return;
+
+			const members = <?php echo wp_json_encode( $bc_members, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>;
+			const tools = <?php echo wp_json_encode( $bc_tools, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>;
+			const memberInfo = <?php echo wp_json_encode( $bc_info, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>;
+			const defaultDays = <?php echo (int) $bc_days; ?>;
+
+			const form = document.getElementById('mtl-bc-form');
+			const search = document.getElementById('mtl-bc-member-search');
+			const dropdown = document.getElementById('mtl-bc-dropdown');
+			const memberField = document.getElementById('mtl-bc-member-id');
+			const info = document.getElementById('mtl-bc-member-info');
+			const tbody = document.getElementById('mtl-bc-rows');
+			const submit = document.getElementById('mtl-bc-submit');
+			const summary = document.getElementById('mtl-bc-summary');
+			// From PHP, not from the DOM: a refused batch re-renders with as
+			// many rows as were submitted, and Clear should still go back to
+			// the starting five rather than to however many were on screen.
+			const startingRows = <?php echo (int) $bc_base_rows; ?>;
+
+			function memberId() { return parseInt(memberField.value, 10) || 0; }
+
+			function dueFromDays(days) {
+				const d = new Date();
+				d.setDate(d.getDate() + days);
+				return d.toISOString().slice(0, 10);
+			}
+
+			// The client half of mtl_tool_row_status(). Returns the pill plus
+			// what the row would actually do.
+			function rowStatus(barcode, reserve) {
+				const tool = tools[barcode.trim()];
+				if (!barcode.trim()) return null;
+				if (!tool) return { cls: 'bad', text: 'No such barcode', act: 'block' };
+
+				const me = memberId();
+				const onLoanSelf = me > 0 && tool.loanBy === me;
+				const onLoanOther = tool.loanBy > 0 && !onLoanSelf;
+				const mine = me > 0 && tool.queue.indexOf(me) !== -1;
+				const othersQueued = tool.queue.length > (mine ? 1 : 0);
+
+				if (tool.retired) return { cls: 'bad', text: 'Retired', act: 'block' };
+
+				if (reserve) {
+					if (onLoanSelf) return { cls: 'skip', text: 'Already on loan to them', act: 'skip' };
+					if (mine) return { cls: 'skip', text: 'Already reserved', act: 'skip' };
+					return { cls: 'ok', text: 'Will join the queue', act: 'reserve' };
+				}
+				if (onLoanSelf) return { cls: 'bad', text: 'They already have it', act: 'block' };
+				if (onLoanOther) return { cls: 'bad', text: 'On loan', act: 'block' };
+				if (othersQueued) return { cls: 'warn', text: 'Reserved by another member', act: 'loan', warn: tool.name };
+				if (mine) return { cls: 'ok', text: 'Reserved by member', act: 'loan' };
+				return { cls: 'ok', text: 'Available', act: 'loan' };
+			}
+
+			function refresh() {
+				let loans = 0, reserves = 0, skips = 0, blocked = 0;
+				tbody.querySelectorAll('tr').forEach(function(tr) {
+					const barcode = tr.querySelector('.mtl-bc-barcode');
+					const reserve = tr.querySelector('.mtl-bc-reserve');
+					const cell = tr.querySelector('.mtl-bc-status');
+					const due = tr.querySelector('.mtl-bc-due');
+					const dueBtns = tr.querySelectorAll('.mtl-bc-due-btn');
+
+					// A reservation has no due date, so the cell is disabled
+					// rather than hidden, which would make rows jump about.
+					due.disabled = reserve.checked;
+					dueBtns.forEach(function(b) { b.disabled = reserve.checked; });
+
+					const tool = tools[barcode.value.trim()];
+					tr.querySelector('.mtl-bc-tool-name').textContent = tool ? tool.name : '';
+
+					const st = rowStatus(barcode.value, reserve.checked);
+					if (!st) { cell.innerHTML = ''; return; }
+					cell.innerHTML = '<span class="mtl-bc-pill mtl-bc-pill-' + st.cls + '"></span>';
+					cell.firstChild.textContent = st.text;
+
+					if (st.act === 'loan') loans++;
+					else if (st.act === 'reserve') reserves++;
+					else if (st.act === 'skip') skips++;
+					else blocked++;
+				});
+
+				const parts = [];
+				if (loans) parts.push('Loan ' + loans);
+				if (reserves) parts.push('reserve ' + reserves);
+				if (skips) parts.push('skip ' + skips);
+				submit.textContent = parts.length ? parts.join(', ').replace(/^l/, 'L') : 'Loan';
+				summary.textContent = blocked ? blocked + ' row(s) need attention' : '';
+				// Disabled only when the batch would do nothing at all. Blocked
+				// rows stay submittable so the server produces the real message.
+				submit.disabled = (loans + reserves + skips) === 0;
+			}
+
+			function addRow() {
+				const last = tbody.querySelector('tr:last-child');
+				const clone = last.cloneNode(true);
+				const index = tbody.querySelectorAll('tr').length;
+				clone.querySelectorAll('input').forEach(function(input) {
+					if (input.name) input.name = input.name.replace(/\[\d+\]/, '[' + index + ']');
+					if (input.type === 'checkbox') input.checked = false;
+					else if (input.type === 'date') input.value = dueFromDays(defaultDays);
+					else input.value = '';
+					input.disabled = false;
+				});
+				clone.querySelectorAll('.mtl-bc-row-note').forEach(function(n) { n.remove(); });
+				clone.querySelectorAll('.mtl-bc-due-btn').forEach(function(b) {
+					b.disabled = false;
+					b.classList.toggle('mtl-bc-due-active', parseInt(b.dataset.days, 10) === defaultDays);
+				});
+				clone.querySelector('.mtl-bc-status').innerHTML = '';
+				clone.querySelector('.mtl-bc-tool-name').textContent = '';
+				tbody.appendChild(clone);
+				return clone;
+			}
+
+			// Advancing on a resolved barcode is what makes this a scanning
+			// workflow: fill the last row and the next one is already waiting.
+			function advanceFrom(tr) {
+				let next = tr.nextElementSibling;
+				if (!next) next = addRow();
+				next.querySelector('.mtl-bc-barcode').focus();
+			}
+
+			tbody.addEventListener('input', function(e) {
+				if (!e.target.classList.contains('mtl-bc-barcode')) return;
+				refresh();
+				const tr = e.target.closest('tr');
+				if (tools[e.target.value.trim()]) advanceFrom(tr);
+			});
+
+			tbody.addEventListener('change', function(e) {
+				if (e.target.classList.contains('mtl-bc-reserve') || e.target.classList.contains('mtl-bc-due')) refresh();
+			});
+
+			tbody.addEventListener('click', function(e) {
+				if (!e.target.classList.contains('mtl-bc-due-btn')) return;
+				const tr = e.target.closest('tr');
+				tr.querySelector('.mtl-bc-due').value = dueFromDays(parseInt(e.target.dataset.days, 10));
+				tr.querySelectorAll('.mtl-bc-due-btn').forEach(function(b) { b.classList.remove('mtl-bc-due-active'); });
+				e.target.classList.add('mtl-bc-due-active');
+			});
+
+			// Enter would submit the batch mid-scan, so it advances instead.
+			tbody.addEventListener('keydown', function(e) {
+				if (e.key !== 'Enter' || !e.target.classList.contains('mtl-bc-barcode')) return;
+				e.preventDefault();
+				advanceFrom(e.target.closest('tr'));
+			});
+
+			// A pill rather than plain text, so "Not verified" and an overdue
+			// count read as flags to weigh rather than as sentences to skim.
+			// Built as an element with textContent, so a training name or any
+			// other stored value cannot become markup on its way in.
+			function setPill(el, cls, text) {
+				const span = document.createElement('span');
+				span.className = 'mtl-bc-pill mtl-bc-pill-' + cls;
+				span.textContent = text;
+				el.innerHTML = '';
+				el.appendChild(span);
+			}
+
+			function showMemberInfo(m) {
+				const extra = memberInfo[m.id] || { trainings: [], overdue: 0, agreement: '' };
+				info.style.display = 'block';
+				setPill(document.getElementById('mtl-bc-info-verified'),
+					m.verified ? 'ok' : 'warn', m.verified ? 'Verified' : 'Not verified');
+				document.getElementById('mtl-bc-info-trainings').textContent =
+					extra.trainings.length ? extra.trainings.join(', ') : 'None current';
+				setPill(document.getElementById('mtl-bc-info-overdue'),
+					extra.overdue ? 'bad' : 'ok',
+					extra.overdue ? extra.overdue + ' tool(s) overdue' : 'Nothing overdue');
+
+				// The agreements row is absent entirely when the feature is off,
+				// rather than present and reassuring about nothing.
+				const agLabel = document.getElementById('mtl-bc-info-agreement-label');
+				const agValue = document.getElementById('mtl-bc-info-agreement');
+				agLabel.style.display = extra.agreement ? '' : 'none';
+				agValue.style.display = extra.agreement ? '' : 'none';
+				if (extra.agreement) setPill(agValue, 'warn', extra.agreement);
+			}
+
+			function pickMember(m) {
+				memberField.value = m.id;
+				search.value = m.label;
+				dropdown.style.display = 'none';
+				search.setAttribute('aria-expanded', 'false');
+				showMemberInfo(m);
+				refresh();
+			}
+
+			search.addEventListener('input', function() {
+				const q = search.value.trim().toLowerCase();
+				memberField.value = '';
+				info.style.display = 'none';
+				refresh();
+				dropdown.innerHTML = '';
+				if (q.length < 2) {
+					dropdown.style.display = 'none';
+					search.setAttribute('aria-expanded', 'false');
+					return;
+				}
+				const hits = members.filter(function(m) { return m.search.indexOf(q) !== -1; }).slice(0, 10);
+				if (!hits.length) {
+					const none = document.createElement('div');
+					none.className = 'mtl-bc-empty';
+					none.textContent = 'No member matches that.';
+					dropdown.appendChild(none);
+				}
+				hits.forEach(function(m) {
+					// Name and email on opposite sides so two members with the
+					// same name are still told apart at a glance.
+					const opt = document.createElement('div');
+					opt.className = 'mtl-bc-option';
+					opt.setAttribute('role', 'option');
+					const name = document.createElement('span');
+					name.textContent = m.name;
+					const email = document.createElement('span');
+					email.className = 'mtl-bc-option-email';
+					email.textContent = m.email;
+					opt.appendChild(name);
+					opt.appendChild(email);
+					opt.addEventListener('mousedown', function(e) {
+						// mousedown, not click: blurring the field first would
+						// close the dropdown out from under the pointer.
+						e.preventDefault();
+						pickMember(m);
+					});
+					dropdown.appendChild(opt);
+				});
+				dropdown.style.display = 'block';
+				search.setAttribute('aria-expanded', 'true');
+			});
+
+			// Arrow keys and Enter, so the list is usable without the mouse.
+			search.addEventListener('keydown', function(e) {
+				const opts = Array.prototype.slice.call(dropdown.querySelectorAll('.mtl-bc-option'));
+				if (!opts.length || dropdown.style.display === 'none') return;
+				let at = opts.findIndex(function(o) { return o.classList.contains('mtl-bc-option-active'); });
+				if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+					e.preventDefault();
+					if (at >= 0) opts[at].classList.remove('mtl-bc-option-active');
+					at = e.key === 'ArrowDown' ? (at + 1) % opts.length : (at <= 0 ? opts.length - 1 : at - 1);
+					opts[at].classList.add('mtl-bc-option-active');
+					opts[at].scrollIntoView({ block: 'nearest' });
+				} else if (e.key === 'Enter' && at >= 0) {
+					e.preventDefault();
+					opts[at].dispatchEvent(new MouseEvent('mousedown'));
+				} else if (e.key === 'Escape') {
+					// Closes the list only. Without this the modal's own Escape
+					// handler would also fire and throw away the whole batch.
+					e.stopPropagation();
+					dropdown.style.display = 'none';
+					search.setAttribute('aria-expanded', 'false');
+				}
+			});
+
+			document.addEventListener('click', function(e) {
+				if (!e.target.closest('#mtl-bc-overlay .mtl-bc-picker')) {
+					dropdown.style.display = 'none';
+					search.setAttribute('aria-expanded', 'false');
+				}
+			});
+
+			form.addEventListener('submit', function(e) {
+				if (!memberId()) {
+					e.preventDefault();
+					window.alert('Pick a member from the list first.');
+					search.focus();
+					return;
+				}
+				// Loaning a tool somebody else is queued for is allowed, but it
+				// takes their turn, so it is acknowledged rather than just logged.
+				const jumped = [];
+				tbody.querySelectorAll('tr').forEach(function(tr) {
+					const st = rowStatus(tr.querySelector('.mtl-bc-barcode').value, tr.querySelector('.mtl-bc-reserve').checked);
+					if (st && st.warn) jumped.push(st.warn);
+				});
+				if (jumped.length && !window.confirm(
+					'Reserved by another member:\n\n' + jumped.join('\n') +
+					'\n\nLending these takes the turn of whoever is waiting. Continue?'
+				)) {
+					e.preventDefault();
+				}
+			});
+
+			function open() {
+				overlay.style.display = 'flex';
+				refresh();
+				// The member is always the first thing to establish, and every
+				// row's status depends on it.
+				search.focus();
+				search.select();
+			}
+			function close() { overlay.style.display = 'none'; }
+
+			// Puts the window back exactly as it opens, which is the recovery
+			// staff actually want after scanning the wrong pile or picking the
+			// wrong member. Every per-row choice goes with the barcode that
+			// prompted it: a Reserve? tick or a hand-set due date left behind
+			// would silently apply to whatever is scanned next. Rows added
+			// during the batch go too, back to the starting five.
+			// Closing is still the X, the backdrop, or Escape.
+			function clearAll() {
+				memberField.value = '';
+				search.value = '';
+				info.style.display = 'none';
+				dropdown.style.display = 'none';
+				search.setAttribute('aria-expanded', 'false');
+
+				const rows = tbody.querySelectorAll('tr');
+				for (let i = rows.length - 1; i >= startingRows; i--) {
+					rows[i].remove();
+				}
+
+				tbody.querySelectorAll('tr').forEach(function(tr) {
+					tr.querySelector('.mtl-bc-barcode').value = '';
+					tr.querySelector('.mtl-bc-reserve').checked = false;
+					tr.querySelector('.mtl-bc-due').value = dueFromDays(defaultDays);
+					tr.querySelector('.mtl-bc-status').innerHTML = '';
+					tr.querySelector('.mtl-bc-tool-name').textContent = '';
+					tr.querySelectorAll('.mtl-bc-row-note').forEach(function(n) { n.remove(); });
+					tr.querySelectorAll('.mtl-bc-due-btn').forEach(function(b) {
+						b.classList.toggle('mtl-bc-due-active', parseInt(b.dataset.days, 10) === defaultDays);
+					});
+				});
+
+				refresh();
+				search.focus();
+			}
+
+			document.getElementById('mtl-bc-open').addEventListener('click', open);
+			document.getElementById('mtl-bc-close').addEventListener('click', close);
+			document.getElementById('mtl-bc-clear').addEventListener('click', clearAll);
+			overlay.addEventListener('click', function(e) { if (e.target === overlay) close(); });
+			document.addEventListener('keydown', function(e) {
+				if (e.key === 'Escape' && overlay.style.display !== 'none') close();
+			});
+
+			<?php if ( $bc_state['open'] ) : ?>
+				// The batch was refused. Reopen with every cell as it was left.
+				<?php $bc_picked = $bc_member > 0 ? wp_list_filter( $bc_members, array( 'id' => $bc_member ) ) : array(); ?>
+				<?php if ( $bc_picked ) : ?>
+					pickMember(<?php echo wp_json_encode( array_values( $bc_picked )[0], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>);
+				<?php endif; ?>
+				open();
+			<?php endif; ?>
 		});
 	</script>
 	<?php

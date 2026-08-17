@@ -214,7 +214,7 @@ Deleting a member does not delete hosted files. Member deletion emails the links
 
 ## 5. Starting a Loan for a Member
 
-There are two ways to start a loan, depending on whether the member already has a reservation for the tool.
+There are three ways to start a loan: from a reservation the member placed online, on the spot for a walk-in, or several tools at once for one member.
 
 ### Option A: Check out an existing reservation
 
@@ -252,6 +252,32 @@ Use this for a walk-in member who wants to reserve a tool for future use.
 3. Click **Create Reservation**. There's no due date to set.
 
 Quick Reserve refuses to run if the member already has that tool on loan, or already has an active reservation for it.
+
+### Option C: Bulk checkout (several tools, one member)
+
+Use this when somebody is collecting an armful. Click **Bulk checkout** under the heading on **Loans & Reservations**.
+
+1. Type the member's name or email and pick them from the list. Their **Verified** / **Not verified** badge appears.
+2. Scan or type a barcode into the first row. When it matches a tool, the status appears and the cursor jumps to the next row, so you can continue scanning. Filling the last row adds another.
+3. Set a due date per row if you want one other than the default.
+4. Press the button at the bottom. It tells you what it is about to do, for example: Loan 3, reserve 2.
+
+**To reserve rather than lend**, tick **Reserve?** on that row. The member joins the back of that tool's queue, and the due date box greys out.
+
+**The whole batch succeeds or none of it does.** If any row action cannot be completed, nothing is checked out and the problem rows are named.
+
+What stops a batch:
+
+- The barcode matches no tool.
+- The tool is **retired**. Retired tools can be neither lent nor reserved.
+- The tool is **on loan**, and you are trying to lend it. End that loan first, or tick Reserve? to queue for it instead.
+- The same tool appears on two rows.
+- A due date in the past.
+
+Two things that do **not** stop a batch:
+
+- **Lending a tool somebody else has reserved.** You will be asked to confirm.
+- **Ticking Reserve? on a tool the member already has**, on loan or reserved. That row is skipped and the rest of the batch processes.
 
 ---
 

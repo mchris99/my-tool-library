@@ -1037,24 +1037,10 @@ function mtl_render_inventory_page() {
 				$ql_on_loan = $wpdb->get_var( $wpdb->prepare( "SELECT loan_id FROM {$tbl_loans} WHERE tool_id = %d AND return_date IS NULL LIMIT 1", $ql_tool_id ) );
 				if ( $ql_on_loan ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot loan this tool.</strong> It is already checked out. End the current loan first.</p></div>';
+				} elseif ( mtl_create_loan( $ql_tool_id, $ql_member_id, $ql_due ) > 0 ) {
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Loan created.</strong> ' . esc_html( stripslashes( (string) $ql_tool_name ) ) . ' is now on loan, due ' . mtl_format_date( $ql_due ) . '.</p></div>';
 				} else {
-					$ql_inserted = $wpdb->insert(
-						$tbl_loans,
-						array(
-							'tool_id'   => $ql_tool_id,
-							'member_id' => $ql_member_id,
-							'loan_date' => current_time( 'mysql' ),
-							'due_date'  => $ql_due,
-						),
-						array( '%d', '%d', '%s', '%s' )
-					);
-					if ( $ql_inserted ) {
-						// Tool is out, so nobody queued for it is collectable.
-						mtl_sync_reservation_readiness( $ql_tool_id );
-						echo '<div class="notice notice-success is-dismissible"><p><strong>Loan created.</strong> ' . esc_html( stripslashes( (string) $ql_tool_name ) ) . ' is now on loan, due ' . mtl_format_date( $ql_due ) . '.</p></div>';
-					} else {
-						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The loan could not be recorded. Please try again.</p></div>';
-					}
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The loan could not be recorded. Please try again.</p></div>';
 				}
 			}
 		} else {
@@ -1105,25 +1091,10 @@ function mtl_render_inventory_page() {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot reserve this tool.</strong> This member already has it on loan.</p></div>';
 				} elseif ( $qr_already ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot reserve this tool.</strong> This member already has an active reservation for it.</p></div>';
+				} elseif ( mtl_create_reservation( $qr_tool_id, $qr_member_id ) > 0 ) {
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Reservation created.</strong> ' . esc_html( stripslashes( (string) $qr_tool_name ) ) . ' has been reserved for this member.</p></div>';
 				} else {
-					$qr_inserted = $wpdb->insert(
-						$tbl_reservations,
-						array(
-							'tool_id'          => $qr_tool_id,
-							'member_id'        => $qr_member_id,
-							'reservation_date' => current_time( 'mysql' ),
-						),
-						array( '%d', '%d', '%s' )
-					);
-					if ( $qr_inserted ) {
-						// If the tool is on the shelf and this is the only
-						// reservation, it is collectable right away and the
-						// hold period starts now.
-						mtl_sync_reservation_readiness( $qr_tool_id );
-						echo '<div class="notice notice-success is-dismissible"><p><strong>Reservation created.</strong> ' . esc_html( stripslashes( (string) $qr_tool_name ) ) . ' has been reserved for this member.</p></div>';
-					} else {
-						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The reservation could not be recorded. Please try again.</p></div>';
-					}
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The reservation could not be recorded. Please try again.</p></div>';
 				}
 			}
 		} else {
@@ -2000,36 +1971,9 @@ function mtl_render_inventory_page() {
 	}
 
 	// Members for the Quick Loan/Quick Reserve search box, preloaded so the
-	// name/email filter is instant with no AJAX. Each entry carries a display
-	// label ("Name (email)"), a lowercased search string covering both the
-	// name and the email so typing part of either matches, and whether the
-	// member is fully verified (both scan URLs on file; one alone does not
-	// count, see mtl_verification_urls_complete()) so the admin can see at a
-	// glance whether a walk-in has provided their documents yet.
-	$tbl_verifications = $wpdb->prefix . 'member_verifications';
-	$ql_members        = array();
-	foreach (
-		$wpdb->get_results(
-			"
-        SELECT m.member_id, m.first_name, m.last_name, m.email,
-               (v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS verified
-        FROM {$tbl_members} m
-        LEFT JOIN {$tbl_verifications} v ON v.member_id = m.member_id
-        ORDER BY m.last_name ASC, m.first_name ASC
-    "
-		) as $m
-	) {
-		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$ql_name      = trim( stripslashes( (string) $m->first_name ) . ' ' . stripslashes( (string) $m->last_name ) );
-		$ql_members[] = array(
-			'id'       => (int) $m->member_id,
-			'verified' => (bool) $m->verified,
-			'name'     => $ql_name,
-			'email'    => (string) $m->email,
-			'label'    => $ql_name . ' (' . $m->email . ')',
-			'search'   => strtolower( $ql_name . ' ' . $m->email ),
-		);
-	}
+	// name/email filter is instant with no AJAX. See the shared builder for
+	// what each entry carries.
+	$ql_members      = mtl_get_member_picker_list();
 	$ql_default_days = (int) get_option( 'mtl_default_loan_days', 21 );
 	$ql_default_due  = gmdate( 'Y-m-d', strtotime( '+' . $ql_default_days . ' days' ) );
 
