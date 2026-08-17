@@ -539,12 +539,18 @@ function mtl_render_inventory_page() {
 
 			// $_FILES values below: 'error' and 'size' are always plain
 			// integers set by PHP itself (never sanitized per WPCS
-			// convention); 'name' and 'tmp_name' are sanitized once here and
-			// used via these locals for the rest of this block. 'tmp_name'
-			// is also verified with is_uploaded_file() before it's opened.
-			$csv_error    = isset( $_FILES['csv_file']['error'] ) ? (int) $_FILES['csv_file']['error'] : UPLOAD_ERR_NO_FILE;
-			$csv_name     = isset( $_FILES['csv_file']['name'] ) ? sanitize_file_name( wp_unslash( $_FILES['csv_file']['name'] ) ) : '';
-			$csv_tmp_name = isset( $_FILES['csv_file']['tmp_name'] ) ? sanitize_text_field( wp_unslash( $_FILES['csv_file']['tmp_name'] ) ) : '';
+			// convention); 'name' is sanitized here and used via these locals
+			// for the rest of this block.
+			//
+			// 'tmp_name' is taken RAW. WordPress never slashes $_FILES, and
+			// wp_unslash() on a Windows temp path strips its separators:
+			// C:\Windows\Temp\php1234.tmp becomes C:WindowsTempphp1234.tmp,
+			// which then fails to open. is_uploaded_file() below is what
+			// proves the path, and it is the only check that can.
+			$csv_error = isset( $_FILES['csv_file']['error'] ) ? (int) $_FILES['csv_file']['error'] : UPLOAD_ERR_NO_FILE;
+			$csv_name  = isset( $_FILES['csv_file']['name'] ) ? sanitize_file_name( wp_unslash( $_FILES['csv_file']['name'] ) ) : '';
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- a filesystem path, validated by is_uploaded_file() below; sanitizing corrupts it on Windows.
+			$csv_tmp_name = isset( $_FILES['csv_file']['tmp_name'] ) ? $_FILES['csv_file']['tmp_name'] : '';
 
 			if ( ! isset( $_FILES['csv_file'] ) || UPLOAD_ERR_NO_FILE === $csv_error ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please choose a CSV file to upload.</p></div>';
@@ -1641,6 +1647,42 @@ function mtl_render_inventory_page() {
 			margin: -2px 0 14px 0;
 		}
 
+		/* Same panel as Bulk Checkout on Loans & Reservations, so the member
+			reads identically wherever staff are about to release a tool. */
+		.mtl-ql-member-info {
+			margin: -2px 0 14px 0;
+			padding: 10px 12px;
+			background: #f6f7f7;
+			border-radius: 4px;
+			font-size: 0.9em;
+		}
+
+		.mtl-ql-member-info dl {
+			margin: 0;
+			display: grid;
+			grid-template-columns: max-content 1fr;
+			gap: 3px 12px;
+		}
+
+		.mtl-ql-member-info dt {
+			color: #646970;
+			font-weight: 600;
+		}
+
+		.mtl-ql-member-info dd { margin: 0; }
+
+		.mtl-ql-info-pill {
+			display: inline-block;
+			padding: 1px 9px;
+			border-radius: 10px;
+			font-size: 0.9em;
+			font-weight: 600;
+		}
+
+		.mtl-ql-info-ok   { background: #edfaef; color: #1c7c33; }
+		.mtl-ql-info-warn { background: #fcf5e6; color: #8a6d00; }
+		.mtl-ql-info-bad  { background: #fcf0f1; color: #b32d2e; }
+
 		.mtl-ql-due-quick {
 			display: flex;
 			gap: 6px;
@@ -1974,6 +2016,7 @@ function mtl_render_inventory_page() {
 	// name/email filter is instant with no AJAX. See the shared builder for
 	// what each entry carries.
 	$ql_members      = mtl_get_member_picker_list();
+	$ql_member_info  = mtl_get_member_info_map( wp_list_pluck( $ql_members, 'id' ) );
 	$ql_default_days = (int) get_option( 'mtl_default_loan_days', 21 );
 	$ql_default_due  = gmdate( 'Y-m-d', strtotime( '+' . $ql_default_days . ' days' ) );
 
@@ -2487,7 +2530,14 @@ function mtl_render_inventory_page() {
 					<div class="mtl-ql-dropdown" id="mtl-ql-dropdown" style="display: none;"></div>
 				</div>
 				<p class="mtl-ql-hint" id="mtl-ql-member-hint">Start typing to find a member by name or email, then click to select.</p>
-				<p class="mtl-ql-verified-pill" id="mtl-ql-verified-pill" style="display: none;"></p>
+				<div class="mtl-ql-member-info" id="mtl-ql-member-info" style="display: none;">
+					<dl>
+						<dt>Verification</dt><dd id="mtl-ql-info-verified"></dd>
+						<dt>Trainings</dt><dd id="mtl-ql-info-trainings"></dd>
+						<dt>Overdue</dt><dd id="mtl-ql-info-overdue"></dd>
+						<dt id="mtl-ql-info-agreement-label">Agreements</dt><dd id="mtl-ql-info-agreement"></dd>
+					</dl>
+				</div>
 
 				<div id="mtl-ql-due-section">
 					<label class="mtl-ql-label" for="mtl-ql-due">Due date</label>
@@ -2938,6 +2988,7 @@ function mtl_render_inventory_page() {
 			// JSON_HEX_TAG/AMP/APOS/QUOT so a member name/email containing
 			// "</script>" or quotes can't break out of this inline script.
 			?>
+			const memberInfo = <?php echo wp_json_encode( $ql_member_info, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>;
 			const members = <?php echo wp_json_encode( $ql_members, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>;
 			const qlDefaultDays = <?php echo (int) $ql_default_days; ?>;
 
@@ -2950,7 +3001,7 @@ function mtl_render_inventory_page() {
 			const searchInput = document.getElementById('mtl-ql-member-search');
 			const dropdown = document.getElementById('mtl-ql-dropdown');
 			const memberHint = document.getElementById('mtl-ql-member-hint');
-			const verifiedPill = document.getElementById('mtl-ql-verified-pill');
+			const memberInfoBox = document.getElementById('mtl-ql-member-info');
 			const dueSection = document.getElementById('mtl-ql-due-section');
 			const dueInput = document.getElementById('mtl-ql-due');
 			const dueButtons = overlay.querySelectorAll('.mtl-ql-due-btn');
@@ -2983,15 +3034,36 @@ function mtl_render_inventory_page() {
 			}
 
 			function resetVerifiedPill() {
-				verifiedPill.style.display = 'none';
-				verifiedPill.innerHTML = '';
+				memberInfoBox.style.display = 'none';
 			}
 
-			function showVerifiedPill(verified) {
-				verifiedPill.innerHTML = verified ?
-					'<span class="mtl-verified-badge">Verified</span>' :
-					'<span class="mtl-unverified-badge">Not Verified</span>';
-				verifiedPill.style.display = 'block';
+			// textContent rather than a built string, so a stored value cannot
+			// become markup on its way in.
+			function infoPill(el, cls, text) {
+				const span = document.createElement('span');
+				span.className = 'mtl-ql-info-pill mtl-ql-info-' + cls;
+				span.textContent = text;
+				el.innerHTML = '';
+				el.appendChild(span);
+			}
+
+			function showVerifiedPill(m) {
+				const extra = memberInfo[m.id] || { trainings: [], overdue: 0, agreement: '' };
+				memberInfoBox.style.display = 'block';
+				infoPill(document.getElementById('mtl-ql-info-verified'),
+					m.verified ? 'ok' : 'warn', m.verified ? 'Verified' : 'Not verified');
+				document.getElementById('mtl-ql-info-trainings').textContent =
+					extra.trainings.length ? extra.trainings.join(', ') : 'None current';
+				infoPill(document.getElementById('mtl-ql-info-overdue'),
+					extra.overdue ? 'bad' : 'ok',
+					extra.overdue ? extra.overdue + ' tool(s) overdue' : 'Nothing overdue');
+
+				// Absent entirely when agreements are off.
+				const agLabel = document.getElementById('mtl-ql-info-agreement-label');
+				const agValue = document.getElementById('mtl-ql-info-agreement');
+				agLabel.style.display = extra.agreement ? '' : 'none';
+				agValue.style.display = extra.agreement ? '' : 'none';
+				if (extra.agreement) infoPill(agValue, 'warn', extra.agreement);
 			}
 
 			function openModal(toolId, toolName, mode) {
@@ -3066,7 +3138,7 @@ function mtl_render_inventory_page() {
 						searchInput.value = m.label;
 						hideDropdown();
 						resetMemberHint();
-						showVerifiedPill(m.verified);
+						showVerifiedPill(m);
 					});
 					dropdown.appendChild(opt);
 				});

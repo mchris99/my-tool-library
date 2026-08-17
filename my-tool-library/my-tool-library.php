@@ -2783,6 +2783,87 @@ function mtl_get_member_picker_list() {
 }
 
 /**
+ * What staff weigh before releasing a tool: current trainings, anything already
+ * overdue, and any outstanding agreement. Keyed by member_id.
+ *
+ * None of it blocks anything. Verification, trainings and agreements are all
+ * staff judgement at the desk, so this reports and the person decides.
+ *
+ * Batched across the whole membership in three queries rather than three per
+ * selection, because every caller embeds the picker list anyway and would
+ * otherwise need a round trip each time the chosen member changed.
+ *
+ * @param int[] $member_ids Members to describe.
+ * @return array<int, array{trainings:string[], overdue:int, agreement:string}>
+ */
+function mtl_get_member_info_map( $member_ids ) {
+	global $wpdb;
+
+	$member_ids = array_values( array_unique( array_filter( array_map( 'intval', (array) $member_ids ) ) ) );
+	if ( ! $member_ids ) {
+		return array();
+	}
+
+	$map = array();
+	foreach ( $member_ids as $id ) {
+		$map[ $id ] = array(
+			'trainings' => array(),
+			'overdue'   => 0,
+			'agreement' => '',
+		);
+	}
+
+	$tbl_training_map = $wpdb->prefix . 'member_training_mappings';
+	$tbl_trainings    = $wpdb->prefix . 'member_trainings';
+	$tbl_loans        = $wpdb->prefix . 'loans';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	foreach (
+		$wpdb->get_results(
+			"SELECT tm.member_id, t.training_name, tm.start_date, t.certification_length_months
+             FROM {$tbl_training_map} tm
+             JOIN {$tbl_trainings} t ON t.training_id = tm.training_id
+             ORDER BY t.training_name ASC"
+		) as $row
+	) {
+		$id = (int) $row->member_id;
+		// Current only: a lapsed certification is not a qualification.
+		if ( isset( $map[ $id ] ) && mtl_training_is_current( $row->start_date, $row->certification_length_months ) ) {
+			$map[ $id ]['trainings'][] = stripslashes( (string) $row->training_name );
+		}
+	}
+
+	foreach (
+		$wpdb->get_results(
+			"SELECT member_id, COUNT(*) AS overdue
+             FROM {$tbl_loans}
+             WHERE return_date IS NULL AND due_date < CURDATE()
+             GROUP BY member_id"
+		) as $row
+	) {
+		$id = (int) $row->member_id;
+		if ( isset( $map[ $id ] ) ) {
+			$map[ $id ]['overdue'] = (int) $row->overdue;
+		}
+	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	// Silent unless agreements are on; the map returns 'disabled' for everyone.
+	foreach ( mtl_member_agreements_status_map( $member_ids ) as $id => $status ) {
+		if ( ! isset( $map[ $id ] ) ) {
+			continue;
+		}
+		if ( 'none' === $status ) {
+			$map[ $id ]['agreement'] = __( 'Has not agreed to the member agreements', 'my-tool-library' );
+		} elseif ( 'outdated' === $status ) {
+			$map[ $id ]['agreement'] = __( 'Needs to agree again to a revised agreement', 'my-tool-library' );
+		}
+	}
+
+	return $map;
+}
+
+/**
  * Everything one tool/member pair needs for a checkout decision.
  *
  * Returns a record rather than a single verdict because loaning and reserving
@@ -5026,6 +5107,12 @@ function mtl_agreement_file_hash_status( $attachment_id ) {
  *
  * @param int      $member_id    Member the acceptance belongs to.
  * @param int      $agreement_id Agreement being accepted.
+ * @param string   $accepted_at  UTC 'Y-m-d H:i:s' for when the member agreed.
+ *                               Blank means now, which every interactive path
+ *                               wants. Only the bulk CSV passes a value, since
+ *                               a paper form carries the date it was signed;
+ *                               it is validated against version_published_at
+ *                               there, not here.
  * @param string   $context      One of the keys of mtl_agreement_contexts().
  * @param int|null $seen_version The version_num the form displayed. Null skips
  *                               the check, which every real caller supplies;
@@ -5038,7 +5125,7 @@ function mtl_agreement_file_hash_status( $attachment_id ) {
  *             them from the timestamp, which has one-second resolution and
  *             cannot separate two events in the same second.
  */
-function mtl_record_agreement_acceptance( $member_id, $agreement_id, $context, $seen_version = null ) {
+function mtl_record_agreement_acceptance( $member_id, $agreement_id, $context, $seen_version = null, $accepted_at = '' ) {
 	global $wpdb;
 
 	$member_id    = (int) $member_id;
@@ -5058,6 +5145,11 @@ function mtl_record_agreement_acceptance( $member_id, $agreement_id, $context, $
 	// so a row written under one would claim agreement framed by nothing.
 	if ( ! mtl_agreement_context_is_valid( $context ) ) {
 		return 0;
+	}
+
+	$accepted_at = trim( (string) $accepted_at );
+	if ( '' === $accepted_at || ! preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $accepted_at ) ) {
+		$accepted_at = gmdate( 'Y-m-d H:i:s' );
 	}
 
 	$is_staff = mtl_acceptance_is_staff( $context );
@@ -5123,7 +5215,7 @@ function mtl_record_agreement_acceptance( $member_id, $agreement_id, $context, $
 		array(
 			'member_id'                      => $member_id,
 			'agreement_id'                   => $agreement_id,
-			'accepted_at'                    => gmdate( 'Y-m-d H:i:s' ),
+			'accepted_at'                    => $accepted_at,
 			'agreement_text'                 => $agreement->agreement_text,
 			'assent_text'                    => mtl_assent_language( $context ),
 			'agreement_version_num'          => (int) $agreement->version_num,

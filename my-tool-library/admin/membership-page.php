@@ -13,6 +13,361 @@ if ( ! defined( 'ABSPATH' ) ) {
 add_action( 'admin_init', 'mtl_maybe_serve_member_csv_template' );
 
 /**
+ * Records agreements in bulk from the uploaded CSV.
+ *
+ * REFUSES THE WHOLE FILE ON ANY PROBLEM. These rows are permanent and there is
+ * no un-agree, so importing the readable part of a file somebody edited by hand
+ * would leave staff unable to say what was recorded and unable to undo it.
+ *
+ * A row is skipped, not refused, when the member is already current on that
+ * agreement. That also makes re-uploading the same file safe, which is what
+ * recovers a run that hit the time budget.
+ *
+ * @return string Admin-notice HTML.
+ */
+function mtl_handle_bulk_agree_upload() {
+	$phrase = isset( $_POST['mtl_bulk_agree_phrase'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['mtl_bulk_agree_phrase'] ) ) ) : '';
+	if ( 0 !== strcasecmp( $phrase, 'Record these agreements' ) ) {
+		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> Type <code>Record these agreements</code> to confirm.</p></div>';
+	}
+
+	// Taken RAW, like the two CSV importers on this page and on Inventory.
+	// WordPress never slashes $_FILES, and wp_unslash() on a Windows temp path
+	// strips its separators: C:\Windows\Temp\php1234.tmp becomes
+	// C:WindowsTempphp1234.tmp, which then fails to open. is_uploaded_file() is
+	// what proves the path, and it is the only check that can.
+	// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- a filesystem path, validated by is_uploaded_file() on the next line.
+	$tmp_name = isset( $_FILES['mtl_bulk_agree_file']['tmp_name'] ) ? $_FILES['mtl_bulk_agree_file']['tmp_name'] : '';
+	if ( '' === $tmp_name || ! is_uploaded_file( $tmp_name ) ) {
+		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> Choose a CSV file to upload.</p></div>';
+	}
+
+	return mtl_bulk_agree_process( $tmp_name, isset( $_POST['mtl_bulk_agree_email'] ) );
+}
+
+/**
+ * Parses a bulk-agree file and writes what it asks for.
+ *
+ * Separate from the request handling above so the rules can be exercised
+ * against a file on disk, which is_uploaded_file() makes impossible otherwise.
+ *
+ * @param string $path       Readable CSV path.
+ * @param bool   $send_email Email each member a copy of what was recorded.
+ * @return string Admin-notice HTML.
+ */
+function mtl_bulk_agree_process( $path, $send_email = false ) {
+	global $wpdb;
+
+	$handle = fopen( $path, 'r' );
+	if ( ! $handle ) {
+		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> That file could not be read.</p></div>';
+	}
+
+	$headers = fgetcsv( $handle );
+	if ( ! $headers ) {
+		fclose( $handle );
+		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> That file is empty.</p></div>';
+	}
+	// A byte-order mark on the first heading is Excel's parting gift.
+	$headers[0] = preg_replace( '/^\xEF\xBB\xBF/', '', (string) $headers[0] );
+
+	$live = array();
+	foreach ( mtl_get_active_agreements() as $agreement ) {
+		$live[ (int) $agreement->agreement_id ] = $agreement;
+	}
+
+	// Which column holds which agreement, and proof the file still matches.
+	$columns  = array();
+	$id_index = array_search( 'member_id', array_map( 'trim', $headers ), true );
+	foreach ( $headers as $index => $heading ) {
+		$parsed = mtl_parse_bulk_agree_heading( $heading );
+		if ( null === $parsed ) {
+			continue;
+		}
+		if ( ! isset( $live[ $parsed['id'] ] ) ) {
+			fclose( $handle );
+			return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> This file has a column for an agreement that is no longer active. Download a fresh copy and start again.</p></div>';
+		}
+		if ( (int) $live[ $parsed['id'] ]->version_num !== $parsed['version'] ) {
+			fclose( $handle );
+			return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> An agreement was revised after this file was downloaded, so its wording no longer matches. Download a fresh copy and start again.</p></div>';
+		}
+		$columns[ $index ] = $live[ $parsed['id'] ];
+	}
+
+	if ( false === $id_index || ! $columns ) {
+		fclose( $handle );
+		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> This does not look like a member agreements file. It needs the <code>member_id</code> column and at least one agreement column, with their headings unchanged.</p></div>';
+	}
+
+	$tbl_members = $wpdb->prefix . 'members';
+	$today       = current_time( 'Y-m-d' );
+	$planned     = array();
+	$errors      = array();
+	$row_no      = 1;
+
+	while ( false !== ( $row = fgetcsv( $handle ) ) ) {
+		++$row_no;
+		if ( 1 === count( $row ) && ( null === $row[0] || '' === trim( (string) $row[0] ) ) ) {
+			continue;
+		}
+
+		$member_id = isset( $row[ $id_index ] ) ? (int) trim( (string) $row[ $id_index ] ) : 0;
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+		$member = $member_id > 0 ? $wpdb->get_row( $wpdb->prepare( "SELECT member_id, anonymized_at FROM {$tbl_members} WHERE member_id = %d", $member_id ) ) : null;
+		if ( ! $member ) {
+			$errors[] = sprintf( 'Row %1$d: no member with id %2$s.', $row_no, esc_html( (string) $member_id ) );
+			continue;
+		}
+		if ( ! empty( $member->anonymized_at ) ) {
+			$errors[] = sprintf( 'Row %d: that member has been deleted.', $row_no );
+			continue;
+		}
+
+		foreach ( $columns as $index => $agreement ) {
+			$cell = isset( $row[ $index ] ) ? trim( (string) $row[ $index ] ) : '';
+			if ( '' === $cell ) {
+				continue;
+			}
+			if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $cell ) || ! wp_checkdate( (int) substr( $cell, 5, 2 ), (int) substr( $cell, 8, 2 ), (int) substr( $cell, 0, 4 ), $cell ) ) {
+				$errors[] = sprintf( 'Row %1$d: &ldquo;%2$s&rdquo; is not a date. Use YYYY-MM-DD, or leave the cell empty.', $row_no, esc_html( $cell ) );
+				continue;
+			}
+			if ( $cell > $today ) {
+				$errors[] = sprintf( 'Row %1$d: %2$s is in the future.', $row_no, esc_html( $cell ) );
+				continue;
+			}
+			// Nobody can have agreed to wording that did not exist yet.
+			//
+			// Compared in LOCAL dates on both sides. version_published_at is
+			// UTC, so slicing its date off directly would read midnight UTC as
+			// the 15th while the library was still on the 14th, and refuse a
+			// form signed the day the agreement actually went live.
+			$published = get_date_from_gmt( (string) $agreement->version_published_at, 'Y-m-d' );
+			if ( $cell < $published ) {
+				$errors[] = sprintf(
+					'Row %1$d: %2$s is before this version was published (%3$s).',
+					$row_no,
+					esc_html( $cell ),
+					esc_html( $published )
+				);
+				continue;
+			}
+
+			$planned[] = array(
+				'member'    => $member_id,
+				'agreement' => (int) $agreement->agreement_id,
+				'version'   => (int) $agreement->version_num,
+				// Start of that day where the library is, stored as UTC, so it
+				// reads back as the date on the paper rather than the one before.
+				'at'        => get_gmt_from_date( $cell . ' 00:00:00' ),
+			);
+		}
+	}
+	fclose( $handle );
+
+	if ( $errors ) {
+		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> Fix the file and upload it again.</p><ul style="list-style: disc; margin-left: 20px;"><li>'
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- assembled above from literals and esc_html()'d values.
+			. implode( '</li><li>', array_slice( $errors, 0, 25 ) ) . '</li></ul>'
+			. ( count( $errors ) > 25 ? '<p>' . esc_html( sprintf( 'and %d more.', count( $errors ) - 25 ) ) . '</p>' : '' )
+			. '</div>';
+	}
+
+	if ( ! $planned ) {
+		return '<div class="notice notice-warning is-dismissible"><p><strong>Nothing was recorded.</strong> No dates were filled in.</p></div>';
+	}
+
+	$written   = 0;
+	$skipped   = 0;
+	$by_member = array();
+	$started   = microtime( true );
+	$ran_out   = false;
+
+	$outstanding_for = array();
+	foreach ( $planned as $item ) {
+		if ( microtime( true ) - $started > 20 ) {
+			$ran_out = true;
+			break;
+		}
+
+		// Re-read per member the first time they come up, so a file listing the
+		// same member twice cannot record them twice.
+		if ( ! isset( $outstanding_for[ $item['member'] ] ) ) {
+			$outstanding_for[ $item['member'] ] = array_map(
+				'intval',
+				wp_list_pluck( mtl_member_outstanding_agreements( $item['member'] ), 'agreement_id' )
+			);
+		}
+		// Not outstanding means they are already current on it.
+		if ( ! in_array( $item['agreement'], $outstanding_for[ $item['member'] ], true ) ) {
+			++$skipped;
+			continue;
+		}
+		$acceptance_id = mtl_record_agreement_acceptance( $item['member'], $item['agreement'], 'staff_edit', $item['version'], $item['at'] );
+		if ( $acceptance_id > 0 ) {
+			++$written;
+			$by_member[ $item['member'] ][] = $acceptance_id;
+			$outstanding_for[ $item['member'] ] = array_diff( $outstanding_for[ $item['member'] ], array( $item['agreement'] ) );
+		} else {
+			++$skipped;
+		}
+	}
+
+	// Mail shares the same budget as the writing. A send is an SMTP round trip,
+	// so a few hundred of them will outrun a request on their own, and anyone
+	// left unmailed is reported rather than silently dropped.
+	$emailed   = 0;
+	$unemailed = 0;
+	if ( $send_email ) {
+		foreach ( $by_member as $member_id => $ids ) {
+			if ( microtime( true ) - $started > 20 ) {
+				$unemailed = count( $by_member ) - $emailed;
+				break;
+			}
+			if ( mtl_send_agreement_confirmation_email( $member_id, $ids ) ) {
+				++$emailed;
+			}
+		}
+	}
+
+	$notice = '<div class="notice notice-success is-dismissible"><p><strong>'
+		. esc_html( sprintf( '%1$d recorded for %2$d member(s).', $written, count( $by_member ) ) ) . '</strong>';
+	if ( $skipped > 0 ) {
+		$notice .= ' ' . esc_html( sprintf( '%d already on record, so skipped.', $skipped ) );
+	}
+	if ( $emailed > 0 ) {
+		$notice .= ' ' . esc_html( sprintf( '%d member(s) emailed their copy.', $emailed ) );
+	}
+	if ( $unemailed > 0 ) {
+		$notice .= ' ' . esc_html( sprintf( '%d could not be emailed in time; their agreements are recorded either way.', $unemailed ) );
+	}
+	if ( $ran_out ) {
+		$notice .= ' <strong>The file was too long to finish in one go.</strong> Upload the same file again to continue; anything already recorded will be skipped.';
+	}
+
+	return $notice . '</p></div>';
+}
+
+/**
+ * Column heading for one agreement in the bulk-agree CSV: "12: Waiver... (v3)".
+ *
+ * Carries the agreement_id and the version so the upload can prove the file
+ * still describes what it described when it was downloaded. The text between
+ * them is for the person filling it in and is never read back.
+ *
+ * @param object $agreement Row from member_agreements.
+ * @return string
+ */
+function mtl_bulk_agree_heading( $agreement ) {
+	// Entities decoded: mtl_agreement_excerpt() ends a truncation with &hellip;,
+	// which a spreadsheet shows literally rather than as an ellipsis.
+	$excerpt = html_entity_decode( wp_strip_all_tags( mtl_agreement_excerpt( $agreement->agreement_text ) ), ENT_QUOTES, 'UTF-8' );
+	$excerpt = str_replace( array( "\r", "\n" ), ' ', $excerpt );
+
+	return (int) $agreement->agreement_id . ': ' . $excerpt . ' (v' . (int) $agreement->version_num . ')';
+}
+
+/**
+ * Reads a bulk-agree column heading back into the ids it encodes.
+ *
+ * The version is matched greedily so wording containing its own "(v2)" cannot
+ * shadow the real marker at the end.
+ *
+ * @param string $heading Column heading from the uploaded file.
+ * @return array{id:int, version:int}|null Null when the heading is not one of ours.
+ */
+function mtl_parse_bulk_agree_heading( $heading ) {
+	if ( ! preg_match( '/^(\d+):.*\(v(\d+)\)\s*$/', trim( (string) $heading ), $m ) ) {
+		return null;
+	}
+
+	return array(
+		'id'      => (int) $m[1],
+		'version' => (int) $m[2],
+	);
+}
+
+/**
+ * Streams the bulk-agree CSV: one row per member, one column per active
+ * agreement, for staff to date from the signed paper.
+ *
+ * Administrators only, and only where staff may attest at all. Anonymized
+ * members are left out: recording a fresh attestation against a placeholder
+ * name would be recording nothing about nobody.
+ *
+ * @return void
+ */
+function mtl_maybe_serve_bulk_agree_csv() {
+	$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+	if (
+		! isset( $_GET['mtl_download_bulk_agree'] ) || 'mtl-membership' !== $page ||
+		! mtl_can_manage_settings() || ! mtl_agreements_staff_recording()
+	) {
+		return;
+	}
+	if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ), 'mtl_bulk_agree_action' ) ) {
+		return;
+	}
+
+	global $wpdb;
+	$agreements = mtl_get_active_agreements();
+	if ( ! $agreements ) {
+		return;
+	}
+
+	$everyone = isset( $_GET['audience'] ) && 'all' === sanitize_key( wp_unslash( $_GET['audience'] ) );
+
+	$tbl_members = $wpdb->prefix . 'members';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	$members = $wpdb->get_results( "SELECT member_id, first_name, last_name, email FROM {$tbl_members} WHERE anonymized_at IS NULL ORDER BY last_name ASC, first_name ASC" );
+
+	// One batched query rather than one per member: a library with a couple of
+	// thousand members would otherwise spend the whole request on lookups.
+	$owes = array();
+	if ( ! $everyone ) {
+		foreach ( mtl_member_agreements_status_map( wp_list_pluck( $members, 'member_id' ) ) as $id => $status ) {
+			$owes[ (int) $id ] = in_array( $status, array( 'none', 'outdated' ), true );
+		}
+	}
+
+	nocache_headers();
+	header( 'Content-Type: text/csv; charset=utf-8' );
+	header( 'Content-Disposition: attachment; filename="member-agreements-' . gmdate( 'Y-m-d' ) . '.csv"' );
+
+	$out     = fopen( 'php://output', 'w' );
+	$headers = array( 'member_id', 'first_name', 'last_name', 'email' );
+	foreach ( $agreements as $agreement ) {
+		$headers[] = mtl_bulk_agree_heading( $agreement );
+	}
+	fputcsv( $out, $headers );
+
+	foreach ( $members as $member ) {
+		$member_id = (int) $member->member_id;
+		if ( ! $everyone && empty( $owes[ $member_id ] ) ) {
+			continue;
+		}
+
+		$row = array(
+			$member_id,
+			stripslashes( (string) $member->first_name ),
+			stripslashes( (string) $member->last_name ),
+			(string) $member->email,
+		);
+		// Blank cells throughout. A pre-ticked file is a file somebody uploads
+		// without reading, and every row here is a permanent attestation.
+		foreach ( $agreements as $unused ) {
+			$row[] = '';
+		}
+		fputcsv( $out, $row );
+	}
+
+	fclose( $out );
+	exit;
+}
+add_action( 'admin_init', 'mtl_maybe_serve_bulk_agree_csv' );
+
+/**
  * Serves a downloadable CSV template for the Membership Bulk Import feature.
  * Runs on admin_init (before any HTML) so it can send download headers, the
  * same way the inventory template download works.
@@ -317,10 +672,9 @@ function mtl_maybe_serve_agreement_record() {
  * @param object   $member      Member row.
  * @param object[] $acceptances Latest acceptance per agreement for this member.
  * @param bool     $changed     Whether an agreement was revised mid-form.
- * @param int[]    $checked     Agreement ids to render already ticked.
  * @return string HTML.
  */
-function mtl_render_record_agreement_form( $member, $acceptances, $changed = false, $checked = array() ) {
+function mtl_render_record_agreement_form( $member, $acceptances, $changed = false ) {
 	$member_id   = (int) $member->member_id;
 	$outstanding = mtl_member_outstanding_agreements( $member_id );
 	$by_id       = array();
@@ -394,7 +748,7 @@ function mtl_render_record_agreement_form( $member, $acceptances, $changed = fal
 					?>
 					<div class="mtl-record-item">
 						<label for="<?php echo esc_attr( $box_id ); ?>" class="mtl-record-label">
-							<input type="checkbox" id="<?php echo esc_attr( $box_id ); ?>" name="agreements[<?php echo esc_attr( $aid ); ?>]" value="1" class="mtl-record-box" data-member="<?php echo esc_attr( $member_id ); ?>" <?php checked( true, in_array( $aid, array_map( 'intval', $checked ), true ) ); ?>>
+							<input type="checkbox" id="<?php echo esc_attr( $box_id ); ?>" name="agreements[<?php echo esc_attr( $aid ); ?>]" value="1" class="mtl-record-box" data-member="<?php echo esc_attr( $member_id ); ?>">
 							<span><?php echo nl2br( esc_html( $agreement->agreement_text ) ); ?></span>
 						</label>
 						<p class="mtl-record-meta">
@@ -426,10 +780,6 @@ function mtl_render_record_agreement_form( $member, $acceptances, $changed = fal
 		<?php endif; ?>
 
 		<p style="margin-bottom:0;">
-			<?php if ( $outstanding ) : ?>
-				<?php // Server-side so it works with scripting off; it ticks the boxes and re-renders, it does not record. ?>
-				<button type="submit" name="mtl_tick_all_agreements" value="1" class="button">Tick all</button>
-			<?php endif; ?>
 			<a class="button" href="<?php echo esc_url( remove_query_arg( 'mtl_record_agreement' ) ); ?>#mtl-detail-<?php echo esc_attr( $member_id ); ?>">Cancel</a>
 			<?php if ( $outstanding ) : ?>
 				<button type="submit" name="mtl_record_agreement" value="1" class="button button-primary">Record</button>
@@ -783,7 +1133,6 @@ function mtl_render_membership_page() {
 	// a failed submit back into the re-render.
 	$record_agreement_id      = isset( $_GET['mtl_record_agreement'] ) ? absint( $_GET['mtl_record_agreement'] ) : 0;
 	$record_agreement_changed = false;
-	$record_agreement_checked = array();
 
 	// 0a. HANDLE "RECORD AGREEMENT" SUBMISSION
 	//
@@ -858,17 +1207,6 @@ function mtl_render_membership_page() {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Nothing could be recorded. Please try again.</p></div>';
 				}
 			}
-		}
-	}
-
-	// 0b. HANDLE "TICK ALL"
-	//
-	// A server-side submit rather than a script, so the dialog works with
-	// scripting off. It ticks the boxes and re-renders; it does not record.
-	if ( isset( $_POST['mtl_tick_all_agreements'] ) && mtl_agreements_staff_recording() && mtl_can_manage_library() ) {
-		if ( isset( $_POST['mtl_record_agreement_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_record_agreement_nonce'] ) ), 'mtl_record_agreement_action' ) ) {
-			$record_agreement_id      = isset( $_POST['agreement_member_id'] ) ? absint( $_POST['agreement_member_id'] ) : 0;
-			$record_agreement_checked = array_map( 'intval', wp_list_pluck( mtl_member_outstanding_agreements( $record_agreement_id ), 'agreement_id' ) );
 		}
 	}
 
@@ -1210,12 +1548,18 @@ function mtl_render_membership_page() {
 
 			// $_FILES values below: 'error' and 'size' are always plain
 			// integers set by PHP itself (never sanitized per WPCS
-			// convention); 'name' and 'tmp_name' are sanitized once here and
-			// used via these locals for the rest of this block. 'tmp_name'
-			// is also verified with is_uploaded_file() before it's opened.
-			$csv_error    = isset( $_FILES['csv_file']['error'] ) ? (int) $_FILES['csv_file']['error'] : UPLOAD_ERR_NO_FILE;
-			$csv_name     = isset( $_FILES['csv_file']['name'] ) ? sanitize_file_name( wp_unslash( $_FILES['csv_file']['name'] ) ) : '';
-			$csv_tmp_name = isset( $_FILES['csv_file']['tmp_name'] ) ? sanitize_text_field( wp_unslash( $_FILES['csv_file']['tmp_name'] ) ) : '';
+			// convention); 'name' is sanitized here and used via these locals
+			// for the rest of this block.
+			//
+			// 'tmp_name' is taken RAW. WordPress never slashes $_FILES, and
+			// wp_unslash() on a Windows temp path strips its separators:
+			// C:\Windows\Temp\php1234.tmp becomes C:WindowsTempphp1234.tmp,
+			// which then fails to open. is_uploaded_file() below is what
+			// proves the path, and it is the only check that can.
+			$csv_error = isset( $_FILES['csv_file']['error'] ) ? (int) $_FILES['csv_file']['error'] : UPLOAD_ERR_NO_FILE;
+			$csv_name  = isset( $_FILES['csv_file']['name'] ) ? sanitize_file_name( wp_unslash( $_FILES['csv_file']['name'] ) ) : '';
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- a filesystem path, validated by is_uploaded_file() below; sanitizing corrupts it on Windows.
+			$csv_tmp_name = isset( $_FILES['csv_file']['tmp_name'] ) ? $_FILES['csv_file']['tmp_name'] : '';
 
 			if ( ! isset( $_FILES['csv_file'] ) || UPLOAD_ERR_NO_FILE === $csv_error ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please choose a CSV file to upload.</p></div>';
@@ -1657,6 +2001,15 @@ function mtl_render_membership_page() {
 	// Bulk agreement requests. Administrators only, since one click here mails the
 	// whole membership. Editors keep the per-member action above.
 	$agreement_batch_notice = '';
+	if ( isset( $_POST['mtl_bulk_agree_upload'] ) && mtl_agreements_staff_recording() && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_bulk_agree_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_bulk_agree_nonce'] ) ), 'mtl_bulk_agree_upload_action' ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-built, escaped HTML from the handler.
+			echo mtl_handle_bulk_agree_upload();
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
 	if ( isset( $_POST['mtl_send_agreement_requests'] ) && mtl_agreements_online() && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_agreement_requests_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_agreement_requests_nonce'] ) ), 'mtl_agreement_requests_action' ) ) {
 			// The one place the audience string is trusted, and it is
@@ -3151,15 +3504,18 @@ function mtl_render_membership_page() {
 		</details>
 	<?php endif; ?>
 	<?php
-	// Bulk agreement requests. Administrators only, and absent in paper mode;
-	// the panel sends members to a page where they agree online, which paper
-	// mode does not have.
-	if ( mtl_agreements_online() && mtl_can_manage_settings() ) :
-		$ag_outstanding  = mtl_count_members_awaiting_agreement_request( 'outstanding', true );
-		$ag_due_now      = mtl_count_members_awaiting_agreement_request( 'outstanding', false );
+	// Administrators only. The box appears for either of its two halves: asking
+	// members to agree online, or recording paper in bulk. Each half is gated
+	// again below, since a paper-mode library has nowhere to send members and a
+	// fully online one may not let staff attest at all.
+	$ag_can_send   = mtl_agreements_online();
+	$ag_can_record = mtl_agreements_staff_recording();
+	if ( ( $ag_can_send || $ag_can_record ) && mtl_can_manage_settings() ) :
+		$ag_outstanding  = $ag_can_send ? mtl_count_members_awaiting_agreement_request( 'outstanding', true ) : mtl_count_members_not_in_agreement();
+		$ag_due_now      = $ag_can_send ? mtl_count_members_awaiting_agreement_request( 'outstanding', false ) : 0;
 		$ag_recent       = $ag_outstanding - $ag_due_now;
-		$ag_excluded     = mtl_count_agreement_request_excluded( 'outstanding' );
-		$ag_never_agreed = mtl_count_agreement_request_never_agreed( true );
+		$ag_excluded     = $ag_can_send ? mtl_count_agreement_request_excluded( 'outstanding' ) : 0;
+		$ag_never_agreed = $ag_can_send ? mtl_count_agreement_request_never_agreed( true ) : 0;
 		?>
 		<?php // Starts collapsed, matching Member Logins above. ?>
 		<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
@@ -3170,6 +3526,7 @@ function mtl_render_membership_page() {
 				<?php endif; ?>
 			</summary>
 
+			<?php if ( $ag_can_send ) : ?>
 			<div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
 				<p style="margin-top: 0;">Ask members to review and agree to the current agreements. They receive an email with a link and agree on the website themselves.</p>
 
@@ -3220,6 +3577,57 @@ function mtl_render_membership_page() {
 					<p style="color: #666; font-size: 0.85em; margin-bottom: 0;">Works through the list a batch at a time. <strong>Sending does not change anyone&rsquo;s status.</strong> Revising an agreement does not automatically send emails.</p>
 				</form>
 			</div>
+			<?php endif; ?>
+
+			<?php if ( $ag_can_record ) : ?>
+				<div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
+					<h4 style="margin-top: 0;">Record signed paper in bulk</h4>
+					<p style="margin-top: 0;">Download the list, put the date each member signed against each agreement, and upload it. Cells you leave empty record nothing.</p>
+
+					<p>
+						<?php
+						$ag_dl_base = wp_nonce_url(
+							add_query_arg(
+								array(
+									'page'                     => 'mtl-membership',
+									'mtl_download_bulk_agree'  => '1',
+								),
+								admin_url( 'admin.php' )
+							),
+							'mtl_bulk_agree_action'
+						);
+						?>
+						<a class="button" href="<?php echo esc_url( add_query_arg( 'audience', 'outstanding', $ag_dl_base ) ); ?>">Download members who have not agreed</a>
+						<a class="button" href="<?php echo esc_url( add_query_arg( 'audience', 'all', $ag_dl_base ) ); ?>">Download every member</a>
+					</p>
+
+					<div class="notice notice-warning inline" style="margin: 12px 0;">
+						<p style="margin: 6px 0;"><strong>&#9888; This cannot be undone.</strong> Every date you enter becomes a permanent record that the member signed that agreement, attributed to your account. There is no way to remove one afterwards, so only upload a file you have checked against the signed forms.</p>
+					</div>
+
+					<form method="post" action="" enctype="multipart/form-data">
+						<?php wp_nonce_field( 'mtl_bulk_agree_upload_action', 'mtl_bulk_agree_nonce' ); ?>
+						<p>
+							<label for="mtl-bulk-agree-file"><strong>Completed file</strong></label><br>
+							<input type="file" name="mtl_bulk_agree_file" id="mtl-bulk-agree-file" accept=".csv,text/csv" required>
+							<span style="color: #666; font-size: 0.85em;">Dates must be written YYYY-MM-DD, for example 2026-03-04.</span>
+						</p>
+						<p>
+							<label>
+								<input type="checkbox" name="mtl_bulk_agree_email" value="1">
+								Email each member a copy of what was recorded
+							</label>
+						</p>
+						<p>
+							<label for="mtl-bulk-agree-phrase">Type <code>Record these agreements</code> to confirm</label><br>
+							<input type="text" name="mtl_bulk_agree_phrase" id="mtl-bulk-agree-phrase" class="regular-text" autocomplete="off" required>
+						</p>
+						<p style="margin-bottom: 0;">
+							<button type="submit" name="mtl_bulk_agree_upload" value="1" class="button button-primary">Record agreements</button>
+						</p>
+					</form>
+				</div>
+			<?php endif; ?>
 		</details>
 	<?php endif; ?>
 
@@ -4028,7 +4436,7 @@ function mtl_render_membership_page() {
 													// two implementations.
 													if ( $mtl_p_open && $mtl_p_can_record ) {
 														echo '<div class="mtl-record-inline">';
-														echo mtl_render_record_agreement_form( $member, $mtl_p_acceptances, $record_agreement_changed, $record_agreement_checked ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer.
+														echo mtl_render_record_agreement_form( $member, $mtl_p_acceptances, $record_agreement_changed ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer.
 														echo '</div>';
 													}
 													?>

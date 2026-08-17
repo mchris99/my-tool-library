@@ -1281,9 +1281,9 @@ function mtl_render_loans_page() {
 		}
 
 		/* The picker. These rules exist on the Inventory page too, for the
-		   Quick Loan version; each admin page carries its own stylesheet, so
-		   they are duplicated rather than shared. Without them the results
-		   render as unstyled text and do not read as a list you can click. */
+			Quick Loan version; each admin page carries its own stylesheet, so
+			they are duplicated rather than shared. Without them the results
+			render as unstyled text and do not read as a list you can click. */
 		.mtl-bc-picker {
 			position: relative;
 			width: 100%;
@@ -1984,66 +1984,7 @@ function mtl_render_loans_page() {
 	$bc_base_rows = 5;
 	$bc_rows      = max( $bc_base_rows, count( $bc_barcodes ) );
 
-	// What staff should know before handing over an armful: what the member is
-	// trained on, whether they are already late with something, and whether
-	// they owe an agreement. Three batched queries for the whole membership
-	// rather than three per selection, since the list is embedded anyway.
-	$bc_info = array();
-	foreach ( $bc_members as $bc_m ) {
-		$bc_info[ $bc_m['id'] ] = array(
-			'trainings' => array(),
-			'overdue'   => 0,
-			'agreement' => '',
-		);
-	}
-
-	$tbl_training_map = $wpdb->prefix . 'member_training_mappings';
-	$tbl_trainings    = $wpdb->prefix . 'member_trainings';
-
-	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
-	foreach (
-		$wpdb->get_results(
-			"SELECT tm.member_id, t.training_name, tm.start_date, t.certification_length_months
-             FROM {$tbl_training_map} tm
-             JOIN {$tbl_trainings} t ON t.training_id = tm.training_id
-             ORDER BY t.training_name ASC"
-		) as $bc_tr
-	) {
-		$bc_mid = (int) $bc_tr->member_id;
-		if ( ! isset( $bc_info[ $bc_mid ] ) ) {
-			continue;
-		}
-		// Current ones only. A lapsed certification is not a qualification, and
-		// listing it here would read as one.
-		if ( mtl_training_is_current( $bc_tr->start_date, $bc_tr->certification_length_months ) ) {
-			$bc_info[ $bc_mid ]['trainings'][] = stripslashes( (string) $bc_tr->training_name );
-		}
-	}
-
-	foreach (
-		$wpdb->get_results(
-			"SELECT member_id, COUNT(*) AS overdue
-             FROM {$tbl_loans}
-             WHERE return_date IS NULL AND due_date < CURDATE()
-             GROUP BY member_id"
-		) as $bc_od
-	) {
-		$bc_mid = (int) $bc_od->member_id;
-		if ( isset( $bc_info[ $bc_mid ] ) ) {
-			$bc_info[ $bc_mid ]['overdue'] = (int) $bc_od->overdue;
-		}
-	}
-	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-
-	// Silent unless agreements are switched on, which the status map already
-	// answers by returning 'disabled' for every member.
-	foreach ( mtl_member_agreements_status_map( array_keys( $bc_info ) ) as $bc_mid => $bc_ag ) {
-		if ( isset( $bc_info[ $bc_mid ] ) && in_array( $bc_ag, array( 'none', 'outdated' ), true ) ) {
-			$bc_info[ $bc_mid ]['agreement'] = ( 'none' === $bc_ag )
-				? __( 'Has not agreed to the member agreements', 'my-tool-library' )
-				: __( 'Needs to agree again to a revised agreement', 'my-tool-library' );
-		}
-	}
+	$bc_info = mtl_get_member_info_map( wp_list_pluck( $bc_members, 'id' ) );
 
 	// Barcode => status, for the client to resolve a typed barcode without a
 	// query. Only what the pill needs; nothing here is authoritative.
