@@ -5700,6 +5700,27 @@ function mtl_can_delete_tools() {
 	return current_user_can( 'manage_options' );
 }
 
+/**
+ * Whether the current user may bulk-import tools or members from a CSV file,
+ * and download the CSV templates that go with it. Administrators only.
+ *
+ * A bulk import writes hundreds of rows from a single upload, with no
+ * per-row confirmation and no undo -- a mistyped column or a stale
+ * spreadsheet lands in the live library all at once, and unpicking it means
+ * deleting the rows by hand. That is a different kind of action from the
+ * per-record adds and edits Editors do at the desk all day, so it sits with
+ * the other irreversible, whole-library operations (Setup, deleting a member,
+ * deleting a tool) rather than with everyday membership and inventory work.
+ *
+ * Editors keep Add a New Member and Add New Tool, so nothing about running
+ * the desk needs an administrator.
+ *
+ * @return bool
+ */
+function mtl_can_bulk_import() {
+	return current_user_can( 'manage_options' );
+}
+
 // ADMIN MENUS: Register the portal pages.
 // add_submenu_page() both places a sidebar link AND registers the page's
 // routing/render callback/capability check, so all six must stay
