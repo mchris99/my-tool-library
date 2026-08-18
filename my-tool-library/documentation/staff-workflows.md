@@ -47,9 +47,19 @@ Two staff roles, both standard WordPress roles. **Editor** is for anyone working
 | ↳ Export data (`.sql` / CSV)                                             |   ❌   |      ✅       |
 | ↳ Run Database Setup                                                     |   ❌   |      ✅       |
 
-An Editor doesn't see a **Setup** tab at all.
+An Editor doesn't see a **Setup** tab at all. An administrator can temporarily give up the whole Administrator column for themselves with one switch: see [Working the desk as an administrator](#working-the-desk-as-an-administrator).
 
 > **Note:** Editor is a full WordPress role, so it also grants editing of posts and pages elsewhere on your site. Restrict it with a role-management plugin if that matters; the tool library only checks whether the account is an Editor or an Administrator.
+
+### Working the desk as an administrator
+
+An administrator doing a shift on the desk has delete, bulk import, and database configuration taking up space and creating the risk of data loss. At the top of **Setup** is an **Admin view** switch that turns these abilities off.
+
+- Toggled off, My Tool Library behaves as it does for an Editor.
+- The toggle affects your admin account, not other administrators.
+- This is only a tidiness feature and does not modify user permissions.
+
+To restore admin abilities, return to **Setup** and switch **Admin view** on.
 
 ### Members can always delete their own account
 
