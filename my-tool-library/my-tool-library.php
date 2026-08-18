@@ -5662,6 +5662,44 @@ function mtl_can_manage_library() {
  * @return bool
  */
 function mtl_can_manage_settings() {
+	return current_user_can( 'manage_options' ) && mtl_admin_view_enabled();
+}
+
+/**
+ * Whether this administrator is currently using the full admin view.
+ *
+ * A PER-USER PREFERENCE, NOT A PERMISSION. Switching it off narrows what the
+ * plugin offers the person who set it, so Delete, Export and Run Database Setup
+ * cannot be hit by accident during a shift on the desk. The account keeps
+ * manage_options throughout and can switch back whenever it likes, so never use
+ * this in place of a role.
+ *
+ * Per user rather than site-wide: one administrator going to the desk must not
+ * take Setup away from the others.
+ *
+ * @param int $user_id User to ask about; 0 means whoever is signed in.
+ * @return bool
+ */
+function mtl_admin_view_enabled( $user_id = 0 ) {
+	$user_id = $user_id > 0 ? (int) $user_id : get_current_user_id();
+	if ( $user_id <= 0 ) {
+		return true;
+	}
+
+	// Absent meta means on, so an existing site is unchanged by this feature.
+	return '0' !== (string) get_user_meta( $user_id, 'mtl_admin_view_off', true );
+}
+
+/**
+ * Whether this account could use the full admin view if it chose to.
+ *
+ * Stays true while the view is switched off, which is why Setup's routing, its
+ * tab and its toggle all ask this rather than mtl_can_manage_settings(): those
+ * three are the way back, and gating them on the view would strand the user.
+ *
+ * @return bool
+ */
+function mtl_is_administrator() {
 	return current_user_can( 'manage_options' );
 }
 
@@ -5675,10 +5713,14 @@ function mtl_can_manage_settings() {
  * through this; see mtl_render_account_page() in public/member-pages.php.
  * That right is theirs regardless of who is on staff.
  *
+ * Withdrawn while the admin view is off, which is the main thing that switch
+ * is for: this is the button a librarian on the desk should not be able to hit
+ * by accident.
+ *
  * @return bool
  */
 function mtl_can_delete_members() {
-	return current_user_can( 'manage_options' );
+	return mtl_can_manage_settings();
 }
 
 /**
@@ -5694,10 +5736,12 @@ function mtl_can_delete_members() {
  * by a foreign key, and that is unchanged by this check (see the delete
  * handler in admin/inventory-page.php).
  *
+ * Withdrawn while the admin view is off, matching mtl_can_delete_members().
+ *
  * @return bool
  */
 function mtl_can_delete_tools() {
-	return current_user_can( 'manage_options' );
+	return mtl_can_manage_settings();
 }
 
 /**
@@ -5715,10 +5759,12 @@ function mtl_can_delete_tools() {
  * Editors keep Add a New Member and Add New Tool, so nothing about running
  * the desk needs an administrator.
  *
+ * Withdrawn while the admin view is off, matching mtl_can_delete_members().
+ *
  * @return bool
  */
 function mtl_can_bulk_import() {
-	return current_user_can( 'manage_options' );
+	return mtl_can_manage_settings();
 }
 
 // ADMIN MENUS: Register the portal pages.
@@ -5803,7 +5849,9 @@ function mtl_render_admin_portal_tabs() {
 	);
 	// Setup is administrators-only, so Editors never see the tab. Hiding it is
 	// a courtesy; the capability on the page itself is what enforces it.
-	if ( mtl_can_manage_settings() ) {
+	// mtl_is_administrator(), not mtl_can_manage_settings(): this tab is the way
+	// back when the admin view is off.
+	if ( mtl_is_administrator() ) {
 		$tabs['mtl-setup'] = 'Setup';
 	}
 	$current = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';

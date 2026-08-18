@@ -389,8 +389,26 @@ function mtl_render_setup_page() {
 	// mtl_register_admin_menus()), so this is defence in depth rather than the
 	// gate itself, and it keeps the guarantee local to the file, where every
 	// handler below repeats it.
-	if ( ! mtl_can_manage_settings() ) {
+	//
+	// mtl_is_administrator(), not mtl_can_manage_settings(): the switch that
+	// turns the view back on is at the top of this page.
+	if ( ! mtl_is_administrator() ) {
 		return;
+	}
+
+	// Applied before the page renders, so everything below can simply ask
+	// mtl_can_manage_settings() and get an answer that already reflects it.
+	$mtl_admin_view_notice = '';
+	if ( isset( $_POST['mtl_save_admin_view'] ) ) {
+		if ( isset( $_POST['mtl_admin_view_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_admin_view_nonce'] ) ), 'mtl_admin_view_action' ) ) {
+			if ( isset( $_POST['mtl_admin_view_on'] ) ) {
+				delete_user_meta( get_current_user_id(), 'mtl_admin_view_off' );
+			} else {
+				update_user_meta( get_current_user_id(), 'mtl_admin_view_off', '0' );
+			}
+		} else {
+			$mtl_admin_view_notice = '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
 	}
 
 	$tbl_categories = $wpdb->prefix . 'tool_categories';
@@ -403,7 +421,95 @@ function mtl_render_setup_page() {
 	wp_enqueue_media();
 
 	echo '<div class="wrap mtl-admin-wrapper">';
-	echo '<h2>My Tool Library Setup & Settings</h2>';
+
+	$mtl_admin_view = mtl_admin_view_enabled();
+	?>
+	<style>
+		/* Its own block: it has to survive the early return below, which never
+		   reaches the page's main stylesheet. */
+		.mtl-view-toggle {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			cursor: pointer;
+			user-select: none;
+			margin: 0;
+		}
+
+		.mtl-view-toggle input[type="checkbox"] {
+			position: absolute;
+			opacity: 0;
+			width: 0;
+			height: 0;
+		}
+
+		.mtl-view-slider {
+			position: relative;
+			display: inline-block;
+			width: 46px;
+			height: 24px;
+			background: #ccc;
+			border-radius: 999px;
+			flex-shrink: 0;
+			transition: background 0.2s ease;
+		}
+
+		.mtl-view-slider::before {
+			content: "";
+			position: absolute;
+			left: 3px;
+			top: 3px;
+			width: 18px;
+			height: 18px;
+			background: #fff;
+			border-radius: 50%;
+			box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+			transition: transform 0.2s ease;
+		}
+
+		.mtl-view-toggle input[type="checkbox"]:checked+.mtl-view-slider { background: #2271b1; }
+		.mtl-view-toggle input[type="checkbox"]:checked+.mtl-view-slider::before { transform: translateX(22px); }
+		.mtl-view-toggle input[type="checkbox"]:focus-visible+.mtl-view-slider {
+			outline: 2px solid #096491;
+			outline-offset: 2px;
+		}
+
+		/* Shares the heading's line rather than taking one of its own. */
+		.mtl-view-header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 16px;
+			flex-wrap: wrap;
+		}
+
+		.mtl-view-header h2 { margin: 0; }
+		.mtl-view-header form { margin: 0; }
+	</style>
+
+	<div class="mtl-view-header">
+		<h2>My Tool Library Setup &amp; Settings</h2>
+		<form method="post" action="">
+			<?php wp_nonce_field( 'mtl_admin_view_action', 'mtl_admin_view_nonce' ); ?>
+			<label class="mtl-view-toggle">
+				<input type="checkbox" name="mtl_admin_view_on" value="1" onchange="this.form.submit();" <?php checked( $mtl_admin_view ); ?>>
+				<span class="mtl-view-slider"></span>
+				<span><strong>Admin view</strong> <?php echo $mtl_admin_view ? 'on' : 'off'; ?></span>
+			</label>
+			<noscript><p style="margin: 8px 0 0 0;"><button type="submit" name="mtl_save_admin_view" value="1" class="button">Save</button></p></noscript>
+			<input type="hidden" name="mtl_save_admin_view" value="1">
+		</form>
+	</div>
+	<?php
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-built, escaped HTML from the admin-view handler above.
+	echo $mtl_admin_view_notice;
+
+	// Everything past here is the admin view. The switch above is the whole
+	// page while it is off, since it is the only way back.
+	if ( ! $mtl_admin_view ) {
+		echo '</div>';
+		return;
+	}
 
 	// ==========================================
 	// 1. HANDLE SETTINGS FORM SUBMISSION

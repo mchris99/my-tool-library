@@ -1859,9 +1859,10 @@ function mtl_render_inventory_page() {
 	</details>
 
 	<?php
-	// Administrators only -- see mtl_can_bulk_import(). The upload handler and
-	// the template download check the same thing for themselves, so hiding the
-	// panel here is presentation, not the access control.
+	// Administrators only, and withdrawn while the admin view is off -- see
+	// mtl_can_bulk_import(). The upload handler and the template download check
+	// the same thing for themselves, so hiding the panel here is presentation,
+	// not the access control.
 	if ( mtl_can_bulk_import() ) :
 		?>
 	<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);" <?php echo $keep_bulk_panel_open ? ' open' : ''; ?>>
