@@ -12,6 +12,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS {{prefix}}tool_reservations;
 DROP TABLE IF EXISTS {{prefix}}loans;
+DROP TABLE IF EXISTS {{prefix}}tool_training_mappings;
 DROP TABLE IF EXISTS {{prefix}}tool_tag_mappings;
 DROP TABLE IF EXISTS {{prefix}}tool_category_mappings;
 DROP TABLE IF EXISTS {{prefix}}tool_tags;
@@ -162,8 +163,8 @@ CREATE TABLE {{prefix}}tool_tag_mappings (
 
 -- Member Trainings (e.g., Table Saw Safety, Welding Basics)
 -- Which safety/skill trainings a member has completed, so staff can tell at a
--- glance which tools that member is qualified to check out; the counterpart to
--- the 'Requires Training' tool tag below. Managed by admins on the Setup page
+-- glance which tools that member is qualified to check out; the counterpart
+-- to tool_training_mappings below. Managed by admins on the Setup page
 -- like categories and tags, except that all three columns are editable in
 -- place there (categories and tags are add-or-delete only), since a badge
 -- image or certification length can change long after the training was created.
@@ -204,6 +205,17 @@ CREATE TABLE {{prefix}}member_training_mappings (
     start_date DATE NOT NULL,
     PRIMARY KEY (member_id, training_id),
     FOREIGN KEY (member_id) REFERENCES {{prefix}}members(member_id) ON DELETE CASCADE,
+    FOREIGN KEY (training_id) REFERENCES {{prefix}}member_trainings(training_id) ON DELETE CASCADE
+);
+
+-- Junction table for Tool <-> Trainings (Many-to-Many)
+-- Which trainings a member must hold before this tool goes out; no rows means
+-- none required. Advisory only, never blocks a loan; see mtl_tool_training_gap().
+CREATE TABLE {{prefix}}tool_training_mappings (
+    tool_id INT,
+    training_id INT,
+    PRIMARY KEY (tool_id, training_id),
+    FOREIGN KEY (tool_id) REFERENCES {{prefix}}tool_inventory(tool_id) ON DELETE CASCADE,
     FOREIGN KEY (training_id) REFERENCES {{prefix}}member_trainings(training_id) ON DELETE CASCADE
 );
 
@@ -398,8 +410,7 @@ INSERT INTO {{prefix}}tool_tags (tag_id, tag_name) VALUES
 (8, 'Outdoor Use Only'),
 (9, 'Requires PPE'),
 (10, 'Consumables Required'),
-(11, 'Requires Training'),
-(12, 'Large/Bulky');
+(11, 'Large/Bulky');
 
 -- Starting set of trainings; admins add, edit and remove their own on the Setup
 -- page, including changing any of these renewal periods. The lengths are a

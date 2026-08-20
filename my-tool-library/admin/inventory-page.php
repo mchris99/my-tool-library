@@ -186,16 +186,49 @@ function mtl_maybe_serve_csv_template() {
 }
 
 /**
+ * Replaces a tool's rows in one of its mapping tables with $ids.
+ *
+ * Clear-and-reinsert rather than diffing old against new, which adds AND
+ * removes in one step. Mirrors mtl_sync_member_trainings() on the membership
+ * side. On a brand-new tool the delete is a no-op, so the add and edit paths
+ * can share this.
+ *
+ * @param string $table     Mapping table, already prefixed.
+ * @param string $id_column The non-tool column, e.g. 'category_id'.
+ * @param int    $tool_id   Tool whose mappings are being replaced.
+ * @param array  $ids       Selected ids; anything <= 0 is skipped.
+ */
+function mtl_sync_tool_mappings( $table, $id_column, $tool_id, $ids ) {
+	global $wpdb;
+
+	$wpdb->delete( $table, array( 'tool_id' => $tool_id ), array( '%d' ) );
+	foreach ( array_unique( array_map( 'intval', (array) $ids ) ) as $id ) {
+		if ( $id <= 0 ) {
+			continue;
+		}
+		$wpdb->insert(
+			$table,
+			array(
+				'tool_id'  => $tool_id,
+				$id_column => $id,
+			),
+			array( '%d', '%d' )
+		);
+	}
+}
+
+/**
  * Renders the shared set of tool fields used by both the "Add a New Tool"
  * and "Edit Tool" forms, so the two stay in sync automatically.
  *
  * @param array  $values     Current field values, keyed by field name.
  * @param array  $categories Available categories.
  * @param array  $tags       Available tags.
+ * @param array  $trainings  Available member trainings, offered as requirements.
  * @param string $id_prefix  Prefix for element IDs (e.g. "edit_") so both forms
  *                           can appear on the page without <label for="..."> collisions.
  */
-function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = '' ) {
+function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $id_prefix = '' ) {
 	$field_id = function ( $name ) use ( $id_prefix ) {
 		return esc_attr( $id_prefix . $name );
 	};
@@ -244,6 +277,17 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $id_prefix = 
 				<?php endforeach; ?>
 			</select>
 			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every tag that applies, since a tool can have more than one. Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to select or unselect multiple. Drag the bottom-right corner to resize the box. Leave blank if none apply.</p>
+		</td>
+	</tr>
+	<tr>
+		<th scope="row"><label for="<?php echo $field_id( 'training_id' ); ?>">Required Trainings</label></th>
+		<td>
+			<select name="training_id[]" id="<?php echo $field_id( 'training_id' ); ?>" multiple size="6" class="mtl-resizable-select">
+				<?php foreach ( $trainings as $training ) : ?>
+					<option value="<?php echo esc_attr( $training->training_id ); ?>" <?php echo in_array( (int) $training->training_id, $values['training_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $training->training_name ); ?></option>
+				<?php endforeach; ?>
+			</select>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every training a member must hold before borrowing this tool. Checkout warns staff when a member is missing one or their certification has lapsed, but never blocks the loan. Leave blank if none are needed.</p>
 		</td>
 	</tr>
 	<tr>
@@ -320,14 +364,16 @@ function mtl_render_inventory_page() {
 	global $wpdb;
 
 	// Table names go through $wpdb->prefix to match the {prefix} tables created by schema.sql (see setup-page.php).
-	$tbl_inventory    = $wpdb->prefix . 'tool_inventory';
-	$tbl_categories   = $wpdb->prefix . 'tool_categories';
-	$tbl_cat_map      = $wpdb->prefix . 'tool_category_mappings';
-	$tbl_tags         = $wpdb->prefix . 'tool_tags';
-	$tbl_tag_map      = $wpdb->prefix . 'tool_tag_mappings';
-	$tbl_loans        = $wpdb->prefix . 'loans';
-	$tbl_reservations = $wpdb->prefix . 'tool_reservations';
-	$tbl_members      = $wpdb->prefix . 'members';
+	$tbl_inventory         = $wpdb->prefix . 'tool_inventory';
+	$tbl_categories        = $wpdb->prefix . 'tool_categories';
+	$tbl_cat_map           = $wpdb->prefix . 'tool_category_mappings';
+	$tbl_tags              = $wpdb->prefix . 'tool_tags';
+	$tbl_tag_map           = $wpdb->prefix . 'tool_tag_mappings';
+	$tbl_trainings         = $wpdb->prefix . 'member_trainings';
+	$tbl_tool_training_map = $wpdb->prefix . 'tool_training_mappings';
+	$tbl_loans             = $wpdb->prefix . 'loans';
+	$tbl_reservations      = $wpdb->prefix . 'tool_reservations';
+	$tbl_members           = $wpdb->prefix . 'members';
 
 	// Every form on this page posts back to this exact (query-string-free)
 	// URL rather than action="". That keeps an in-progress "?mtl_action=edit"
@@ -357,6 +403,7 @@ function mtl_render_inventory_page() {
 		'private_notes'               => '',
 		'category_ids'                => array(),
 		'tag_ids'                     => array(),
+		'training_ids'                => array(),
 	);
 	$keep_form_open = false;
 
@@ -374,6 +421,8 @@ function mtl_render_inventory_page() {
 	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_categories} ORDER BY category_name ASC" );
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$tags = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
+	$trainings = $wpdb->get_results( "SELECT training_id, training_name FROM {$tbl_trainings} ORDER BY training_name ASC" );
 
 	// 1. HANDLE "ADD" FORM SUBMISSION (Insert Data)
 	if ( isset( $_POST['mtl_add_tool'] ) && mtl_can_manage_library() ) {
@@ -404,6 +453,7 @@ function mtl_render_inventory_page() {
 			// nothing is chosen. Guard with isset() and coerce every value to int.
 			$category_ids = isset( $_POST['category_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['category_id'] ) ) : array();
 			$tag_ids      = isset( $_POST['tag_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['tag_id'] ) ) : array();
+			$training_ids = isset( $_POST['training_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['training_id'] ) ) : array();
 
 			// --- Validate ---
 			$error         = false;
@@ -458,33 +508,9 @@ function mtl_render_inventory_page() {
 					// tool_id is AUTO_INCREMENT, so read back the ID MySQL assigned.
 					$new_tool_id = $wpdb->insert_id;
 
-					// MANY-TO-MANY: one row per selected category in the mapping table.
-					foreach ( $category_ids as $cid ) {
-						if ( $cid > 0 ) {
-							$wpdb->insert(
-								$tbl_cat_map,
-								array(
-									'tool_id'     => $new_tool_id,
-									'category_id' => $cid,
-								),
-								array( '%d', '%d' )
-							);
-						}
-					}
-
-					// MANY-TO-MANY: one row per selected tag in the mapping table.
-					foreach ( $tag_ids as $tid ) {
-						if ( $tid > 0 ) {
-							$wpdb->insert(
-								$tbl_tag_map,
-								array(
-									'tool_id' => $new_tool_id,
-									'tag_id'  => $tid,
-								),
-								array( '%d', '%d' )
-							);
-						}
-					}
+					mtl_sync_tool_mappings( $tbl_cat_map, 'category_id', $new_tool_id, $category_ids );
+					mtl_sync_tool_mappings( $tbl_tag_map, 'tag_id', $new_tool_id, $tag_ids );
+					mtl_sync_tool_mappings( $tbl_tool_training_map, 'training_id', $new_tool_id, $training_ids );
 
 					mtl_maybe_flag_donor_as_donated( $donated_by );
 
@@ -515,6 +541,7 @@ function mtl_render_inventory_page() {
 				$form_values['private_notes']               = $private_notes;
 				$form_values['category_ids']                = $category_ids;
 				$form_values['tag_ids']                     = $tag_ids;
+				$form_values['training_ids']                = $training_ids;
 				// 'barcode' intentionally left as '' so the admin re-enters it.
 			}
 		} else {
@@ -847,6 +874,7 @@ function mtl_render_inventory_page() {
 
 			$category_ids = isset( $_POST['category_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['category_id'] ) ) : array();
 			$tag_ids      = isset( $_POST['tag_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['tag_id'] ) ) : array();
+			$training_ids = isset( $_POST['training_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['training_id'] ) ) : array();
 
 			$error         = false;
 			$error_message = '';
@@ -906,36 +934,9 @@ function mtl_render_inventory_page() {
 					$error         = true;
 					$error_message = 'Failed to update tool. Please verify the database connection and try again.';
 				} else {
-					// Re-sync the category/tag mappings by clearing and re-inserting
-					// the current selections, the simplest way to add AND remove
-					// mappings in one step without diffing old vs. new.
-					$wpdb->delete( $tbl_cat_map, array( 'tool_id' => $edit_tool_id ), array( '%d' ) );
-					$wpdb->delete( $tbl_tag_map, array( 'tool_id' => $edit_tool_id ), array( '%d' ) );
-
-					foreach ( $category_ids as $cid ) {
-						if ( $cid > 0 ) {
-							$wpdb->insert(
-								$tbl_cat_map,
-								array(
-									'tool_id'     => $edit_tool_id,
-									'category_id' => $cid,
-								),
-								array( '%d', '%d' )
-							);
-						}
-					}
-					foreach ( $tag_ids as $tid ) {
-						if ( $tid > 0 ) {
-							$wpdb->insert(
-								$tbl_tag_map,
-								array(
-									'tool_id' => $edit_tool_id,
-									'tag_id'  => $tid,
-								),
-								array( '%d', '%d' )
-							);
-						}
-					}
+					mtl_sync_tool_mappings( $tbl_cat_map, 'category_id', $edit_tool_id, $category_ids );
+					mtl_sync_tool_mappings( $tbl_tag_map, 'tag_id', $edit_tool_id, $tag_ids );
+					mtl_sync_tool_mappings( $tbl_tool_training_map, 'training_id', $edit_tool_id, $training_ids );
 
 					mtl_maybe_flag_donor_as_donated( $donated_by );
 
@@ -964,6 +965,7 @@ function mtl_render_inventory_page() {
 					'private_notes'               => $private_notes,
 					'category_ids'                => $category_ids,
 					'tag_ids'                     => $tag_ids,
+					'training_ids'                => $training_ids,
 				);
 			}
 		} else {
@@ -1044,6 +1046,12 @@ function mtl_render_inventory_page() {
 				if ( $ql_on_loan ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot loan this tool.</strong> It is already checked out. End the current loan first.</p></div>';
 				} elseif ( mtl_create_loan( $ql_tool_id, $ql_member_id, $ql_due ) > 0 ) {
+					// Walk-in loans skip the reservation queue, so this is the path
+					// least likely to have been vetted. See mtl_tool_training_gap().
+					$ql_gap = mtl_tool_training_gap( $ql_tool_id, $ql_member_id );
+					if ( $ql_gap ) {
+						echo '<div class="notice notice-warning is-dismissible"><p><strong>Training not current:</strong> ' . esc_html( implode( ', ', $ql_gap ) ) . '. The loan was recorded anyway.</p></div>';
+					}
 					echo '<div class="notice notice-success is-dismissible"><p><strong>Loan created.</strong> ' . esc_html( stripslashes( (string) $ql_tool_name ) ) . ' is now on loan, due ' . mtl_format_date( $ql_due ) . '.</p></div>';
 				} else {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The loan could not be recorded. Please try again.</p></div>';
@@ -1241,6 +1249,8 @@ function mtl_render_inventory_page() {
 				$existing_cat_ids = $wpdb->get_col( $wpdb->prepare( "SELECT category_id FROM {$tbl_cat_map} WHERE tool_id = %d", $edit_tool_id ) );
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				$existing_tag_ids = $wpdb->get_col( $wpdb->prepare( "SELECT tag_id FROM {$tbl_tag_map} WHERE tool_id = %d", $edit_tool_id ) );
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+				$existing_training_ids = $wpdb->get_col( $wpdb->prepare( "SELECT training_id FROM {$tbl_tool_training_map} WHERE tool_id = %d", $edit_tool_id ) );
 
 				$editing     = true;
 				$edit_values = array(
@@ -1261,6 +1271,7 @@ function mtl_render_inventory_page() {
 					'private_notes'               => stripslashes( (string) $tool_row->private_notes ),
 					'category_ids'                => array_map( 'intval', $existing_cat_ids ),
 					'tag_ids'                     => array_map( 'intval', $existing_tag_ids ),
+					'training_ids'                => array_map( 'intval', $existing_training_ids ),
 				);
 			} else {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Not found.</strong> That tool no longer exists.</p></div>';
@@ -1849,7 +1860,7 @@ function mtl_render_inventory_page() {
 				<?php wp_nonce_field( 'mtl_add_tool_action', 'mtl_add_tool_nonce' ); ?>
 
 				<table class="form-table" style="margin-top: 0;">
-					<?php mtl_render_tool_form_fields( $form_values, $categories, $tags ); ?>
+					<?php mtl_render_tool_form_fields( $form_values, $categories, $tags, $trainings ); ?>
 				</table>
 				<p class="submit">
 					<input type="submit" name="mtl_add_tool" id="mtl_add_tool" class="button button-primary" value="Save to Database">
@@ -1909,7 +1920,7 @@ function mtl_render_inventory_page() {
 					<input type="hidden" name="tool_id" value="<?php echo esc_attr( $edit_tool_id ); ?>">
 
 					<table class="form-table" style="margin-top: 0;">
-						<?php mtl_render_tool_form_fields( $edit_values, $categories, $tags, 'edit_' ); ?>
+						<?php mtl_render_tool_form_fields( $edit_values, $categories, $tags, $trainings, 'edit_' ); ?>
 					</table>
 					<p class="submit">
 						<input type="submit" name="mtl_update_tool" class="button button-primary" value="Update Tool">

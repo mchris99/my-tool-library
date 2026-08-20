@@ -496,7 +496,13 @@ function mtl_lr_handle_actions() {
 			return '<div class="notice notice-error is-dismissible"><p>Sorry, the loan could not be recorded. Please try again.</p></div>';
 		}
 
-		return '<div class="notice notice-success is-dismissible"><p><strong>Checked out.</strong> The tool is on loan, due ' . mtl_format_date( $due_date ) . ', and the member&rsquo;s reservation has been closed.</p></div>';
+		// Advisory only, after the write on purpose. See mtl_tool_training_gap().
+		$training_gap     = mtl_tool_training_gap( (int) $res->tool_id, (int) $res->member_id );
+		$training_warning = $training_gap
+			? '<div class="notice notice-warning is-dismissible"><p><strong>Training not current:</strong> ' . esc_html( implode( ', ', $training_gap ) ) . '. The loan was recorded anyway.</p></div>'
+			: '';
+
+		return $training_warning . '<div class="notice notice-success is-dismissible"><p><strong>Checked out.</strong> The tool is on loan, due ' . mtl_format_date( $due_date ) . ', and the member&rsquo;s reservation has been closed.</p></div>';
 	}
 
 	if ( 'cancel_reservation' === $action ) {

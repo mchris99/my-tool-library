@@ -69,6 +69,7 @@ function mtl_export_table_names() {
 		'tool_category_mappings',
 		'tool_tags',
 		'tool_tag_mappings',
+		'tool_training_mappings',
 		'loans',
 		'tool_reservations',
 	);

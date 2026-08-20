@@ -401,6 +401,8 @@ A training records that a member has been shown how to use something safely. Eac
 
 **Changing "Valid For" applies immediately and retroactively.** Each member's expiry is worked out from their own completion date and the training's current setting, so shortening a period can expire people straight away, and lengthening it can bring lapsed certifications back.
 
+**Requiring a training for a tool.** On the **Inventory** page, add or edit a tool and pick from **Required Trainings**. At checkout, staff see a warning naming any required training the member has not completed or has let lapse. It does not stop the loan.
+
 **Finding qualified members.** On the **Membership** page, open **Advanced Search** and use the **Trainings** dropdown. Tick one or more to show only members who hold _all_ of them, or use **Select all** for members who've completed everything. This matches on **current** certifications only.
 
 **What members see.** On their own account page, the badges near the top show only what they're currently certified in. A collapsible **Trainings** section below lists everything they've ever completed, expired included, with dates and status.

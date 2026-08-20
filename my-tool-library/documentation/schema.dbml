@@ -144,7 +144,7 @@ Table member_trainings {
   Note: '''
     Safety/skill trainings staff can record a member as having completed
     (e.g. Table Saw Safety, Welding Basics), managed on the Setup page,
-    the counterpart to the "Requires Training" tool tag. Editing
+    the counterpart to tool_training_mappings. Editing
     certification_length_months here re-dates every member who holds it,
     since expiry is derived rather than stored.
   '''
@@ -168,6 +168,23 @@ Table member_training_mappings {
 }
 Ref: member_training_mappings.member_id > members.member_id
 Ref: member_training_mappings.training_id > member_trainings.training_id
+
+Table tool_training_mappings {
+  tool_id int [not null]
+  training_id int [not null]
+
+  indexes {
+    (tool_id, training_id) [pk]
+  }
+
+  Note: '''
+    Many-to-many join between tool_inventory and member_trainings: the
+    trainings a member must hold before this tool goes out. Advisory only,
+    never blocks a loan; see mtl_tool_training_gap(). Both FKs ON DELETE CASCADE.
+  '''
+}
+Ref: tool_training_mappings.tool_id > tool_inventory.tool_id
+Ref: tool_training_mappings.training_id > member_trainings.training_id
 
 // ---------------------------------------------------------------------
 // Transactional tables

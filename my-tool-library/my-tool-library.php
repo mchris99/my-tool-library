@@ -1571,24 +1571,27 @@ function mtl_phone_formatter_script() {
 }
 
 // ==========================================================================
-// MEMBER TRAININGS
+// TRAININGS
 //
 // A training (member_trainings) has a name, an optional badge image, and an
 // optional certification_length_months. A member holds a training via
 // member_training_mappings, which records the start_date they completed it.
+// A tool requires one via tool_training_mappings.
 //
 // Expiry is always DERIVED from those two, never stored; see
 // mtl_training_expiry_date(). That means an admin editing a training's
 // certification length on the Setup page instantly re-dates every member who
 // holds it, with no backfill step and no stale copies to go wrong.
 //
-// "Current" vs "expired" matters in three different places, and they
+// "Current" vs "expired" matters in four different places, and they
 // deliberately behave differently:
 // - My Account badge images: current trainings only.
 // - My Account trainings table: everything, current and expired, with the
 // status spelled out.
 // - Membership filter: current only, since the question staff are asking
 // is "who is qualified to use this tool today".
+// - Checkout: the tool's required trainings, current only; a lapsed one
+// reads the same as one never taken. See mtl_tool_training_gap().
 // ==========================================================================
 
 /**
@@ -1638,6 +1641,61 @@ function mtl_training_is_current( $start_date, $months ) {
 		return true;
 	}
 	return current_time( 'Y-m-d' ) <= $expiry;
+}
+
+/**
+ * The trainings a member still needs before this tool should go out.
+ *
+ * A tool's requirements live in tool_training_mappings; whether the member
+ * satisfies one is decided by mtl_training_is_current() against the start_date
+ * in member_training_mappings. A lapsed certification counts the same as one
+ * never taken, since both mean the member is not currently qualified.
+ *
+ * @param int $tool_id   Tool being borrowed.
+ * @param int $member_id Member borrowing it.
+ * @return string[] Names of the missing or expired trainings, in name order.
+ *                  Empty when the member is clear, or the tool requires none.
+ */
+function mtl_tool_training_gap( $tool_id, $member_id ) {
+	global $wpdb;
+
+	$tool_id   = (int) $tool_id;
+	$member_id = (int) $member_id;
+	if ( $tool_id <= 0 || $member_id <= 0 ) {
+		return array();
+	}
+
+	$tbl_tool_map   = $wpdb->prefix . 'tool_training_mappings';
+	$tbl_trainings  = $wpdb->prefix . 'member_trainings';
+	$tbl_member_map = $wpdb->prefix . 'member_training_mappings';
+
+	// LEFT JOIN: a training the member never took must still come back, with a
+	// NULL start_date.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix; both ids are prepared.
+	$rows = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT t.training_name, t.certification_length_months, mtm.start_date
+			FROM {$tbl_tool_map} ttm
+			INNER JOIN {$tbl_trainings} t ON t.training_id = ttm.training_id
+			LEFT JOIN {$tbl_member_map} mtm ON mtm.training_id = ttm.training_id AND mtm.member_id = %d
+			WHERE ttm.tool_id = %d
+			ORDER BY t.training_name ASC",
+			$member_id,
+			$tool_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	$missing = array();
+	foreach ( (array) $rows as $row ) {
+		// mtl_training_is_current() reads a blank start_date as current, so the
+		// missing row must be tested first.
+		if ( '' === (string) $row->start_date
+			|| ! mtl_training_is_current( $row->start_date, $row->certification_length_months ) ) {
+			$missing[] = $row->training_name;
+		}
+	}
+	return $missing;
 }
 
 /**
@@ -3006,6 +3064,23 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 		$status['reserve_blocker'] = '';
 	} elseif ( '' !== $status['reserve_skip'] ) {
 		$status['reserve_blocker'] = '';
+	}
+
+	// Same advisory channel as the queue warning above, so every caller that
+	// already reads loan_warning gets this without changing. Only with a member
+	// in view: a gap is a fact about the pair, not the tool.
+	if ( $member_id > 0 ) {
+		$training_gap = mtl_tool_training_gap( $tool_id, $member_id );
+		if ( $training_gap ) {
+			$gap_text = sprintf(
+				/* translators: %s: comma-separated training names. */
+				__( 'Training not current: %s.', 'my-tool-library' ),
+				implode( ', ', $training_gap )
+			);
+			$status['loan_warning'] = '' === $status['loan_warning']
+				? $gap_text
+				: $status['loan_warning'] . ' ' . $gap_text;
+		}
 	}
 
 	return $status;
@@ -5637,6 +5712,63 @@ function mtl_register_staff_capabilities() {
 	}
 }
 
+// Plain counter, not the plugin version: bump when a table or column is added.
+define( 'MTL_DB_VERSION', 2 );
+
+// admin_init, not init: nothing reads these tables on the front end, and it
+// covers exactly the requests that can write them.
+add_action( 'admin_init', 'mtl_maybe_upgrade_schema' );
+
+/**
+ * Creates tables added after this site's database was first set up. Additive
+ * only: it creates what is missing, and never alters or drops.
+ *
+ * The fresh-install path, admin/schema.sql, DROPs every table before creating
+ * them, so it can never be how a live library picks up a new one. Runs for the same reason
+ * mtl_register_staff_capabilities() does: installs already active when a
+ * feature shipped need it too.
+ */
+function mtl_maybe_upgrade_schema() {
+	// Options round-trip as strings, so cast before comparing. >= leaves a
+	// downgraded site alone rather than re-running.
+	if ( (int) get_option( 'mtl_db_version', 0 ) >= MTL_DB_VERSION ) {
+		return;
+	}
+
+	global $wpdb;
+	$tbl_inventory         = $wpdb->prefix . 'tool_inventory';
+	$tbl_trainings         = $wpdb->prefix . 'member_trainings';
+	$tbl_tool_training_map = $wpdb->prefix . 'tool_training_mappings';
+
+	// A site that has never run Database Setup has no tables at all, and both
+	// of these are foreign-keyed below. schema.sql will create the new table
+	// with the rest, so there is nothing to add and nothing to record.
+	foreach ( array( $tbl_inventory, $tbl_trainings ) as $parent ) {
+		if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $parent ) ) !== $parent ) {
+			return;
+		}
+	}
+
+	// Frozen copy of the admin/schema.sql definition. It stays as it is even if
+	// that file changes, so this upgrade always produces the shape it promised.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	$created = $wpdb->query(
+		"CREATE TABLE IF NOT EXISTS {$tbl_tool_training_map} (
+			tool_id INT,
+			training_id INT,
+			PRIMARY KEY (tool_id, training_id),
+			FOREIGN KEY (tool_id) REFERENCES {$tbl_inventory}(tool_id) ON DELETE CASCADE,
+			FOREIGN KEY (training_id) REFERENCES {$tbl_trainings}(training_id) ON DELETE CASCADE
+		)"
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	// Not recorded on failure, so the next request retries.
+	if ( false !== $created ) {
+		update_option( 'mtl_db_version', MTL_DB_VERSION );
+	}
+}
+
 /**
  * Whether the current user may use the plugin's admin portal at all:
  * Dashboard, Membership, Inventory, Loans & Reservations, and Workflows.
@@ -5892,9 +6024,10 @@ function mtl_render_admin_portal_tabs() {
 register_activation_hook( __FILE__, 'mtl_plugin_activate' );
 
 /**
- * Registers and flushes the plugin's rewrite rule on activation.
+ * Registers and flushes the rewrite rule, and creates any missing tables.
  */
 function mtl_plugin_activate() {
+	mtl_maybe_upgrade_schema();
 	mtl_register_rewrite_rules();
 	// Rewrite rules are cached in the database. A fresh activation must
 	// flush that cache once so /tool-library/ resolves immediately instead
