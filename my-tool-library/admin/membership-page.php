@@ -26,6 +26,7 @@ add_action( 'admin_init', 'mtl_maybe_serve_member_csv_template' );
  * @return string Admin-notice HTML.
  */
 function mtl_handle_bulk_agree_upload() {
+	// phpcs:ignore WordPress.Security.NonceVerification.Missing -- the caller verifies mtl_bulk_agree_nonce before calling this.
 	$phrase = isset( $_POST['mtl_bulk_agree_phrase'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['mtl_bulk_agree_phrase'] ) ) ) : '';
 	if ( 0 !== strcasecmp( $phrase, 'Record these agreements' ) ) {
 		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> Type <code>Record these agreements</code> to confirm.</p></div>';
@@ -36,12 +37,13 @@ function mtl_handle_bulk_agree_upload() {
 	// strips its separators: C:\Windows\Temp\php1234.tmp becomes
 	// C:WindowsTempphp1234.tmp, which then fails to open. is_uploaded_file() is
 	// what proves the path, and it is the only check that can.
-	// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- a filesystem path, validated by is_uploaded_file() on the next line.
+	// phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- nonce as above; a filesystem path, validated by is_uploaded_file() on the next line.
 	$tmp_name = isset( $_FILES['mtl_bulk_agree_file']['tmp_name'] ) ? $_FILES['mtl_bulk_agree_file']['tmp_name'] : '';
 	if ( '' === $tmp_name || ! is_uploaded_file( $tmp_name ) ) {
 		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> Choose a CSV file to upload.</p></div>';
 	}
 
+	// phpcs:ignore WordPress.Security.NonceVerification.Missing -- as above.
 	return mtl_bulk_agree_process( $tmp_name, isset( $_POST['mtl_bulk_agree_email'] ) );
 }
 
@@ -106,7 +108,11 @@ function mtl_bulk_agree_process( $path, $send_email = false ) {
 	$errors      = array();
 	$row_no      = 1;
 
-	while ( false !== ( $row = fgetcsv( $handle ) ) ) {
+	while ( true ) {
+		$row = fgetcsv( $handle );
+		if ( false === $row ) {
+			break;
+		}
 		++$row_no;
 		if ( 1 === count( $row ) && ( null === $row[0] || '' === trim( (string) $row[0] ) ) ) {
 			continue;
@@ -207,7 +213,7 @@ function mtl_bulk_agree_process( $path, $send_email = false ) {
 		$acceptance_id = mtl_record_agreement_acceptance( $item['member'], $item['agreement'], 'staff_edit', $item['version'], $item['at'] );
 		if ( $acceptance_id > 0 ) {
 			++$written;
-			$by_member[ $item['member'] ][] = $acceptance_id;
+			$by_member[ $item['member'] ][]     = $acceptance_id;
 			$outstanding_for[ $item['member'] ] = array_diff( $outstanding_for[ $item['member'] ], array( $item['agreement'] ) );
 		} else {
 			++$skipped;
@@ -3597,8 +3603,8 @@ function mtl_render_membership_page() {
 						$ag_dl_base = wp_nonce_url(
 							add_query_arg(
 								array(
-									'page'                     => 'mtl-membership',
-									'mtl_download_bulk_agree'  => '1',
+									'page' => 'mtl-membership',
+									'mtl_download_bulk_agree' => '1',
 								),
 								admin_url( 'admin.php' )
 							),

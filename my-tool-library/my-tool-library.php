@@ -5107,17 +5107,17 @@ function mtl_agreement_file_hash_status( $attachment_id ) {
  *
  * @param int      $member_id    Member the acceptance belongs to.
  * @param int      $agreement_id Agreement being accepted.
+ * @param string   $context      One of the keys of mtl_agreement_contexts().
+ * @param int|null $seen_version The version_num the form displayed. Null skips
+ *                               the check, which every real caller supplies;
+ *                               nothing writes an acceptance without having
+ *                               shown somebody something first.
  * @param string   $accepted_at  UTC 'Y-m-d H:i:s' for when the member agreed.
  *                               Blank means now, which every interactive path
  *                               wants. Only the bulk CSV passes a value, since
  *                               a paper form carries the date it was signed;
  *                               it is validated against version_published_at
  *                               there, not here.
- * @param string   $context      One of the keys of mtl_agreement_contexts().
- * @param int|null $seen_version The version_num the form displayed. Null skips
- *                               the check, which every real caller supplies;
- *                               nothing writes an acceptance without having
- *                               shown somebody something first.
  * @return int The new acceptance_id, or 0 if nothing was written. Truthy on
  *             success either way, so a caller that only asks "did it write?"
  *             reads correctly, but a caller that needs to email exactly the

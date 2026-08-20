@@ -426,7 +426,7 @@ function mtl_render_setup_page() {
 	?>
 	<style>
 		/* Its own block: it has to survive the early return below, which never
-		   reaches the page's main stylesheet. */
+			reaches the page's main stylesheet. */
 		.mtl-view-toggle {
 			display: flex;
 			align-items: center;
