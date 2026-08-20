@@ -1628,16 +1628,38 @@ function mtl_render_inventory_page() {
 
 		/* Advanced filters: related fields are boxed into side-by-side groups
 			so the whole panel stays short instead of running down the page. */
+		/* Four columns, so the group carrying the multi-selects can span two of
+		them and the other two take a quarter each. Halves at laptop width, and
+		stacks below that. */
 		.mtl-adv-groups {
-			display: flex;
+			display: grid;
+			grid-template-columns: repeat(4, minmax(0, 1fr));
 			gap: 16px;
-			flex-wrap: wrap;
-			align-items: flex-start;
+			align-items: start;
+		}
+
+		.mtl-adv-group-wide {
+			grid-column: span 2;
+		}
+
+		@media (max-width: 1400px) {
+			.mtl-adv-groups {
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+			}
+		}
+
+		@media (max-width: 782px) {
+			.mtl-adv-groups {
+				grid-template-columns: minmax(0, 1fr);
+			}
+
+			.mtl-adv-group-wide {
+				grid-column: auto;
+			}
 		}
 
 		.mtl-adv-group {
-			flex: 1 1 280px;
-			min-width: 250px;
+			min-width: 0;
 			margin: 0;
 			border: 1px solid #e2e5e8;
 			border-radius: 4px;
@@ -2354,7 +2376,7 @@ function mtl_render_inventory_page() {
 				</div>
 			</fieldset>
 
-			<fieldset class="mtl-adv-group">
+			<fieldset class="mtl-adv-group mtl-adv-group-wide">
 				<legend>Classification &amp; Value</legend>
 				<div class="mtl-adv-fields">
 					<?php // See the TAXONOMY TREE FILTER block in my-tool-library.php. ?>
