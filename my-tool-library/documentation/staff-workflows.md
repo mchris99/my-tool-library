@@ -395,6 +395,22 @@ A sub-category narrows a category. Woodworking might hold Saws, Sanders & Planer
 
 **In the bulk CSV.** Use the `subcategories` column and write each value as `Category > Sub-category`, separated by semicolons. A sub-category is skipped if the row does not also list its category, and the import reports it.
 
+**Searching by them.** Advanced Search on the **Inventory**, **Loans & Reservations** and public catalog pages shows categories and sub-categories as one indented list:
+
+```
+[ ] Automotive
+    [ ] Lifting & Jacks
+    [ ] Diagnostics
+[ ] Electrical
+    [ ] Testing & Metering
+```
+
+Ticks inside this list are an "any of these" match. Ticking **Automotive** finds every Automotive tool, including ones with no sub-category. Ticking **Electrical > Testing & Metering** finds only that sub-category. Tick both and you get either.
+
+Ticking a category greys out its sub-categories, because the category already covers them.
+
+Other filters still narrow the result. Categories and tags together mean "in one of these categories **and** carrying one of these tags".
+
 #### Trainings and certifications
 
 A training records that a member has been shown how to use something safely. Each one is set up under **Setup > Member Trainings**:

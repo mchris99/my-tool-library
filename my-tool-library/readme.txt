@@ -31,7 +31,8 @@ My Tool Library turns a WordPress site into the online home of a physical tool-l
 * Member trainings: track the safety or equipment trainings a member has completed, with an optional badge image and a "valid for" period. Membership is searchable based on certification status.
 * Tools can require trainings. Attach any number on the Inventory page. Checkout warns staff when the member is missing one or has let it lapse, and never blocks the loan.
 * Sub-categories: each category can hold its own, and a tool optionally takes one per category it belongs to. Managed on the Setup page, picked when adding or editing a tool, and filterable on the public catalog.
-* A unified Loans & Reservations page: check a reservation out as a loan, cancel a reservation, renew or end a loan. Search, sorting, and advanced filters throughout. Bulk checkout for a member collecting several tools at once: scan multiple barcodes, and lend or reserve the lot in one action.
+* A unified Loans & Reservations page: check a reservation out as a loan, cancel a reservation, renew or end a loan. Filter by tool category, sub-category or tag as well as by tool, barcode and member. Search, sorting, and advanced filters throughout. Bulk checkout for a member collecting several tools at once: scan multiple barcodes, and lend or reserve the lot in one action.
+* Category tree search. Advanced Search on the Inventory, Loans & Reservations and public catalog pages lists categories with their sub-categories indented beneath. Ticks are an "any of these" match, so a category on its own finds everything in it, and a sub-category finds only that.
 * Reservations that expire on their own: once a tool is back on the shelf and a member is at the front of its queue, the configurable hold period starts.
 * A Setup page for branding (logo, colors, fonts, button style), category/tag/training management, reservation and loan defaults, and full data export/backup.
 
