@@ -158,6 +158,7 @@ function mtl_maybe_serve_csv_template() {
 			'date_acquired',
 			'categories',
 			'subcategories',
+			'trainings',
 			'tags',
 			'private_notes',
 		)
@@ -179,6 +180,7 @@ function mtl_maybe_serve_csv_template() {
 			gmdate( 'm/d/Y' ),
 			'Woodworking;General Hand Tools',
 			'Woodworking > Saws;General Hand Tools > Drills & Drivers',
+			'Table Saw Safety',
 			'Cordless;Heavy-Duty',
 			'Staff-only, never shown publicly.',
 		)
@@ -816,6 +818,10 @@ function mtl_render_inventory_page() {
 							foreach ( $tags as $tag ) {
 								$tag_lookup[ strtolower( $tag->tag_name ) ] = (int) $tag->tag_id;
 							}
+							$training_lookup = array();
+							foreach ( $trainings as $training ) {
+								$training_lookup[ strtolower( $training->training_name ) ] = (int) $training->training_id;
+							}
 
 							// Barcodes claimed earlier in THIS file; the DB
 							// uniqueness check alone can't catch two rows in
@@ -933,6 +939,15 @@ function mtl_render_inventory_page() {
 									$row_subcategory_pairs[ $pair['category_id'] ] = $pair['subcategory_id'];
 								}
 
+								$row_training_ids = array();
+								foreach ( array_filter( array_map( 'sanitize_text_field', explode( ';', $get_col( $row, 'trainings' ) ) ) ) as $name ) {
+									if ( isset( $training_lookup[ strtolower( $name ) ] ) ) {
+										$row_training_ids[] = $training_lookup[ strtolower( $name ) ];
+									} else {
+										$bulk_warnings[] = 'Row ' . $row_number . ': unknown training "' . $name . '" was skipped.';
+									}
+								}
+
 								$row_tag_ids = array();
 								foreach ( array_filter( array_map( 'sanitize_text_field', explode( ';', $get_col( $row, 'tags' ) ) ) ) as $name ) {
 									if ( isset( $tag_lookup[ strtolower( $name ) ] ) ) {
@@ -992,6 +1007,7 @@ function mtl_render_inventory_page() {
 									);
 								}
 								mtl_sync_tool_subcategories( $tbl_subcat_map, $row_tool_id, $row_subcategory_pairs );
+								mtl_sync_tool_mappings( $tbl_tool_training_map, 'training_id', $row_tool_id, $row_training_ids );
 
 								mtl_maybe_flag_donor_as_donated( $row_donated_by );
 
@@ -2098,6 +2114,7 @@ function mtl_render_inventory_page() {
 				<li>Do not include a <code>tool_id</code> column, as it is assigned automatically when each tool is added.</li>
 				<li>For <code>categories</code> and <code>tags</code>, separate multiple values with a semicolon (e.g. &ldquo;Woodworking;General Hand Tools&rdquo;). Names must match existing categories/tags exactly, so add new ones on the Setup page first if needed.</li>
 				<li>Write each <code>subcategories</code> value as &ldquo;Category &gt; Sub-category&rdquo; (e.g. &ldquo;Woodworking &gt; Saws&rdquo;), because two categories can each have a sub-category of the same name. A sub-category is skipped if the row does not also list its category.</li>
+				<li><code>trainings</code> takes training names, semicolon separated, and sets what a member must hold before borrowing the tool. Unknown names are skipped and reported.</li>
 				<li><code>annual_depreciation_amount</code> accepts either a plain dollar amount (e.g. &ldquo;5.00&rdquo;) or a percentage of that row&rsquo;s <code>initial_cash_value</code> (e.g. &ldquo;5%&rdquo;). Any value containing a % sign is converted to a dollar amount before it&rsquo;s stored.</li>
 				<li><code>donated_by</code> is plain text. If it exactly matches an existing member&rsquo;s email address (their sign-in username), that member is automatically credited as a donor. Otherwise it is just stored as-is (e.g. for a non-member donor).</li>
 				<li><code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form, but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
