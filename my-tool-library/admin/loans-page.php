@@ -968,6 +968,13 @@ function mtl_render_loans_page() {
 			font-size: 0.85em;
 		}
 
+		/* Sits beside the category tree, so it matches its height. */
+		.mtl-adv-fields .mtl-adv-multi select[multiple] {
+			height: 170px;
+			resize: vertical;
+			overflow: auto;
+		}
+
 		/*
 		 * Table on the left, detail box on the right, resizable with pure
 		 * CSS. The table uses the native `resize: horizontal` handle; the
@@ -1510,7 +1517,6 @@ function mtl_render_loans_page() {
 				<div class="mtl-adv-multi">
 					<label>Categories</label>
 					<?php mtl_taxonomy_tree( $tx_rows, array(), array(), 'mtl-lr-tx' ); ?>
-					<small>Leave empty for any. A category on its own includes tools with no sub-category.</small>
 				</div>
 				<div class="mtl-adv-multi">
 					<label for="lr-adv-tag">Tags</label>

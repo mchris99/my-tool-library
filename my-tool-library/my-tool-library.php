@@ -6125,9 +6125,24 @@ function mtl_taxonomy_matcher_script() {
 function mtl_taxonomy_tree_assets() {
 	?>
 	<style>
-		.mtl-tx-tree { max-height: 220px; overflow-y: auto; border: 1px solid #ccd0d4; background: #fff; padding: 8px 10px; border-radius: 4px; }
+		.mtl-tx-tree { height: 170px; overflow-y: auto; border: 1px solid #ccd0d4; background: #fff; padding: 8px 10px; border-radius: 4px; box-sizing: border-box; }
+		/* Both admin pages set width:100% on bare inputs in their filter panels,
+		and a front-end theme may size checkboxes too. Pinned, and specific enough
+		to win, so the box stays a box wherever the tree is dropped. */
+		.mtl-tx-tree .mtl-tx-parent input[type="checkbox"],
+		.mtl-tx-tree .mtl-tx-child input[type="checkbox"] {
+			width: 16px;
+			min-width: 16px;
+			max-width: 16px;
+			height: 16px;
+			min-height: 16px;
+			margin: 0;
+			padding: 0;
+			flex: 0 0 auto;
+			box-sizing: border-box;
+		}
 		.mtl-tx-branch { margin-bottom: 6px; }
-		.mtl-tx-parent, .mtl-tx-child { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
+		.mtl-tx-parent, .mtl-tx-child { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; line-height: 1.6; }
 		.mtl-tx-parent { font-weight: 600; }
 		.mtl-tx-child { margin-left: 22px; font-weight: 400; }
 		.mtl-tx-child.mtl-tx-covered { opacity: 0.5; }

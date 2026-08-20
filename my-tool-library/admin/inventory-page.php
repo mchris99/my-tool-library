@@ -1680,7 +1680,7 @@ function mtl_render_inventory_page() {
 		}
 
 		.mtl-adv-fields .mtl-adv-multi select[multiple] {
-			min-height: 78px;
+			height: 170px;
 			resize: vertical;
 			overflow: auto;
 		}
@@ -2360,7 +2360,6 @@ function mtl_render_inventory_page() {
 					<div class="mtl-adv-multi">
 						<label>Categories</label>
 						<?php mtl_taxonomy_tree( $tx_rows, array(), array(), 'mtl-inv-tx' ); ?>
-						<small>Leave empty for any. A category on its own includes tools with no sub-category.</small>
 					</div>
 					<div class="mtl-adv-multi">
 						<label for="adv-tag">Tags</label>
