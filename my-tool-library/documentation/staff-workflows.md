@@ -385,6 +385,16 @@ You can also cancel a reservation from **Loans & Reservations** by opening its d
 
 > **Note:** Only ordinary `http://` and `https://` web addresses are accepted for the link.
 
+#### Sub-categories
+
+A sub-category narrows a category. Woodworking might hold Saws, Sanders & Planers and Routers & Joinery.
+
+**Adding them.** On the **Setup** page, under **Categories & Tags**, pick the parent category, type a name, and add. Names only need to be unique inside their category, so Woodworking and Electrical can each have a "Drills". Deleting a category deletes its sub-categories too.
+
+**Using them on a tool.** On the **Inventory** page, tick the tool's categories first. The **Sub-category** row then offers one dropdown per ticked category. A tool takes at most one sub-category per category, and is optional.
+
+**In the bulk CSV.** Use the `subcategories` column and write each value as `Category > Sub-category`, separated by semicolons. A sub-category is skipped if the row does not also list its category, and the import reports it.
+
 #### Trainings and certifications
 
 A training records that a member has been shown how to use something safely. Each one is set up under **Setup > Member Trainings**:

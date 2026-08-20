@@ -67,6 +67,8 @@ function mtl_export_table_names() {
 		'tool_inventory',
 		'tool_categories',
 		'tool_category_mappings',
+		'tool_subcategories',
+		'tool_subcategory_mappings',
 		'tool_tags',
 		'tool_tag_mappings',
 		'tool_training_mappings',
@@ -412,9 +414,10 @@ function mtl_render_setup_page() {
 		}
 	}
 
-	$tbl_categories = $wpdb->prefix . 'tool_categories';
-	$tbl_tags       = $wpdb->prefix . 'tool_tags';
-	$tbl_trainings  = $wpdb->prefix . 'member_trainings';
+	$tbl_categories    = $wpdb->prefix . 'tool_categories';
+	$tbl_subcategories = $wpdb->prefix . 'tool_subcategories';
+	$tbl_tags          = $wpdb->prefix . 'tool_tags';
+	$tbl_trainings     = $wpdb->prefix . 'member_trainings';
 
 	// The Member Agreements file picker uses the Media Library modal. Enqueued
 	// here rather than on admin_enqueue_scripts because this callback runs
@@ -749,6 +752,87 @@ function mtl_render_setup_page() {
 					}
 				}
 				echo '<div class="notice notice-success is-dismissible"><p><strong>Removed.</strong> ' . intval( $deleted_count ) . ' categor' . ( 1 === $deleted_count ? 'y' : 'ies' ) . ' deleted. Any tools that had it were automatically un-categorized from it.</p></div>';
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ==========================================
+	// 3A2. HANDLE "ADD SUB-CATEGORY" SUBMISSION
+	// ==========================================
+	if ( isset( $_POST['mtl_add_subcategory'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_add_subcategory_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_add_subcategory_nonce'] ) ), 'mtl_add_subcategory_action' ) ) {
+			$new_subcategory_name   = isset( $_POST['new_subcategory_name'] ) ? sanitize_text_field( wp_unslash( $_POST['new_subcategory_name'] ) ) : '';
+			$new_subcategory_parent = isset( $_POST['new_subcategory_category'] ) ? (int) $_POST['new_subcategory_category'] : 0;
+
+			if ( '' === $new_subcategory_name ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please enter a sub-category name.</p></div>';
+			} elseif ( strlen( $new_subcategory_name ) > 50 ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Sub-category names must be 50 characters or fewer.</p></div>';
+			} elseif ( $new_subcategory_parent <= 0 ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please choose the category this sub-category belongs to.</p></div>';
+			} else {
+				// Names are unique per category, not globally, so this looks for
+				// the pair. Two categories may each have their own "Drills".
+				$existing = $wpdb->get_var(
+					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+						"SELECT subcategory_id FROM {$tbl_subcategories} WHERE category_id = %d AND subcategory_name = %s LIMIT 1",
+						$new_subcategory_parent,
+						$new_subcategory_name
+					)
+				);
+
+				if ( $existing ) {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That category already has that sub-category.</p></div>';
+				} else {
+					$inserted = $wpdb->insert(
+						$tbl_subcategories,
+						array(
+							'category_id'      => $new_subcategory_parent,
+							'subcategory_name' => $new_subcategory_name,
+						),
+						array( '%d', '%s' )
+					);
+
+					if ( $inserted ) {
+						echo '<div class="notice notice-success is-dismissible"><p><strong>Success!</strong> Sub-category &ldquo;' . esc_html( $new_subcategory_name ) . '&rdquo; has been added.</p></div>';
+					} else {
+						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Failed to add sub-category. The category may no longer exist.</p></div>';
+					}
+				}
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ==========================================
+	// 3B2. HANDLE "DELETE SUB-CATEGORIES" SUBMISSION
+	// ==========================================
+	if ( isset( $_POST['mtl_delete_subcategories'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_delete_subcategories_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_subcategories_nonce'] ) ), 'mtl_delete_subcategories_action' ) ) {
+			$delete_subcategory_ids = isset( $_POST['delete_subcategory_ids'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['delete_subcategory_ids'] ) ) : array();
+			$delete_subcategory_ids = array_filter(
+				$delete_subcategory_ids,
+				function ( $id ) {
+					return $id > 0;
+				}
+			);
+
+			if ( empty( $delete_subcategory_ids ) ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> No sub-categories were selected.</p></div>';
+			} else {
+				// Cascades to tool_subcategory_mappings (see schema.sql), so any
+				// tool using it loses that sub-category and keeps its category.
+				$deleted_count = 0;
+				foreach ( $delete_subcategory_ids as $id ) {
+					if ( $wpdb->delete( $tbl_subcategories, array( 'subcategory_id' => $id ), array( '%d' ) ) ) {
+						++$deleted_count;
+					}
+				}
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Removed.</strong> ' . intval( $deleted_count ) . ' sub-categor' . ( 1 === $deleted_count ? 'y' : 'ies' ) . ' deleted.</p></div>';
 			}
 		} else {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
@@ -1488,6 +1572,16 @@ function mtl_render_setup_page() {
 	// Shown as chips next to the "add new" mini-forms below.
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_categories} ORDER BY category_name ASC" );
+	// Joined to the parent so the panel can label each one "Category > Sub-category";
+	// the names are only unique inside their category.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, no request-derived data.
+	$subcategories = $wpdb->get_results(
+		"SELECT s.subcategory_id, s.subcategory_name, s.category_id, c.category_name
+		 FROM {$tbl_subcategories} s
+		 INNER JOIN {$tbl_categories} c ON c.category_id = s.category_id
+		 ORDER BY c.category_name ASC, s.subcategory_name ASC"
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$tags = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
@@ -2419,6 +2513,44 @@ function mtl_render_setup_page() {
 				<input type="text" name="new_category_name" maxlength="50" placeholder="New category name" class="regular-text" required>
 				<button type="submit" name="mtl_add_category" class="button button-primary">Add Category</button>
 			</form>
+
+			<h4 style="margin-bottom: 0;">Sub-categories</h4>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 8px 0;">Each belongs to one category. Deleting a category deletes its sub-categories too. Names only need to be unique within a category, so two categories can each have their own.</p>
+			<?php if ( $subcategories ) : ?>
+				<form method="post" action="" onsubmit="return confirm('Delete the selected sub-categories? Any tools using them will lose that sub-category and keep their category. This cannot be undone.');">
+					<?php wp_nonce_field( 'mtl_delete_subcategories_action', 'mtl_delete_subcategories_nonce' ); ?>
+					<div class="mtl-chip-row">
+						<?php foreach ( $subcategories as $sub ) : ?>
+							<label class="mtl-chip-checkbox">
+								<input type="checkbox" name="delete_subcategory_ids[]" value="<?php echo esc_attr( $sub->subcategory_id ); ?>">
+								<?php echo esc_html( $sub->category_name . ' > ' . $sub->subcategory_name ); ?>
+							</label>
+						<?php endforeach; ?>
+					</div>
+					<p class="submit" style="margin: 8px 0 0 0;">
+						<button type="submit" name="mtl_delete_subcategories" class="button mtl-btn-danger">Delete Selected</button>
+					</p>
+				</form>
+			<?php else : ?>
+				<div class="mtl-chip-row">
+					<span style="color: #999; font-size: 0.85em;">None yet.</span>
+				</div>
+			<?php endif; ?>
+			<?php if ( $categories ) : ?>
+				<form method="post" action="" class="mtl-add-lookup-form">
+					<?php wp_nonce_field( 'mtl_add_subcategory_action', 'mtl_add_subcategory_nonce' ); ?>
+					<select name="new_subcategory_category" required>
+						<option value="">Category&hellip;</option>
+						<?php foreach ( $categories as $cat ) : ?>
+							<option value="<?php echo esc_attr( $cat->category_id ); ?>"><?php echo esc_html( $cat->category_name ); ?></option>
+						<?php endforeach; ?>
+					</select>
+					<input type="text" name="new_subcategory_name" maxlength="50" placeholder="New sub-category name" class="regular-text" required>
+					<button type="submit" name="mtl_add_subcategory" class="button button-primary">Add Sub-category</button>
+				</form>
+			<?php else : ?>
+				<p style="font-size: 0.85em; color: #666;">Add a category first. Every sub-category needs one.</p>
+			<?php endif; ?>
 
 			<hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
 

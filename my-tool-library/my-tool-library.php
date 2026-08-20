@@ -5713,7 +5713,7 @@ function mtl_register_staff_capabilities() {
 }
 
 // Plain counter, not the plugin version: bump when a table or column is added.
-define( 'MTL_DB_VERSION', 2 );
+define( 'MTL_DB_VERSION', 3 );
 
 // admin_init, not init: nothing reads these tables on the front end, and it
 // covers exactly the requests that can write them.
@@ -5736,37 +5736,59 @@ function mtl_maybe_upgrade_schema() {
 	}
 
 	global $wpdb;
-	$tbl_inventory         = $wpdb->prefix . 'tool_inventory';
-	$tbl_trainings         = $wpdb->prefix . 'member_trainings';
-	$tbl_tool_training_map = $wpdb->prefix . 'tool_training_mappings';
+	$p = $wpdb->prefix;
 
-	// A site that has never run Database Setup has no tables at all, and both
-	// of these are foreign-keyed below. schema.sql will create the new table
-	// with the rest, so there is nothing to add and nothing to record.
-	foreach ( array( $tbl_inventory, $tbl_trainings ) as $parent ) {
-		if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $parent ) ) !== $parent ) {
+	// A site that has never run Database Setup has no tables at all, and every
+	// definition below foreign-keys one of these. schema.sql will create the new
+	// tables with the rest, so there is nothing to add and nothing to record.
+	foreach ( array( 'tool_inventory', 'tool_categories', 'member_trainings' ) as $parent ) {
+		if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $p . $parent ) ) !== $p . $parent ) {
 			return;
 		}
 	}
 
-	// Frozen copy of the admin/schema.sql definition. It stays as it is even if
-	// that file changes, so this upgrade always produces the shape it promised.
-	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
-	$created = $wpdb->query(
-		"CREATE TABLE IF NOT EXISTS {$tbl_tool_training_map} (
+	// Frozen copies of the admin/schema.sql definitions, in dependency order.
+	// They stay as they are even if that file changes, so an upgrade always
+	// produces the shape it promised. Adding a table here is the whole job of
+	// shipping one to sites that already exist.
+	$tables = array(
+		"CREATE TABLE IF NOT EXISTS {$p}tool_training_mappings (
 			tool_id INT,
 			training_id INT,
 			PRIMARY KEY (tool_id, training_id),
-			FOREIGN KEY (tool_id) REFERENCES {$tbl_inventory}(tool_id) ON DELETE CASCADE,
-			FOREIGN KEY (training_id) REFERENCES {$tbl_trainings}(training_id) ON DELETE CASCADE
-		)"
+			FOREIGN KEY (tool_id) REFERENCES {$p}tool_inventory(tool_id) ON DELETE CASCADE,
+			FOREIGN KEY (training_id) REFERENCES {$p}member_trainings(training_id) ON DELETE CASCADE
+		)",
+		"CREATE TABLE IF NOT EXISTS {$p}tool_subcategories (
+			subcategory_id INT AUTO_INCREMENT PRIMARY KEY,
+			category_id INT NOT NULL,
+			subcategory_name VARCHAR(50) NOT NULL,
+			UNIQUE KEY category_subcategory (category_id, subcategory_name),
+			UNIQUE KEY subcategory_category (subcategory_id, category_id),
+			FOREIGN KEY (category_id) REFERENCES {$p}tool_categories(category_id) ON DELETE CASCADE
+		)",
+		"CREATE TABLE IF NOT EXISTS {$p}tool_subcategory_mappings (
+			tool_id INT,
+			category_id INT,
+			subcategory_id INT,
+			PRIMARY KEY (tool_id, category_id),
+			KEY subcategory (subcategory_id),
+			FOREIGN KEY (tool_id) REFERENCES {$p}tool_inventory(tool_id) ON DELETE CASCADE,
+			FOREIGN KEY (subcategory_id, category_id) REFERENCES {$p}tool_subcategories(subcategory_id, category_id) ON DELETE CASCADE
+		)",
 	);
-	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-	// Not recorded on failure, so the next request retries.
-	if ( false !== $created ) {
-		update_option( 'mtl_db_version', MTL_DB_VERSION );
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	foreach ( $tables as $sql ) {
+		// Not recorded on failure, so the next request retries the whole set.
+		// IF NOT EXISTS makes the ones that already landed a no-op.
+		if ( false === $wpdb->query( $sql ) ) {
+			return;
+		}
 	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+
+	update_option( 'mtl_db_version', MTL_DB_VERSION );
 }
 
 /**

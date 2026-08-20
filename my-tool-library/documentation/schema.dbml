@@ -131,6 +131,38 @@ Table tool_tag_mappings {
 Ref: tool_tag_mappings.tool_id > tool_inventory.tool_id
 Ref: tool_tag_mappings.tag_id > tool_tags.tag_id
 
+Table tool_subcategories {
+  subcategory_id int [pk, increment]
+  category_id int [not null]
+  subcategory_name varchar(50) [not null, note: 'Unique within its category, not globally, so two categories can each have a "Drills". That is why the bulk CSV names them "Category > Sub-category".']
+
+  indexes {
+    (category_id, subcategory_name) [unique]
+    (subcategory_id, category_id) [unique, note: 'Exists only as the target of the composite FK on tool_subcategory_mappings.']
+  }
+
+  Note: 'One level deep. Deleting a category deletes its sub-categories (FK ON DELETE CASCADE).'
+}
+Ref: tool_subcategories.category_id > tool_categories.category_id
+
+Table tool_subcategory_mappings {
+  tool_id int [not null]
+  category_id int [not null, note: 'Derivable from subcategory_id, stored so the primary key can make one-per-category a database rule. The composite FK below keeps it honest.']
+  subcategory_id int [not null]
+
+  indexes {
+    (tool_id, category_id) [pk]
+  }
+
+  Note: '''
+    A tool takes at most one sub-category per category it belongs to, which
+    is what the primary key enforces. (subcategory_id, category_id) is a
+    composite FK into tool_subcategories, so a row can never claim a category
+    the sub-category does not belong to. Both FKs ON DELETE CASCADE.
+  '''
+}
+Ref: tool_subcategory_mappings.tool_id > tool_inventory.tool_id
+
 // ---------------------------------------------------------------------
 // Member trainings
 // ---------------------------------------------------------------------

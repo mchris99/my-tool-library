@@ -207,9 +207,20 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 			<div><?php echo mtl_shop_pills( $tool->categories ); ?></div>
 		<?php endif; ?>
 
+		<?php if ( ! empty( $tool->subcategories ) ) : ?>
+			<h4>Sub-categories</h4>
+			<div><?php echo mtl_shop_pills( $tool->subcategories ); ?></div>
+		<?php endif; ?>
+
 		<?php if ( ! empty( $tool->tags ) ) : ?>
 			<h4>Tags</h4>
 			<div><?php echo mtl_shop_pills( $tool->tags ); ?></div>
+		<?php endif; ?>
+
+		<?php if ( ! empty( $tool->required_trainings ) ) : ?>
+			<h4>Training needed</h4>
+			<div><?php echo mtl_shop_pills( $tool->required_trainings ); ?></div>
+			<p class="mtl-shop-note">Ask staff about completing these before you borrow this tool.</p>
 		<?php endif; ?>
 
 		<?php if ( ! empty( $tool->description ) ) : ?>
@@ -263,13 +274,17 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 function mtl_render_shop_page() {
 	global $wpdb;
 
-	$tbl_inv     = $wpdb->prefix . 'tool_inventory';
-	$tbl_cats    = $wpdb->prefix . 'tool_categories';
-	$tbl_cat_map = $wpdb->prefix . 'tool_category_mappings';
-	$tbl_tags    = $wpdb->prefix . 'tool_tags';
-	$tbl_tag_map = $wpdb->prefix . 'tool_tag_mappings';
-	$tbl_loans   = $wpdb->prefix . 'loans';
-	$tbl_res     = $wpdb->prefix . 'tool_reservations';
+	$tbl_inv        = $wpdb->prefix . 'tool_inventory';
+	$tbl_cats       = $wpdb->prefix . 'tool_categories';
+	$tbl_cat_map    = $wpdb->prefix . 'tool_category_mappings';
+	$tbl_tags       = $wpdb->prefix . 'tool_tags';
+	$tbl_tag_map    = $wpdb->prefix . 'tool_tag_mappings';
+	$tbl_subcats    = $wpdb->prefix . 'tool_subcategories';
+	$tbl_subcat_map = $wpdb->prefix . 'tool_subcategory_mappings';
+	$tbl_trainings  = $wpdb->prefix . 'member_trainings';
+	$tbl_tool_train = $wpdb->prefix . 'tool_training_mappings';
+	$tbl_loans      = $wpdb->prefix . 'loans';
+	$tbl_res        = $wpdb->prefix . 'tool_reservations';
 
 	// Bail gracefully if the plugin's tables don't exist yet.
 	if ( ! $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $tbl_inv ) ) ) {
@@ -281,6 +296,16 @@ function mtl_render_shop_page() {
 	// against it below.
 	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_cats} ORDER BY category_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$tags_list  = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
+	// Qualified for display, since a bare sub-category name is only unique
+	// within its category.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, no request-derived data.
+	$subcats_list = $wpdb->get_results(
+		"SELECT s.subcategory_id, s.subcategory_name, c.category_name
+		 FROM {$tbl_subcats} s
+		 INNER JOIN {$tbl_cats} c ON c.category_id = s.category_id
+		 ORDER BY c.category_name ASC, s.subcategory_name ASC"
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	// Read + sanitize the request parameters.
 	$q        = isset( $_GET['mtl_q'] ) ? sanitize_text_field( wp_unslash( $_GET['mtl_q'] ) ) : '';
@@ -308,8 +333,9 @@ function mtl_render_shop_page() {
 	};
 	$a_cats        = $id_list_param( 'mtl_cat', array_map( 'intval', wp_list_pluck( $categories, 'category_id' ) ) );
 	$a_tags        = $id_list_param( 'mtl_tag', array_map( 'intval', wp_list_pluck( $tags_list, 'tag_id' ) ) );
+	$a_subcats     = $id_list_param( 'mtl_subcat', array_map( 'intval', wp_list_pluck( $subcats_list, 'subcategory_id' ) ) );
 
-	$advanced_active = ( '' !== $a_name || '' !== $a_brand || $a_cats || $a_tags || '' !== $a_status );
+	$advanced_active = ( '' !== $a_name || '' !== $a_brand || $a_cats || $a_subcats || $a_tags || '' !== $a_status );
 
 	// The catalog's sort modes, whitelisted: each accepted mtl_sort value
 	// mapped to its safe ORDER BY fragment (never user SQL) and to the label
@@ -389,6 +415,11 @@ function mtl_render_shop_page() {
 		$where[] = "EXISTS (SELECT 1 FROM {$tbl_cat_map} fcm WHERE fcm.tool_id = t.tool_id AND fcm.category_id IN ({$cat_ph}))";
 		$args    = array_merge( $args, $a_cats );
 	}
+	if ( $a_subcats ) {
+		$sub_ph  = implode( ',', array_fill( 0, count( $a_subcats ), '%d' ) );
+		$where[] = "EXISTS (SELECT 1 FROM {$tbl_subcat_map} fsm WHERE fsm.tool_id = t.tool_id AND fsm.subcategory_id IN ({$sub_ph}))";
+		$args    = array_merge( $args, $a_subcats );
+	}
 	if ( $a_tags ) {
 		$tag_ph  = implode( ',', array_fill( 0, count( $a_tags ), '%d' ) );
 		$where[] = "EXISTS (SELECT 1 FROM {$tbl_tag_map} ftm WHERE ftm.tool_id = t.tool_id AND ftm.tag_id IN ({$tag_ph}))";
@@ -415,7 +446,10 @@ function mtl_render_shop_page() {
 		. " LEFT JOIN {$tbl_cat_map} tcm ON t.tool_id = tcm.tool_id"
 		. " LEFT JOIN {$tbl_cats} c ON tcm.category_id = c.category_id"
 		. " LEFT JOIN {$tbl_tag_map} ttm ON t.tool_id = ttm.tool_id"
-		. " LEFT JOIN {$tbl_tags} tg ON ttm.tag_id = tg.tag_id";
+		. " LEFT JOIN {$tbl_subcat_map} tsm ON t.tool_id = tsm.tool_id"
+		. " LEFT JOIN {$tbl_subcats} sc ON tsm.subcategory_id = sc.subcategory_id"
+		. " LEFT JOIN {$tbl_tool_train} ttr ON t.tool_id = ttr.tool_id"
+		. " LEFT JOIN {$tbl_trainings} tr ON ttr.training_id = tr.training_id";
 
 	// Total matching count (for pagination).
 	$count_sql = "SELECT COUNT(*) FROM (SELECT t.tool_id, {$sub_loans} AS active_loans, {$sub_res} AS active_res {$from} {$where_sql} GROUP BY t.tool_id {$having}) sub";
@@ -431,6 +465,8 @@ function mtl_render_shop_page() {
 	$page_sql  = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url,'
 		. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 		. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
+		. " GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories,"
+		. " GROUP_CONCAT(DISTINCT tr.training_name ORDER BY tr.training_name SEPARATOR ', ') AS required_trainings,"
 		. " {$sub_loans} AS active_loans, {$sub_res} AS active_res"
 		. " {$from} {$where_sql} GROUP BY t.tool_id {$having} ORDER BY {$order_by} LIMIT %d OFFSET %d";
 	$page_args = array_merge( $args, array( $per_page, $offset ) );
@@ -1239,6 +1275,15 @@ function mtl_render_shop_page() {
 								<?php endforeach; ?>
 							</select>
 							<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick or unpick several.</small>
+						</div>
+						<div class="mtl-shop-adv-multi">
+							<label for="mtl-a-subcat">Sub-categories</label>
+							<select id="mtl-a-subcat" name="mtl_subcat[]" multiple size="4">
+								<?php foreach ( $subcats_list as $sc ) : ?>
+									<option value="<?php echo esc_attr( $sc->subcategory_id ); ?>" <?php echo in_array( (int) $sc->subcategory_id, $a_subcats, true ) ? 'selected' : ''; ?>><?php echo esc_html( $sc->category_name . ' > ' . $sc->subcategory_name ); ?></option>
+								<?php endforeach; ?>
+							</select>
+							<small>Leave empty for any. Named by category, since two categories can share a sub-category name.</small>
 						</div>
 						<div class="mtl-shop-adv-multi">
 							<label for="mtl-a-tag">Tags</label>

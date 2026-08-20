@@ -34,6 +34,7 @@ DELETE FROM wp_tool_reservations;
 DELETE FROM wp_loans;
 DELETE FROM wp_tool_training_mappings;
 DELETE FROM wp_tool_tag_mappings;
+DELETE FROM wp_tool_subcategory_mappings;
 DELETE FROM wp_tool_category_mappings;
 DELETE FROM wp_member_training_mappings;
 DELETE FROM wp_member_verifications;
@@ -765,6 +766,13 @@ INSERT INTO wp_tool_tag_mappings (tool_id, tag_id) VALUES
 (124, 6),
 (125, 2),
 (125, 10);
+
+-- Tool <-> sub-categories. One per category the tool is in, so every row here
+-- pairs with a category mapping above. Only a sample of tools carries one.
+INSERT INTO wp_tool_subcategory_mappings (tool_id, category_id, subcategory_id) VALUES
+(3, 1, 1), (31, 1, 1), (59, 1, 1), (87, 1, 1), (115, 1, 1),
+(8, 1, 1), (36, 1, 1), (64, 1, 1), (92, 1, 1), (120, 1, 1),
+(11, 4, 8), (39, 4, 8), (67, 4, 8);
 
 -- Tool <-> required trainings: the five Table Saws need Table Saw Safety, the
 -- five Chainsaws need Chainsaw Safety.

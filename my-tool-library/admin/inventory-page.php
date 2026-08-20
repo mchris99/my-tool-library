@@ -157,6 +157,7 @@ function mtl_maybe_serve_csv_template() {
 			'donated_by',
 			'date_acquired',
 			'categories',
+			'subcategories',
 			'tags',
 			'private_notes',
 		)
@@ -177,6 +178,7 @@ function mtl_maybe_serve_csv_template() {
 			// The importer accepts any date string strtotime() understands, but the template shows the site-wide MM/DD/YYYY convention.
 			gmdate( 'm/d/Y' ),
 			'Woodworking;General Hand Tools',
+			'Woodworking > Saws;General Hand Tools > Drills & Drivers',
 			'Cordless;Heavy-Duty',
 			'Staff-only, never shown publicly.',
 		)
@@ -218,6 +220,110 @@ function mtl_sync_tool_mappings( $table, $id_column, $tool_id, $ids ) {
 }
 
 /**
+ * Shows only the sub-category selects whose category is currently ticked.
+ *
+ * Printed once per page, not per form, and it finds each picker's category
+ * select by id so the Add and Edit forms both work without knowing about
+ * each other. With JavaScript off every select stays hidden, and the handler
+ * discards choices for categories that were not ticked anyway, so the worst
+ * case is that sub-categories cannot be set from that browser.
+ */
+function mtl_subcategory_picker_script() {
+	?>
+	<style>
+		.mtl-subcat-line { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+		.mtl-subcat-line label { min-width: 160px; font-weight: 600; }
+	</style>
+	<script>
+		document.querySelectorAll( '.mtl-subcat-picker' ).forEach( function ( picker ) {
+			var categories = document.getElementById( picker.id.replace( 'subcat_picker', 'category_id' ) );
+			if ( ! categories ) {
+				return;
+			}
+			var empty = picker.querySelector( '.mtl-subcat-empty' );
+			var sync  = function () {
+				var chosen = Array.prototype.map.call( categories.selectedOptions, function ( option ) {
+					return option.value;
+				} );
+				var shown = 0;
+				picker.querySelectorAll( '.mtl-subcat-line' ).forEach( function ( line ) {
+					var on = chosen.indexOf( line.getAttribute( 'data-category' ) ) !== -1;
+					line.style.display = on ? 'flex' : 'none';
+					if ( on ) {
+						shown++;
+					}
+				} );
+				if ( empty ) {
+					empty.style.display = shown ? 'none' : '';
+				}
+			};
+			categories.addEventListener( 'change', sync );
+			sync();
+		} );
+	</script>
+	<?php
+}
+
+/**
+ * Narrows posted sub-category choices to the ones a tool may actually hold.
+ *
+ * The form renders every category's select and hides those whose category is
+ * not ticked, so hidden selects still post. This drops anything whose category
+ * the tool is not in, and anything naming a sub-category that belongs to a
+ * different category. The composite foreign key would refuse the second case;
+ * refusing it here keeps a tool save from half-failing.
+ *
+ * @param array $posted        Raw subcategory_id[], keyed by category id.
+ * @param array $category_ids  Categories actually chosen for the tool.
+ * @param array $subcategories All sub-category rows, for checking parentage.
+ * @return array category_id => subcategory_id, only the pairs that stand up.
+ */
+function mtl_resolve_tool_subcategories( $posted, $category_ids, $subcategories ) {
+	$parent_of = array();
+	foreach ( $subcategories as $sub ) {
+		$parent_of[ (int) $sub->subcategory_id ] = (int) $sub->category_id;
+	}
+
+	$pairs = array();
+	foreach ( $category_ids as $category_id ) {
+		$category_id = (int) $category_id;
+		$sub_id      = isset( $posted[ $category_id ] ) ? (int) $posted[ $category_id ] : 0;
+		if ( $sub_id > 0 && isset( $parent_of[ $sub_id ] ) && $parent_of[ $sub_id ] === $category_id ) {
+			$pairs[ $category_id ] = $sub_id;
+		}
+	}
+	return $pairs;
+}
+
+/**
+ * Replaces a tool's sub-category rows with $pairs.
+ *
+ * Separate from mtl_sync_tool_mappings() because this table carries three
+ * columns: category_id rides along so one-per-category is the primary key
+ * rather than a habit of the form.
+ *
+ * @param string $table   Mapping table, already prefixed.
+ * @param int    $tool_id Tool whose sub-categories are being replaced.
+ * @param array  $pairs   category_id => subcategory_id.
+ */
+function mtl_sync_tool_subcategories( $table, $tool_id, $pairs ) {
+	global $wpdb;
+
+	$wpdb->delete( $table, array( 'tool_id' => $tool_id ), array( '%d' ) );
+	foreach ( $pairs as $category_id => $subcategory_id ) {
+		$wpdb->insert(
+			$table,
+			array(
+				'tool_id'        => $tool_id,
+				'category_id'    => $category_id,
+				'subcategory_id' => $subcategory_id,
+			),
+			array( '%d', '%d', '%d' )
+		);
+	}
+}
+
+/**
  * Renders the shared set of tool fields used by both the "Add a New Tool"
  * and "Edit Tool" forms, so the two stay in sync automatically.
  *
@@ -225,10 +331,13 @@ function mtl_sync_tool_mappings( $table, $id_column, $tool_id, $ids ) {
  * @param array  $categories Available categories.
  * @param array  $tags       Available tags.
  * @param array  $trainings  Available member trainings, offered as requirements.
+ * @param array  $subcategories Sub-category rows (subcategory_id, category_id,
+ *                           subcategory_name), every category's, since the
+ *                           picker below filters them client-side.
  * @param string $id_prefix  Prefix for element IDs (e.g. "edit_") so both forms
  *                           can appear on the page without <label for="..."> collisions.
  */
-function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $id_prefix = '' ) {
+function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $subcategories, $id_prefix = '' ) {
 	$field_id = function ( $name ) use ( $id_prefix ) {
 		return esc_attr( $id_prefix . $name );
 	};
@@ -288,6 +397,49 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 				<?php endforeach; ?>
 			</select>
 			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every training a member must hold before borrowing this tool. Checkout warns staff when a member is missing one or their certification has lapsed, but never blocks the loan. Leave blank if none are needed.</p>
+		</td>
+	</tr>
+	<tr>
+		<th scope="row">Sub-category</th>
+		<td>
+			<?php
+			// One select per category, and only the ticked categories' selects are
+			// shown. A tool takes at most one sub-category per category, which is
+			// the primary key on tool_subcategory_mappings.
+			//
+			// Every category's block is rendered and then hidden, rather than
+			// fetched as the boxes are ticked, so this needs no AJAX. Hidden ones
+			// still post, so the handler re-checks each against the categories
+			// actually chosen; the client is never the authority on that.
+			$subs_by_category = array();
+			foreach ( $subcategories as $sub ) {
+				$subs_by_category[ (int) $sub->category_id ][] = $sub;
+			}
+			?>
+			<div class="mtl-subcat-picker" id="<?php echo $field_id( 'subcat_picker' ); ?>">
+				<?php foreach ( $categories as $cat ) : ?>
+					<?php
+					$cat_id   = (int) $cat->category_id;
+					$cat_subs = isset( $subs_by_category[ $cat_id ] ) ? $subs_by_category[ $cat_id ] : array();
+					$chosen   = isset( $values['subcategory_ids'][ $cat_id ] ) ? (int) $values['subcategory_ids'][ $cat_id ] : 0;
+					?>
+					<div class="mtl-subcat-line" data-category="<?php echo esc_attr( $cat_id ); ?>" style="display: none;">
+						<label for="<?php echo $field_id( 'subcategory_' . $cat_id ); ?>"><?php echo esc_html( $cat->category_name ); ?></label>
+						<?php if ( $cat_subs ) : ?>
+							<select name="subcategory_id[<?php echo esc_attr( $cat_id ); ?>]" id="<?php echo $field_id( 'subcategory_' . $cat_id ); ?>">
+								<option value="0">No sub-category</option>
+								<?php foreach ( $cat_subs as $sub ) : ?>
+									<option value="<?php echo esc_attr( $sub->subcategory_id ); ?>" <?php selected( $chosen, (int) $sub->subcategory_id ); ?>><?php echo esc_html( $sub->subcategory_name ); ?></option>
+								<?php endforeach; ?>
+							</select>
+						<?php else : ?>
+							<span style="color: #999; font-size: 0.85em;">No sub-categories yet. Add them under Setup &rarr; Categories &amp; Tags.</span>
+						<?php endif; ?>
+					</div>
+				<?php endforeach; ?>
+				<p class="mtl-subcat-empty" style="font-size: 0.85em; color: #666; margin: 0;">Choose a category above to pick a sub-category.</p>
+			</div>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Optional. Each category you selected can take one sub-category.</p>
 		</td>
 	</tr>
 	<tr>
@@ -367,6 +519,8 @@ function mtl_render_inventory_page() {
 	$tbl_inventory         = $wpdb->prefix . 'tool_inventory';
 	$tbl_categories        = $wpdb->prefix . 'tool_categories';
 	$tbl_cat_map           = $wpdb->prefix . 'tool_category_mappings';
+	$tbl_subcategories     = $wpdb->prefix . 'tool_subcategories';
+	$tbl_subcat_map        = $wpdb->prefix . 'tool_subcategory_mappings';
 	$tbl_tags              = $wpdb->prefix . 'tool_tags';
 	$tbl_tag_map           = $wpdb->prefix . 'tool_tag_mappings';
 	$tbl_trainings         = $wpdb->prefix . 'member_trainings';
@@ -403,6 +557,7 @@ function mtl_render_inventory_page() {
 		'private_notes'               => '',
 		'category_ids'                => array(),
 		'tag_ids'                     => array(),
+		'subcategory_ids'             => array(),
 		'training_ids'                => array(),
 	);
 	$keep_form_open = false;
@@ -423,6 +578,8 @@ function mtl_render_inventory_page() {
 	$tags = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$trainings = $wpdb->get_results( "SELECT training_id, training_name FROM {$tbl_trainings} ORDER BY training_name ASC" );
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
+	$subcategories = $wpdb->get_results( "SELECT subcategory_id, category_id, subcategory_name FROM {$tbl_subcategories} ORDER BY subcategory_name ASC" );
 
 	// 1. HANDLE "ADD" FORM SUBMISSION (Insert Data)
 	if ( isset( $_POST['mtl_add_tool'] ) && mtl_can_manage_library() ) {
@@ -451,9 +608,11 @@ function mtl_render_inventory_page() {
 
 			// Multi-selects submit an ARRAY of IDs, and submit NOTHING at all when
 			// nothing is chosen. Guard with isset() and coerce every value to int.
-			$category_ids = isset( $_POST['category_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['category_id'] ) ) : array();
-			$tag_ids      = isset( $_POST['tag_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['tag_id'] ) ) : array();
-			$training_ids = isset( $_POST['training_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['training_id'] ) ) : array();
+			$category_ids         = isset( $_POST['category_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['category_id'] ) ) : array();
+			$tag_ids              = isset( $_POST['tag_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['tag_id'] ) ) : array();
+			$training_ids         = isset( $_POST['training_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['training_id'] ) ) : array();
+			$posted_subcategories = isset( $_POST['subcategory_id'] ) ? array_map( 'absint', (array) wp_unslash( $_POST['subcategory_id'] ) ) : array();
+			$subcategory_pairs    = mtl_resolve_tool_subcategories( $posted_subcategories, $category_ids, $subcategories );
 
 			// --- Validate ---
 			$error         = false;
@@ -511,6 +670,7 @@ function mtl_render_inventory_page() {
 					mtl_sync_tool_mappings( $tbl_cat_map, 'category_id', $new_tool_id, $category_ids );
 					mtl_sync_tool_mappings( $tbl_tag_map, 'tag_id', $new_tool_id, $tag_ids );
 					mtl_sync_tool_mappings( $tbl_tool_training_map, 'training_id', $new_tool_id, $training_ids );
+					mtl_sync_tool_subcategories( $tbl_subcat_map, $new_tool_id, $subcategory_pairs );
 
 					mtl_maybe_flag_donor_as_donated( $donated_by );
 
@@ -542,6 +702,7 @@ function mtl_render_inventory_page() {
 				$form_values['category_ids']                = $category_ids;
 				$form_values['tag_ids']                     = $tag_ids;
 				$form_values['training_ids']                = $training_ids;
+				$form_values['subcategory_ids']             = $subcategory_pairs;
 				// 'barcode' intentionally left as '' so the admin re-enters it.
 			}
 		} else {
@@ -635,6 +796,20 @@ function mtl_render_inventory_page() {
 							$category_lookup = array();
 							foreach ( $categories as $cat ) {
 								$category_lookup[ strtolower( $cat->category_name ) ] = (int) $cat->category_id;
+							}
+							// Keyed by "category > sub-category", lower-cased. Sub-category
+							// names are unique only within a category, so the bare name
+							// cannot identify one.
+							$subcategory_lookup = array();
+							foreach ( $subcategories as $sub ) {
+								foreach ( $categories as $parent ) {
+									if ( (int) $parent->category_id === (int) $sub->category_id ) {
+										$subcategory_lookup[ strtolower( $parent->category_name . ' > ' . $sub->subcategory_name ) ] = array(
+											'category_id' => (int) $sub->category_id,
+											'subcategory_id' => (int) $sub->subcategory_id,
+										);
+									}
+								}
 							}
 							$tag_lookup = array();
 							foreach ( $tags as $tag ) {
@@ -739,6 +914,24 @@ function mtl_render_inventory_page() {
 									}
 								}
 
+								// Written qualified, as "Woodworking > Saws". A sub-category
+								// whose category the row did not also list is skipped: the
+								// mapping row would have nothing to hang from.
+								$row_subcategory_pairs = array();
+								foreach ( array_filter( array_map( 'sanitize_text_field', explode( ';', $get_col( $row, 'subcategories' ) ) ) ) as $name ) {
+									$key = strtolower( trim( preg_replace( '/s*>s*/', ' > ', $name ) ) );
+									if ( ! isset( $subcategory_lookup[ $key ] ) ) {
+										$bulk_warnings[] = 'Row ' . $row_number . ': unknown sub-category "' . $name . '" was skipped. Write them as "Category > Sub-category".';
+										continue;
+									}
+									$pair = $subcategory_lookup[ $key ];
+									if ( ! in_array( $pair['category_id'], $row_category_ids, true ) ) {
+										$bulk_warnings[] = 'Row ' . $row_number . ': sub-category "' . $name . '" was skipped, because the row does not list its category.';
+										continue;
+									}
+									$row_subcategory_pairs[ $pair['category_id'] ] = $pair['subcategory_id'];
+								}
+
 								$row_tag_ids = array();
 								foreach ( array_filter( array_map( 'sanitize_text_field', explode( ';', $get_col( $row, 'tags' ) ) ) ) as $name ) {
 									if ( isset( $tag_lookup[ strtolower( $name ) ] ) ) {
@@ -797,6 +990,7 @@ function mtl_render_inventory_page() {
 										array( '%d', '%d' )
 									);
 								}
+								mtl_sync_tool_subcategories( $tbl_subcat_map, $row_tool_id, $row_subcategory_pairs );
 
 								mtl_maybe_flag_donor_as_donated( $row_donated_by );
 
@@ -872,9 +1066,11 @@ function mtl_render_inventory_page() {
 			$depreciation_resolved    = mtl_resolve_depreciation_amount( $depreciation_display, $depreciation_pct_display, $initial_value );
 			$depreciation             = $depreciation_resolved['amount'];
 
-			$category_ids = isset( $_POST['category_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['category_id'] ) ) : array();
-			$tag_ids      = isset( $_POST['tag_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['tag_id'] ) ) : array();
-			$training_ids = isset( $_POST['training_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['training_id'] ) ) : array();
+			$category_ids         = isset( $_POST['category_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['category_id'] ) ) : array();
+			$tag_ids              = isset( $_POST['tag_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['tag_id'] ) ) : array();
+			$training_ids         = isset( $_POST['training_id'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['training_id'] ) ) : array();
+			$posted_subcategories = isset( $_POST['subcategory_id'] ) ? array_map( 'absint', (array) wp_unslash( $_POST['subcategory_id'] ) ) : array();
+			$subcategory_pairs    = mtl_resolve_tool_subcategories( $posted_subcategories, $category_ids, $subcategories );
 
 			$error         = false;
 			$error_message = '';
@@ -937,6 +1133,7 @@ function mtl_render_inventory_page() {
 					mtl_sync_tool_mappings( $tbl_cat_map, 'category_id', $edit_tool_id, $category_ids );
 					mtl_sync_tool_mappings( $tbl_tag_map, 'tag_id', $edit_tool_id, $tag_ids );
 					mtl_sync_tool_mappings( $tbl_tool_training_map, 'training_id', $edit_tool_id, $training_ids );
+					mtl_sync_tool_subcategories( $tbl_subcat_map, $edit_tool_id, $subcategory_pairs );
 
 					mtl_maybe_flag_donor_as_donated( $donated_by );
 
@@ -966,6 +1163,7 @@ function mtl_render_inventory_page() {
 					'category_ids'                => $category_ids,
 					'tag_ids'                     => $tag_ids,
 					'training_ids'                => $training_ids,
+					'subcategory_ids'             => $subcategory_pairs,
 				);
 			}
 		} else {
@@ -1251,6 +1449,12 @@ function mtl_render_inventory_page() {
 				$existing_tag_ids = $wpdb->get_col( $wpdb->prepare( "SELECT tag_id FROM {$tbl_tag_map} WHERE tool_id = %d", $edit_tool_id ) );
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				$existing_training_ids = $wpdb->get_col( $wpdb->prepare( "SELECT training_id FROM {$tbl_tool_training_map} WHERE tool_id = %d", $edit_tool_id ) );
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+				$existing_subcategory_rows  = $wpdb->get_results( $wpdb->prepare( "SELECT category_id, subcategory_id FROM {$tbl_subcat_map} WHERE tool_id = %d", $edit_tool_id ) );
+				$existing_subcategory_pairs = array();
+				foreach ( $existing_subcategory_rows as $sub_row ) {
+					$existing_subcategory_pairs[ (int) $sub_row->category_id ] = (int) $sub_row->subcategory_id;
+				}
 
 				$editing     = true;
 				$edit_values = array(
@@ -1272,6 +1476,7 @@ function mtl_render_inventory_page() {
 					'category_ids'                => array_map( 'intval', $existing_cat_ids ),
 					'tag_ids'                     => array_map( 'intval', $existing_tag_ids ),
 					'training_ids'                => array_map( 'intval', $existing_training_ids ),
+					'subcategory_ids'             => $existing_subcategory_pairs,
 				);
 			} else {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Not found.</strong> That tool no longer exists.</p></div>';
@@ -1860,7 +2065,7 @@ function mtl_render_inventory_page() {
 				<?php wp_nonce_field( 'mtl_add_tool_action', 'mtl_add_tool_nonce' ); ?>
 
 				<table class="form-table" style="margin-top: 0;">
-					<?php mtl_render_tool_form_fields( $form_values, $categories, $tags, $trainings ); ?>
+					<?php mtl_render_tool_form_fields( $form_values, $categories, $tags, $trainings, $subcategories ); ?>
 				</table>
 				<p class="submit">
 					<input type="submit" name="mtl_add_tool" id="mtl_add_tool" class="button button-primary" value="Save to Database">
@@ -1891,6 +2096,7 @@ function mtl_render_inventory_page() {
 				<li><code>tool_name</code> and <code>barcode</code> are required for every row; each barcode must be unique.</li>
 				<li>Do not include a <code>tool_id</code> column, as it is assigned automatically when each tool is added.</li>
 				<li>For <code>categories</code> and <code>tags</code>, separate multiple values with a semicolon (e.g. &ldquo;Woodworking;General Hand Tools&rdquo;). Names must match existing categories/tags exactly, so add new ones on the Setup page first if needed.</li>
+				<li>Write each <code>subcategories</code> value as &ldquo;Category &gt; Sub-category&rdquo; (e.g. &ldquo;Woodworking &gt; Saws&rdquo;), because two categories can each have a sub-category of the same name. A sub-category is skipped if the row does not also list its category.</li>
 				<li><code>annual_depreciation_amount</code> accepts either a plain dollar amount (e.g. &ldquo;5.00&rdquo;) or a percentage of that row&rsquo;s <code>initial_cash_value</code> (e.g. &ldquo;5%&rdquo;). Any value containing a % sign is converted to a dollar amount before it&rsquo;s stored.</li>
 				<li><code>donated_by</code> is plain text. If it exactly matches an existing member&rsquo;s email address (their sign-in username), that member is automatically credited as a donor. Otherwise it is just stored as-is (e.g. for a non-member donor).</li>
 				<li><code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form, but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
@@ -1920,7 +2126,7 @@ function mtl_render_inventory_page() {
 					<input type="hidden" name="tool_id" value="<?php echo esc_attr( $edit_tool_id ); ?>">
 
 					<table class="form-table" style="margin-top: 0;">
-						<?php mtl_render_tool_form_fields( $edit_values, $categories, $tags, $trainings, 'edit_' ); ?>
+						<?php mtl_render_tool_form_fields( $edit_values, $categories, $tags, $trainings, $subcategories, 'edit_' ); ?>
 					</table>
 					<p class="submit">
 						<input type="submit" name="mtl_update_tool" class="button button-primary" value="Update Tool">
@@ -1930,6 +2136,8 @@ function mtl_render_inventory_page() {
 			</div>
 		</details>
 	<?php endif; ?>
+
+	<?php mtl_subcategory_picker_script(); ?>
 
 	<?php
 	// 5. FETCH ALL INVENTORY DATA FIELDS

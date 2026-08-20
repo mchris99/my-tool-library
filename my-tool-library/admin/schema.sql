@@ -14,6 +14,8 @@ DROP TABLE IF EXISTS {{prefix}}tool_reservations;
 DROP TABLE IF EXISTS {{prefix}}loans;
 DROP TABLE IF EXISTS {{prefix}}tool_training_mappings;
 DROP TABLE IF EXISTS {{prefix}}tool_tag_mappings;
+DROP TABLE IF EXISTS {{prefix}}tool_subcategory_mappings;
+DROP TABLE IF EXISTS {{prefix}}tool_subcategories;
 DROP TABLE IF EXISTS {{prefix}}tool_category_mappings;
 DROP TABLE IF EXISTS {{prefix}}tool_tags;
 DROP TABLE IF EXISTS {{prefix}}tool_categories;
@@ -144,6 +146,43 @@ CREATE TABLE {{prefix}}tool_category_mappings (
     PRIMARY KEY (tool_id, category_id),
     FOREIGN KEY (tool_id) REFERENCES {{prefix}}tool_inventory(tool_id) ON DELETE CASCADE,
     FOREIGN KEY (category_id) REFERENCES {{prefix}}tool_categories(category_id) ON DELETE CASCADE
+);
+
+-- Sub-categories (e.g., Woodworking > Circular Saws)
+-- One level deep, and each belongs to exactly one category. Deleting a
+-- category takes its sub-categories with it, as the Setup page warns.
+--
+-- subcategory_name is unique per category, not globally, so two categories can
+-- each have their own "Drills". That is why the CSV import names them
+-- qualified, as "Category > Sub-category".
+--
+-- The second unique key exists only so tool_subcategory_mappings can point a
+-- composite foreign key at it; see the note there.
+CREATE TABLE {{prefix}}tool_subcategories (
+    subcategory_id INT AUTO_INCREMENT PRIMARY KEY,
+    category_id INT NOT NULL,
+    subcategory_name VARCHAR(50) NOT NULL,
+    UNIQUE KEY category_subcategory (category_id, subcategory_name),
+    UNIQUE KEY subcategory_category (subcategory_id, category_id),
+    FOREIGN KEY (category_id) REFERENCES {{prefix}}tool_categories(category_id) ON DELETE CASCADE
+);
+
+-- Junction table for Tool <-> Sub-categories
+-- A tool takes at most one sub-category per category it belongs to, which is
+-- what PRIMARY KEY (tool_id, category_id) enforces.
+--
+-- category_id is derivable from subcategory_id, and is stored anyway because
+-- it is what makes that rule a database guarantee rather than a habit of the
+-- form. The composite foreign key below points at both columns together, so a
+-- row can never claim a category the sub-category does not actually belong to.
+CREATE TABLE {{prefix}}tool_subcategory_mappings (
+    tool_id INT,
+    category_id INT,
+    subcategory_id INT,
+    PRIMARY KEY (tool_id, category_id),
+    KEY subcategory (subcategory_id),
+    FOREIGN KEY (tool_id) REFERENCES {{prefix}}tool_inventory(tool_id) ON DELETE CASCADE,
+    FOREIGN KEY (subcategory_id, category_id) REFERENCES {{prefix}}tool_subcategories(subcategory_id, category_id) ON DELETE CASCADE
 );
 
 -- Tags (e.g., Heavy-Duty, Cordless, Indoor, Precision)
@@ -398,6 +437,24 @@ INSERT INTO {{prefix}}tool_categories (category_id, category_name) VALUES
 (9, 'Metalworking'),
 (10, 'General Hand Tools'),
 (11, 'Moving & Hauling');
+
+-- A starting set so the picker is not empty. Admins add their own on Setup.
+INSERT INTO {{prefix}}tool_subcategories (subcategory_id, category_id, subcategory_name) VALUES
+(1, 1, 'Saws'),
+(2, 1, 'Sanders & Planers'),
+(3, 1, 'Routers & Joinery'),
+(4, 2, 'Mowers & Trimmers'),
+(5, 2, 'Digging & Soil'),
+(6, 3, 'Drain Clearing'),
+(7, 3, 'Pipe & Fitting'),
+(8, 4, 'Testing & Metering'),
+(9, 4, 'Wiring & Conduit'),
+(10, 5, 'Lifting & Jacks'),
+(11, 5, 'Diagnostics'),
+(12, 9, 'Welding'),
+(13, 9, 'Cutting & Grinding'),
+(14, 10, 'Drills & Drivers'),
+(15, 10, 'Wrenches & Sockets');
 
 INSERT INTO {{prefix}}tool_tags (tag_id, tag_name) VALUES
 (1, 'Cordless'),
