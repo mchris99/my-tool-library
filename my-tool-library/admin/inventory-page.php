@@ -580,6 +580,7 @@ function mtl_render_inventory_page() {
 	$trainings = $wpdb->get_results( "SELECT training_id, training_name FROM {$tbl_trainings} ORDER BY training_name ASC" );
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$subcategories = $wpdb->get_results( "SELECT subcategory_id, category_id, subcategory_name FROM {$tbl_subcategories} ORDER BY subcategory_name ASC" );
+	$tx_rows       = mtl_taxonomy_tree_rows();
 
 	// 1. HANDLE "ADD" FORM SUBMISSION (Insert Data)
 	if ( isset( $_POST['mtl_add_tool'] ) && mtl_can_manage_library() ) {
@@ -2138,6 +2139,8 @@ function mtl_render_inventory_page() {
 	<?php endif; ?>
 
 	<?php mtl_subcategory_picker_script(); ?>
+	<?php mtl_taxonomy_tree_style(); ?>
+	<?php mtl_taxonomy_matcher_script(); ?>
 
 	<?php
 	// 5. FETCH ALL INVENTORY DATA FIELDS
@@ -2169,6 +2172,8 @@ function mtl_render_inventory_page() {
             GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags
             , GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories
             , GROUP_CONCAT(DISTINCT tr.training_name ORDER BY tr.training_name SEPARATOR ', ') AS required_trainings
+            , GROUP_CONCAT(DISTINCT c.category_id) AS category_ids
+            , GROUP_CONCAT(DISTINCT sc.subcategory_id) AS subcategory_ids
         FROM {$tbl_inventory} t
         LEFT JOIN {$tbl_cat_map} tcm ON t.tool_id = tcm.tool_id
         LEFT JOIN {$tbl_categories} c ON tcm.category_id = c.category_id
@@ -2330,18 +2335,14 @@ function mtl_render_inventory_page() {
 				<legend>Classification &amp; Value</legend>
 				<div class="mtl-adv-fields">
 					<?php
-					// Categories and tags are multi-select: nothing selected means
-					// "any", and picking several widens the results to tools
-					// matching any one of them.
+					// The category tree is OR within itself: a category on its own
+					// matches everything in it, a sub-category matches only that.
+					// Tags stay a plain multi-select, and the controls AND together.
 					?>
 					<div class="mtl-adv-multi">
-						<label for="adv-category">Categories</label>
-						<select id="adv-category" multiple size="4">
-							<?php foreach ( $categories as $cat ) : ?>
-								<option value="<?php echo esc_attr( strtolower( $cat->category_name ) ); ?>"><?php echo esc_html( $cat->category_name ); ?></option>
-							<?php endforeach; ?>
-						</select>
-						<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick or unpick several.</small>
+						<label>Categories</label>
+						<?php mtl_taxonomy_tree( $tx_rows, array(), array(), 'mtl-inv-tx' ); ?>
+						<small>Leave empty for any. A category on its own includes tools with no sub-category.</small>
 					</div>
 					<div class="mtl-adv-multi">
 						<label for="adv-tag">Tags</label>
@@ -2513,6 +2514,8 @@ function mtl_render_inventory_page() {
 							data-barcode="<?php echo esc_attr( strtolower( stripslashes( $item->barcode ) ) ); ?>"
 							data-brand="<?php echo esc_attr( strtolower( stripslashes( (string) $item->brand ) ) ); ?>"
 							data-categories="<?php echo esc_attr( strtolower( (string) $item->categories ) ); ?>"
+							data-category-ids="<?php echo esc_attr( (string) $item->category_ids ); ?>"
+							data-subcategory-ids="<?php echo esc_attr( (string) $item->subcategory_ids ); ?>"
 							data-tags="<?php echo esc_attr( strtolower( (string) $item->tags ) ); ?>"
 							data-description="<?php echo esc_attr( strtolower( stripslashes( (string) $item->description ) ) ); ?>"
 							data-components="<?php echo esc_attr( strtolower( stripslashes( (string) $item->components ) ) ); ?>"
@@ -2868,7 +2871,6 @@ function mtl_render_inventory_page() {
 				name: document.getElementById('adv-name'),
 				barcode: document.getElementById('adv-barcode'),
 				brand: document.getElementById('adv-brand'),
-				category: document.getElementById('adv-category'),
 				tag: document.getElementById('adv-tag'),
 				description: document.getElementById('adv-description'),
 				components: document.getElementById('adv-components'),
@@ -2922,7 +2924,7 @@ function mtl_render_inventory_page() {
 					name: advFields.name.value.trim().toLowerCase(),
 					barcode: advFields.barcode.value.trim().toLowerCase(),
 					brand: advFields.brand.value.trim().toLowerCase(),
-					categories: selectedValues(advFields.category),
+					taxonomy: window.mtlTaxonomySelection(document.getElementById('mtl-inv-tx')),
 					tags: selectedValues(advFields.tag),
 					description: advFields.description.value.trim().toLowerCase(),
 					components: advFields.components.value.trim().toLowerCase(),
@@ -2962,7 +2964,7 @@ function mtl_render_inventory_page() {
 					if (visible && f.name && !d.name.includes(f.name)) visible = false;
 					if (visible && f.barcode && !d.barcode.includes(f.barcode)) visible = false;
 					if (visible && f.brand && !d.brand.includes(f.brand)) visible = false;
-					if (visible && !listMatchesAny(d.categories, f.categories)) visible = false;
+					if (visible && !window.mtlTaxonomyMatches(f.taxonomy, d.categoryIds, d.subcategoryIds)) visible = false;
 					if (visible && !listMatchesAny(d.tags, f.tags)) visible = false;
 					if (visible && f.description && !d.description.includes(f.description)) visible = false;
 					if (visible && f.components && !d.components.includes(f.components)) visible = false;
@@ -3064,6 +3066,10 @@ function mtl_render_inventory_page() {
 			}
 
 			searchInput.addEventListener('keyup', applyFilters);
+			const invTaxonomyTree = document.getElementById('mtl-inv-tx');
+			if (invTaxonomyTree) {
+				invTaxonomyTree.addEventListener('change', applyFilters);
+			}
 			Object.values(advFields).forEach(function(el) {
 				el.addEventListener('input', applyFilters);
 				el.addEventListener('change', applyFilters);
@@ -3082,6 +3088,13 @@ function mtl_render_inventory_page() {
 						el.value = '';
 					}
 				});
+				if (invTaxonomyTree) {
+					invTaxonomyTree.querySelectorAll('input[type="checkbox"]').forEach(function(box) {
+						box.checked = false;
+					});
+					// Re-enables children that a ticked parent had covered.
+					invTaxonomyTree.dispatchEvent(new Event('change', { bubbles: true }));
+				}
 				applyFilters();
 			});
 

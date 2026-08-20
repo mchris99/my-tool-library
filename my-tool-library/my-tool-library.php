@@ -6040,6 +6040,61 @@ function mtl_taxonomy_where( $sel_cats, $sel_subs, $tool_column = 't.tool_id' ) 
 }
 
 /**
+ * The JavaScript half of the OR rule, and the twin of mtl_taxonomy_where().
+ *
+ * The admin pages render every row and hide the non-matches, so they cannot
+ * use the SQL above. This prints the same rule as two globals:
+ *
+ *   mtlTaxonomySelection( tree )              -> { cats: [ids], subs: [ids] }
+ *   mtlTaxonomyMatches( sel, catIds, subIds ) -> bool
+ *
+ * Matching is by id, not by name, so it agrees with the SQL exactly and is not
+ * confused by two categories owning a sub-category of the same name. An empty
+ * selection matches everything, which is what "leave it blank for any" means.
+ *
+ * A ticked parent is included on its own, never expanded into its children:
+ * the category mapping already covers every tool in that category.
+ */
+function mtl_taxonomy_matcher_script() {
+	?>
+	<script>
+		window.mtlTaxonomySelection = function ( tree ) {
+			var sel = { cats: [], subs: [] };
+			if ( ! tree ) {
+				return sel;
+			}
+			tree.querySelectorAll( 'input[type="checkbox"]:checked' ).forEach( function ( box ) {
+				// Disabled children sit under a ticked parent, which already
+				// covers them. Reading them would only add redundant ids.
+				if ( box.disabled ) {
+					return;
+				}
+				if ( box.hasAttribute( 'data-tx-parent' ) ) {
+					sel.cats.push( box.value );
+				} else if ( box.hasAttribute( 'data-tx-child-of' ) ) {
+					sel.subs.push( box.value );
+				}
+			} );
+			return sel;
+		};
+
+		window.mtlTaxonomyMatches = function ( sel, catIds, subIds ) {
+			if ( ! sel.cats.length && ! sel.subs.length ) {
+				return true;
+			}
+			var rowCats = catIds ? String( catIds ).split( ',' ) : [];
+			var rowSubs = subIds ? String( subIds ).split( ',' ) : [];
+			return sel.cats.some( function ( id ) {
+				return rowCats.indexOf( id ) !== -1;
+			} ) || sel.subs.some( function ( id ) {
+				return rowSubs.indexOf( id ) !== -1;
+			} );
+		};
+	</script>
+	<?php
+}
+
+/**
  * Styling and behaviour for the tree: indentation, and greying a branch's
  * children out while its parent is ticked.
  *
@@ -6059,19 +6114,30 @@ function mtl_taxonomy_tree_style() {
 		.mtl-tx-empty { color: #666; font-size: 0.85em; margin: 0; }
 	</style>
 	<script>
-		document.querySelectorAll( '.mtl-tx-tree' ).forEach( function ( tree ) {
-			var sync = function () {
-				tree.querySelectorAll( '[data-tx-parent]' ).forEach( function ( parent ) {
-					var id = parent.getAttribute( 'data-tx-parent' );
-					tree.querySelectorAll( '[data-tx-child-of="' + id + '"]' ).forEach( function ( child ) {
-						child.disabled = parent.checked;
-						child.closest( '.mtl-tx-child' ).classList.toggle( 'mtl-tx-covered', parent.checked );
+	// Callers emit this wherever suits their page, sometimes before the tree
+	// markup, so wire up once the document has it.
+	( function () {
+		var wire = function () {
+			document.querySelectorAll( '.mtl-tx-tree' ).forEach( function ( tree ) {
+				var sync = function () {
+					tree.querySelectorAll( '[data-tx-parent]' ).forEach( function ( parent ) {
+						var id = parent.getAttribute( 'data-tx-parent' );
+						tree.querySelectorAll( '[data-tx-child-of="' + id + '"]' ).forEach( function ( child ) {
+							child.disabled = parent.checked;
+							child.closest( '.mtl-tx-child' ).classList.toggle( 'mtl-tx-covered', parent.checked );
+						} );
 					} );
-				} );
-			};
-			tree.addEventListener( 'change', sync );
-			sync();
-		} );
+				};
+				tree.addEventListener( 'change', sync );
+				sync();
+			} );
+		};
+		if ( 'loading' === document.readyState ) {
+			document.addEventListener( 'DOMContentLoaded', wire );
+		} else {
+			wire();
+		}
+	}() );
 	</script>
 	<?php
 }
