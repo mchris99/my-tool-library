@@ -444,6 +444,7 @@ function mtl_render_shop_page() {
 		. " LEFT JOIN {$tbl_cat_map} tcm ON t.tool_id = tcm.tool_id"
 		. " LEFT JOIN {$tbl_cats} c ON tcm.category_id = c.category_id"
 		. " LEFT JOIN {$tbl_tag_map} ttm ON t.tool_id = ttm.tool_id"
+		. " LEFT JOIN {$tbl_tags} tg ON ttm.tag_id = tg.tag_id"
 		. " LEFT JOIN {$tbl_subcat_map} tsm ON t.tool_id = tsm.tool_id"
 		. " LEFT JOIN {$tbl_subcats} sc ON tsm.subcategory_id = sc.subcategory_id"
 		. " LEFT JOIN {$tbl_tool_train} ttr ON t.tool_id = ttr.tool_id"

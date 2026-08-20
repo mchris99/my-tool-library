@@ -6081,21 +6081,28 @@ function mtl_taxonomy_matcher_script() {
 			return sel;
 		};
 
-		window.mtlTaxonomyMatches = function ( sel, catIds, subIds ) {
-			if ( ! sel.cats.length && ! sel.subs.length ) {
-				return true;
-			}
-			return window.mtlIdsIntersect( catIds, sel.cats ) || window.mtlIdsIntersect( subIds, sel.subs );
-		};
-
-		window.mtlIdsIntersect = function ( csvIds, picked ) {
+		// Nothing picked means no match, which is what the OR below needs from
+		// each side. mtlIdsIntersect() adds the "empty means any" rule that a
+		// filter used on its own wants; the two must not be confused.
+		var anyIn = function ( csvIds, picked ) {
 			if ( ! picked.length ) {
-				return true;
+				return false;
 			}
 			var rowIds = csvIds ? String( csvIds ).split( ',' ) : [];
 			return picked.some( function ( id ) {
 				return rowIds.indexOf( id ) !== -1;
 			} );
+		};
+
+		window.mtlTaxonomyMatches = function ( sel, catIds, subIds ) {
+			if ( ! sel.cats.length && ! sel.subs.length ) {
+				return true;
+			}
+			return anyIn( catIds, sel.cats ) || anyIn( subIds, sel.subs );
+		};
+
+		window.mtlIdsIntersect = function ( csvIds, picked ) {
+			return ! picked.length || anyIn( csvIds, picked );
 		};
 
 		window.mtlTaxonomyClear = function ( tree ) {
