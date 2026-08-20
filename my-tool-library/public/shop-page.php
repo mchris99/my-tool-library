@@ -1416,6 +1416,9 @@ function mtl_render_shop_page() {
 									<?php if ( ! empty( $tool->categories ) ) : ?>
 										<div><?php echo mtl_shop_pills( $tool->categories ); ?></div>
 									<?php endif; ?>
+									<?php if ( ! empty( $tool->subcategories ) ) : ?>
+										<div><?php echo mtl_shop_pills( $tool->subcategories ); ?></div>
+									<?php endif; ?>
 								</div>
 							</a>
 						<?php endforeach; ?>

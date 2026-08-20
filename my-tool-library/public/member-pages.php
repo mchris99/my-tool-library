@@ -1807,6 +1807,11 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 			<div><?php echo mtl_shop_pills( $r->categories ); ?></div>
 		<?php endif; ?>
 
+		<?php if ( ! empty( $r->subcategories ) ) : ?>
+			<h4>Sub-categories</h4>
+			<div><?php echo mtl_shop_pills( $r->subcategories ); ?></div>
+		<?php endif; ?>
+
 		<?php if ( ! empty( $r->tags ) ) : ?>
 			<h4>Tags</h4>
 			<div><?php echo mtl_shop_pills( $r->tags ); ?></div>
@@ -1858,14 +1863,16 @@ function mtl_render_member_reservations_page() {
 	}
 
 	global $wpdb;
-	$tbl_res     = $wpdb->prefix . 'tool_reservations';
-	$tbl_inv     = $wpdb->prefix . 'tool_inventory';
-	$tbl_loans   = $wpdb->prefix . 'loans';
-	$tbl_cats    = $wpdb->prefix . 'tool_categories';
-	$tbl_cat_map = $wpdb->prefix . 'tool_category_mappings';
-	$tbl_tags    = $wpdb->prefix . 'tool_tags';
-	$tbl_tag_map = $wpdb->prefix . 'tool_tag_mappings';
-	$self        = mtl_front_page_url( 'reservations' );
+	$tbl_res        = $wpdb->prefix . 'tool_reservations';
+	$tbl_inv        = $wpdb->prefix . 'tool_inventory';
+	$tbl_loans      = $wpdb->prefix . 'loans';
+	$tbl_cats       = $wpdb->prefix . 'tool_categories';
+	$tbl_cat_map    = $wpdb->prefix . 'tool_category_mappings';
+	$tbl_subcats    = $wpdb->prefix . 'tool_subcategories';
+	$tbl_subcat_map = $wpdb->prefix . 'tool_subcategory_mappings';
+	$tbl_tags       = $wpdb->prefix . 'tool_tags';
+	$tbl_tag_map    = $wpdb->prefix . 'tool_tag_mappings';
+	$self           = mtl_front_page_url( 'reservations' );
 
 	// --- Active loans (currently checked out), soonest due date first. Each
 	// is flagged 'overdue', 'due_today', 'due_soon' (within 1-3 days), or
@@ -1995,6 +2002,10 @@ function mtl_render_member_reservations_page() {
                     FROM {$tbl_cat_map} cm JOIN {$tbl_cats} c ON c.category_id = cm.category_id
                     WHERE cm.tool_id = r.tool_id
                 ) AS categories,
+                (SELECT GROUP_CONCAT(sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ')
+                    FROM {$tbl_subcat_map} sm JOIN {$tbl_subcats} sc ON sc.subcategory_id = sm.subcategory_id
+                    WHERE sm.tool_id = r.tool_id
+                ) AS subcategories,
                 (SELECT GROUP_CONCAT(tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ')
                     FROM {$tbl_tag_map} tm JOIN {$tbl_tags} tg ON tg.tag_id = tm.tag_id
                     WHERE tm.tool_id = r.tool_id
