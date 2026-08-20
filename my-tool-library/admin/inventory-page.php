@@ -2196,6 +2196,7 @@ function mtl_render_inventory_page() {
             , GROUP_CONCAT(DISTINCT tr.training_name ORDER BY tr.training_name SEPARATOR ', ') AS required_trainings
             , GROUP_CONCAT(DISTINCT c.category_id) AS category_ids
             , GROUP_CONCAT(DISTINCT sc.subcategory_id) AS subcategory_ids
+            , GROUP_CONCAT(DISTINCT tr.training_id) AS training_ids
         FROM {$tbl_inventory} t
         LEFT JOIN {$tbl_cat_map} tcm ON t.tool_id = tcm.tool_id
         LEFT JOIN {$tbl_categories} c ON tcm.category_id = c.category_id
@@ -2370,6 +2371,7 @@ function mtl_render_inventory_page() {
 						</select>
 						<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick or unpick several.</small>
 					</div>
+					<?php mtl_training_filter_select( $trainings, 'adv-training' ); ?>
 					<div>
 						<label for="adv-acquired-from">Acquired From</label>
 						<input type="date" id="adv-acquired-from">
@@ -2533,6 +2535,7 @@ function mtl_render_inventory_page() {
 							data-categories="<?php echo esc_attr( strtolower( (string) $item->categories ) ); ?>"
 							data-category-ids="<?php echo esc_attr( (string) $item->category_ids ); ?>"
 							data-subcategory-ids="<?php echo esc_attr( (string) $item->subcategory_ids ); ?>"
+							data-training-ids="<?php echo esc_attr( (string) $item->training_ids ); ?>"
 							data-tags="<?php echo esc_attr( strtolower( (string) $item->tags ) ); ?>"
 							data-description="<?php echo esc_attr( strtolower( stripslashes( (string) $item->description ) ) ); ?>"
 							data-components="<?php echo esc_attr( strtolower( stripslashes( (string) $item->components ) ) ); ?>"
@@ -2889,6 +2892,7 @@ function mtl_render_inventory_page() {
 				barcode: document.getElementById('adv-barcode'),
 				brand: document.getElementById('adv-brand'),
 				tag: document.getElementById('adv-tag'),
+				training: document.getElementById('adv-training'),
 				description: document.getElementById('adv-description'),
 				components: document.getElementById('adv-components'),
 				donor: document.getElementById('adv-donor'),
@@ -2943,6 +2947,7 @@ function mtl_render_inventory_page() {
 					brand: advFields.brand.value.trim().toLowerCase(),
 					taxonomy: window.mtlTaxonomySelection(document.getElementById('mtl-inv-tx')),
 					tags: selectedValues(advFields.tag),
+					trainings: selectedValues(advFields.training),
 					description: advFields.description.value.trim().toLowerCase(),
 					components: advFields.components.value.trim().toLowerCase(),
 					donor: advFields.donor.value.trim().toLowerCase(),
@@ -2983,6 +2988,7 @@ function mtl_render_inventory_page() {
 					if (visible && f.brand && !d.brand.includes(f.brand)) visible = false;
 					if (visible && !window.mtlTaxonomyMatches(f.taxonomy, d.categoryIds, d.subcategoryIds)) visible = false;
 					if (visible && !listMatchesAny(d.tags, f.tags)) visible = false;
+					if (visible && !window.mtlTrainingMatches(f.trainings, d.trainingIds)) visible = false;
 					if (visible && f.description && !d.description.includes(f.description)) visible = false;
 					if (visible && f.components && !d.components.includes(f.components)) visible = false;
 					if (visible && f.donor && !d.donor.includes(f.donor)) visible = false;

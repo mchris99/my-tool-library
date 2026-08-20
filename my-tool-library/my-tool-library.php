@@ -6040,6 +6040,36 @@ function mtl_taxonomy_where( $sel_cats, $sel_subs, $tool_column = 't.tool_id' ) 
 }
 
 /**
+ * Renders the "Requires Training" filter used by the staff advanced searches.
+ *
+ * Three states, not two. Nothing selected leaves the filter off and every tool
+ * through, including tools that require no training at all. "Any" matches a
+ * tool that requires at least one training, whichever it is, which is the same
+ * answer as selecting every training in the list. Naming specific trainings
+ * matches a tool requiring at least one of them.
+ *
+ * Public catalog does not get this: it is a staff question about what a tool
+ * demands, not something a browsing member is choosing between.
+ *
+ * @param array  $trainings  Training rows (training_id, training_name).
+ * @param string $element_id id for the select, so both pages stay distinct.
+ */
+function mtl_training_filter_select( $trainings, $element_id ) {
+	?>
+	<div class="mtl-adv-multi">
+		<label for="<?php echo esc_attr( $element_id ); ?>">Requires Training</label>
+		<select id="<?php echo esc_attr( $element_id ); ?>" multiple size="4">
+			<option value="any">Any training</option>
+			<?php foreach ( $trainings as $training ) : ?>
+				<option value="<?php echo esc_attr( $training->training_id ); ?>"><?php echo esc_html( $training->training_name ); ?></option>
+			<?php endforeach; ?>
+		</select>
+		<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick several.</small>
+	</div>
+	<?php
+}
+
+/**
  * The JavaScript half of the OR rule, and the twin of mtl_taxonomy_where().
  *
  * The admin pages render every row and hide the non-matches, so they cannot
@@ -6051,6 +6081,8 @@ function mtl_taxonomy_where( $sel_cats, $sel_subs, $tool_column = 't.tool_id' ) 
  *                                                the tag selects need
  *   mtlTaxonomyClear( tree )                  -> unticks it, and re-enables
  *                                                children a parent had covered
+ *   mtlTrainingMatches( picked, csvIds )      -> bool, with "any" meaning
+ *                                                "requires at least one"
  *
  * Matching is by id, not by name, so it agrees with the SQL exactly and is not
  * confused by two categories owning a sub-category of the same name. An empty
@@ -6103,6 +6135,18 @@ function mtl_taxonomy_matcher_script() {
 
 		window.mtlIdsIntersect = function ( csvIds, picked ) {
 			return ! picked.length || anyIn( csvIds, picked );
+		};
+
+		window.mtlTrainingMatches = function ( picked, csvIds ) {
+			if ( ! picked.length ) {
+				return true;
+			}
+			var rowIds = csvIds ? String( csvIds ).split( ',' ) : [];
+			// "Any" is the whole list, so it wins over anything picked with it.
+			if ( picked.indexOf( 'any' ) !== -1 ) {
+				return rowIds.length > 0;
+			}
+			return anyIn( csvIds, picked );
 		};
 
 		window.mtlTaxonomyClear = function ( tree ) {

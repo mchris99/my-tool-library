@@ -429,6 +429,8 @@ A training records that a member has been shown how to use something safely. Eac
 
 **Requiring a training for a tool.** On the **Inventory** page, add or edit a tool and pick from **Required Trainings**. At checkout, staff see a warning naming any required training the member has not completed or has let lapse. It does not stop the loan.
 
+**Finding tools by what they require.** Advanced Search on the **Inventory** and **Loans & Reservations** pages has a **Requires Training** filter. Pick one or more trainings to see the tools that need them. Pick **Any training** to see every tool that needs some training, whichever it is. Leave it empty and it does not filter at all.
+
 **Finding qualified members.** On the **Membership** page, open **Advanced Search** and use the **Trainings** dropdown. Tick one or more to show only members who hold _all_ of them, or use **Select all** for members who've completed everything. This matches on **current** certifications only.
 
 **What members see.** On their own account page, the badges near the top show only what they're currently certified in. A collapsible **Trainings** section below lists everything they've ever completed, expired included, with dates and status.
