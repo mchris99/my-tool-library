@@ -2167,11 +2167,17 @@ function mtl_render_inventory_page() {
             t.private_notes,
             GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,
             GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags
+            , GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories
+            , GROUP_CONCAT(DISTINCT tr.training_name ORDER BY tr.training_name SEPARATOR ', ') AS required_trainings
         FROM {$tbl_inventory} t
         LEFT JOIN {$tbl_cat_map} tcm ON t.tool_id = tcm.tool_id
         LEFT JOIN {$tbl_categories} c ON tcm.category_id = c.category_id
         LEFT JOIN {$tbl_tag_map} ttm ON t.tool_id = ttm.tool_id
         LEFT JOIN {$tbl_tags} tg ON ttm.tag_id = tg.tag_id
+        LEFT JOIN {$tbl_subcat_map} tsm ON t.tool_id = tsm.tool_id
+        LEFT JOIN {$tbl_subcategories} sc ON tsm.subcategory_id = sc.subcategory_id
+        LEFT JOIN {$tbl_tool_training_map} ttr ON t.tool_id = ttr.tool_id
+        LEFT JOIN {$tbl_trainings} tr ON ttr.training_id = tr.training_id
         GROUP BY t.tool_id
         ORDER BY t.tool_id DESC
     "
@@ -2630,6 +2636,16 @@ function mtl_render_inventory_page() {
 
 									<div class="mtl-detail-col">
 										<strong>Description</strong>
+										<?php if ( ! empty( $item->subcategories ) ) : ?>
+											<strong>Sub-categories</strong>
+											<p><?php echo mtl_render_pill_list( $item->subcategories ); ?></p>
+										<?php endif; ?>
+
+										<?php if ( ! empty( $item->required_trainings ) ) : ?>
+											<strong>Required Trainings</strong>
+											<p><?php echo mtl_render_pill_list( $item->required_trainings ); ?></p>
+										<?php endif; ?>
+
 										<p><?php echo $item->description ? nl2br( esc_html( stripslashes( $item->description ) ) ) : '<span style="color:#999;">&mdash;</span>'; ?></p>
 
 										<strong>Components</strong>
