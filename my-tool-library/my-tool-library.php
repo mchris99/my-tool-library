@@ -5921,6 +5921,162 @@ function mtl_can_bulk_import() {
 	return mtl_can_manage_settings();
 }
 
+// ==========================================================================
+// TAXONOMY TREE FILTER
+//
+// Categories and sub-categories are chosen together, in one control, with OR
+// between them: ticking "Automotive" matches every Automotive tool whether or
+// not it has a sub-category, and ticking "Electrical > Testing & Metering"
+// matches that sub-category alone. Nothing expands a parent into its children,
+// because tool_category_mappings is independent of tool_subcategory_mappings.
+//
+// The rule is written TWICE, once as SQL for the public catalog and once as
+// JavaScript for the admin pages, which filter rendered rows rather than
+// querying. mtl_taxonomy_where() and the matcher in
+// mtl_taxonomy_tree_script() are a pair and must agree; change one, change the
+// other, or the catalog and Inventory will disagree about the same tool.
+//
+// Within this control the selections are OR'd. Across controls (tags, status,
+// and so on) they are AND'd, which is how the filters already behaved.
+// ==========================================================================
+
+/**
+ * Rows for the tree, parents each carrying their children.
+ *
+ * @return array List of objects: category_id, category_name, children[].
+ */
+function mtl_taxonomy_tree_rows() {
+	global $wpdb;
+
+	$tbl_cats    = $wpdb->prefix . 'tool_categories';
+	$tbl_subcats = $wpdb->prefix . 'tool_subcategories';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, no request-derived data.
+	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_cats} ORDER BY category_name ASC" );
+	$subs       = $wpdb->get_results( "SELECT subcategory_id, category_id, subcategory_name FROM {$tbl_subcats} ORDER BY subcategory_name ASC" );
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	$by_parent = array();
+	foreach ( (array) $subs as $sub ) {
+		$by_parent[ (int) $sub->category_id ][] = $sub;
+	}
+	foreach ( (array) $categories as $cat ) {
+		$cat->children = isset( $by_parent[ (int) $cat->category_id ] ) ? $by_parent[ (int) $cat->category_id ] : array();
+	}
+	return (array) $categories;
+}
+
+/**
+ * Renders the category / sub-category tree as nested checkboxes.
+ *
+ * Used by the public catalog and by both admin pages, so the control reads the
+ * same everywhere. The catalog submits it as a form; the admin pages read the
+ * same checkboxes from JavaScript.
+ *
+ * @param array  $rows      From mtl_taxonomy_tree_rows().
+ * @param array  $sel_cats  Ticked category ids.
+ * @param array  $sel_subs  Ticked sub-category ids.
+ * @param string $id_prefix Prefix for element ids, so two trees can coexist.
+ */
+function mtl_taxonomy_tree( $rows, $sel_cats = array(), $sel_subs = array(), $id_prefix = 'mtl-tx' ) {
+	if ( ! $rows ) {
+		echo '<p class="mtl-tx-empty">No categories yet.</p>';
+		return;
+	}
+	?>
+	<div class="mtl-tx-tree" id="<?php echo esc_attr( $id_prefix ); ?>">
+		<?php foreach ( $rows as $cat ) : ?>
+			<?php $cat_id = (int) $cat->category_id; ?>
+			<div class="mtl-tx-branch">
+				<label class="mtl-tx-parent">
+					<input type="checkbox" name="mtl_cat[]" value="<?php echo esc_attr( $cat_id ); ?>" data-tx-parent="<?php echo esc_attr( $cat_id ); ?>" <?php checked( in_array( $cat_id, $sel_cats, true ) ); ?>>
+					<span><?php echo esc_html( $cat->category_name ); ?></span>
+				</label>
+				<?php foreach ( $cat->children as $sub ) : ?>
+					<?php $sub_id = (int) $sub->subcategory_id; ?>
+					<label class="mtl-tx-child">
+						<input type="checkbox" name="mtl_subcat[]" value="<?php echo esc_attr( $sub_id ); ?>" data-tx-child-of="<?php echo esc_attr( $cat_id ); ?>" <?php checked( in_array( $sub_id, $sel_subs, true ) ); ?>>
+						<span><?php echo esc_html( $sub->subcategory_name ); ?></span>
+					</label>
+				<?php endforeach; ?>
+			</div>
+		<?php endforeach; ?>
+	</div>
+	<?php
+}
+
+/**
+ * The SQL half of the OR rule. See the block comment above.
+ *
+ * @param array  $sel_cats    Ticked category ids.
+ * @param array  $sel_subs    Ticked sub-category ids.
+ * @param string $tool_column Tool id column to correlate against, e.g. 't.tool_id'.
+ * @return array array( where_fragment_or_empty_string, args[] )
+ */
+function mtl_taxonomy_where( $sel_cats, $sel_subs, $tool_column = 't.tool_id' ) {
+	global $wpdb;
+
+	if ( ! $sel_cats && ! $sel_subs ) {
+		return array( '', array() );
+	}
+
+	$tbl_cat_map    = $wpdb->prefix . 'tool_category_mappings';
+	$tbl_subcat_map = $wpdb->prefix . 'tool_subcategory_mappings';
+
+	$parts = array();
+	$args  = array();
+	if ( $sel_cats ) {
+		$ph      = implode( ',', array_fill( 0, count( $sel_cats ), '%d' ) );
+		$parts[] = "EXISTS (SELECT 1 FROM {$tbl_cat_map} txc WHERE txc.tool_id = {$tool_column} AND txc.category_id IN ({$ph}))";
+		$args    = array_merge( $args, $sel_cats );
+	}
+	if ( $sel_subs ) {
+		$ph      = implode( ',', array_fill( 0, count( $sel_subs ), '%d' ) );
+		$parts[] = "EXISTS (SELECT 1 FROM {$tbl_subcat_map} txs WHERE txs.tool_id = {$tool_column} AND txs.subcategory_id IN ({$ph}))";
+		$args    = array_merge( $args, $sel_subs );
+	}
+
+	return array( '(' . implode( ' OR ', $parts ) . ')', $args );
+}
+
+/**
+ * Styling and behaviour for the tree: indentation, and greying a branch's
+ * children out while its parent is ticked.
+ *
+ * A ticked parent already matches every tool in that category, so its children
+ * could only ever be redundant. Disabling them says so, and keeps redundant
+ * ids out of the query string.
+ */
+function mtl_taxonomy_tree_style() {
+	?>
+	<style>
+		.mtl-tx-tree { max-height: 220px; overflow-y: auto; border: 1px solid #ccd0d4; background: #fff; padding: 8px 10px; border-radius: 4px; }
+		.mtl-tx-branch { margin-bottom: 6px; }
+		.mtl-tx-parent, .mtl-tx-child { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
+		.mtl-tx-parent { font-weight: 600; }
+		.mtl-tx-child { margin-left: 22px; font-weight: 400; }
+		.mtl-tx-child.mtl-tx-covered { opacity: 0.5; }
+		.mtl-tx-empty { color: #666; font-size: 0.85em; margin: 0; }
+	</style>
+	<script>
+		document.querySelectorAll( '.mtl-tx-tree' ).forEach( function ( tree ) {
+			var sync = function () {
+				tree.querySelectorAll( '[data-tx-parent]' ).forEach( function ( parent ) {
+					var id = parent.getAttribute( 'data-tx-parent' );
+					tree.querySelectorAll( '[data-tx-child-of="' + id + '"]' ).forEach( function ( child ) {
+						child.disabled = parent.checked;
+						child.closest( '.mtl-tx-child' ).classList.toggle( 'mtl-tx-covered', parent.checked );
+					} );
+				} );
+			};
+			tree.addEventListener( 'change', sync );
+			sync();
+		} );
+	</script>
+	<?php
+}
+
+
 // ADMIN MENUS: Register the portal pages.
 // add_submenu_page() both places a sidebar link AND registers the page's
 // routing/render callback/capability check, so all six must stay

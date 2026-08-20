@@ -291,21 +291,22 @@ function mtl_render_shop_page() {
 		return '<div class="mtl-front-card"><p>Our tool catalog is being set up. Please check back soon.</p></div>';
 	}
 
-	// Lookup data for the advanced panel's category/tag pickers. Fetched here,
-	// before the filters are read, because the selections are validated
-	// against it below.
-	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_cats} ORDER BY category_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-	$tags_list  = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-	// Qualified for display, since a bare sub-category name is only unique
-	// within its category.
-	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, no request-derived data.
-	$subcats_list = $wpdb->get_results(
-		"SELECT s.subcategory_id, s.subcategory_name, c.category_name
-		 FROM {$tbl_subcats} s
-		 INNER JOIN {$tbl_cats} c ON c.category_id = s.category_id
-		 ORDER BY c.category_name ASC, s.subcategory_name ASC"
-	);
-	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	// Lookup data for the advanced panel, fetched before the filters are read
+	// because the selections are validated against it below. $tx_rows carries
+	// the categories and their sub-categories together, so it is also what the
+	// tree renders from.
+	$tx_rows = mtl_taxonomy_tree_rows();
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
+	$tags_list = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags} ORDER BY tag_name ASC" );
+
+	$valid_category_ids    = array();
+	$valid_subcategory_ids = array();
+	foreach ( $tx_rows as $tx_cat ) {
+		$valid_category_ids[] = (int) $tx_cat->category_id;
+		foreach ( $tx_cat->children as $tx_sub ) {
+			$valid_subcategory_ids[] = (int) $tx_sub->subcategory_id;
+		}
+	}
 
 	// Read + sanitize the request parameters.
 	$q        = isset( $_GET['mtl_q'] ) ? sanitize_text_field( wp_unslash( $_GET['mtl_q'] ) ) : '';
@@ -331,9 +332,9 @@ function mtl_render_shop_page() {
 		$requested = array_map( 'intval', (array) wp_unslash( $_GET[ $key ] ) );
 		return array_values( array_unique( array_intersect( $requested, $valid_ids ) ) );
 	};
-	$a_cats        = $id_list_param( 'mtl_cat', array_map( 'intval', wp_list_pluck( $categories, 'category_id' ) ) );
+	$a_cats        = $id_list_param( 'mtl_cat', $valid_category_ids );
 	$a_tags        = $id_list_param( 'mtl_tag', array_map( 'intval', wp_list_pluck( $tags_list, 'tag_id' ) ) );
-	$a_subcats     = $id_list_param( 'mtl_subcat', array_map( 'intval', wp_list_pluck( $subcats_list, 'subcategory_id' ) ) );
+	$a_subcats     = $id_list_param( 'mtl_subcat', $valid_subcategory_ids );
 
 	$advanced_active = ( '' !== $a_name || '' !== $a_brand || $a_cats || $a_subcats || $a_tags || '' !== $a_status );
 
@@ -410,15 +411,12 @@ function mtl_render_shop_page() {
 	// Plumbing widens the results rather than narrowing them to tools filed
 	// under both. The two filters still combine with each other, and with
 	// everything else here, as AND.
-	if ( $a_cats ) {
-		$cat_ph  = implode( ',', array_fill( 0, count( $a_cats ), '%d' ) );
-		$where[] = "EXISTS (SELECT 1 FROM {$tbl_cat_map} fcm WHERE fcm.tool_id = t.tool_id AND fcm.category_id IN ({$cat_ph}))";
-		$args    = array_merge( $args, $a_cats );
-	}
-	if ( $a_subcats ) {
-		$sub_ph  = implode( ',', array_fill( 0, count( $a_subcats ), '%d' ) );
-		$where[] = "EXISTS (SELECT 1 FROM {$tbl_subcat_map} fsm WHERE fsm.tool_id = t.tool_id AND fsm.subcategory_id IN ({$sub_ph}))";
-		$args    = array_merge( $args, $a_subcats );
+	// Categories and sub-categories are one control with OR between them; see
+	// the TAXONOMY TREE FILTER block in my-tool-library.php.
+	list( $tx_where, $tx_args ) = mtl_taxonomy_where( $a_cats, $a_subcats, 't.tool_id' );
+	if ( '' !== $tx_where ) {
+		$where[] = $tx_where;
+		$args    = array_merge( $args, $tx_args );
 	}
 	if ( $a_tags ) {
 		$tag_ph  = implode( ',', array_fill( 0, count( $a_tags ), '%d' ) );
@@ -1267,24 +1265,12 @@ function mtl_render_shop_page() {
 						// means "any", and picking several widens the results to
 						// tools matching any one of them.
 						?>
-						<div class="mtl-shop-adv-multi">
-							<label for="mtl-a-cat">Categories</label>
-							<select id="mtl-a-cat" name="mtl_cat[]" multiple size="4">
-								<?php foreach ( $categories as $cat ) : ?>
-									<option value="<?php echo esc_attr( $cat->category_id ); ?>" <?php echo in_array( (int) $cat->category_id, $a_cats, true ) ? 'selected' : ''; ?>><?php echo esc_html( $cat->category_name ); ?></option>
-								<?php endforeach; ?>
-							</select>
-							<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick or unpick several.</small>
+						<div class="mtl-shop-adv-multi mtl-shop-adv-tree">
+							<label>Categories</label>
+							<?php mtl_taxonomy_tree( $tx_rows, $a_cats, $a_subcats, 'mtl-shop-tx' ); ?>
+							<small>Tick any combination. A category on its own matches everything in it, including tools with no sub-category.</small>
 						</div>
-						<div class="mtl-shop-adv-multi">
-							<label for="mtl-a-subcat">Sub-categories</label>
-							<select id="mtl-a-subcat" name="mtl_subcat[]" multiple size="4">
-								<?php foreach ( $subcats_list as $sc ) : ?>
-									<option value="<?php echo esc_attr( $sc->subcategory_id ); ?>" <?php echo in_array( (int) $sc->subcategory_id, $a_subcats, true ) ? 'selected' : ''; ?>><?php echo esc_html( $sc->category_name . ' > ' . $sc->subcategory_name ); ?></option>
-								<?php endforeach; ?>
-							</select>
-							<small>Leave empty for any. Named by category, since two categories can share a sub-category name.</small>
-						</div>
+						<?php mtl_taxonomy_tree_style(); ?>
 						<div class="mtl-shop-adv-multi">
 							<label for="mtl-a-tag">Tags</label>
 							<select id="mtl-a-tag" name="mtl_tag[]" multiple size="4">
