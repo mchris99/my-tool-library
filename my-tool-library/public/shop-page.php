@@ -1346,7 +1346,7 @@ function mtl_render_shop_page() {
 			</div>
 		</div>
 
-		<p class="mtl-shop-count"><strong><?php echo esc_html( number_format( $total ) ); ?></strong> <?php echo esc_html( $result_word ); ?> found<?php echo ( $total > 0 ) ? ' (page ' . esc_html( $page_no ) . ' of ' . esc_html( $total_pages ) : ''; ?></p>
+		<p class="mtl-shop-count"><strong><?php echo esc_html( number_format( $total ) ); ?></strong> <?php echo esc_html( $result_word ); ?> found<?php echo ( $total > 0 ) ? ' (page ' . esc_html( $page_no ) . ' of ' . esc_html( $total_pages ) . ')' : ''; ?></p>
 
 		<div class="mtl-shop-layout">
 			<div class="mtl-shop-main">
