@@ -833,6 +833,29 @@ function mtl_render_inventory_page() {
 								return isset( $columns[ $name ], $row[ $columns[ $name ] ] ) ? trim( (string) $row[ $columns[ $name ] ] ) : '';
 							};
 
+							// Resolves one semicolon-separated column of names against a
+							// name-to-id lookup.
+							//
+							// An unknown name does not fail the row. Categories, tags and
+							// trainings are all optional, so the name is skipped and
+							// reported as a note. sanitize_text_field() runs here rather
+							// than only at output, as defence in depth alongside the
+							// esc_html() applied when the warnings render.
+							//
+							// Sub-categories do not come through here: their key is
+							// qualified, and they have a second way to be skipped.
+							$resolve_names = function ( $row, $row_number, $column, $lookup, $noun ) use ( &$bulk_warnings, $get_col ) {
+								$ids = array();
+								foreach ( array_filter( array_map( 'sanitize_text_field', explode( ';', $get_col( $row, $column ) ) ) ) as $name ) {
+									if ( isset( $lookup[ strtolower( $name ) ] ) ) {
+										$ids[] = $lookup[ strtolower( $name ) ];
+									} else {
+										$bulk_warnings[] = 'Row ' . $row_number . ': unknown ' . $noun . ' "' . $name . '" was skipped.';
+									}
+								}
+								return $ids;
+							};
+
 							$row_number      = 1; // First data row is row 2, matching what a spreadsheet program would show.
 							$bulk_import_ran = true;
 							$max_bulk_rows   = 5000; // Sanity cap so a huge file can't tie up the request indefinitely.
@@ -908,25 +931,14 @@ function mtl_render_inventory_page() {
 									continue;
 								}
 
-								// Unknown category/tag names do not fail the row; they are just
-								// skipped and reported as notes, since categories/tags are optional.
-								// sanitize_text_field() runs here (not just at output) as defense
-								// in depth alongside the esc_html() applied when warnings render.
-								$row_category_ids = array();
-								foreach ( array_filter( array_map( 'sanitize_text_field', explode( ';', $get_col( $row, 'categories' ) ) ) ) as $name ) {
-									if ( isset( $category_lookup[ strtolower( $name ) ] ) ) {
-										$row_category_ids[] = $category_lookup[ strtolower( $name ) ];
-									} else {
-										$bulk_warnings[] = 'Row ' . $row_number . ': unknown category "' . $name . '" was skipped.';
-									}
-								}
+								$row_category_ids = $resolve_names( $row, $row_number, 'categories', $category_lookup, 'category' );
 
 								// Written qualified, as "Woodworking > Saws". A sub-category
 								// whose category the row did not also list is skipped: the
 								// mapping row would have nothing to hang from.
 								$row_subcategory_pairs = array();
 								foreach ( array_filter( array_map( 'sanitize_text_field', explode( ';', $get_col( $row, 'subcategories' ) ) ) ) as $name ) {
-									$key = strtolower( trim( preg_replace( '/s*>s*/', ' > ', $name ) ) );
+									$key = strtolower( trim( preg_replace( '/\s*>\s*/', ' > ', $name ) ) );
 									if ( ! isset( $subcategory_lookup[ $key ] ) ) {
 										$bulk_warnings[] = 'Row ' . $row_number . ': unknown sub-category "' . $name . '" was skipped. Write them as "Category > Sub-category".';
 										continue;
@@ -939,14 +951,7 @@ function mtl_render_inventory_page() {
 									$row_subcategory_pairs[ $pair['category_id'] ] = $pair['subcategory_id'];
 								}
 
-								$row_training_ids = array();
-								foreach ( array_filter( array_map( 'sanitize_text_field', explode( ';', $get_col( $row, 'trainings' ) ) ) ) as $name ) {
-									if ( isset( $training_lookup[ strtolower( $name ) ] ) ) {
-										$row_training_ids[] = $training_lookup[ strtolower( $name ) ];
-									} else {
-										$bulk_warnings[] = 'Row ' . $row_number . ': unknown training "' . $name . '" was skipped.';
-									}
-								}
+								$row_training_ids = $resolve_names( $row, $row_number, 'trainings', $training_lookup, 'training' );
 
 								$row_tag_ids = array();
 								foreach ( array_filter( array_map( 'sanitize_text_field', explode( ';', $get_col( $row, 'tags' ) ) ) ) as $name ) {
@@ -2156,7 +2161,7 @@ function mtl_render_inventory_page() {
 	<?php endif; ?>
 
 	<?php mtl_subcategory_picker_script(); ?>
-	<?php mtl_taxonomy_tree_style(); ?>
+	<?php mtl_taxonomy_tree_assets(); ?>
 	<?php mtl_taxonomy_matcher_script(); ?>
 
 	<?php
@@ -2351,11 +2356,7 @@ function mtl_render_inventory_page() {
 			<fieldset class="mtl-adv-group">
 				<legend>Classification &amp; Value</legend>
 				<div class="mtl-adv-fields">
-					<?php
-					// The category tree is OR within itself: a category on its own
-					// matches everything in it, a sub-category matches only that.
-					// Tags stay a plain multi-select, and the controls AND together.
-					?>
+					<?php // See the TAXONOMY TREE FILTER block in my-tool-library.php. ?>
 					<div class="mtl-adv-multi">
 						<label>Categories</label>
 						<?php mtl_taxonomy_tree( $tx_rows, array(), array(), 'mtl-inv-tx' ); ?>
@@ -2655,7 +2656,6 @@ function mtl_render_inventory_page() {
 									</div>
 
 									<div class="mtl-detail-col">
-										<strong>Description</strong>
 										<?php if ( ! empty( $item->subcategories ) ) : ?>
 											<strong>Sub-categories</strong>
 											<p><?php echo mtl_render_pill_list( $item->subcategories ); ?></p>
@@ -2666,6 +2666,7 @@ function mtl_render_inventory_page() {
 											<p><?php echo mtl_render_pill_list( $item->required_trainings ); ?></p>
 										<?php endif; ?>
 
+										<strong>Description</strong>
 										<p><?php echo $item->description ? nl2br( esc_html( stripslashes( $item->description ) ) ) : '<span style="color:#999;">&mdash;</span>'; ?></p>
 
 										<strong>Components</strong>
@@ -3105,13 +3106,7 @@ function mtl_render_inventory_page() {
 						el.value = '';
 					}
 				});
-				if (invTaxonomyTree) {
-					invTaxonomyTree.querySelectorAll('input[type="checkbox"]').forEach(function(box) {
-						box.checked = false;
-					});
-					// Re-enables children that a ticked parent had covered.
-					invTaxonomyTree.dispatchEvent(new Event('change', { bubbles: true }));
-				}
+				window.mtlTaxonomyClear(invTaxonomyTree);
 				applyFilters();
 			});
 

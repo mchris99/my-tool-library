@@ -1270,7 +1270,7 @@ function mtl_render_shop_page() {
 							<?php mtl_taxonomy_tree( $tx_rows, $a_cats, $a_subcats, 'mtl-shop-tx' ); ?>
 							<small>Tick any combination. A category on its own matches everything in it, including tools with no sub-category.</small>
 						</div>
-						<?php mtl_taxonomy_tree_style(); ?>
+						<?php mtl_taxonomy_tree_assets(); ?>
 						<div class="mtl-shop-adv-multi">
 							<label for="mtl-a-tag">Tags</label>
 							<select id="mtl-a-tag" name="mtl_tag[]" multiple size="4">

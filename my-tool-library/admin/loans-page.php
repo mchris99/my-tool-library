@@ -685,9 +685,8 @@ function mtl_render_loans_page() {
 	}
 
 	// --- Per-tool taxonomy, for the advanced filters ---
-	// One query per relationship rather than one per row: these rows are loans
-	// and reservations, so the same tool appears many times over. Same reason
-	// the two totals above are maps.
+	// Mapped, not queried per row: one tool recurs across many loans and
+	// reservations. Same reason as the two totals above.
 	$tbl_cat_map    = $wpdb->prefix . 'tool_category_mappings';
 	$tbl_subcat_map = $wpdb->prefix . 'tool_subcategory_mappings';
 	$tbl_tag_map    = $wpdb->prefix . 'tool_tag_mappings';
@@ -1479,11 +1478,11 @@ function mtl_render_loans_page() {
 	</div>
 
 	<div id="mtl-lr-advanced-search" style="display: none; background: #fff; border: 1px solid #ccd0d4; border-radius: 4px; padding: 15px 20px; margin-bottom: 15px;">
+		<?php mtl_taxonomy_tree_assets(); ?>
+		<?php mtl_taxonomy_matcher_script(); ?>
 		<div class="mtl-adv-groups">
 
 			<fieldset class="mtl-adv-group">
-				<?php mtl_taxonomy_tree_style(); ?>
-				<?php mtl_taxonomy_matcher_script(); ?>
 				<legend>Tool &amp; Member</legend>
 				<div class="mtl-adv-fields">
 					<div>
@@ -1759,17 +1758,12 @@ function mtl_render_loans_page() {
 			const advPanel = document.getElementById('mtl-lr-advanced-search');
 			const clearBtn = document.getElementById('mtl-lr-clear-filters');
 
-			// The tree and the tag select sit outside advFields: one is a group of
-			// checkboxes, the other needs its ids read rather than its value.
+			// Read once per filter pass rather than per row, and so held here
+			// rather than in advFields, whose entries are all read by .value.
 			const lrTaxonomyTree = document.getElementById('mtl-lr-tx');
 			const lrTagSelect = document.getElementById('lr-adv-tag');
-			function lrTaxonomySelection() {
-				return window.mtlTaxonomySelection(lrTaxonomyTree);
-			}
-			function lrSelectedTagIds() {
-				if (!lrTagSelect) return [];
-				return Array.from(lrTagSelect.selectedOptions).map(function(opt) { return opt.value; });
-			}
+			let lrTaxonomy = { cats: [], subs: [] };
+			let lrPickedTags = [];
 
 			const advFields = {
 				tool: document.getElementById('adv-lr-tool'),
@@ -1808,14 +1802,9 @@ function mtl_render_loans_page() {
 				if (member && !d.member.includes(member)) return false;
 				if (advFields.type.value && d.type !== advFields.type.value) return false;
 
-				// Tool taxonomy. OR inside the tree, OR inside tags, AND between
-				// the two, matching how the other controls already combine.
-				if (!window.mtlTaxonomyMatches(lrTaxonomySelection(), d.categoryIds, d.subcategoryIds)) return false;
-				const pickedTags = lrSelectedTagIds();
-				if (pickedTags.length) {
-					const rowTags = d.tagIds ? d.tagIds.split(',') : [];
-					if (!pickedTags.some(function(id) { return rowTags.indexOf(id) !== -1; })) return false;
-				}
+				// See the TAXONOMY TREE FILTER block in my-tool-library.php.
+				if (!window.mtlTaxonomyMatches(lrTaxonomy, d.categoryIds, d.subcategoryIds)) return false;
+				if (!window.mtlIdsIntersect(d.tagIds, lrPickedTags)) return false;
 
 				// d.loan/d.reserved carry a full timestamp, so range-filtering
 				// compares just the date portion (first 10 chars) against the
@@ -1850,6 +1839,8 @@ function mtl_render_loans_page() {
 			}
 
 			function applyFilters() {
+				lrTaxonomy = window.mtlTaxonomySelection(lrTaxonomyTree);
+				lrPickedTags = lrTagSelect ? Array.from(lrTagSelect.selectedOptions).map(function(opt) { return opt.value; }) : [];
 				tbody.querySelectorAll('tr.mtl-lr-row').forEach(function(row) {
 					row.dataset.matched = rowMatches(row) ? '1' : '0';
 				});
@@ -1945,11 +1936,7 @@ function mtl_render_loans_page() {
 				Object.values(advFields).forEach(function(el) {
 					el.value = '';
 				});
-				if (lrTaxonomyTree) {
-					lrTaxonomyTree.querySelectorAll('input[type="checkbox"]').forEach(function(box) { box.checked = false; });
-					// Re-enables children that a ticked parent had covered.
-					lrTaxonomyTree.dispatchEvent(new Event('change', { bubbles: true }));
-				}
+				window.mtlTaxonomyClear(lrTaxonomyTree);
 				if (lrTagSelect) {
 					Array.from(lrTagSelect.options).forEach(function(opt) { opt.selected = false; });
 				}

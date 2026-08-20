@@ -5933,7 +5933,7 @@ function mtl_can_bulk_import() {
 // The rule is written TWICE, once as SQL for the public catalog and once as
 // JavaScript for the admin pages, which filter rendered rows rather than
 // querying. mtl_taxonomy_where() and the matcher in
-// mtl_taxonomy_tree_script() are a pair and must agree; change one, change the
+// mtl_taxonomy_matcher_script() are a pair and must agree; change one, change the
 // other, or the catalog and Inventory will disagree about the same tool.
 //
 // Within this control the selections are OR'd. Across controls (tags, status,
@@ -6047,13 +6047,18 @@ function mtl_taxonomy_where( $sel_cats, $sel_subs, $tool_column = 't.tool_id' ) 
  *
  *   mtlTaxonomySelection( tree )              -> { cats: [ids], subs: [ids] }
  *   mtlTaxonomyMatches( sel, catIds, subIds ) -> bool
+ *   mtlIdsIntersect( csvIds, picked )         -> bool, the same any-of test
+ *                                                the tag selects need
+ *   mtlTaxonomyClear( tree )                  -> unticks it, and re-enables
+ *                                                children a parent had covered
  *
  * Matching is by id, not by name, so it agrees with the SQL exactly and is not
  * confused by two categories owning a sub-category of the same name. An empty
  * selection matches everything, which is what "leave it blank for any" means.
  *
  * A ticked parent is included on its own, never expanded into its children:
- * the category mapping already covers every tool in that category.
+ * the category mapping already covers every tool in that category. Its
+ * children are read as disabled and skipped, since they could only repeat it.
  */
 function mtl_taxonomy_matcher_script() {
 	?>
@@ -6064,8 +6069,6 @@ function mtl_taxonomy_matcher_script() {
 				return sel;
 			}
 			tree.querySelectorAll( 'input[type="checkbox"]:checked' ).forEach( function ( box ) {
-				// Disabled children sit under a ticked parent, which already
-				// covers them. Reading them would only add redundant ids.
 				if ( box.disabled ) {
 					return;
 				}
@@ -6082,27 +6085,44 @@ function mtl_taxonomy_matcher_script() {
 			if ( ! sel.cats.length && ! sel.subs.length ) {
 				return true;
 			}
-			var rowCats = catIds ? String( catIds ).split( ',' ) : [];
-			var rowSubs = subIds ? String( subIds ).split( ',' ) : [];
-			return sel.cats.some( function ( id ) {
-				return rowCats.indexOf( id ) !== -1;
-			} ) || sel.subs.some( function ( id ) {
-				return rowSubs.indexOf( id ) !== -1;
+			return window.mtlIdsIntersect( catIds, sel.cats ) || window.mtlIdsIntersect( subIds, sel.subs );
+		};
+
+		window.mtlIdsIntersect = function ( csvIds, picked ) {
+			if ( ! picked.length ) {
+				return true;
+			}
+			var rowIds = csvIds ? String( csvIds ).split( ',' ) : [];
+			return picked.some( function ( id ) {
+				return rowIds.indexOf( id ) !== -1;
 			} );
+		};
+
+		window.mtlTaxonomyClear = function ( tree ) {
+			if ( ! tree ) {
+				return;
+			}
+			tree.querySelectorAll( 'input[type="checkbox"]' ).forEach( function ( box ) {
+				box.checked = false;
+			} );
+			tree.dispatchEvent( new Event( 'change', { bubbles: true } ) );
 		};
 	</script>
 	<?php
 }
 
 /**
- * Styling and behaviour for the tree: indentation, and greying a branch's
+ * Style and behaviour for the tree: indentation, and greying a branch's
  * children out while its parent is ticked.
  *
  * A ticked parent already matches every tool in that category, so its children
  * could only ever be redundant. Disabling them says so, and keeps redundant
  * ids out of the query string.
+ *
+ * Callers emit this wherever suits their page, sometimes above the tree markup,
+ * so it waits for the document rather than assuming the tree is there.
  */
-function mtl_taxonomy_tree_style() {
+function mtl_taxonomy_tree_assets() {
 	?>
 	<style>
 		.mtl-tx-tree { max-height: 220px; overflow-y: auto; border: 1px solid #ccd0d4; background: #fff; padding: 8px 10px; border-radius: 4px; }
@@ -6114,8 +6134,6 @@ function mtl_taxonomy_tree_style() {
 		.mtl-tx-empty { color: #666; font-size: 0.85em; margin: 0; }
 	</style>
 	<script>
-	// Callers emit this wherever suits their page, sometimes before the tree
-	// markup, so wire up once the document has it.
 	( function () {
 		var wire = function () {
 			document.querySelectorAll( '.mtl-tx-tree' ).forEach( function ( tree ) {
