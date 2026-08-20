@@ -684,6 +684,33 @@ function mtl_render_loans_page() {
 		$tool_active_res[ (int) $row->tool_id ] = (int) $row->total;
 	}
 
+	// --- Per-tool taxonomy, for the advanced filters ---
+	// One query per relationship rather than one per row: these rows are loans
+	// and reservations, so the same tool appears many times over. Same reason
+	// the two totals above are maps.
+	$tbl_cat_map    = $wpdb->prefix . 'tool_category_mappings';
+	$tbl_subcat_map = $wpdb->prefix . 'tool_subcategory_mappings';
+	$tbl_tag_map    = $wpdb->prefix . 'tool_tag_mappings';
+
+	$tool_taxonomy = array();
+	$taxonomy_sets = array(
+		'cats' => "SELECT tool_id, GROUP_CONCAT(DISTINCT category_id) AS ids FROM {$tbl_cat_map} GROUP BY tool_id",
+		'subs' => "SELECT tool_id, GROUP_CONCAT(DISTINCT subcategory_id) AS ids FROM {$tbl_subcat_map} GROUP BY tool_id",
+		'tags' => "SELECT tool_id, GROUP_CONCAT(DISTINCT tag_id) AS ids FROM {$tbl_tag_map} GROUP BY tool_id",
+	);
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- table names only, no request-derived data.
+	foreach ( $taxonomy_sets as $key => $sql ) {
+		foreach ( $wpdb->get_results( $sql ) as $row ) {
+			$tool_taxonomy[ (int) $row->tool_id ][ $key ] = (string) $row->ids;
+		}
+	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+
+	$tx_rows         = mtl_taxonomy_tree_rows();
+	$tbl_tags_lookup = $wpdb->prefix . 'tool_tags';
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
+	$lr_tags = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags_lookup} ORDER BY tag_name ASC" );
+
 	// --- Normalize everything into one $records list ---
 	$current_loans  = array();
 	$previous_loans = array();
@@ -829,6 +856,9 @@ function mtl_render_loans_page() {
 		$tid                                 = $rec_ref['tool_id'];
 		$rec_ref['tool_total_loans']         = isset( $tool_total_loans[ $tid ] ) ? $tool_total_loans[ $tid ] : 0;
 		$rec_ref['tool_active_reservations'] = isset( $tool_active_res[ $tid ] ) ? $tool_active_res[ $tid ] : 0;
+		$rec_ref['tool_category_ids']        = isset( $tool_taxonomy[ $tid ]['cats'] ) ? $tool_taxonomy[ $tid ]['cats'] : '';
+		$rec_ref['tool_subcategory_ids']     = isset( $tool_taxonomy[ $tid ]['subs'] ) ? $tool_taxonomy[ $tid ]['subs'] : '';
+		$rec_ref['tool_tag_ids']             = isset( $tool_taxonomy[ $tid ]['tags'] ) ? $tool_taxonomy[ $tid ]['tags'] : '';
 		$rec_ref['status_rank']              = isset( $status_rank_map[ $rec_ref['status_label'] ] ) ? $status_rank_map[ $rec_ref['status_label'] ] : 9;
 	}
 	unset( $rec_ref ); // Break the reference so later loops can't clobber the last record.
@@ -1452,6 +1482,8 @@ function mtl_render_loans_page() {
 		<div class="mtl-adv-groups">
 
 			<fieldset class="mtl-adv-group">
+				<?php mtl_taxonomy_tree_style(); ?>
+				<?php mtl_taxonomy_matcher_script(); ?>
 				<legend>Tool &amp; Member</legend>
 				<div class="mtl-adv-fields">
 					<div>
@@ -1475,6 +1507,20 @@ function mtl_render_loans_page() {
 							<option value="previous">Previous Loan</option>
 						</select>
 					</div>
+				</div>
+				<div class="mtl-adv-multi">
+					<label>Categories</label>
+					<?php mtl_taxonomy_tree( $tx_rows, array(), array(), 'mtl-lr-tx' ); ?>
+					<small>Leave empty for any. A category on its own includes tools with no sub-category.</small>
+				</div>
+				<div class="mtl-adv-multi">
+					<label for="lr-adv-tag">Tags</label>
+					<select id="lr-adv-tag" multiple size="4">
+						<?php foreach ( $lr_tags as $lr_tag ) : ?>
+							<option value="<?php echo esc_attr( $lr_tag->tag_id ); ?>"><?php echo esc_html( $lr_tag->tag_name ); ?></option>
+						<?php endforeach; ?>
+					</select>
+					<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick several.</small>
 				</div>
 			</fieldset>
 
@@ -1606,7 +1652,10 @@ function mtl_render_loans_page() {
 									?>
 									data-returnedlate="<?php echo 'previous' === $rec['type'] ? ( $rec['returned_late'] ? '1' : '0' ) : ''; ?>"
 									data-firstinqueue="<?php echo 'reservation' === $rec['type'] ? ( 1 === (int) $rec['queue_place'] ? '1' : '0' ) : ''; ?>"
-									data-toolonloan="<?php echo 'reservation' === $rec['type'] ? ( '' !== $rec['current_loan_due'] ? '1' : '0' ) : ''; ?>">
+									data-toolonloan="<?php echo 'reservation' === $rec['type'] ? ( '' !== $rec['current_loan_due'] ? '1' : '0' ) : ''; ?>"
+									data-category-ids="<?php echo esc_attr( $rec['tool_category_ids'] ); ?>"
+									data-subcategory-ids="<?php echo esc_attr( $rec['tool_subcategory_ids'] ); ?>"
+									data-tag-ids="<?php echo esc_attr( $rec['tool_tag_ids'] ); ?>">
 									<td><span class="mtl-lr-pill <?php echo esc_attr( $rec['status_class'] ); ?>"><?php echo esc_html( $rec['status_label'] ); ?></span></td>
 									<td><?php echo esc_html( $rec['barcode'] ); ?></td>
 									<td><strong><?php echo esc_html( $rec['tool_name'] ); ?></strong></td>
@@ -1710,6 +1759,18 @@ function mtl_render_loans_page() {
 			const advPanel = document.getElementById('mtl-lr-advanced-search');
 			const clearBtn = document.getElementById('mtl-lr-clear-filters');
 
+			// The tree and the tag select sit outside advFields: one is a group of
+			// checkboxes, the other needs its ids read rather than its value.
+			const lrTaxonomyTree = document.getElementById('mtl-lr-tx');
+			const lrTagSelect = document.getElementById('lr-adv-tag');
+			function lrTaxonomySelection() {
+				return window.mtlTaxonomySelection(lrTaxonomyTree);
+			}
+			function lrSelectedTagIds() {
+				if (!lrTagSelect) return [];
+				return Array.from(lrTagSelect.selectedOptions).map(function(opt) { return opt.value; });
+			}
+
 			const advFields = {
 				tool: document.getElementById('adv-lr-tool'),
 				barcode: document.getElementById('adv-lr-barcode'),
@@ -1746,6 +1807,15 @@ function mtl_render_loans_page() {
 				const member = advFields.member.value.trim().toLowerCase();
 				if (member && !d.member.includes(member)) return false;
 				if (advFields.type.value && d.type !== advFields.type.value) return false;
+
+				// Tool taxonomy. OR inside the tree, OR inside tags, AND between
+				// the two, matching how the other controls already combine.
+				if (!window.mtlTaxonomyMatches(lrTaxonomySelection(), d.categoryIds, d.subcategoryIds)) return false;
+				const pickedTags = lrSelectedTagIds();
+				if (pickedTags.length) {
+					const rowTags = d.tagIds ? d.tagIds.split(',') : [];
+					if (!pickedTags.some(function(id) { return rowTags.indexOf(id) !== -1; })) return false;
+				}
 
 				// d.loan/d.reserved carry a full timestamp, so range-filtering
 				// compares just the date portion (first 10 chars) against the
@@ -1863,6 +1933,8 @@ function mtl_render_loans_page() {
 			});
 
 			searchInput.addEventListener('keyup', applyFilters);
+			if (lrTaxonomyTree) lrTaxonomyTree.addEventListener('change', applyFilters);
+			if (lrTagSelect) lrTagSelect.addEventListener('change', applyFilters);
 			Object.values(advFields).forEach(function(el) {
 				el.addEventListener('input', applyFilters);
 				el.addEventListener('change', applyFilters);
@@ -1873,6 +1945,14 @@ function mtl_render_loans_page() {
 				Object.values(advFields).forEach(function(el) {
 					el.value = '';
 				});
+				if (lrTaxonomyTree) {
+					lrTaxonomyTree.querySelectorAll('input[type="checkbox"]').forEach(function(box) { box.checked = false; });
+					// Re-enables children that a ticked parent had covered.
+					lrTaxonomyTree.dispatchEvent(new Event('change', { bubbles: true }));
+				}
+				if (lrTagSelect) {
+					Array.from(lrTagSelect.options).forEach(function(opt) { opt.selected = false; });
+				}
 				currentView = 'all';
 				viewButtons.forEach(function(b) { b.classList.toggle('mtl-lr-view-active', b.dataset.view === 'all'); });
 				if (detailBox) detailBox.innerHTML = detailDefault;
