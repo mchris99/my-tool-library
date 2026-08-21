@@ -6095,6 +6095,9 @@ function mtl_training_filter_select( $trainings, $element_id ) {
 function mtl_taxonomy_matcher_script() {
 	?>
 	<script>
+	( function () {
+		// Exported through window because the two admin pages read them from
+		// their own scripts; anyIn() stays in here.
 		window.mtlTaxonomySelection = function ( tree ) {
 			var sel = { cats: [], subs: [] };
 			if ( ! tree ) {
@@ -6142,7 +6145,6 @@ function mtl_taxonomy_matcher_script() {
 				return true;
 			}
 			var rowIds = csvIds ? String( csvIds ).split( ',' ) : [];
-			// "Any" is the whole list, so it wins over anything picked with it.
 			if ( picked.indexOf( 'any' ) !== -1 ) {
 				return rowIds.length > 0;
 			}
@@ -6158,6 +6160,7 @@ function mtl_taxonomy_matcher_script() {
 			} );
 			tree.dispatchEvent( new Event( 'change', { bubbles: true } ) );
 		};
+	}() );
 	</script>
 	<?php
 }

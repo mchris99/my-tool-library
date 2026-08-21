@@ -707,13 +707,13 @@ function mtl_render_loans_page() {
 	}
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 
-	$tx_rows         = mtl_taxonomy_tree_rows();
-	$tbl_tags_lookup = $wpdb->prefix . 'tool_tags';
-	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-	$lr_tags              = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags_lookup} ORDER BY tag_name ASC" );
-	$tbl_trainings_lookup = $wpdb->prefix . 'member_trainings';
-	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
-	$lr_trainings = $wpdb->get_results( "SELECT training_id, training_name FROM {$tbl_trainings_lookup} ORDER BY training_name ASC" );
+	$tx_rows           = mtl_taxonomy_tree_rows();
+	$tbl_tags_all      = $wpdb->prefix . 'tool_tags';
+	$tbl_trainings_all = $wpdb->prefix . 'member_trainings';
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, no request-derived data.
+	$lr_tags      = $wpdb->get_results( "SELECT tag_id, tag_name FROM {$tbl_tags_all} ORDER BY tag_name ASC" );
+	$lr_trainings = $wpdb->get_results( "SELECT training_id, training_name FROM {$tbl_trainings_all} ORDER BY training_name ASC" );
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	// --- Normalize everything into one $records list ---
 	$current_loans  = array();
