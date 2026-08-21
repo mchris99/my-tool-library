@@ -4038,7 +4038,6 @@ function mtl_render_membership_page() {
 									<?php endforeach; ?>
 								</div>
 							</div>
-							<p style="font-size: 0.75em; color: #787c82; margin: 3px 0 0 0;">Shows members holding <em>every</em> training ticked, and still current.</p>
 						</div>
 					</div>
 				</fieldset>
