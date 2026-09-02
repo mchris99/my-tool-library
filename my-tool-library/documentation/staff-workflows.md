@@ -78,7 +78,7 @@ Do this once, when the plugin is first installed on the site.
     - **Only do this once.** On a library that is already running, it deletes every member, tool, loan and reservation and rebuilds the tables empty, with no undo. That is why it makes you type the phrase out. To troubleshoot a live library, use **Export Data** first.
 5. On the **Setup** page, fill in:
     - **General Details**: organization name, logo URL, brand colors/fonts, button style, and an optional **Verified Badge Image URL**, shown on a verified member's account page in place of the plain green "Verified" pill.
-    - **Reservations & Loans**: the default loan length in days used when checking a reservation out, and the **Reservation Hold Period**, how long a tool is held once it's ready to collect (default 14 days; see [Reservations that expire on their own](#reservations-that-expire-on-their-own)).
+    - **Reservations & Loans**: the default loan length in days used when checking a reservation out, the **Reservation Hold Period**, how long a tool is held once it's ready to collect (default 14 days; see [Reservations that expire on their own](#reservations-that-expire-on-their-own)), and **Shelf Location**, whether members are shown where a tool sits on the shelf (off by default; see [Location](#location-shelf-location)).
     - **Categories & Tags**: the tool categories (e.g. Woodworking, Plumbing) and tags (e.g. Cordless, Requires PPE) staff pick from when adding inventory.
     - **Member Trainings**: the trainings you offer. Each has a **name**, an optional **Badge Image URL** (upload the image to the WordPress Media Library and paste its File URL), and **Valid For**, how many months it stays current after someone completes it, or blank if it never expires. All three are changeable later. See [Trainings and certifications](#trainings-and-certifications).
     - **Member Agreements**: the statements a member must agree to before creating an account (e.g. a liability waiver). Choose a mode at the top of the section: **Off**, **Track signed paper only**, or **Full: members agree online**. See [Member Agreements](#6-member-agreements) for what each mode does.
@@ -133,14 +133,28 @@ Go to **My Tool Library > Inventory**.
 3. Add a **photo URL**, a link to an image hosted elsewhere (see [Hosting Photos and Documents](#hosting-photos-and-documents)). Optional but recommended; it's shown to the public on the catalog.
 4. Fill in the financial tracking fields: initial cash value, annual depreciation amount, who donated it, and date acquired.
 5. Select one or more **categories** and **tags**, set up during Initial Setup.
-6. Optionally, add **Private Notes**: see below.
-7. Save. The tool immediately appears in the public catalog.
+6. Optionally, record where the tool lives on the shelf in **Location**: see below.
+7. Optionally, add **Private Notes**: see below.
+8. Save. The tool immediately appears in the public catalog.
 
 ### Adding many tools at once
 
 Use the **Bulk Import from CSV** panel described in [Initial Setup](#1-initial-setup), step 8. It is the fastest way to load an existing inventory spreadsheet, and works later for a new batch of donated or purchased tools. **Admin** action only.
 
 > **Note:** A barcode is required and must be unique to the tool. Beyond that the database makes no assumptions: any text or number up to 100 characters works.
+
+### Location (shelf location)
+
+Where the tool physically sits, so whoever fetches it doesn't have to hunt. It's plain text with no format imposed, because every library shelves differently: "Aisle 3, Shelf 4", "113" and "K4-1" are all equally valid. Leave it blank if you don't label your storage, or for a tool that has no fixed home.
+
+Staff always see it, in the Inventory page's detail view (click a tool's row to expand it), and the quick filter at the top of the page searches it, so typing a shelf label lists everything on that shelf.
+
+Whether **members** see it is one switch, under **Setup > Reservations & Loans > Shelf Location**:
+
+- **Off** (the default): members are shown nothing about location anywhere. Not a "hidden" note, not an empty field, nothing at all. Choose this if your tools are in a stockroom members don't walk into.
+- **On**: the location appears under "Where to find it" when a member opens that tool in the catalog, and on My Reservations for a tool they're waiting on.
+
+Either way, a tool with no location recorded shows members nothing.
 
 ### Private Notes (staff-only)
 

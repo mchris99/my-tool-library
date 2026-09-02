@@ -87,6 +87,7 @@ Table tool_inventory {
   date_acquired date [default: `CURRENT_DATE`]
   retired_at timestamp [note: 'NULL = active/lendable. Once set, hidden from the public catalog and blocked from new loans/reservations, but reversible (just clear it); see mtl_retire_tool()/mtl_reactivate_tool()']
   private_notes text [note: 'Staff-only. Never selected by any public-facing query, shown only in the admin Inventory page detail view.']
+  location varchar(100) [note: 'Where the tool sits on the shelf, free text in whatever notation the library uses ("Aisle 3, Shelf 4", "113", "K4-1"). Optional. Staff always see it; members see it on a tool detail view only while the Setup page option mtl_show_tool_location is on, and see nothing at all in its place when it is off. See mtl_tool_location_visible_to_members().']
 
   Note: 'One row per physical tool the library owns.'
 }

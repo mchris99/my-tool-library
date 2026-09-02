@@ -606,6 +606,11 @@ function mtl_render_setup_page() {
 				update_option( 'mtl_reservation_hold_days', $posted_hold_days );
 			}
 
+			// An unticked checkbox posts nothing at all, so absence is the "off"
+			// value here rather than a missing field. Stored as '1'/'' to match
+			// how mtl_tool_location_visible_to_members() reads it.
+			update_option( 'mtl_show_tool_location', isset( $_POST['mtl_show_tool_location'] ) ? '1' : '' );
+
 			// A saved blank value is meaningful, not "unset": get_option()'s
 			// default only applies before the option row exists, so an empty
 			// save sticks and intentionally hides the directions on the public pages.
@@ -1550,6 +1555,7 @@ function mtl_render_setup_page() {
 	$default_loan_days = get_option( 'mtl_default_loan_days', '21' );
 	// 0 means "never expires"; see mtl_reservation_hold_days().
 	$reservation_hold_days   = (int) get_option( 'mtl_reservation_hold_days', 14 );
+	$show_tool_location      = mtl_tool_location_visible_to_members();
 	$pickup_directions       = get_option(
 		'mtl_pickup_directions',
 		'Placing a reservation holds your spot in line and speeds up the process of checking out tools. If no one is waiting in line to borrow a tool, no reservation is required. Come by our store and speak with a representative to take tools home.'
@@ -1997,6 +2003,16 @@ function mtl_render_setup_page() {
 								Never expires
 							</label>
 							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">How long a tool reservation is held once the member reaches the front of the queue <em>and</em> the tool is back on the shelf. Reservation auto-cancelled upon expiration.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">Shelf Location</th>
+						<td>
+							<label>
+								<input type="checkbox" name="mtl_show_tool_location" id="mtl_show_tool_location" value="1" <?php checked( true, $show_tool_location ); ?>>
+								Show each tool&rsquo;s shelf location to members
+							</label>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Adds the <strong>Location</strong> recorded on a tool&rsquo;s Inventory record (e.g. &ldquo;Aisle 3, Shelf 4&rdquo;) to what members see when they open that tool in the catalog, so they can find it on the shelf themselves. Leave this off if your tools live somewhere only staff go: members are then shown nothing at all about location, not a message about it being hidden. Either way staff always see it on the Inventory page. Tools with no location recorded show nothing either way.</p>
 						</td>
 					</tr>
 					<tr>
