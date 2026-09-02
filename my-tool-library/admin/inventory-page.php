@@ -149,6 +149,7 @@ function mtl_maybe_serve_csv_template() {
 			'tool_name',
 			'barcode',
 			'brand',
+			'location',
 			'description',
 			'components',
 			'photo_url',
@@ -170,6 +171,7 @@ function mtl_maybe_serve_csv_template() {
 			'Example Tool - Delete This Row',
 			'EXAMPLE-0000',
 			'ExampleBrand',
+			'Aisle 3, Shelf 4',
 			'A short description of the tool.',
 			'Battery;Charger;Case',
 			'https://example.com/photo.jpg',
@@ -369,6 +371,13 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 		</td>
 	</tr>
 	<tr>
+		<th scope="row"><label for="<?php echo $field_id( 'location' ); ?>">Location</label></th>
+		<td>
+			<input type="text" name="location" id="<?php echo $field_id( 'location' ); ?>" class="regular-text" maxlength="100" value="<?php echo esc_attr( $values['location'] ); ?>" placeholder="e.g. Aisle 3, Shelf 4">
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Where this tool lives on the shelf, written however your library already labels its storage &mdash; &ldquo;Aisle 3, Shelf 4&rdquo;, &ldquo;113&rdquo; and &ldquo;K4-1&rdquo; are all fine. Staff always see it in this tool&rsquo;s detail view below; whether members do is the <strong>Shelf Location</strong> switch under Setup &rarr; Reservations &amp; Loans. Leave blank if unknown.</p>
+		</td>
+	</tr>
+	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'category_id' ); ?>">Categories</label></th>
 		<td>
 			<select name="category_id[]" id="<?php echo $field_id( 'category_id' ); ?>" multiple size="6" class="mtl-resizable-select">
@@ -548,6 +557,7 @@ function mtl_render_inventory_page() {
 		'tool_name'                   => '',
 		'barcode'                     => '',
 		'brand'                       => '',
+		'location'                    => '',
 		'photo_url'                   => '',
 		'initial_cash_value'          => '',
 		'annual_depreciation_amount'  => '',
@@ -593,6 +603,7 @@ function mtl_render_inventory_page() {
 			$tool_name     = sanitize_text_field( wp_unslash( $_POST['tool_name'] ?? '' ) );
 			$barcode       = sanitize_text_field( wp_unslash( $_POST['barcode'] ?? '' ) );
 			$brand         = sanitize_text_field( wp_unslash( $_POST['brand'] ?? '' ) );
+			$location      = sanitize_text_field( wp_unslash( $_POST['location'] ?? '' ) );
 			$photo_url     = sanitize_url( wp_unslash( $_POST['photo_url'] ?? '' ) );
 			$donated_by    = sanitize_text_field( wp_unslash( $_POST['donated_by'] ?? '' ) );
 			$date_acquired = sanitize_text_field( wp_unslash( $_POST['date_acquired'] ?? '' ) );
@@ -662,8 +673,12 @@ function mtl_render_inventory_page() {
 						'donated_by'                 => $donated_by,
 						'date_acquired'              => $date_acquired,
 						'private_notes'              => '' !== $private_notes ? $private_notes : null,
+						// NULL rather than '' for an unfilled location, so
+						// "nothing recorded" is one value in the column instead
+						// of two; clearing it on Edit puts it back to NULL too.
+						'location'                   => '' !== $location ? $location : null,
 					),
-					array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s' )
+					array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' )
 				);
 
 				if ( $inserted ) {
@@ -693,6 +708,7 @@ function mtl_render_inventory_page() {
 
 				$form_values['tool_name']                   = $tool_name;
 				$form_values['brand']                       = $brand;
+				$form_values['location']                    = $location;
 				$form_values['photo_url']                   = $photo_url;
 				$form_values['initial_cash_value']          = $initial_value_display;
 				$form_values['annual_depreciation_amount']  = $depreciation_display;
@@ -880,6 +896,7 @@ function mtl_render_inventory_page() {
 								$row_tool_name     = sanitize_text_field( $get_col( $row, 'tool_name' ) );
 								$row_barcode       = sanitize_text_field( $get_col( $row, 'barcode' ) );
 								$row_brand         = sanitize_text_field( $get_col( $row, 'brand' ) );
+								$row_location      = sanitize_text_field( $get_col( $row, 'location' ) );
 								$row_photo_url     = sanitize_url( $get_col( $row, 'photo_url' ) );
 								$row_donated_by    = sanitize_text_field( $get_col( $row, 'donated_by' ) );
 								$row_description   = sanitize_textarea_field( $get_col( $row, 'description' ) );
@@ -976,8 +993,9 @@ function mtl_render_inventory_page() {
 										'donated_by'    => $row_donated_by,
 										'date_acquired' => $row_date,
 										'private_notes' => '' !== $row_private_notes ? $row_private_notes : null,
+										'location'      => '' !== $row_location ? $row_location : null,
 									),
-									array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s' )
+									array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' )
 								);
 
 								if ( ! $row_inserted ) {
@@ -1074,6 +1092,7 @@ function mtl_render_inventory_page() {
 			$tool_name     = sanitize_text_field( wp_unslash( $_POST['tool_name'] ?? '' ) );
 			$barcode       = sanitize_text_field( wp_unslash( $_POST['barcode'] ?? '' ) );
 			$brand         = sanitize_text_field( wp_unslash( $_POST['brand'] ?? '' ) );
+			$location      = sanitize_text_field( wp_unslash( $_POST['location'] ?? '' ) );
 			$photo_url     = sanitize_url( wp_unslash( $_POST['photo_url'] ?? '' ) );
 			$donated_by    = sanitize_text_field( wp_unslash( $_POST['donated_by'] ?? '' ) );
 			$date_acquired = sanitize_text_field( wp_unslash( $_POST['date_acquired'] ?? '' ) );
@@ -1139,9 +1158,10 @@ function mtl_render_inventory_page() {
 						'donated_by'                 => $donated_by,
 						'date_acquired'              => $date_acquired,
 						'private_notes'              => '' !== $private_notes ? $private_notes : null,
+						'location'                   => '' !== $location ? $location : null,
 					),
 					array( 'tool_id' => $edit_tool_id ),
-					array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s' ),
+					array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' ),
 					array( '%d' )
 				);
 
@@ -1173,6 +1193,7 @@ function mtl_render_inventory_page() {
 					'tool_name'                   => $tool_name,
 					'barcode'                     => $barcode,
 					'brand'                       => $brand,
+					'location'                    => $location,
 					'photo_url'                   => $photo_url,
 					'initial_cash_value'          => $initial_value_display,
 					'annual_depreciation_amount'  => $depreciation_display,
@@ -1483,6 +1504,7 @@ function mtl_render_inventory_page() {
 					'tool_name'                   => stripslashes( $tool_row->tool_name ),
 					'barcode'                     => stripslashes( $tool_row->barcode ),
 					'brand'                       => stripslashes( $tool_row->brand ),
+					'location'                    => stripslashes( (string) $tool_row->location ),
 					'photo_url'                   => $tool_row->photo_url,
 					'initial_cash_value'          => $tool_row->initial_cash_value,
 					'annual_depreciation_amount'  => $tool_row->annual_depreciation_amount,
@@ -2145,6 +2167,7 @@ function mtl_render_inventory_page() {
 				<li><code>annual_depreciation_amount</code> accepts either a plain dollar amount (e.g. &ldquo;5.00&rdquo;) or a percentage of that row&rsquo;s <code>initial_cash_value</code> (e.g. &ldquo;5%&rdquo;). Any value containing a % sign is converted to a dollar amount before it&rsquo;s stored.</li>
 				<li><code>donated_by</code> is plain text. If it exactly matches an existing member&rsquo;s email address (their sign-in username), that member is automatically credited as a donor. Otherwise it is just stored as-is (e.g. for a non-member donor).</li>
 				<li><code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form, but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
+				<li><code>location</code> is where the tool sits on the shelf, in whatever notation you already use (e.g. &ldquo;Aisle 3, Shelf 4&rdquo;, &ldquo;113&rdquo;, &ldquo;K4-1&rdquo;). Staff always see it; whether members do is the <strong>Shelf Location</strong> switch under Setup &rarr; Reservations &amp; Loans.</li>
 				<li>Leave a cell blank to skip that field. If a row fails, the rest of the file still gets processed, and failures are listed after upload.</li>
 			</ul>
 			<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
@@ -2212,6 +2235,7 @@ function mtl_render_inventory_page() {
             t.date_acquired,
             t.retired_at,
             t.private_notes,
+            t.location,
             GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,
             GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags
             , GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories
@@ -2554,6 +2578,7 @@ function mtl_render_inventory_page() {
 							data-name="<?php echo esc_attr( strtolower( stripslashes( $item->tool_name ) ) ); ?>"
 							data-barcode="<?php echo esc_attr( strtolower( stripslashes( $item->barcode ) ) ); ?>"
 							data-brand="<?php echo esc_attr( strtolower( stripslashes( (string) $item->brand ) ) ); ?>"
+							data-location="<?php echo esc_attr( strtolower( stripslashes( (string) $item->location ) ) ); ?>"
 							data-categories="<?php echo esc_attr( strtolower( (string) $item->categories ) ); ?>"
 							data-category-ids="<?php echo esc_attr( (string) $item->category_ids ); ?>"
 							data-subcategory-ids="<?php echo esc_attr( (string) $item->subcategory_ids ); ?>"
@@ -2680,6 +2705,21 @@ function mtl_render_inventory_page() {
 									</div>
 
 									<div class="mtl-detail-col">
+										<?php
+										// Shown to staff whatever the Setup switch says, and
+										// with an em dash when nothing is on file, so an
+										// unlabelled tool is visibly unlabelled rather than
+										// looking like a field that does not exist. The
+										// member-facing views do the opposite and render
+										// nothing at all; see mtl_shop_location_block().
+										//
+										// Compared against '' rather than tested for
+										// truthiness like the fields below, since "0" is a
+										// perfectly good bin label and would read as empty.
+										?>
+										<strong>Location</strong>
+										<p><?php echo '' !== (string) $item->location ? esc_html( stripslashes( $item->location ) ) : '<span style="color:#999;">&mdash;</span>'; ?></p>
+
 										<?php if ( ! empty( $item->subcategories ) ) : ?>
 											<strong>Sub-categories</strong>
 											<p><?php echo mtl_render_pill_list( $item->subcategories ); ?></p>
@@ -2995,12 +3035,13 @@ function mtl_render_inventory_page() {
 					let visible = true;
 
 					// Quick filter searches the row's DATA values, not its rendered
-					// text: description, components, donor, value and acquired date
-					// live in the expandable detail panel rather than in cells,
-					// and the data attributes hold the full untruncated strings.
+					// text: location, description, components, donor, value and
+					// acquired date live in the expandable detail panel rather than
+					// in cells, and the data attributes hold the full untruncated
+					// strings.
 					if (quick) {
 						const haystack = [
-							d.name, d.barcode, d.brand, d.categories, d.tags,
+							d.name, d.barcode, d.brand, d.location, d.categories, d.tags,
 							d.description, d.components, d.donor, d.value, d.acquired
 						].join(' ');
 						if (!haystack.includes(quick)) visible = false;

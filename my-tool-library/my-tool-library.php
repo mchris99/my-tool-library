@@ -2794,6 +2794,24 @@ function mtl_reservation_collect_by( $ready_since ) {
 }
 
 /**
+ * Whether members are shown a tool's shelf location (tool_inventory.location)
+ * on the public catalog and on My Reservations.
+ *
+ * Off unless a library has deliberately turned it on: some lend from a closed
+ * stockroom where the shelf a tool lives on is staff information, so an
+ * absent option means "staff only", never "not decided yet". Staff-facing
+ * views ignore this and always show the location.
+ *
+ * Member-facing pages call mtl_shop_location_block() rather than this, since
+ * it answers both this question and "does this tool have a location at all".
+ *
+ * @return bool
+ */
+function mtl_tool_location_visible_to_members() {
+	return '1' === (string) get_option( 'mtl_show_tool_location', '' );
+}
+
+/**
  * The member list behind every "type a name or email" picker: Quick Loan,
  * Quick Reserve, the donor field on Inventory, and Bulk Checkout.
  *
@@ -5713,15 +5731,16 @@ function mtl_register_staff_capabilities() {
 }
 
 // Plain counter, not the plugin version: bump when a table or column is added.
-define( 'MTL_DB_VERSION', 3 );
+define( 'MTL_DB_VERSION', 4 );
 
 // admin_init, not init: nothing reads these tables on the front end, and it
 // covers exactly the requests that can write them.
 add_action( 'admin_init', 'mtl_maybe_upgrade_schema' );
 
 /**
- * Creates tables added after this site's database was first set up. Additive
- * only: it creates what is missing, and never alters or drops.
+ * Creates tables and columns added after this site's database was first set
+ * up. Additive only: it creates what is missing, and never drops, narrows or
+ * redefines anything already there.
  *
  * The fresh-install path, admin/schema.sql, DROPs every table before creating
  * them, so it can never be how a live library picks up a new one. Runs for the same reason
@@ -5738,10 +5757,26 @@ function mtl_maybe_upgrade_schema() {
 	global $wpdb;
 	$p = $wpdb->prefix;
 
+	// Columns added to a table that already existed, as
+	// table => column => definition. Frozen copies of the admin/schema.sql
+	// definitions for the same reason the table list below is. Declared up
+	// here because the guard that follows needs its table names.
+	$columns = array(
+		'tool_inventory' => array(
+			'location' => 'VARCHAR(100) DEFAULT NULL',
+		),
+	);
+
 	// A site that has never run Database Setup has no tables at all, and every
-	// definition below foreign-keys one of these. schema.sql will create the new
-	// tables with the rest, so there is nothing to add and nothing to record.
-	foreach ( array( 'tool_inventory', 'tool_categories', 'member_trainings' ) as $parent ) {
+	// definition below foreign-keys or alters one of these. schema.sql will
+	// create the new tables and columns with the rest, so there is nothing to
+	// add and nothing to record.
+	//
+	// The $columns tables are folded in rather than listed again, so adding a
+	// column to a table nobody has needed before cannot ALTER something that
+	// was never confirmed to exist.
+	$required = array_unique( array_merge( array( 'tool_inventory', 'tool_categories', 'member_trainings' ), array_keys( $columns ) ) );
+	foreach ( $required as $parent ) {
 		if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $p . $parent ) ) !== $p . $parent ) {
 			return;
 		}
@@ -5749,8 +5784,9 @@ function mtl_maybe_upgrade_schema() {
 
 	// Frozen copies of the admin/schema.sql definitions, in dependency order.
 	// They stay as they are even if that file changes, so an upgrade always
-	// produces the shape it promised. Adding a table here is the whole job of
-	// shipping one to sites that already exist.
+	// produces the shape it promised. Adding a table here (or a column to
+	// $columns above) is the whole job of shipping one to sites that already
+	// exist.
 	$tables = array(
 		"CREATE TABLE IF NOT EXISTS {$p}tool_training_mappings (
 			tool_id INT,
@@ -5784,6 +5820,24 @@ function mtl_maybe_upgrade_schema() {
 		// IF NOT EXISTS makes the ones that already landed a no-op.
 		if ( false === $wpdb->query( $sql ) ) {
 			return;
+		}
+	}
+
+	// There is no "ADD COLUMN IF NOT EXISTS" before MySQL 8.0.29 / MariaDB
+	// 10.5 and this plugin supports older servers, so each column is checked
+	// first and skipped when it is already there. esc_like() matters because
+	// SHOW COLUMNS takes a PATTERN, and "_" in a column name would otherwise
+	// be a single-character wildcard: most names in this schema have one.
+	foreach ( $columns as $table => $definitions ) {
+		foreach ( $definitions as $column => $definition ) {
+			if ( $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM {$p}{$table} LIKE %s", $wpdb->esc_like( $column ) ) ) ) {
+				continue;
+			}
+			// Same as the tables above: a failure leaves the version option
+			// alone so the next request tries again.
+			if ( false === $wpdb->query( "ALTER TABLE {$p}{$table} ADD COLUMN {$column} {$definition}" ) ) {
+				return;
+			}
 		}
 	}
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared

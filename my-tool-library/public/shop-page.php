@@ -61,7 +61,32 @@ function mtl_shop_pills( $csv ) {
 }
 
 /**
- * The CSS for the badges and pills the two helpers above render.
+ * Renders a tool's shelf location for a member, or nothing at all.
+ *
+ * Two independent reasons to render nothing, and neither one gets a message:
+ * the library keeps shelf locations to staff, or this tool simply has none on
+ * file. A member who is never shown a location has nothing to be told about.
+ *
+ * Both conditions live here rather than at the call sites, so a page that
+ * forgets one cannot leak a location the library meant to keep back: the only
+ * way to render this is to ask this function, and it fails closed. That is
+ * also why it takes the raw column value rather than a "should I show it"
+ * flag. Called by the catalog's detail panel and by My Reservations.
+ *
+ * @param string $location Raw tool_inventory.location value; NULL/'' for a
+ *                         tool with no location recorded.
+ * @return string HTML markup, or '' when the member is shown nothing.
+ */
+function mtl_shop_location_block( $location ) {
+	$location = (string) $location;
+	if ( '' === $location || ! mtl_tool_location_visible_to_members() ) {
+		return '';
+	}
+	return '<h4>Where to find it</h4><p>' . esc_html( stripslashes( $location ) ) . '</p>';
+}
+
+/**
+ * The CSS for what mtl_shop_status_badges() and mtl_shop_pills() render.
  *
  * Both the catalog (mtl_render_shop_page()) and the member pages
  * (mtl_member_page_styles()) call those helpers, so both need these rules.
@@ -149,8 +174,9 @@ function mtl_shop_tool_share_url( $tool_id, $base ) {
 
 /**
  * Renders one tool's full detail-panel body: photo, badges, availability,
- * a shareable link, categories/tags, description, components, and a
- * context-aware Reserve control.
+ * shelf location (only when the library shows it to members), a shareable
+ * link, categories/tags, description, components, and a context-aware
+ * Reserve control.
  *
  * @param object $tool Tool row from the catalog query.
  * @param string $base Base page URL.
@@ -185,6 +211,8 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 		<p style="margin-top:0; color:#50575e; font-size:0.9em;">
 			<?php echo esc_html( $res ); ?> active reservation<?php echo 1 === $res ? '' : 's'; ?> in the queue.
 		</p>
+
+		<?php echo mtl_shop_location_block( $tool->location ); ?>
 
 		<?php
 		// Collapsed by default (native <details>, no JS) so visitors see
@@ -461,7 +489,10 @@ function mtl_render_shop_page() {
 	$offset = ( $page_no - 1 ) * $per_page;
 
 	// The page of results.
-	$page_sql  = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url,'
+	// t.location is selected whatever the Setup switch says;
+	// mtl_shop_location_block() is the single place that decides whether a
+	// member is shown it, so the query does not have to be built two ways.
+	$page_sql  = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location,'
 		. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 		. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
 		. " GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories,"
@@ -477,7 +508,7 @@ function mtl_render_shop_page() {
 	if ( $sel_id > 0 ) {
 		$selected = $wpdb->get_row(
 			$wpdb->prepare(
-				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.date_acquired,'
+				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.date_acquired,'
 				. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 				. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
 				. " {$sub_loans} AS active_loans, {$sub_res} AS active_res"

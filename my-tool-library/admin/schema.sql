@@ -113,6 +113,12 @@ CREATE TABLE {{prefix}}member_verifications (
 -- private_notes is staff-only, like members.private_notes above and unlike
 -- description/components; see public/shop-page.php, which lists its columns
 -- explicitly rather than using SELECT *.
+-- location is where the tool sits on the shelf, written in whatever notation
+-- the library already uses ("Aisle 3, Shelf 4", "113", "K4-1"), so it is free
+-- text rather than a structured aisle/shelf/bin. Optional, and unlike
+-- private_notes it is only conditionally staff-only: staff always see it,
+-- members see it only while the Setup page's "Shelf Location" switch is on.
+-- See mtl_tool_location_visible_to_members().
 CREATE TABLE {{prefix}}tool_inventory (
     tool_id INT AUTO_INCREMENT PRIMARY KEY,
     tool_name VARCHAR(100) NOT NULL,
@@ -126,7 +132,8 @@ CREATE TABLE {{prefix}}tool_inventory (
     donated_by VARCHAR(255),
     date_acquired DATE DEFAULT (CURRENT_DATE),
     retired_at TIMESTAMP NULL DEFAULT NULL,
-    private_notes TEXT DEFAULT NULL
+    private_notes TEXT DEFAULT NULL,
+    location VARCHAR(100) DEFAULT NULL
 );
 
 -- ==========================================

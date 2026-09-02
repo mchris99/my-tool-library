@@ -1744,7 +1744,9 @@ function mtl_render_signup_page() {
  * Render one reserved tool's detail-panel body for the My Reservations page:
  * the tool's customer-facing details plus this member's reservation info
  * (place in line, ready/on-loan status, dates) and a cancel link. Reuses the
- * shop's badge/pill helpers so it matches the catalog's detail box.
+ * shop's badge/pill helpers so it matches the catalog's detail box, and
+ * follows the same rule on shelf location: shown only when the library has
+ * turned it on for members.
  *
  * @param object $r        Enriched reservation row from the query below.
  * @param string $self_url Current page URL, used to build the cancel link.
@@ -1801,6 +1803,8 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 				</p>
 			<?php endif; ?>
 		</div>
+
+		<?php echo mtl_shop_location_block( $r->location ); ?>
 
 		<?php if ( ! empty( $r->categories ) ) : ?>
 			<h4>Categories</h4>
@@ -1986,7 +1990,7 @@ function mtl_render_member_reservations_page() {
 	$rows = $wpdb->get_results(
 		$wpdb->prepare(
 			"SELECT r.reservation_id, r.tool_id, r.reservation_date, r.ready_since,
-                t.tool_name, t.brand, t.description, t.components, t.photo_url,
+                t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location,
                 (SELECT COUNT(*) FROM {$tbl_res} r2
                     WHERE r2.tool_id = r.tool_id AND r2.expiry_date IS NULL
                       AND (r2.reservation_date < r.reservation_date
