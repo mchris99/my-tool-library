@@ -27,14 +27,27 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Renders the availability badges shared by tiles, rows and the detail box.
  *
- * @param bool $on_loan  Whether the tool is currently on loan.
+ * A retired tool is never "Available": it can't be borrowed or reserved at
+ * all (mtl_reserve_tool() refuses one), so it gets a Retired badge in place
+ * of that. One retired mid-loan still shows On Loan, since that is a fact
+ * about where the tool is right now, and its reservation count still shows,
+ * since those members are still queued behind it.
+ *
+ * @param bool $on_loan   Whether the tool is currently on loan.
  * @param int  $res_count Number of active reservations for the tool.
+ * @param bool $retired   Whether the tool is retired from the collection.
  * @return string HTML markup.
  */
-function mtl_shop_status_badges( $on_loan, $res_count ) {
-	$out = $on_loan
-		? '<span class="mtl-shop-badge mtl-shop-badge-out">On Loan</span>'
-		: '<span class="mtl-shop-badge mtl-shop-badge-avail">Available</span>';
+function mtl_shop_status_badges( $on_loan, $res_count, $retired = false ) {
+	$out = '';
+	if ( $retired ) {
+		$out .= '<span class="mtl-shop-badge mtl-shop-badge-retired">Retired</span>';
+	}
+	if ( $on_loan ) {
+		$out .= '<span class="mtl-shop-badge mtl-shop-badge-out">On Loan</span>';
+	} elseif ( ! $retired ) {
+		$out .= '<span class="mtl-shop-badge mtl-shop-badge-avail">Available</span>';
+	}
 	if ( (int) $res_count > 0 ) {
 		$out .= '<span class="mtl-shop-badge mtl-shop-badge-res">'
 			. esc_html( (int) $res_count ) . ' reserved</span>';
@@ -132,6 +145,12 @@ function mtl_shop_badge_pill_css() {
 			border: 1px solid #b9d7ef;
 		}
 
+		.mtl-shop-badge-retired {
+			background: #f0f1f2;
+			color: #50575e;
+			border: 1px solid #d5d8dc;
+		}
+
 		.mtl-shop-pill {
 			display: inline-block;
 			background: #f0f1f2;
@@ -176,7 +195,8 @@ function mtl_shop_tool_share_url( $tool_id, $base ) {
  * Renders one tool's full detail-panel body: photo, badges, availability, a
  * shareable link, categories/tags, description, components, shelf location
  * (only when the library shows it to members), and a context-aware Reserve
- * control.
+ * control. A retired tool reads as retired throughout and is offered no
+ * Reserve control at all.
  *
  * @param object $tool Tool row from the catalog query.
  * @param string $base Base page URL.
@@ -191,6 +211,9 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 	$res       = (int) $tool->active_res;
 	$share_url = mtl_shop_tool_share_url( $tool->tool_id, $base );
 	$tool_id   = (int) $tool->tool_id;
+	// Only ever true when the visitor asked for retired tools by filter, since
+	// the catalog query hides them otherwise.
+	$retired = ! empty( $tool->retired_at );
 
 	ob_start();
 	?>
@@ -203,10 +226,16 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 			<p class="mtl-shop-detail-brand"><?php echo esc_html( stripslashes( $tool->brand ) ); ?></p>
 		<?php endif; ?>
 
-		<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $res ); ?></div>
+		<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $res, $retired ); ?></div>
 
 		<p class="mtl-shop-avail-line">
-			<?php echo $on_loan ? 'Currently on loan' : 'Available to borrow'; ?>
+			<?php
+			if ( $retired ) {
+				echo 'Retired from the collection';
+			} else {
+				echo $on_loan ? 'Currently on loan' : 'Available to borrow';
+			}
+			?>
 		</p>
 		<p style="margin-top:0; color:#50575e; font-size:0.9em;">
 			<?php echo esc_html( $res ); ?> active reservation<?php echo 1 === $res ? '' : 's'; ?> in the queue.
@@ -269,7 +298,9 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 				// visitor gets a sign-in prompt. Reserving is POST + nonce,
 				// never GET, so it can't be triggered by prefetch or CSRF.
 		?>
-		<?php if ( ! empty( $ctx['is_member'] ) ) : ?>
+		<?php if ( $retired ) : ?>
+			<p class="mtl-shop-reserve-note">This tool has been retired from the collection and can no longer be borrowed or reserved.</p>
+		<?php elseif ( ! empty( $ctx['is_member'] ) ) : ?>
 			<?php if ( isset( $ctx['loaned'][ $tool_id ] ) ) : ?>
 				<p class="mtl-shop-reserve-note">You currently have this tool checked out.</p>
 			<?php elseif ( isset( $ctx['reserved'][ $tool_id ] ) ) : ?>
@@ -346,6 +377,15 @@ function mtl_render_shop_page() {
 	$page_no  = isset( $_GET['mtl_pg'] ) ? max( 1, (int) $_GET['mtl_pg'] ) : 1;
 	$sel_id   = isset( $_GET['mtl_tool'] ) ? (int) $_GET['mtl_tool'] : 0;
 
+	// Retired scope: '' active only (the default, and the only state a plain
+	// catalog URL produces), 'include' active + retired, 'only' retired.
+	// Whitelisted the way mtl_sort is below, so a stale or hand-edited value
+	// folds to the default rather than widening what the catalog lists.
+	$a_retired = isset( $_GET['mtl_retired'] ) ? sanitize_key( wp_unslash( $_GET['mtl_retired'] ) ) : '';
+	if ( 'include' !== $a_retired && 'only' !== $a_retired ) {
+		$a_retired = '';
+	}
+
 	// Category and tag are multi-select, so both arrive as id lists. The
 	// (array) cast also accepts the single scalar the filters used to send,
 	// which keeps old bookmarks and shared links working.
@@ -364,7 +404,7 @@ function mtl_render_shop_page() {
 	$a_tags        = $id_list_param( 'mtl_tag', array_map( 'intval', wp_list_pluck( $tags_list, 'tag_id' ) ) );
 	$a_subcats     = $id_list_param( 'mtl_subcat', $valid_subcategory_ids );
 
-	$advanced_active = ( '' !== $a_name || '' !== $a_brand || $a_cats || $a_subcats || $a_tags || '' !== $a_status );
+	$advanced_active = ( '' !== $a_name || '' !== $a_brand || $a_cats || $a_subcats || $a_tags || '' !== $a_status || '' !== $a_retired );
 
 	// The catalog's sort modes, whitelisted: each accepted mtl_sort value
 	// mapped to its safe ORDER BY fragment (never user SQL) and to the label
@@ -415,10 +455,22 @@ function mtl_render_shop_page() {
 	// phpcs can't verify that across this many lines, hence the disable
 	// block through the end of the query-building section.
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
-	// Retired tools are never shown publicly; see admin/schema.sql's note
-	// on tool_inventory.retired_at.
-	$where = array( 't.retired_at IS NULL' );
-	$args  = array();
+	// Retired tools are hidden unless the visitor asks for them through the
+	// advanced search's Retired filter; see admin/schema.sql's note on
+	// tool_inventory.retired_at. Held as its own fragment because the
+	// deep-linked tool below is fetched by a separate query and has to answer
+	// the same question, or selecting a retired tool out of a retired-only
+	// result list would open an empty detail box.
+	$retired_where = 'only' === $a_retired ? 't.retired_at IS NOT NULL' : 't.retired_at IS NULL';
+	if ( 'include' === $a_retired ) {
+		$retired_where = '';
+	}
+
+	$where = array();
+	if ( '' !== $retired_where ) {
+		$where[] = $retired_where;
+	}
+	$args = array();
 
 	if ( '' !== $q ) {
 		$like    = '%' . $wpdb->esc_like( $q ) . '%';
@@ -451,7 +503,7 @@ function mtl_render_shop_page() {
 		$where[] = "EXISTS (SELECT 1 FROM {$tbl_tag_map} ftm WHERE ftm.tool_id = t.tool_id AND ftm.tag_id IN ({$tag_ph}))";
 		$args    = array_merge( $args, $a_tags );
 	}
-	$where_sql = 'WHERE ' . implode( ' AND ', $where );
+	$where_sql = $where ? 'WHERE ' . implode( ' AND ', $where ) : '';
 
 	// The availability filter compares computed loan/reservation counts, so
 	// it belongs in HAVING (after GROUP BY) rather than WHERE.
@@ -492,7 +544,7 @@ function mtl_render_shop_page() {
 	// t.location is selected whatever the Setup switch says;
 	// mtl_shop_location_block() is the single place that decides whether a
 	// member is shown it, so the query does not have to be built two ways.
-	$page_sql  = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location,'
+	$page_sql  = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.retired_at,'
 		. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 		. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
 		. " GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories,"
@@ -506,13 +558,14 @@ function mtl_render_shop_page() {
 	// shows even if it isn't on the current page of results.
 	$selected = null;
 	if ( $sel_id > 0 ) {
-		$selected = $wpdb->get_row(
+		$sel_retired_sql = '' !== $retired_where ? ' AND ' . $retired_where : '';
+		$selected        = $wpdb->get_row(
 			$wpdb->prepare(
-				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.date_acquired,'
+				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.date_acquired, t.retired_at,'
 				. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 				. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
 				. " {$sub_loans} AS active_loans, {$sub_res} AS active_res"
-				. " {$from} WHERE t.tool_id = %d AND t.retired_at IS NULL GROUP BY t.tool_id",
+				. " {$from} WHERE t.tool_id = %d{$sel_retired_sql} GROUP BY t.tool_id",
 				$sel_id
 			)
 		);
@@ -536,18 +589,19 @@ function mtl_render_shop_page() {
 	// through hidden inputs.
 	$base  = mtl_front_page_url( 'main' );
 	$state = array(
-		'mtl_q'      => $q,
-		'mtl_name'   => $a_name,
-		'mtl_brand'  => $a_brand,
+		'mtl_q'       => $q,
+		'mtl_name'    => $a_name,
+		'mtl_brand'   => $a_brand,
 		// Id lists: add_query_arg() expands these to mtl_cat[0]=..&mtl_cat[1]=..
 		// and PHP reads them straight back as an array. Empty stays '' so the
 		// $not_empty filter below drops the key entirely.
-		'mtl_cat'    => $a_cats ? $a_cats : '',
-		'mtl_tag'    => $a_tags ? $a_tags : '',
-		'mtl_status' => $a_status,
-		'mtl_sort'   => $sort,
-		'mtl_view'   => 'rows' === $view ? 'rows' : '',
-		'mtl_tool'   => $sel_id > 0 ? $sel_id : '',
+		'mtl_cat'     => $a_cats ? $a_cats : '',
+		'mtl_tag'     => $a_tags ? $a_tags : '',
+		'mtl_status'  => $a_status,
+		'mtl_retired' => $a_retired,
+		'mtl_sort'    => $sort,
+		'mtl_view'    => 'rows' === $view ? 'rows' : '',
+		'mtl_tool'    => $sel_id > 0 ? $sel_id : '',
 	);
 	// Drop empty values so URLs stay tidy.
 	$not_empty   = function ( $v ) {
@@ -1337,6 +1391,19 @@ function mtl_render_shop_page() {
 								<option value="noreserved" <?php selected( $a_status, 'noreserved' ); ?>>No Reservations</option>
 							</select>
 						</div>
+						<?php
+						// Same three states, and the same wording, as the staff
+						// Inventory page's Retired filter, so a volunteer who
+						// knows one reads the other without relearning it.
+						?>
+						<div>
+							<label for="mtl-a-retired">Retired</label>
+							<select id="mtl-a-retired" name="mtl_retired">
+								<option value="">Active only</option>
+								<option value="include" <?php selected( $a_retired, 'include' ); ?>>Active + retired</option>
+								<option value="only" <?php selected( $a_retired, 'only' ); ?>>Retired only</option>
+							</select>
+						</div>
 					</div>
 					<p class="mtl-shop-adv-actions">
 						<button type="submit" class="mtl-shop-btn">Apply Filters</button>
@@ -1424,7 +1491,7 @@ function mtl_render_shop_page() {
 										?>
 									</div>
 								</div>
-								<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $tool->active_res ); ?></div>
+								<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $tool->active_res, ! empty( $tool->retired_at ) ); ?></div>
 							</a>
 						<?php endforeach; ?>
 					</div>
@@ -1446,7 +1513,7 @@ function mtl_render_shop_page() {
 									<?php if ( ! empty( $tool->brand ) ) : ?>
 										<span class="mtl-shop-tile-brand"><?php echo esc_html( stripslashes( $tool->brand ) ); ?></span>
 									<?php endif; ?>
-									<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $tool->active_res ); ?></div>
+									<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $tool->active_res, ! empty( $tool->retired_at ) ); ?></div>
 									<?php if ( ! empty( $tool->categories ) ) : ?>
 										<div><?php echo mtl_shop_pills( $tool->categories ); ?></div>
 									<?php endif; ?>
