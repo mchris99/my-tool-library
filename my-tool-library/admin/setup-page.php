@@ -2012,7 +2012,6 @@ function mtl_render_setup_page() {
 								<input type="checkbox" name="mtl_show_tool_location" id="mtl_show_tool_location" value="1" <?php checked( true, $show_tool_location ); ?>>
 								Show each tool&rsquo;s shelf location to members
 							</label>
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Adds the <strong>Location</strong> recorded on a tool&rsquo;s Inventory record (e.g. &ldquo;Aisle 3, Shelf 4&rdquo;) to what members see when they open that tool in the catalog, so they can find it on the shelf themselves. Leave this off if your tools live somewhere only staff go: members are then shown nothing at all about location, not a message about it being hidden. Either way staff always see it on the Inventory page. Tools with no location recorded show nothing either way.</p>
 						</td>
 					</tr>
 					<tr>
