@@ -173,10 +173,10 @@ function mtl_shop_tool_share_url( $tool_id, $base ) {
 }
 
 /**
- * Renders one tool's full detail-panel body: photo, badges, availability,
- * shelf location (only when the library shows it to members), a shareable
- * link, categories/tags, description, components, and a context-aware
- * Reserve control.
+ * Renders one tool's full detail-panel body: photo, badges, availability, a
+ * shareable link, categories/tags, description, components, shelf location
+ * (only when the library shows it to members), and a context-aware Reserve
+ * control.
  *
  * @param object $tool Tool row from the catalog query.
  * @param string $base Base page URL.
@@ -211,8 +211,6 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 		<p style="margin-top:0; color:#50575e; font-size:0.9em;">
 			<?php echo esc_html( $res ); ?> active reservation<?php echo 1 === $res ? '' : 's'; ?> in the queue.
 		</p>
-
-		<?php echo mtl_shop_location_block( $tool->location ); ?>
 
 		<?php
 		// Collapsed by default (native <details>, no JS) so visitors see
@@ -260,6 +258,8 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 			<h4>What's included</h4>
 			<p><?php echo nl2br( esc_html( stripslashes( $tool->components ) ) ); ?></p>
 		<?php endif; ?>
+
+		<?php echo mtl_shop_location_block( $tool->location ); ?>
 
 		<?php
 		// The Reserve control adapts to the viewer: a member with this
