@@ -2386,6 +2386,10 @@ function mtl_render_inventory_page() {
 						<input type="text" id="adv-brand">
 					</div>
 					<div>
+						<label for="adv-location">Location</label>
+						<input type="text" id="adv-location">
+					</div>
+					<div>
 						<label for="adv-donor">Donated By</label>
 						<input type="text" id="adv-donor">
 					</div>
@@ -2953,6 +2957,7 @@ function mtl_render_inventory_page() {
 				name: document.getElementById('adv-name'),
 				barcode: document.getElementById('adv-barcode'),
 				brand: document.getElementById('adv-brand'),
+				location: document.getElementById('adv-location'),
 				tag: document.getElementById('adv-tag'),
 				training: document.getElementById('adv-training'),
 				description: document.getElementById('adv-description'),
@@ -3007,6 +3012,7 @@ function mtl_render_inventory_page() {
 					name: advFields.name.value.trim().toLowerCase(),
 					barcode: advFields.barcode.value.trim().toLowerCase(),
 					brand: advFields.brand.value.trim().toLowerCase(),
+					location: advFields.location.value.trim().toLowerCase(),
 					taxonomy: window.mtlTaxonomySelection(document.getElementById('mtl-inv-tx')),
 					tags: selectedValues(advFields.tag),
 					trainings: selectedValues(advFields.training),
@@ -3049,6 +3055,7 @@ function mtl_render_inventory_page() {
 					if (visible && f.name && !d.name.includes(f.name)) visible = false;
 					if (visible && f.barcode && !d.barcode.includes(f.barcode)) visible = false;
 					if (visible && f.brand && !d.brand.includes(f.brand)) visible = false;
+					if (visible && f.location && !d.location.includes(f.location)) visible = false;
 					if (visible && !window.mtlTaxonomyMatches(f.taxonomy, d.categoryIds, d.subcategoryIds)) visible = false;
 					if (visible && !listMatchesAny(d.tags, f.tags)) visible = false;
 					if (visible && !window.mtlTrainingMatches(f.trainings, d.trainingIds)) visible = false;

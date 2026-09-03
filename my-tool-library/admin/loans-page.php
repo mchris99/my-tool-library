@@ -118,6 +118,12 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 
 	// Tool-level totals, not totals for this member or single record.
 	$html .= '<p class="mtl-detail-section">This tool</p>';
+	$html .= mtl_lr_field(
+		'Location',
+		'' !== $rec['location']
+		? esc_html( $rec['location'] )
+		: '<span class="mtl-lr-muted">&mdash;</span>'
+	);
 	$html .= mtl_lr_field( 'Total loans (all time)', esc_html( (string) $rec['tool_total_loans'] ) );
 	$html .= mtl_lr_field( 'Active reservations', esc_html( (string) $rec['tool_active_reservations'] ) );
 
@@ -627,7 +633,7 @@ function mtl_render_loans_page() {
 	$loan_rows = $wpdb->get_results(
 		"
         SELECT l.loan_id, l.tool_id, l.member_id, l.loan_date, l.due_date, l.return_date,
-               t.tool_name, t.barcode, t.brand,
+               t.tool_name, t.barcode, t.brand, t.location,
                m.first_name, m.last_name, m.email, m.phone_number,
                DATEDIFF(CURDATE(), l.due_date) AS days_past_due,
                (SELECT COUNT(*) FROM {$tbl_verifications} v WHERE v.member_id = l.member_id AND v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS is_verified
@@ -644,7 +650,7 @@ function mtl_render_loans_page() {
 	$res_rows = $wpdb->get_results(
 		"
         SELECT r.reservation_id, r.tool_id, r.member_id, r.reservation_date, r.ready_since,
-               t.tool_name, t.barcode, t.brand,
+               t.tool_name, t.barcode, t.brand, t.location,
                m.first_name, m.last_name, m.email, m.phone_number,
                (SELECT COUNT(*) FROM {$tbl_verifications} v WHERE v.member_id = r.member_id AND v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS is_verified,
                (SELECT COUNT(*) FROM {$tbl_reservations} r2
@@ -754,6 +760,7 @@ function mtl_render_loans_page() {
 			'tool_name'        => stripslashes( $l->tool_name ),
 			'barcode'          => stripslashes( $l->barcode ),
 			'brand'            => stripslashes( (string) $l->brand ),
+			'location'         => stripslashes( (string) $l->location ),
 			'member_name'      => mtl_lr_name( $l->first_name, $l->last_name ),
 			'member_email'     => $l->email,
 			'member_phone'     => stripslashes( (string) $l->phone_number ),
@@ -787,6 +794,7 @@ function mtl_render_loans_page() {
 			'tool_name'        => stripslashes( $r->tool_name ),
 			'barcode'          => stripslashes( $r->barcode ),
 			'brand'            => stripslashes( (string) $r->brand ),
+			'location'         => stripslashes( (string) $r->location ),
 			'member_name'      => mtl_lr_name( $r->first_name, $r->last_name ),
 			'member_email'     => $r->email,
 			'member_phone'     => stripslashes( (string) $r->phone_number ),
@@ -824,6 +832,7 @@ function mtl_render_loans_page() {
 			'tool_name'        => stripslashes( $l->tool_name ),
 			'barcode'          => stripslashes( $l->barcode ),
 			'brand'            => stripslashes( (string) $l->brand ),
+			'location'         => stripslashes( (string) $l->location ),
 			'member_name'      => mtl_lr_name( $l->first_name, $l->last_name ),
 			'member_email'     => $l->email,
 			'member_phone'     => stripslashes( (string) $l->phone_number ),
@@ -1529,6 +1538,10 @@ function mtl_render_loans_page() {
 						<input type="text" id="adv-lr-barcode">
 					</div>
 					<div>
+						<label for="adv-lr-location">Tool Location</label>
+						<input type="text" id="adv-lr-location">
+					</div>
+					<div>
 						<label for="adv-lr-member">Member Name</label>
 						<input type="text" id="adv-lr-member">
 					</div>
@@ -1673,6 +1686,7 @@ function mtl_render_loans_page() {
 									data-overdue="<?php echo $rec['overdue'] ? '1' : '0'; ?>"
 									data-barcode="<?php echo esc_attr( strtolower( $rec['barcode'] ) ); ?>"
 									data-tool="<?php echo esc_attr( strtolower( $rec['tool_name'] ) ); ?>"
+									data-location="<?php echo esc_attr( strtolower( $rec['location'] ) ); ?>"
 									data-member="<?php echo esc_attr( strtolower( $rec['member_name'] ) ); ?>"
 									data-reserved="<?php echo esc_attr( $reserved_date ); ?>"
 									data-loan="<?php echo esc_attr( $rec['loan_date'] ); ?>"
@@ -1806,6 +1820,7 @@ function mtl_render_loans_page() {
 			const advFields = {
 				tool: document.getElementById('adv-lr-tool'),
 				barcode: document.getElementById('adv-lr-barcode'),
+				location: document.getElementById('adv-lr-location'),
 				member: document.getElementById('adv-lr-member'),
 				type: document.getElementById('adv-lr-type'),
 				loanFrom: document.getElementById('adv-lr-loan-from'),
@@ -1836,6 +1851,10 @@ function mtl_render_loans_page() {
 				if (tool && !d.tool.includes(tool)) return false;
 				const barcode = advFields.barcode.value.trim().toLowerCase();
 				if (barcode && !d.barcode.includes(barcode)) return false;
+				// Shelf location lives in the detail box rather than a column, so
+				// this matches the row's data value, not its rendered text.
+				const location = advFields.location.value.trim().toLowerCase();
+				if (location && !d.location.includes(location)) return false;
 				const member = advFields.member.value.trim().toLowerCase();
 				if (member && !d.member.includes(member)) return false;
 				if (advFields.type.value && d.type !== advFields.type.value) return false;
