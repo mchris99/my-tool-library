@@ -897,6 +897,11 @@ function mtl_render_shop_page() {
 				flex-direction: column;
 			}
 
+			.mtl-shop-detail {
+				max-height: none;
+				overflow: hidden;
+			}
+
 			.mtl-shop-detail-col {
 				position: static;
 				width: 100%;
@@ -1046,7 +1051,19 @@ function mtl_render_shop_page() {
 			border: 1px solid #d5d8dc;
 			border-radius: 8px;
 			background: #fff;
-			overflow: hidden;
+			/* Tall enough to reach the bottom of the viewport (paired with the
+				column's top: 16px, leaving the same gap underneath), then the
+				panel scrolls within its own box rather than running past the
+				bottom of a sticky column the page can never scroll down to.
+				overscroll-behavior stops that scroll from chaining into the
+				catalog when the panel hits either end, so the two columns keep
+				their own scroll positions. overflow-x stays hidden, which is
+				what the plain overflow:hidden here was for: clipping the
+				full-bleed photo to the rounded top corners. */
+			max-height: calc(100vh - 32px);
+			overflow-y: auto;
+			overflow-x: hidden;
+			overscroll-behavior: contain;
 		}
 
 		/* Every tool's panel is pre-rendered (hidden); CSS :target reveals
