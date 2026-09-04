@@ -93,6 +93,20 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 		if ( '' !== $rec['collect_by'] ) {
 			$html .= mtl_lr_field( 'Collect by', mtl_lr_fmt( $rec['collect_by'] ) . ' <span style="color:#646970;">(auto-cancels after this)</span>' );
 		}
+	} elseif ( 'past_reservation' === $rec['type'] ) {
+		$html .= mtl_lr_field( 'Reserved', mtl_lr_fmt( $rec['reserved_at'], 'm/d/Y H:i' ) );
+		$html .= mtl_lr_field( 'Closed', mtl_lr_fmt( $rec['expiry_date'], 'm/d/Y H:i' ) );
+		// The label comes from mtl_reservation_close_reasons(), which returns
+		// '' for anything it does not recognise; a reservation closed before
+		// that column shipped genuinely has no reason on record, and saying so
+		// is better than picking the likeliest one.
+		$reason_label = mtl_reservation_close_reason_label( $rec['closed_reason'] );
+		$html        .= mtl_lr_field(
+			'Reason',
+			'' !== $reason_label
+			? esc_html( $reason_label )
+			: '<span class="mtl-lr-muted">Not recorded</span>'
+		);
 	} elseif ( 'current' === $rec['type'] ) {
 		$html .= mtl_lr_field( 'On loan since', mtl_lr_fmt( $rec['loan_date'], 'm/d/Y H:i' ) );
 		$html .= mtl_lr_field( 'Due date', mtl_lr_fmt( $rec['due_date'] ) );
@@ -674,6 +688,25 @@ function mtl_render_loans_page() {
         ORDER BY t.tool_name ASC, r.reservation_date ASC
     "
 	);
+
+	// --- Closed reservations: the history behind those queues ---
+	// No queue_place/queue_size, since a closed reservation is out of the queue
+	// and the derivation above counts only active rows anyway. closed_reason is
+	// why it ended; see mtl_reservation_close_reasons(). Most recently closed
+	// first, matching how previous loans are ordered below.
+	$past_res_rows = $wpdb->get_results(
+		"
+        SELECT r.reservation_id, r.tool_id, r.member_id, r.reservation_date,
+               r.expiry_date, r.closed_reason,
+               t.tool_name, t.barcode, t.brand, t.location,
+               m.first_name, m.last_name, m.email, m.phone_number
+        FROM {$tbl_reservations} r
+        JOIN {$tbl_inventory} t ON t.tool_id = r.tool_id
+        JOIN {$tbl_members} m ON m.member_id = r.member_id
+        WHERE r.expiry_date IS NOT NULL
+        ORDER BY r.expiry_date DESC
+    "
+	);
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 	// --- Per-tool activity totals ---
@@ -771,6 +804,7 @@ function mtl_render_loans_page() {
 			'due_date'         => $l->due_date,
 			'return_date'      => '',
 			'expiry_date'      => '',
+			'closed_reason'    => '',
 			'queue_place'      => 0,
 			'queue_size'       => 0,
 			'days_past_due'    => (int) $l->days_past_due,
@@ -805,6 +839,7 @@ function mtl_render_loans_page() {
 			'due_date'         => '',
 			'return_date'      => '',
 			'expiry_date'      => '',
+			'closed_reason'    => '',
 			'queue_place'      => (int) $r->queue_place,
 			'queue_size'       => (int) $r->queue_size,
 			'days_past_due'    => 0,
@@ -843,6 +878,7 @@ function mtl_render_loans_page() {
 			'due_date'         => $l->due_date,
 			'return_date'      => $l->return_date,
 			'expiry_date'      => '',
+			'closed_reason'    => '',
 			'queue_place'      => 0,
 			'queue_size'       => 0,
 			'days_past_due'    => 0,
@@ -852,6 +888,46 @@ function mtl_render_loans_page() {
 			'is_verified'      => ( (int) $l->is_verified > 0 ),
 			'current_loan_due' => '',
 			'returned_late'    => $returned_late,
+		);
+	}
+
+	foreach ( $past_res_rows as $r ) {
+		// 'unrecorded' rather than '' for a closed reservation with no reason
+		// on file (one that closed before closed_reason shipped). Every other
+		// record type carries '' here, so the two cases stay tellable apart:
+		// '' means "this question does not apply to this row", and the filter
+		// below relies on that the same way the Yes/No flags do.
+		$closed_reason = (string) $r->closed_reason;
+		$records[]     = array(
+			'idx'              => $idx++,
+			'type'             => 'past_reservation',
+			'status_label'     => 'Closed',
+			'status_class'     => 'mtl-pill-closed',
+			'overdue'          => false,
+			'tool_id'          => (int) $r->tool_id,
+			'tool_name'        => stripslashes( $r->tool_name ),
+			'barcode'          => stripslashes( $r->barcode ),
+			'brand'            => stripslashes( (string) $r->brand ),
+			'location'         => stripslashes( (string) $r->location ),
+			'member_name'      => mtl_lr_name( $r->first_name, $r->last_name ),
+			'member_email'     => $r->email,
+			'member_phone'     => stripslashes( (string) $r->phone_number ),
+			'reserved_at'      => $r->reservation_date,
+			'collect_by'       => '',
+			'loan_date'        => '',
+			'due_date'         => '',
+			'return_date'      => '',
+			'expiry_date'      => $r->expiry_date,
+			'closed_reason'    => '' !== $closed_reason ? $closed_reason : 'unrecorded',
+			'queue_place'      => 0,
+			'queue_size'       => 0,
+			'days_past_due'    => 0,
+			'days_left'        => 0,
+			'loan_id'          => 0,
+			'reservation_id'   => (int) $r->reservation_id,
+			'is_verified'      => false,
+			'current_loan_due' => '',
+			'returned_late'    => false,
 		);
 	}
 
@@ -865,6 +941,7 @@ function mtl_render_loans_page() {
 		'Waiting'  => 2,
 		'Ready'    => 3,
 		'Returned' => 4,
+		'Closed'   => 5,
 	);
 	foreach ( $records as &$rec_ref ) {
 		$tid                                 = $rec_ref['tool_id'];
@@ -884,7 +961,7 @@ function mtl_render_loans_page() {
 	$count_loans   = 0;
 	$count_overdue = 0;
 	foreach ( $records as $rec ) {
-		if ( 'reservation' === $rec['type'] ) {
+		if ( 'reservation' === $rec['type'] || 'past_reservation' === $rec['type'] ) {
 			++$count_res;
 		} else {
 			++$count_loans;
@@ -1165,6 +1242,14 @@ function mtl_render_loans_page() {
 		}
 
 		.mtl-pill-returned {
+			background: #f0f0f1;
+			color: #50575e;
+			border: 1px solid #d5d8dc;
+		}
+
+		/* A closed reservation is finished business like a returned loan, so
+			it reads the same way; the detail box says why it closed. */
+		.mtl-pill-closed {
 			background: #f0f0f1;
 			color: #50575e;
 			border: 1px solid #d5d8dc;
@@ -1551,6 +1636,7 @@ function mtl_render_loans_page() {
 						<select id="adv-lr-type">
 							<option value="">Any</option>
 							<option value="reservation">Reservation</option>
+							<option value="past_reservation">Past Reservation</option>
 							<option value="current">Current Loan</option>
 							<option value="previous">Previous Loan</option>
 						</select>
@@ -1637,6 +1723,23 @@ function mtl_render_loans_page() {
 							<option value="0">No</option>
 						</select>
 					</div>
+					<?php
+					// Options come from the same map the write paths stamp, so
+					// this list cannot drift from the values actually stored.
+					// "Not recorded" is its own choice rather than a blank one:
+					// blank here means "any", and a reservation closed before
+					// closed_reason shipped is a real thing to go looking for.
+					?>
+					<div>
+						<label for="adv-lr-closed-reason" title="Applies to past reservations only: why the reservation ended">Closed Reason</label>
+						<select id="adv-lr-closed-reason">
+							<option value="">Any</option>
+							<?php foreach ( mtl_reservation_close_reasons() as $lr_reason_key => $lr_reason_label ) : ?>
+								<option value="<?php echo esc_attr( $lr_reason_key ); ?>"><?php echo esc_html( $lr_reason_label ); ?></option>
+							<?php endforeach; ?>
+							<option value="unrecorded">Not recorded</option>
+						</select>
+					</div>
 				</div>
 			</fieldset>
 
@@ -1702,6 +1805,8 @@ function mtl_render_loans_page() {
 									data-returnedlate="<?php echo 'previous' === $rec['type'] ? ( $rec['returned_late'] ? '1' : '0' ) : ''; ?>"
 									data-firstinqueue="<?php echo 'reservation' === $rec['type'] ? ( 1 === (int) $rec['queue_place'] ? '1' : '0' ) : ''; ?>"
 									data-toolonloan="<?php echo 'reservation' === $rec['type'] ? ( '' !== $rec['current_loan_due'] ? '1' : '0' ) : ''; ?>"
+									<?php // Blank on every other record type, so a reason filter can't match one. ?>
+									data-closedreason="<?php echo esc_attr( $rec['closed_reason'] ); ?>"
 									data-category-ids="<?php echo esc_attr( $rec['tool_category_ids'] ); ?>"
 									data-subcategory-ids="<?php echo esc_attr( $rec['tool_subcategory_ids'] ); ?>"
 									data-tag-ids="<?php echo esc_attr( $rec['tool_tag_ids'] ); ?>"
@@ -1834,6 +1939,7 @@ function mtl_render_loans_page() {
 				returnedLate: document.getElementById('adv-lr-returned-late'),
 				firstInQueue: document.getElementById('adv-lr-first-queue'),
 				toolOnLoan: document.getElementById('adv-lr-tool-on-loan'),
+				closedReason: document.getElementById('adv-lr-closed-reason'),
 			};
 
 			// A row is visible only if it passes the active one-click view AND
@@ -1841,7 +1947,7 @@ function mtl_render_loans_page() {
 			function rowMatches(row) {
 				const d = row.dataset;
 
-				if (currentView === 'reservation' && d.type !== 'reservation') return false;
+				if (currentView === 'reservation' && !(d.type === 'reservation' || d.type === 'past_reservation')) return false;
 				if (currentView === 'loans' && !(d.type === 'current' || d.type === 'previous')) return false;
 				if (currentView === 'overdue' && d.overdue !== '1') return false;
 
@@ -1893,6 +1999,10 @@ function mtl_render_loans_page() {
 				if (advFields.returnedLate.value && d.returnedlate !== advFields.returnedLate.value) return false;
 				if (advFields.firstInQueue.value && d.firstinqueue !== advFields.firstInQueue.value) return false;
 				if (advFields.toolOnLoan.value && d.toolonloan !== advFields.toolOnLoan.value) return false;
+				// Blank on everything but a past reservation, so picking a
+				// reason drops loans and active reservations out rather than
+				// counting them as "no reason".
+				if (advFields.closedReason.value && d.closedreason !== advFields.closedReason.value) return false;
 
 				return true;
 			}
