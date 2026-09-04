@@ -1437,8 +1437,9 @@ function mtl_render_inventory_page() {
 				$rt_cancelled = $wpdb->query(
 					$wpdb->prepare(
 						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-						"UPDATE {$tbl_reservations} SET expiry_date = %s WHERE tool_id = %d AND expiry_date IS NULL",
+						"UPDATE {$tbl_reservations} SET expiry_date = %s, closed_reason = %s WHERE tool_id = %d AND expiry_date IS NULL",
 						current_time( 'mysql' ),
+						'tool_retired',
 						$rt_tool_id
 					)
 				);

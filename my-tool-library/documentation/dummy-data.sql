@@ -7,10 +7,12 @@
 --      tables are already seeded by schema.sql (category ids 1-11 / tag ids
 --      1-12 / training ids 1-7 are referenced below).
 --
--- CONTENTS: 60 members (45 verified / 15 unverified), 125 tools, their
--- category/tag mappings, 81 loans (26 active, 10 currently overdue, 5
--- returned late), 16 reservations (several tools carry multi-member
--- queues), and 41 member/training records across 24 members.
+-- CONTENTS: 60 members (45 verified / 15 unverified, of whom 1 is deleted and
+-- anonymized), 125 tools (1 of them retired), their category/tag mappings, 81
+-- loans (26 active, 10 currently overdue, 5 returned late), 26 reservations
+-- (16 active, several tools carrying multi-member queues, plus 10 closed ones
+-- covering all six values of closed_reason), and 41 member/training records
+-- across 24 members.
 -- Machine-generated for volume testing (e.g. table pagination); repeated
 -- tool types carry different brands, values, barcodes, and acquisition
 -- dates so every row is distinct.
@@ -119,6 +121,22 @@ UPDATE wp_members SET private_notes = 'Returned the table saw with a chipped bla
 UPDATE wp_members SET private_notes = 'Two overdue returns in a row. Reminded about the 3-week limit on 2026-06-02. No issues since.' WHERE member_id = 39;
 UPDATE wp_members SET private_notes = 'Runs a neighborhood repair cafe; often borrows in bulk for events. Coordinate ahead for large pickups.' WHERE member_id = 44;
 UPDATE wp_members SET private_notes = 'Phone number on file is a shared household line, so ask for Mason by name.' WHERE member_id = 58;
+
+-- One deleted member, written the way mtl_delete_or_anonymize_member() leaves
+-- a row: the record survives so their loan history stays attached, but every
+-- identifying field is replaced and anonymized_at is stamped. Member 16 is
+-- used because they hold no verification row (the delete path removes one),
+-- no trainings, and no active loan or reservation, so nothing else in this
+-- file has to bend around it. Their returned loan #20 stays, and now reads as
+-- belonging to "Former Member", which is the whole point of anonymizing
+-- rather than deleting.
+UPDATE wp_members SET
+    first_name = 'Former', last_name = 'Member',
+    address_line1 = '(removed)', address_line2 = NULL,
+    city = '(removed)', state = 'N/A', zip_code = '00000', country = 'United States',
+    phone_number = '(removed)', email = 'deleted-member-16@example.invalid',
+    private_notes = NULL, anonymized_at = '2026-08-14 10:05:00'
+    WHERE member_id = 16;
 
 -- ==========================================
 -- 2. MEMBER VERIFICATIONS (45 of 60 verified)
@@ -311,6 +329,18 @@ INSERT INTO wp_tool_inventory
 (123, 'Digital Multimeter', 'MTL-000123', 'Klein', 'Auto-ranging multimeter for AC/DC voltage, current and resistance.', 'Test Leads, Carrying Pouch', 'https://picsum.photos/seed/tool-123/600/400', 200.99, 8.00, 'Priya Reed', '2026-05-13', NULL, 'Aisle 4, Shelf 1'),
 (124, 'OBD-II Code Reader', 'MTL-000124', 'Innova', 'Reads and clears check-engine codes on 1996+ vehicles.', 'USB Cable, Quick Reference Card', 'https://picsum.photos/seed/tool-124/600/400', 131.00, 11.00, NULL, '2026-05-20', NULL, 'Aisle 4, Shelf 2'),
 (125, 'Paint Sprayer', 'MTL-000125', 'Wagner', 'HVLP paint sprayer for walls, fences and furniture. Clean thoroughly before returning.', 'Two Nozzles, Viscosity Cup, Cleaning Brush', 'https://picsum.photos/seed/tool-125/600/400', 115.99, 18.00, NULL, '2026-05-27', NULL, 'Aisle 5, Shelf 1');
+
+-- One retired tool. retired_at is the only thing that marks it: the row and
+-- all its history stay intact, and clearing the column reactivates it. Tool 3
+-- is chosen because its private_notes already describe a blade that wobbles
+-- above 6000 RPM and was flagged to maintenance, so taking it out of
+-- circulation is the story those notes were already telling.
+--
+-- Having exactly one retired tool is what exercises the split states: the
+-- public catalog hides it unless the Retired filter asks for it, the staff
+-- Inventory page hides it unless "Active + retired" is picked, and its
+-- reservation queue was closed as 'tool_retired' (see section 7).
+UPDATE wp_tool_inventory SET retired_at = '2026-06-15 09:30:00' WHERE tool_id = 3;
 
 -- ==========================================
 -- 4. TOOL <-> CATEGORY MAPPINGS
@@ -876,7 +906,12 @@ INSERT INTO wp_loans (loan_id, tool_id, member_id, loan_date, due_date, return_d
 (81, 101, 41, '2026-07-18 17:55:00', '2026-08-01', NULL);
 
 -- ==========================================
--- 7. TOOL RESERVATIONS (16)
+-- 7. ACTIVE TOOL RESERVATIONS (16)
+--    The waiting queues as they stand right now. Reservations that have
+--    already ended are section 7B, kept separate because they answer a
+--    different question and are matched by a different test (expiry_date IS
+--    NOT NULL, never "active").
+--
 --    reservation_date is a full TIMESTAMP, so a tool can hold a multi-member
 --    waiting queue; the earliest timestamp for a tool is queue position 1
 --    (position is derived on the fly, never stored).
@@ -887,8 +922,9 @@ INSERT INTO wp_loans (loan_id, tool_id, member_id, loan_date, due_date, return_d
 --      * Tools 11, 35, 43, 51, 59 and 75 are NOT on loan, so their
 --        reservations are collectable now ("Ready").
 --    No member ever reserves a tool they already have checked out. Every row
---    here is an ACTIVE reservation, so expiry_date is NULL (it is only set when
---    a reservation is cancelled or fulfilled by a loan; see schema.sql).
+--    here is an ACTIVE reservation, so expiry_date and closed_reason are both
+--    NULL: the pair is only ever written together, when the reservation ends
+--    (see schema.sql and mtl_reservation_close_reasons()).
 --
 --    ready_since is set ONLY on a reservation that is collectable right now:
 --    front of its queue with the tool on the shelf. Everything queued behind a
@@ -898,33 +934,82 @@ INSERT INTO wp_loans (loan_id, tool_id, member_id, loan_date, due_date, return_d
 --    loading this file does not immediately expire anything; see
 --    mtl_expire_stale_reservations().
 -- ==========================================
-INSERT INTO wp_tool_reservations (reservation_id, tool_id, member_id, reservation_date, ready_since, expiry_date) VALUES
+INSERT INTO wp_tool_reservations (reservation_id, tool_id, member_id, reservation_date, ready_since, expiry_date, closed_reason) VALUES
 -- Tool 1 (on loan to member 6, overdue): 3-member waiting queue, nobody ready
-(1,  1,  8,  '2026-07-17 09:15:00', NULL, NULL),
-(2,  1,  21, '2026-07-19 14:30:00', NULL, NULL),
-(3,  1,  34, '2026-07-22 11:05:00', NULL, NULL),
+(1,  1,  8,  '2026-07-17 09:15:00', NULL, NULL, NULL),
+(2,  1,  21, '2026-07-19 14:30:00', NULL, NULL, NULL),
+(3,  1,  34, '2026-07-22 11:05:00', NULL, NULL, NULL),
 -- Tool 13 (on loan to member 39, overdue): 2-member waiting queue
-(4,  13, 47, '2026-07-18 10:00:00', NULL, NULL),
-(5,  13, 52, '2026-07-21 16:20:00', NULL, NULL),
+(4,  13, 47, '2026-07-18 10:00:00', NULL, NULL, NULL),
+(5,  13, 52, '2026-07-21 16:20:00', NULL, NULL, NULL),
 -- Tool 45 (on loan to member 7): 2-member waiting queue
-(6,  45, 5,  '2026-07-20 08:45:00', NULL, NULL),
-(7,  45, 18, '2026-07-24 15:40:00', NULL, NULL),
+(6,  45, 5,  '2026-07-20 08:45:00', NULL, NULL, NULL),
+(7,  45, 18, '2026-07-24 15:40:00', NULL, NULL, NULL),
 -- Tool 97 (on loan to member 30): single wait-list entry
-(8,  97, 44, '2026-07-27 09:00:00', NULL, NULL),
+(8,  97, 44, '2026-07-27 09:00:00', NULL, NULL, NULL),
 -- Tool 11 (available): single reservation, ready for pickup
-(9,  11, 21, '2026-07-23 13:25:00', '2026-08-01 09:00:00', NULL),
+(9,  11, 21, '2026-07-23 13:25:00', '2026-08-01 09:00:00', NULL, NULL),
 -- Tool 35 (available): single reservation
-(10, 35, 5,  '2026-07-25 15:10:00', '2026-08-02 10:30:00', NULL),
+(10, 35, 5,  '2026-07-25 15:10:00', '2026-08-02 10:30:00', NULL, NULL),
 -- Tool 43 (available): single reservation
-(11, 43, 13, '2026-07-26 14:00:00', '2026-07-30 16:45:00', NULL),
+(11, 43, 13, '2026-07-26 14:00:00', '2026-07-30 16:45:00', NULL, NULL),
 -- Tool 51 (available): 2-member queue, of which only the front is ready
-(12, 51, 26, '2026-07-22 11:00:00', '2026-08-03 08:15:00', NULL),
-(13, 51, 60, '2026-07-25 10:15:00', NULL, NULL),
+(12, 51, 26, '2026-07-22 11:00:00', '2026-08-03 08:15:00', NULL, NULL),
+(13, 51, 60, '2026-07-25 10:15:00', NULL, NULL, NULL),
 -- Tool 59 (available): 2-member queue, of which only the front is ready
-(14, 59, 39, '2026-07-23 08:30:00', '2026-07-31 12:00:00', NULL),
-(15, 59, 44, '2026-07-26 17:45:00', NULL, NULL),
+(14, 59, 39, '2026-07-23 08:30:00', '2026-07-31 12:00:00', NULL, NULL),
+(15, 59, 44, '2026-07-26 17:45:00', NULL, NULL, NULL),
 -- Tool 75 (available): single reservation
-(16, 75, 30, '2026-07-28 12:00:00', '2026-08-02 14:20:00', NULL);
+(16, 75, 30, '2026-07-28 12:00:00', '2026-08-02 14:20:00', NULL, NULL);
+
+-- ==========================================
+-- 7B. CLOSED RESERVATIONS (10)
+--    History, not queue: every row here has expiry_date set, so no query that
+--    means "active reservation" (expiry_date IS NULL) picks them up, and none
+--    of them shifts a queue position above.
+--
+--    Between them they cover all six values of closed_reason, so every branch
+--    of mtl_reservation_close_reasons() has data behind it:
+--      fulfilled (2), lapsed (2), cancelled_member (2), cancelled_staff (1),
+--      tool_retired (2), member_deleted (1).
+--
+--    Each is kept consistent with the rest of this file rather than invented
+--    freely:
+--      * The two 'fulfilled' rows close at the exact loan_date of the loan
+--        they turned into (loans 47 and 51), which is what mtl_create_loan()
+--        stamps.
+--      * The two 'lapsed' rows expire 14 days after ready_since, matching the
+--        default mtl_reservation_hold_days. Only a reservation that actually
+--        became collectable can lapse, so both carry a ready_since.
+--      * The 'tool_retired' pair closes at the moment tool 3 was retired
+--        (section 3), to the second, since one UPDATE closed them together.
+--        Both members hold current Table Saw Safety, keeping the rule that
+--        nobody here is queued for a tool they aren't cleared for.
+--      * The 'member_deleted' row closes at member 16's anonymized_at
+--        (section 1), for the same reason.
+--      * A reservation cancelled while still queued behind a loan never became
+--        collectable, so ready_since stays NULL on those.
+-- ==========================================
+INSERT INTO wp_tool_reservations (reservation_id, tool_id, member_id, reservation_date, ready_since, expiry_date, closed_reason) VALUES
+-- Became loan #47 (tool 43 to member 25, 2025-12-16): reserved, collected, closed.
+(17, 43,  25, '2025-12-08 10:20:00', '2025-12-11 09:00:00', '2025-12-16 15:10:00', 'fulfilled'),
+-- Became loan #51 (tool 79 to member 53, 2026-02-02).
+(18, 79,  53, '2026-01-26 16:40:00', '2026-01-29 11:15:00', '2026-02-02 16:15:00', 'fulfilled'),
+-- Ready 2026-05-04, never collected; the daily sweep closed it 14 days later.
+(19, 22,  35, '2026-04-28 13:05:00', '2026-05-04 09:45:00', '2026-05-18 03:00:00', 'lapsed'),
+-- Same again, on a different tool and member.
+(20, 66,  47, '2026-06-03 15:30:00', '2026-06-10 08:20:00', '2026-06-24 03:00:00', 'lapsed'),
+-- Gave up their place from My Reservations while still behind a loan.
+(21, 105, 27, '2026-04-02 11:50:00', NULL, '2026-04-09 19:05:00', 'cancelled_member'),
+-- Cancelled their own reservation after it was already collectable.
+(22, 118, 42, '2026-05-19 09:10:00', '2026-05-27 10:00:00', '2026-05-29 08:40:00', 'cancelled_member'),
+-- Member phoned to say they no longer needed it; staff closed it for them.
+(23, 92,  19, '2026-05-11 14:25:00', '2026-05-15 09:30:00', '2026-05-20 16:10:00', 'cancelled_staff'),
+-- Tool 3 was retired out from under its queue, closing both places at once.
+(24, 3,   22, '2026-06-01 10:15:00', '2026-06-05 08:00:00', '2026-06-15 09:30:00', 'tool_retired'),
+(25, 3,   44, '2026-06-08 17:20:00', NULL, '2026-06-15 09:30:00', 'tool_retired'),
+-- Member 16 was deleted; their queue place went with them.
+(26, 30,  16, '2026-08-03 12:35:00', NULL, '2026-08-14 10:05:00', 'member_deleted');
 
 -- ==========================================
 -- 8. MEMBER <-> TRAINING MAPPINGS (41 records across 24 of 60 members)

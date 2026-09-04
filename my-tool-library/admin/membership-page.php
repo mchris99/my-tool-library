@@ -2528,8 +2528,9 @@ function mtl_render_membership_page() {
 			);
 			$cr_done           = $wpdb->query(
 				$wpdb->prepare(
-					"UPDATE {$tbl_reservations} SET expiry_date = %s WHERE reservation_id = %d AND expiry_date IS NULL",
+					"UPDATE {$tbl_reservations} SET expiry_date = %s, closed_reason = %s WHERE reservation_id = %d AND expiry_date IS NULL",
 					current_time( 'mysql' ),
+					'cancelled_staff',
 					$cr_reservation_id
 				)
 			);
@@ -2627,8 +2628,9 @@ function mtl_render_membership_page() {
 							// Reservations checkout action.
 							$wpdb->query(
 								$wpdb->prepare(
-									"UPDATE {$tbl_reservations} SET expiry_date = %s WHERE reservation_id = %d AND expiry_date IS NULL",
+									"UPDATE {$tbl_reservations} SET expiry_date = %s, closed_reason = %s WHERE reservation_id = %d AND expiry_date IS NULL",
 									current_time( 'mysql' ),
+									'fulfilled',
 									$sl_reservation_id
 								)
 							);

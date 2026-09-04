@@ -524,8 +524,9 @@ function mtl_lr_handle_actions() {
 		$done = $wpdb->query(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-				"UPDATE {$tbl_reservations} SET expiry_date = %s WHERE reservation_id = %d AND expiry_date IS NULL",
+				"UPDATE {$tbl_reservations} SET expiry_date = %s, closed_reason = %s WHERE reservation_id = %d AND expiry_date IS NULL",
 				$today,
+				'cancelled_staff',
 				$reservation_id
 			)
 		);

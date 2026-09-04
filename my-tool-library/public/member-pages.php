@@ -1942,9 +1942,10 @@ function mtl_render_member_reservations_page() {
 			$wpdb->query(
 				$wpdb->prepare(
 					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-					"UPDATE {$tbl_res} SET expiry_date = %s
+					"UPDATE {$tbl_res} SET expiry_date = %s, closed_reason = %s
                  WHERE reservation_id = %d AND member_id = %d AND expiry_date IS NULL",
 					$today,
+					'cancelled_member',
 					$rid,
 					(int) $member->member_id
 				)
@@ -1966,9 +1967,10 @@ function mtl_render_member_reservations_page() {
 			$wpdb->query(
 				$wpdb->prepare(
 					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-					"UPDATE {$tbl_res} SET expiry_date = %s
+					"UPDATE {$tbl_res} SET expiry_date = %s, closed_reason = %s
                  WHERE member_id = %d AND expiry_date IS NULL",
 					$today,
+					'cancelled_member',
 					(int) $member->member_id
 				)
 			);

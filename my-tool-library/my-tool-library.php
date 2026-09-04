@@ -2759,6 +2759,55 @@ function mtl_resolve_return_timestamp( $loan_id, $posted_date ) {
 // ==========================================================================
 
 /**
+ * Every way a reservation can stop being active, and how to say each one.
+ *
+ * tool_reservations.expiry_date records WHEN a reservation ended;
+ * closed_reason records WHY, because the timestamp alone cannot tell a
+ * reservation that turned into a loan from one nobody came to collect. The
+ * keys here are the only values that column ever holds, and this map is the
+ * single place their wording lives, so a label is corrected in one edit
+ * rather than at each of the eight sites that close a reservation.
+ *
+ * 'lapsed' is the only one nobody chose: mtl_expire_stale_reservations()
+ * applies it on a timer. The rest all name an actor or an event, since "the
+ * member gave up their place" and "we retired the tool out from under them"
+ * are the same row otherwise, and only one of them is the library's doing.
+ *
+ * Built on every call rather than held in a constant, so the labels resolve
+ * against the text domain loaded for the current request; see
+ * mtl_agreement_contexts() for the same rule and the reasoning behind it.
+ *
+ * @return array<string, string> Reason key => human-readable label.
+ */
+function mtl_reservation_close_reasons() {
+	return array(
+		'fulfilled'        => __( 'Fulfilled', 'my-tool-library' ),
+		'lapsed'           => __( 'Lapsed', 'my-tool-library' ),
+		'cancelled_staff'  => __( 'Cancelled by staff', 'my-tool-library' ),
+		'cancelled_member' => __( 'Cancelled by the member', 'my-tool-library' ),
+		'tool_retired'     => __( 'Cancelled: tool retired', 'my-tool-library' ),
+		'member_deleted'   => __( 'Cancelled: member deleted', 'my-tool-library' ),
+	);
+}
+
+/**
+ * The label for a stored closed_reason, for display.
+ *
+ * Falls back to '' rather than inventing wording for an unrecognised value:
+ * a row closed before the column shipped has no reason on record, and a
+ * caller showing nothing is honest where a guess would not be. Callers decide
+ * what to render in its place (an em dash, "Not recorded", or nothing).
+ *
+ * @param string $reason Stored closed_reason value; '' / NULL for none.
+ * @return string Label, or '' when there is nothing truthful to show.
+ */
+function mtl_reservation_close_reason_label( $reason ) {
+	$reasons = mtl_reservation_close_reasons();
+	$reason  = (string) $reason;
+	return isset( $reasons[ $reason ] ) ? $reasons[ $reason ] : '';
+}
+
+/**
  * The reservation hold period, in days, from the Setup page.
  *
  * @return int Days a ready reservation is held, or 0 for "never expires".
@@ -3163,8 +3212,9 @@ function mtl_create_loan( $tool_id, $member_id, $due_date ) {
 	// way the Loans page checkout does, by stamping today's expiry.
 	$wpdb->query(
 		$wpdb->prepare(
-			"UPDATE {$tbl_res} SET expiry_date = %s WHERE tool_id = %d AND member_id = %d AND expiry_date IS NULL",
+			"UPDATE {$tbl_res} SET expiry_date = %s, closed_reason = %s WHERE tool_id = %d AND member_id = %d AND expiry_date IS NULL",
 			$now,
+			'fulfilled',
 			$tool_id,
 			$member_id
 		)
@@ -3368,9 +3418,10 @@ function mtl_expire_stale_reservations() {
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 	$wpdb->query(
 		$wpdb->prepare(
-			"UPDATE {$tbl_res} SET expiry_date = %s
+			"UPDATE {$tbl_res} SET expiry_date = %s, closed_reason = %s
              WHERE expiry_date IS NULL AND ready_since IS NOT NULL AND ready_since <= %s",
 			current_time( 'mysql' ),
+			'lapsed',
 			$cutoff
 		)
 	);
@@ -3800,8 +3851,9 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 	$cancelled_reservations = (int) $wpdb->query(
 		$wpdb->prepare(
 			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
-			"UPDATE {$tbl_res} SET expiry_date = %s WHERE member_id = %d AND expiry_date IS NULL",
+			"UPDATE {$tbl_res} SET expiry_date = %s, closed_reason = %s WHERE member_id = %d AND expiry_date IS NULL",
 			current_time( 'mysql' ),
+			'member_deleted',
 			$member_id
 		)
 	);
@@ -5731,7 +5783,7 @@ function mtl_register_staff_capabilities() {
 }
 
 // Plain counter, not the plugin version: bump when a table or column is added.
-define( 'MTL_DB_VERSION', 4 );
+define( 'MTL_DB_VERSION', 5 );
 
 // admin_init, not init: nothing reads these tables on the front end, and it
 // covers exactly the requests that can write them.
@@ -5762,8 +5814,15 @@ function mtl_maybe_upgrade_schema() {
 	// definitions for the same reason the table list below is. Declared up
 	// here because the guard that follows needs its table names.
 	$columns = array(
-		'tool_inventory' => array(
+		'tool_inventory'    => array(
 			'location' => 'VARCHAR(100) DEFAULT NULL',
+		),
+		// Reservations closed before this shipped keep a NULL reason, which
+		// reads as "not recorded". Backfilling would mean guessing, and the
+		// one outcome that could be inferred (a matching loan) is exactly the
+		// one a wrong guess would misreport.
+		'tool_reservations' => array(
+			'closed_reason' => 'VARCHAR(20) DEFAULT NULL',
 		),
 	);
 

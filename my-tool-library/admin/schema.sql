@@ -409,7 +409,18 @@ CREATE TABLE {{prefix}}loans (
 -- expiry_date is NULL while a reservation is active and is stamped only when
 -- it ends, whether cancelled or fulfilled by a loan, so "active reservation"
 -- everywhere means "expiry_date IS NULL" and a non-NULL value is when it
--- closed. ready_since is when the reservation became collectable: the member
+-- closed. closed_reason records WHY it ended, since expiry_date alone cannot
+-- tell a reservation that became a loan from one nobody came to collect: see
+-- mtl_reservation_close_reasons() in my-tool-library.php for the six values
+-- and what each means. Every path that stamps expiry_date must stamp this too,
+-- and the two are only ever written together.
+--
+-- A NULL closed_reason means one of two things, told apart by expiry_date:
+-- the reservation is still active (expiry_date NULL too), or it closed on a
+-- site that upgraded from before this column existed (expiry_date set), where
+-- the reason genuinely was not recorded and must not be guessed at.
+--
+-- ready_since is when the reservation became collectable: the member
 -- reached the front of the queue and the tool was back on the shelf. NULL
 -- means they are still waiting their turn. It exists so an unclaimed
 -- reservation can expire on its own after the hold period set on the Setup
@@ -424,6 +435,7 @@ CREATE TABLE {{prefix}}tool_reservations (
     reservation_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ready_since TIMESTAMP NULL DEFAULT NULL,
     expiry_date TIMESTAMP NULL DEFAULT NULL,
+    closed_reason VARCHAR(20) DEFAULT NULL,
     FOREIGN KEY (tool_id) REFERENCES {{prefix}}tool_inventory(tool_id),
     FOREIGN KEY (member_id) REFERENCES {{prefix}}members(member_id)
 );
