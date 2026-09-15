@@ -936,7 +936,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 				<input type="checkbox" name="mtl_send_setup_email" id="<?php echo $field_id( 'mtl_send_setup_email' ); ?>" value="1" checked>
 				Email them a link to choose their password
 			</label>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">A website sign-in is created either way. Members can always change their password by clicking <em>"Lost your password?"</em> from the main page.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">A sign-in is created either way. Members reset their own password with <em>&ldquo;Lost your password?&rdquo;</em>.</p>
 		</td>
 	</tr>
 	<?php endif; ?>
@@ -944,21 +944,20 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 		<th scope="row"><label for="<?php echo $field_id( 'phone_national' ); ?>">Phone Number *</label></th>
 		<td>
 			<?php mtl_render_phone_input( $values['phone_country'], $values['phone_national'], $id_prefix ); ?>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Pick the country, then type the number, which is formatted automatically.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Pick the country, then type the number. Formatting is automatic.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'address_line1' ); ?>">Address Line 1 *</label></th>
 		<td>
 			<input type="text" name="address_line1" id="<?php echo $field_id( 'address_line1' ); ?>" style="width: 100%; max-width: 400px;" maxlength="255" value="<?php echo esc_attr( $values['address_line1'] ); ?>" required>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Street address.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'address_line2' ); ?>">Address Line 2</label></th>
 		<td>
 			<input type="text" name="address_line2" id="<?php echo $field_id( 'address_line2' ); ?>" style="width: 100%; max-width: 400px;" maxlength="255" value="<?php echo esc_attr( $values['address_line2'] ); ?>">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Optional. Apartment, suite, unit, etc.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Apartment, suite, unit.</p>
 		</td>
 	</tr>
 	<tr>
@@ -976,7 +975,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 					<option value="<?php echo esc_attr( $mtl_state_code ); ?>" <?php selected( $values['state'], $mtl_state_code ); ?>><?php echo esc_html( $mtl_state_label ); ?> (<?php echo esc_html( $mtl_state_code ); ?>)</option>
 				<?php endforeach; ?>
 			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Covers U.S. states/territories and Canadian provinces. Choose &ldquo;N/A&rdquo; for anywhere else.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">U.S. and Canada only. Choose &ldquo;N/A&rdquo; for anywhere else.</p>
 		</td>
 	</tr>
 	<tr>
@@ -999,14 +998,13 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 		<th scope="row"><label for="<?php echo $field_id( 'signup_date' ); ?>">Signup Date</label></th>
 		<td>
 			<input type="date" name="signup_date" id="<?php echo $field_id( 'signup_date' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['signup_date'] ); ?>">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Defaults to today. Change it if the member signed up on a different date.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'recurring_donation_amount' ); ?>">Recurring Donation ($)</label></th>
 		<td>
 			<input type="number" step="0.01" min="0" name="recurring_donation_amount" id="<?php echo $field_id( 'recurring_donation_amount' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['recurring_donation_amount'] ); ?>" placeholder="0.00">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Monthly recurring donation amount, if the member has set one up. Leave blank or enter 0.00 if none.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Monthly amount, if they have one set up.</p>
 		</td>
 	</tr>
 	<tr>
@@ -1023,7 +1021,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 		<td>
 			<?php mtl_render_trainings_picker( $trainings, $values['training_starts'], $id_prefix ); ?>
 			<?php if ( $trainings ) : ?>
-				<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Tick every training this member has completed and set the date they completed it. That date is what the certification length runs from. It shows staff which tools they&rsquo;re qualified to use, and the member sees their own on their account page.</p>
+				<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">The completion date is what the certification length runs from.</p>
 			<?php endif; ?>
 		</td>
 	</tr>
@@ -1031,21 +1029,21 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 		<th scope="row"><label for="<?php echo $field_id( 'photo_id_scan_url' ); ?>">Photo ID Scan URL</label></th>
 		<td>
 			<input type="url" name="photo_id_scan_url" id="<?php echo $field_id( 'photo_id_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['photo_id_scan_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Link to the scan of the member&rsquo;s photo ID. Store scans in a private location, never a publicly listed folder. It&rsquo;s fine to save just this one if that&rsquo;s all the member has provided so far; provide BOTH this and the proof-of-address scan below to mark them verified.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Keep scans somewhere private, never a public folder. A member counts as verified only once both scans are on file.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'address_proof_scan_url' ); ?>">Proof of Address Scan URL</label></th>
 		<td>
 			<input type="url" name="address_proof_scan_url" id="<?php echo $field_id( 'address_proof_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['address_proof_scan_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Link to the scan of the member&rsquo;s proof of address (utility bill, lease, etc.). It&rsquo;s fine to save just this one for now; required together with the photo ID scan above to mark the member as verified.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> A utility bill, lease, or similar. Either scan can be added on its own and the rest filled in later.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'private_notes' ); ?>">Private Notes</label></th>
 		<td>
 			<textarea name="private_notes" id="<?php echo $field_id( 'private_notes' ); ?>" rows="4" style="width: 100%; max-width: 400px;"><?php echo esc_textarea( $values['private_notes'] ); ?></textarea>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Staff-only. Never shown on the public catalog, the member&rsquo;s account page, or anywhere else a member can see it.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Staff-only.</strong> Never shown to members.</p>
 		</td>
 	</tr>
 	<?php
@@ -3435,17 +3433,14 @@ function mtl_render_membership_page() {
 				(it includes a sample row) to get started, fill in one row per member, then upload it below.
 			</p>
 			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
-				<li><strong>Required for every row:</strong> <code>first_name</code>, <code>last_name</code>, <code>email</code>, <code>phone_number</code>, <code>address_line1</code>, <code>city</code>, <code>state</code>, <code>zip_code</code>. Each email must be unique.</li>
-				<li><code>phone_number</code> with no <code>+</code> is read as a 10-digit U.S./Canada number (e.g. <code>(414) 555-0123</code> or just <code>4145550123</code>). For any other country, lead with <code>+</code> and the calling code (e.g. <code>+44 20 7946 0958</code>). Every number is reformatted automatically on import to match what Add/Edit Member produces, and a row with a phone number that can&rsquo;t be read as a real number fails with a specific reason.</li>
-				<li><code>state</code> must be a valid 2-letter U.S. state/territory or Canadian province code (e.g. <code>WI</code>, <code>ON</code>), or <code>N/A</code> for anywhere else.</li>
-				<li><code>country</code> is optional (defaults to <code>United States</code> if blank), but if provided must exactly match a supported country name (the same list the Add/Edit form's Country dropdown uses).</li>
-				<li><strong>Optional:</strong> <code>address_line2</code> (apartment/suite/unit), <code>signup_date</code> (defaults to today if blank; use <code>MM/DD/YYYY</code>), <code>recurring_donation_amount</code> (defaults to 0.00).</li>
-				<li><code>has_donated_tools</code> must be exactly <code>Y</code> or <code>N</code> (blank counts as <code>N</code>).</li>
-				<li>To mark a member <strong>verified</strong>, provide <em>both</em> <code>photo_id_scan_url</code> and <code>address_proof_scan_url</code>. Either can be left blank if the member only has one form of ID on file so far. The row still imports, just unverified until the other is added later via Edit.</li>
-				<li>Do not include a <code>member_id</code> column, as it is assigned automatically.</li>
-				<li><strong>Optional:</strong> <code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form, but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
-				<li><strong>Optional:</strong> <code>trainings</code> takes <code>Name: completion date</code> pairs separated by semicolons, for example &ldquo;Ladder Safety: 8/4/2026; Welding Basics: 8/3/2026&rdquo;. Names must match existing trainings exactly (add new ones under <strong>Setup &rarr; Member Trainings</strong> first), and the date is when that member completed it, which is what their certification length counts from. A pair with an unknown name, a missing date, or an unreadable date is skipped and reported, and it does not fail the row.</li>
-				<li>If a row fails, the rest of the file is still processed, and failed rows are listed after upload.</li>
+				<li><strong>Required:</strong> <code>first_name</code>, <code>last_name</code>, <code>email</code>, <code>phone_number</code>, <code>address_line1</code>, <code>city</code>, <code>state</code>, <code>zip_code</code>. Each email must be unique.</li>
+				<li><code>phone_number</code> without a <code>+</code> is read as U.S./Canada; lead with <code>+</code> and the calling code for anywhere else. A number that can&rsquo;t be read fails the row.</li>
+				<li><code>state</code> is a 2-letter U.S. or Canadian code, or <code>N/A</code>. <code>country</code> must match the Add/Edit dropdown, and defaults to United States.</li>
+				<li><code>has_donated_tools</code> is <code>Y</code> or <code>N</code>.</li>
+				<li>A member counts as verified only with both <code>photo_id_scan_url</code> and <code>address_proof_scan_url</code>. Either on its own still imports.</li>
+				<li><code>trainings</code> takes <code>Name: date</code> pairs separated by semicolons, e.g. &ldquo;Ladder Safety: 8/4/2026&rdquo;. Names must already exist; unknown ones are skipped and reported.</li>
+				<li><code>private_notes</code> is staff-only, but this file isn&rsquo;t &mdash; don&rsquo;t share an import sheet with notes filled in.</li>
+				<li>A row that fails is listed after upload; the rest of the file still imports.</li>
 			</ul>
 			<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
 				<?php wp_nonce_field( 'mtl_bulk_import_members_action', 'mtl_bulk_import_members_nonce' ); ?>

@@ -737,28 +737,26 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 		<th scope="row"><label for="<?php echo $field_id( 'tool_name' ); ?>">Tool Name *</label></th>
 		<td>
 			<input type="text" name="tool_name" id="<?php echo $field_id( 'tool_name' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['tool_name'] ); ?>" required>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. The common name of the tool (e.g. &ldquo;Cordless Drill&rdquo;).</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'barcode' ); ?>">Barcode *</label></th>
 		<td>
 			<input type="text" name="barcode" id="<?php echo $field_id( 'barcode' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['barcode'] ); ?>" required>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Scan or type the barcode printed on the tool&rsquo;s label (usually numbers, but letters are allowed). Each barcode must be unique, so no two tools can share the same one.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Numbers or letters. No two tools can share a barcode.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'brand' ); ?>">Brand</label></th>
 		<td>
 			<input type="text" name="brand" id="<?php echo $field_id( 'brand' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['brand'] ); ?>">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Leave blank if unknown.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'location' ); ?>">Location</label></th>
 		<td>
 			<input type="text" name="location" id="<?php echo $field_id( 'location' ); ?>" class="regular-text" maxlength="100" value="<?php echo esc_attr( $values['location'] ); ?>" placeholder="e.g. Aisle 3, Shelf 4">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Location in storage. Optional. Always visible to staff, optionally visible to members.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Where it sits in storage. Staff always see it; members only if <strong>Shelf Location</strong> is on under Setup.</p>
 		</td>
 	</tr>
 	<tr>
@@ -769,7 +767,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 					<option value="<?php echo esc_attr( $cat->category_id ); ?>" <?php echo in_array( (int) $cat->category_id, $values['category_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $cat->category_name ); ?></option>
 				<?php endforeach; ?>
 			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every category that applies, since a tool can belong to more than one. Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to select or unselect multiple. Drag the bottom-right corner to resize the box. Leave blank if none apply.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to pick more than one.</p>
 		</td>
 	</tr>
 	<tr>
@@ -780,7 +778,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 					<option value="<?php echo esc_attr( $tag->tag_id ); ?>" <?php echo in_array( (int) $tag->tag_id, $values['tag_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $tag->tag_name ); ?></option>
 				<?php endforeach; ?>
 			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every tag that applies, since a tool can have more than one. Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to select or unselect multiple. Drag the bottom-right corner to resize the box. Leave blank if none apply.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to pick more than one.</p>
 		</td>
 	</tr>
 	<tr>
@@ -791,7 +789,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 					<option value="<?php echo esc_attr( $training->training_id ); ?>" <?php echo in_array( (int) $training->training_id, $values['training_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $training->training_name ); ?></option>
 				<?php endforeach; ?>
 			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every training a member must hold before borrowing this tool. Checkout warns staff when a member is missing one or their certification has lapsed, but never blocks the loan. Leave blank if none are needed.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Checkout warns staff about a missing or lapsed training, but never blocks the loan.</p>
 		</td>
 	</tr>
 	<tr>
@@ -834,21 +832,19 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 				<?php endforeach; ?>
 				<p class="mtl-subcat-empty" style="font-size: 0.85em; color: #666; margin: 0;">Choose a category above to pick a sub-category.</p>
 			</div>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Optional. Each category you selected can take one sub-category.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'photo_url' ); ?>">Photo URL</label></th>
 		<td>
 			<input type="url" name="photo_url" id="<?php echo $field_id( 'photo_url' ); ?>" class="regular-text" value="<?php echo esc_url( $values['photo_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Leave blank if unknown. Please make sure the picture link&rsquo;s viewing permissions are set so anyone can view it.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Make sure the link is viewable by anyone.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'initial_cash_value' ); ?>">Initial Cash Value ($)</label></th>
 		<td>
 			<input type="number" step="0.01" min="0" name="initial_cash_value" id="<?php echo $field_id( 'initial_cash_value' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['initial_cash_value'] ); ?>" placeholder="0.00">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Leave blank or enter 0.00 if unknown.</p>
 		</td>
 	</tr>
 	<tr>
@@ -859,14 +855,13 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 			<br>
 			<label for="<?php echo $field_id( 'annual_depreciation_percent' ); ?>" style="display:inline-block; min-width: 100px; margin-top: 6px;">Percent (%)</label>
 			<input type="number" step="0.01" min="0" max="100" name="annual_depreciation_percent" id="<?php echo $field_id( 'annual_depreciation_percent' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['annual_depreciation_percent'] ); ?>" placeholder="0.00" style="max-width: 150px;">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Enter <strong>either</strong> a dollar amount <strong>or</strong> a percentage of the Initial Cash Value above, not both. A percentage is converted to a dollar amount and stored as one, same as if you&rsquo;d typed it directly. Leave both blank or enter 0 if unknown.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Fill in one or the other, not both. A percentage is stored as the dollar amount it works out to.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'date_acquired' ); ?>">Date Acquired</label></th>
 		<td>
 			<input type="date" name="date_acquired" id="<?php echo $field_id( 'date_acquired' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['date_acquired'] ); ?>">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Defaults to today. Change it if the tool was acquired on a different date.</p>
 		</td>
 	</tr>
 	<tr>
@@ -876,21 +871,20 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 				<input type="text" name="donated_by" id="<?php echo $field_id( 'donated_by' ); ?>" class="regular-text mtl-donor-search" autocomplete="off" value="<?php echo esc_attr( $values['donated_by'] ); ?>" placeholder="Name, or type to search members...">
 				<div class="mtl-ql-dropdown" style="display: none;"></div>
 			</div>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Type a member&rsquo;s name or email to find and select them. Selecting one stores their email so they&rsquo;re automatically credited as a donor. Or just type any name for a non-member donor. Leave blank if unknown.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Pick a member to credit them as a donor, or type any name for someone who isn&rsquo;t one.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'components' ); ?>">Components</label></th>
 		<td>
 			<textarea name="components" id="<?php echo $field_id( 'components' ); ?>" rows="3" style="width: 100%; max-width: 400px;"><?php echo esc_textarea( $values['components'] ); ?></textarea>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">List any parts that must be returned with the tool, separated by commas (e.g. &ldquo;Battery, Charger, Carrying Case&rdquo;). Leave blank if none apply.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Parts that must come back with the tool, comma separated (e.g. &ldquo;Battery, Charger, Case&rdquo;).</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'description' ); ?>">Description</label></th>
 		<td>
 			<textarea name="description" id="<?php echo $field_id( 'description' ); ?>" rows="4" style="width: 100%; max-width: 400px;"><?php echo esc_textarea( $values['description'] ); ?></textarea>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Leave blank if unknown.</p>
 		</td>
 	</tr>
 	<?php
@@ -905,7 +899,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 		<th scope="row"><label for="<?php echo $field_id( 'private_notes' ); ?>">Private Notes</label></th>
 		<td>
 			<textarea name="private_notes" id="<?php echo $field_id( 'private_notes' ); ?>" rows="4" style="width: 100%; max-width: 400px;"><?php echo esc_textarea( $values['private_notes'] ); ?></textarea>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Staff-only.</strong> Never shown on the public catalog or anywhere a member can see it. It is visible only here and in this tool&rsquo;s detail view on this page. Leave blank if none.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Staff-only.</strong> Never shown to members.</p>
 		</td>
 	</tr>
 	<?php
@@ -2635,17 +2629,13 @@ function mtl_render_inventory_page() {
 				to get started, fill in one row per tool, then upload it below.
 			</p>
 			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
-				<li><code>tool_name</code> and <code>barcode</code> are required for every row; each barcode must be unique.</li>
-				<li>Do not include a <code>tool_id</code> column, as it is assigned automatically when each tool is added.</li>
-				<li>For <code>categories</code> and <code>tags</code>, separate multiple values with a semicolon (e.g. &ldquo;Woodworking;General Hand Tools&rdquo;). Names must match existing categories/tags exactly, so add new ones on the Setup page first if needed.</li>
-				<li>Write each <code>subcategories</code> value as &ldquo;Category &gt; Sub-category&rdquo; (e.g. &ldquo;Woodworking &gt; Saws&rdquo;), because two categories can each have a sub-category of the same name. A sub-category is skipped if the row does not also list its category.</li>
-				<li><code>trainings</code> takes training names, semicolon separated, and sets what a member must hold before borrowing the tool. Unknown names are skipped and reported.</li>
-				<li><code>annual_depreciation_amount</code> accepts either a plain dollar amount (e.g. &ldquo;5.00&rdquo;) or a percentage of that row&rsquo;s <code>initial_cash_value</code> (e.g. &ldquo;5%&rdquo;). Any value containing a % sign is converted to a dollar amount before it&rsquo;s stored.</li>
-				<li><code>donated_by</code> is plain text. If it exactly matches an existing member&rsquo;s email address (their sign-in username), that member is automatically credited as a donor. Otherwise it is just stored as-is (e.g. for a non-member donor).</li>
-				<li><code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form, but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
-				<li><code>location</code> is where the tool sits on the shelf, in whatever notation you already use (e.g. &ldquo;Aisle 3, Shelf 4&rdquo;, &ldquo;113&rdquo;, &ldquo;K4-1&rdquo;). Staff always see it; whether members do is the <strong>Shelf Location</strong> switch under Setup &rarr; Reservations &amp; Loans.</li>
-				<li><code>resources</code> and <code>partner_links</code> each take the same JSON object the Add/Edit form&rsquo;s <strong>Edit JSON</strong> box shows, e.g. <code>{"Chainsaw tutorial": "example.com/chainsaw-basics"}</code>. Leave a cell blank for a tool with none. A cell that isn&rsquo;t readable JSON fails its row and is reported, rather than importing the tool without its links.</li>
-				<li>Leave a cell blank to skip that field. If a row fails, the rest of the file still gets processed, and failures are listed after upload.</li>
+				<li><code>tool_name</code> and <code>barcode</code> are required. No two tools can share a barcode.</li>
+				<li><code>categories</code>, <code>subcategories</code>, <code>trainings</code> and <code>tags</code> are semicolon separated and must match names that already exist. Write a sub-category as &ldquo;Category &gt; Sub-category&rdquo;.</li>
+				<li><code>annual_depreciation_amount</code> takes a dollar amount, or a percentage of that row&rsquo;s <code>initial_cash_value</code> if it contains a % (e.g. &ldquo;5%&rdquo;).</li>
+				<li><code>donated_by</code> credits a member if it matches their email exactly; anything else is stored as plain text.</li>
+				<li><code>resources</code> and <code>partner_links</code> take the JSON from the Add/Edit form&rsquo;s <strong>Edit JSON</strong> box, e.g. <code>{"Chainsaw tutorial": "example.com/chainsaw-basics"}</code>.</li>
+				<li><code>private_notes</code> is staff-only, but this file isn&rsquo;t &mdash; don&rsquo;t share an import sheet with notes filled in.</li>
+				<li>A row that fails is listed after upload; the rest of the file still imports.</li>
 			</ul>
 			<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
 				<?php wp_nonce_field( 'mtl_bulk_import_action', 'mtl_bulk_import_nonce' ); ?>

@@ -1955,22 +1955,22 @@ function mtl_render_setup_page() {
 						<th scope="row"><label for="mtl_logo_url">Logo URL</label></th>
 						<td>
 							<input type="url" name="mtl_logo_url" id="mtl_logo_url" class="regular-text" value="<?php echo esc_url( $logo_url ); ?>" placeholder="https://...">
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Upload your logo to the WordPress Media Library and paste the File URL here. Leave blank if unknown.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Upload to the Media Library and paste the File URL here.</p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_verified_badge_image_url">Verified Badge Image URL</label></th>
 						<td>
 							<input type="url" name="mtl_verified_badge_image_url" id="mtl_verified_badge_image_url" class="regular-text" value="<?php echo esc_url( $verified_badge_image_url ); ?>" placeholder="https://...">
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Optional. Shown on a member's My Account page in place of the plain green &ldquo;Verified&rdquo; pill once they&rsquo;re verified. Leave blank to keep using the pill.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Replaces the green &ldquo;Verified&rdquo; pill on a verified member&rsquo;s account page. Blank keeps the pill.</p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_contact_email">Public Contact Email</label></th>
 						<td>
 							<input type="email" name="mtl_contact_email" id="mtl_contact_email" class="regular-text" value="<?php echo esc_attr( $contact_email ); ?>" placeholder="hello@example.org">
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown to the public in the footer of every member-facing page, and in the confirmation email sent after a password change, so members have a way to reach staff. Use a shared staff address rather than a personal one. Leave blank to show no contact details anywhere.</p>
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">This address is for members to write <em>to</em>, and automated email is not sent from it. Outgoing mail uses whatever WordPress or your SMTP plugin is configured to send from.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown in the footer of every member-facing page. Use a shared staff address, not a personal one. Blank shows no contact details at all.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Members write <em>to</em> it; nothing is sent <em>from</em> it.</p>
 						</td>
 					</tr>
 					<tr>
@@ -1990,7 +1990,7 @@ function mtl_render_setup_page() {
 								<option value="21" <?php selected( $default_loan_days, '21' ); ?>>21 days</option>
 								<option value="30" <?php selected( $default_loan_days, '30' ); ?>>30 days</option>
 							</select>
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Pre-fills the due date whenever an admin checks out or renews a loan (still adjustable per loan).</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Pre-fills the due date on checkout and renewal. Still adjustable per loan.</p>
 						</td>
 					</tr>
 					<tr>
@@ -2002,7 +2002,7 @@ function mtl_render_setup_page() {
 								<input type="checkbox" name="mtl_reservation_hold_never" id="mtl_reservation_hold_never" value="1" <?php checked( 0, $reservation_hold_days ); ?>>
 								Never expires
 							</label>
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">How long a tool reservation is held once the member reaches the front of the queue <em>and</em> the tool is back on the shelf. Reservation auto-cancelled upon expiration.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Starts once the member is at the front of the queue <em>and</em> the tool is back. The reservation is cancelled when it runs out.</p>
 						</td>
 					</tr>
 					<tr>
@@ -2018,21 +2018,21 @@ function mtl_render_setup_page() {
 						<th scope="row"><label for="mtl_pickup_directions">Tool Pickup Directions</label></th>
 						<td>
 							<textarea name="mtl_pickup_directions" id="mtl_pickup_directions" class="large-text" rows="4"><?php echo esc_textarea( $pickup_directions ); ?></textarea>
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown to members on the My Reservations page. Leave blank to hide it there.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown to members on the My Reservations page. Blank hides it.</p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_verification_directions">Member Verification Directions</label></th>
 						<td>
 							<textarea name="mtl_verification_directions" id="mtl_verification_directions" class="large-text" rows="4"><?php echo esc_textarea( $verification_directions ); ?></textarea>
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown to members on their Account page until they&rsquo;re verified. Leave blank to hide it there.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown on a member&rsquo;s Account page until they&rsquo;re verified. Blank hides it.</p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_giving_text">Consider Giving Message</label></th>
 						<td>
 							<textarea name="mtl_giving_text" id="mtl_giving_text" class="large-text" rows="4"><?php echo esc_textarea( $giving_text ); ?></textarea>
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Fundraising ask, shown to signed-in members on their Account page and on My Reservations. <strong>Leave blank to hide the section entirely</strong>.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown to signed-in members on their Account page and My Reservations. <strong>Blank hides the section</strong>.</p>
 						</td>
 					</tr>
 					<tr>
@@ -2059,7 +2059,7 @@ function mtl_render_setup_page() {
 
 						<!-- Quick Theme Presets -->
 						<h4 style="margin-bottom: 5px;">Quick Theme Presets</h4>
-						<p style="font-size: 0.85em; color: #666; margin: 0 0 10px 0;">Click a preset to fill in the settings below, then fine-tune anything you like before saving. <strong>Inherit</strong> restores every option to the site defaults (fonts follow your WordPress theme).</p>
+						<p style="font-size: 0.85em; color: #666; margin: 0 0 10px 0;">A preset fills in the settings below; adjust anything before saving. <strong>Inherit</strong> restores the site defaults.</p>
 						<div class="mtl-swatch-row">
 							<button type="button" class="mtl-swatch mtl-swatch-inherit" onclick="mtlApplyInherit()">Inherit</button>
 							<button type="button" class="mtl-swatch" style="background: linear-gradient(135deg, #ff6600, #096491);" onclick="mtlApplySwatch('#ff6600', '#096491', '#00b3ff', '#f7c600')">Classic</button>
@@ -2424,7 +2424,7 @@ function mtl_render_setup_page() {
 					<p style="margin-top: 0;">
 						<label for="mtl-agreement-text-new"><strong>Text members must agree to</strong> (required)</label><br>
 						<textarea id="mtl-agreement-text-new" name="agreement_text" rows="5" style="width: 100%;" maxlength="<?php echo esc_attr( MTL_AGREEMENT_TEXT_MAXLENGTH ); ?>" required placeholder="I agree to return tools by the due date, and to report any damage before returning them."><?php echo esc_textarea( $mtl_agreement_add_open ? $mtl_agreement_form_text : '' ); ?></textarea>
-						<span style="font-size: 0.85em; color: #666;">Plain text only. Line breaks are kept; links and formatting are not. To give members a document, attach a file below.</span>
+						<span style="font-size: 0.85em; color: #666;">Plain text; line breaks are kept, formatting is not. Attach a file below to give members a document.</span>
 					</p>
 					<?php mtl_render_agreement_file_picker( 'mtl-file-new', 0 ); ?>
 					<p class="submit" style="margin-bottom: 0;">
@@ -2475,14 +2475,14 @@ function mtl_render_setup_page() {
 						<th scope="row"><label for="mtl_agreement_email_body">Confirmation body</label></th>
 						<td>
 							<textarea name="mtl_agreement_email_body" id="mtl_agreement_email_body" rows="4" class="large-text" placeholder="<?php echo esc_attr( $mtl_agreement_emails['body'] ); ?>"><?php echo esc_textarea( (string) get_option( 'mtl_agreement_email_body', '' ) ); ?></textarea>
-							<p class="description">Sent to a member after they agree, with the agreed wording listed and any attached files included. Do not list the agreements here, because the plugin does that.</p>
+							<p class="description">Sent after a member agrees. The wording and any files are added automatically, so don&rsquo;t list them here.</p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="mtl_agreement_request_email_body">Request body</label></th>
 						<td>
 							<textarea name="mtl_agreement_request_email_body" id="mtl_agreement_request_email_body" rows="4" class="large-text" placeholder="<?php echo esc_attr( $mtl_agreement_emails['request_body'] ); ?>"><?php echo esc_textarea( (string) get_option( 'mtl_agreement_request_email_body', '' ) ); ?></textarea>
-							<p class="description">Sent when you ask members to agree, from the Membership page. Only used when members agree online.</p>
+							<p class="description">Sent when you ask members to agree from the Membership page. Online agreements only.</p>
 						</td>
 					</tr>
 				</table>
@@ -2530,7 +2530,7 @@ function mtl_render_setup_page() {
 			</form>
 
 			<h4 style="margin-bottom: 0;">Sub-categories</h4>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 8px 0;">Each belongs to one category. Deleting a category deletes its sub-categories too. Names only need to be unique within a category, so two categories can each have their own.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 8px 0;">Each belongs to one category, and deleting a category deletes its sub-categories. Two categories can each have their own &ldquo;Drills&rdquo;.</p>
 			<?php if ( $subcategories ) : ?>
 				<form method="post" action="" onsubmit="return confirm('Delete the selected sub-categories? Any tools using them will lose that sub-category and keep their category. This cannot be undone.');">
 					<?php wp_nonce_field( 'mtl_delete_subcategories_action', 'mtl_delete_subcategories_nonce' ); ?>
