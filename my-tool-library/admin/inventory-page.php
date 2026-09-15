@@ -143,50 +143,58 @@ function mtl_maybe_serve_csv_template() {
 	header( 'Content-Disposition: attachment; filename="tool-inventory-template.csv"' );
 
 	$out = fopen( 'php://output', 'w' );
-	fputcsv(
-		$out,
-		array(
-			'tool_name',
-			'barcode',
-			'brand',
-			'location',
-			'description',
-			'components',
-			'photo_url',
-			'initial_cash_value',
-			'annual_depreciation_amount',
-			'donated_by',
-			'date_acquired',
-			'categories',
-			'subcategories',
-			'trainings',
-			'tags',
-			'private_notes',
-		)
+
+	// Header and example row are built in step, with the link lists appended
+	// from the registry so a third one needs no edit here.
+	$header = array(
+		'tool_name',
+		'barcode',
+		'brand',
+		'location',
+		'description',
+		'components',
+		'photo_url',
+		'initial_cash_value',
+		'annual_depreciation_amount',
+		'donated_by',
+		'date_acquired',
+		'categories',
+		'subcategories',
+		'trainings',
+		'tags',
+		'private_notes',
 	);
 	// Clearly-fake example row so admins can see the expected format; delete/overwrite before uploading real data.
-	fputcsv(
-		$out,
-		array(
-			'Example Tool - Delete This Row',
-			'EXAMPLE-0000',
-			'ExampleBrand',
-			'Aisle 3, Shelf 4',
-			'A short description of the tool.',
-			'Battery;Charger;Case',
-			'https://example.com/photo.jpg',
-			'49.99',
-			'5.00',
-			'Jane Doe',
-			// The importer accepts any date string strtotime() understands, but the template shows the site-wide MM/DD/YYYY convention.
-			gmdate( 'm/d/Y' ),
-			'Woodworking;General Hand Tools',
-			'Woodworking > Saws;General Hand Tools > Drills & Drivers',
-			'Table Saw Safety',
-			'Cordless;Heavy-Duty',
-			'Staff-only, never shown publicly.',
-		)
+	$example = array(
+		'Example Tool - Delete This Row',
+		'EXAMPLE-0000',
+		'ExampleBrand',
+		'Aisle 3, Shelf 4',
+		'A short description of the tool.',
+		'Battery;Charger;Case',
+		'https://example.com/photo.jpg',
+		'49.99',
+		'5.00',
+		'Jane Doe',
+		// The importer accepts any date string strtotime() understands, but the template shows the site-wide MM/DD/YYYY convention.
+		gmdate( 'm/d/Y' ),
+		'Woodworking;General Hand Tools',
+		'Woodworking > Saws;General Hand Tools > Drills & Drivers',
+		'Table Saw Safety',
+		'Cordless;Heavy-Duty',
+		'Staff-only, never shown publicly.',
 	);
+
+	// The link lists travel as the raw JSON object each column stores, which is
+	// the same text the Add/Edit form's Edit JSON pane shows. fputcsv() quotes
+	// it and fgetcsv() unquotes it, so it needs no format of its own.
+	foreach ( mtl_tool_link_lists() as $links_key => $links_list ) {
+		$header[]  = $links_key;
+		$example[] = mtl_tool_links_example( $links_list );
+	}
+
+	fputcsv( $out, $header );
+	fputcsv( $out, $example );
 	fclose( $out );
 	exit;
 }
@@ -328,6 +336,382 @@ function mtl_sync_tool_subcategories( $table, $tool_id, $pairs ) {
 }
 
 /**
+ * Renders one link list's editor row inside the Add/Edit tool form.
+ *
+ * Two ways in, because staff arrive two ways: adding one link is typing, and
+ * moving a set over from a spreadsheet or another tool is pasting. The
+ * name/link boxes are what shows; Edit JSON swaps in the stored object.
+ *
+ * Both panes post every time, and the hidden mode field says which one was
+ * being worked in. That is the only thing keeping a stale hidden pane from
+ * overwriting the visible one.
+ *
+ * @param string $key       Registry/column key, e.g. 'partner_links'.
+ * @param array  $link_list List definition from mtl_tool_link_lists().
+ * @param array  $state     Editor state: pairs, json, mode.
+ */
+function mtl_render_tool_links_field( $key, $link_list, $state ) {
+	$rows = isset( $state['pairs'] ) ? (array) $state['pairs'] : array();
+	// Always one spare row, so the field is usable the moment the form opens,
+	// and so a browser with JavaScript off still has somewhere to type.
+	$rows[]    = array(
+		'label' => '',
+		'url'   => '',
+	);
+	$json_mode = isset( $state['mode'] ) && 'json' === $state['mode'];
+	$noun      = $link_list['noun'];
+	?>
+	<tr>
+		<th scope="row"><?php echo esc_html( $link_list['label'] ); ?></th>
+		<td>
+			<div class="mtl-links-editor">
+				<input type="hidden" name="mtl_links_mode[<?php echo esc_attr( $key ); ?>]" class="mtl-links-mode" value="<?php echo $json_mode ? 'json' : 'rows'; ?>">
+
+				<div class="mtl-links-pane mtl-links-pane-rows" <?php echo $json_mode ? 'hidden' : ''; ?>>
+					<div class="mtl-links-rows">
+						<?php foreach ( $rows as $row_index => $row ) : ?>
+							<div class="mtl-links-row">
+								<input type="text" class="mtl-links-label"
+									name="mtl_links[<?php echo esc_attr( $key ); ?>][<?php echo esc_attr( (string) $row_index ); ?>][label]"
+									value="<?php echo esc_attr( $row['label'] ); ?>"
+									placeholder="<?php echo esc_attr( $link_list['name_hint'] ); ?>"
+									aria-label="<?php echo esc_attr( $noun . ' name' ); ?>">
+								<?php
+								// type="text", not type="url": the browser
+								// refuses "example.com/manual", and accepting
+								// exactly that is the point.
+								?>
+								<input type="text" class="mtl-links-url"
+									name="mtl_links[<?php echo esc_attr( $key ); ?>][<?php echo esc_attr( (string) $row_index ); ?>][url]"
+									value="<?php echo esc_attr( $row['url'] ); ?>"
+									placeholder="<?php echo esc_attr( $link_list['url_hint'] ); ?>"
+									aria-label="<?php echo esc_attr( $noun . ' web address' ); ?>">
+								<button type="button" class="button button-small mtl-links-remove" aria-label="<?php echo esc_attr( 'Remove this ' . $noun ); ?>" title="<?php echo esc_attr( 'Remove this ' . $noun ); ?>">&times;</button>
+							</div>
+						<?php endforeach; ?>
+					</div>
+					<p class="mtl-links-actions">
+						<button type="button" class="button button-small mtl-links-add">+ Add <?php echo esc_html( $noun ); ?></button>
+					</p>
+				</div>
+
+				<div class="mtl-links-pane mtl-links-pane-json" <?php echo $json_mode ? '' : 'hidden'; ?>>
+					<textarea name="mtl_links_json[<?php echo esc_attr( $key ); ?>]" class="mtl-links-json" rows="8" spellcheck="false"
+						aria-label="<?php echo esc_attr( $link_list['label'] . ' JSON' ); ?>"
+						placeholder="<?php echo esc_attr( mtl_tool_links_example( $link_list ) ); ?>"><?php echo esc_textarea( isset( $state['json'] ) ? $state['json'] : '' ); ?></textarea>
+				</div>
+
+				<?php
+				// Hidden here and revealed by the script, so a browser with
+				// JavaScript off never sees a button that does nothing.
+				?>
+				<p class="mtl-links-actions">
+					<button type="button" class="button button-small mtl-links-toggle" hidden
+						data-label-json="Edit JSON"
+						data-label-rows="Edit as boxes"><?php echo $json_mode ? 'Edit as boxes' : 'Edit JSON'; ?></button>
+				</p>
+			</div>
+			<p style="font-size: 0.85em; color: #666; margin: 8px 0 0 0;">Optional. Two links on the same tool can&rsquo;t share a name. <strong>Edit JSON</strong> allows you to copy/paste all.</p>
+		</td>
+	</tr>
+	<?php
+}
+
+/**
+ * Editor state for every link list, read off a stored tool row.
+ *
+ * Always opens on the boxes, where most edits happen. The JSON box is left
+ * empty: the script fills it from the boxes when the toggle is pressed, so
+ * anything put here would be overwritten before it could be read.
+ *
+ * @param object $row Tool row carrying one column per list key.
+ * @return array<string, array{pairs:array,mode:string}>
+ */
+function mtl_tool_links_state_from_row( $row ) {
+	$out = array();
+	foreach ( mtl_tool_link_lists() as $key => $link_list ) {
+		$out[ $key ] = array(
+			'pairs' => mtl_parse_tool_links( isset( $row->$key ) ? $row->$key : '' ),
+			'mode'  => 'rows',
+		);
+	}
+	return $out;
+}
+
+/**
+ * Reads every link list off a submitted Add/Edit tool form.
+ *
+ * One error for the whole form, not one per list: the tool saves or it does
+ * not, and reporting the first problem is what the barcode and depreciation
+ * checks beside this already do.
+ *
+ * What comes back for redisplay is what was typed, not the validated result,
+ * so a rejected save never eats anyone's work.
+ *
+ * @return array{columns:array<string,?string>,state:array<string,array>,error:string}
+ *         columns is column name => value ready for $wpdb (NULL for an empty
+ *         list); state refills the editors; error is '' when the submission is
+ *         usable.
+ */
+function mtl_collect_posted_tool_links() {
+	// Read whole and sanitized value by value, below and in
+	// mtl_parse_tool_links_json(). sanitize_textarea_field() over the JSON, or
+	// sanitize_text_field() over a link, strips "%20"-style escapes, which is
+	// how a good URL quietly turns into a broken one.
+	// phpcs:disable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- the Add/Edit handlers verify their form nonce before calling this; every label and link is sanitized below.
+	$posted_rows = isset( $_POST['mtl_links'] ) ? (array) wp_unslash( $_POST['mtl_links'] ) : array();
+	$posted_json = isset( $_POST['mtl_links_json'] ) ? (array) wp_unslash( $_POST['mtl_links_json'] ) : array();
+	$posted_mode = isset( $_POST['mtl_links_mode'] ) ? (array) wp_unslash( $_POST['mtl_links_mode'] ) : array();
+	// phpcs:enable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+	$columns = array();
+	$state   = array();
+	$error   = '';
+
+	foreach ( mtl_tool_link_lists() as $key => $link_list ) {
+		// is_string() before either cast: nothing stops a request from posting
+		// mtl_links_mode[resources][] and handing this an array.
+		$mode = isset( $posted_mode[ $key ] ) && is_string( $posted_mode[ $key ] ) && 'json' === sanitize_key( $posted_mode[ $key ] ) ? 'json' : 'rows';
+		$json = isset( $posted_json[ $key ] ) && is_string( $posted_json[ $key ] ) ? $posted_json[ $key ] : '';
+
+		$raw_pairs = array();
+		foreach ( (array) ( isset( $posted_rows[ $key ] ) ? $posted_rows[ $key ] : array() ) as $posted_row ) {
+			if ( ! is_array( $posted_row ) ) {
+				continue;
+			}
+			$raw_pairs[] = array(
+				'label' => sanitize_text_field( (string) ( $posted_row['label'] ?? '' ) ),
+				// Not sanitize_url(): it prepends http:// to a scheme-less
+				// address before mtl_normalize_link_url() can make that call.
+				'url'   => wp_strip_all_tags( (string) ( $posted_row['url'] ?? '' ) ),
+			);
+		}
+
+		$result          = 'json' === $mode
+			? mtl_parse_tool_links_json( $json, $link_list )
+			: mtl_validate_tool_links( $raw_pairs, $link_list );
+		$columns[ $key ] = mtl_encode_tool_links( $result['pairs'] );
+
+		if ( '' === $error && '' !== $result['error'] ) {
+			$error = $result['error'];
+		}
+
+		$state[ $key ] = array(
+			'pairs' => $raw_pairs,
+			// Only carried back when it is the pane that was submitted; in box
+			// mode the script rewrites it from the boxes on the way in.
+			'json'  => 'json' === $mode ? $json : '',
+			'mode'  => $mode,
+		);
+	}
+
+	return array(
+		'columns' => $columns,
+		'state'   => $state,
+		'error'   => $error,
+	);
+}
+
+/**
+ * Drives every link-list editor on the page: the + / &times; row buttons and
+ * the Edit JSON switch.
+ *
+ * Printed once per page, not per form or per list, and it works off classes
+ * inside each .mtl-links-editor, so the Add and Edit forms both get it without
+ * knowing about each other. Same arrangement as mtl_subcategory_picker_script().
+ *
+ * With JavaScript off the editor still works: the rows are real inputs, so
+ * links can be edited or emptied and one spare row is always there. What is
+ * lost is the + button, the per-row &times;, and the JSON pane.
+ *
+ * Switching panes is refused rather than allowed to lose work. The boxes hold
+ * two things an object cannot: a link with no name yet, and a repeated name.
+ * Both are already errors on save, so refusing the switch teaches the same
+ * rule while it is still one field to fix.
+ */
+function mtl_tool_links_editor_script() {
+	?>
+	<style>
+		.mtl-links-row {
+			display: flex;
+			gap: 6px;
+			margin-bottom: 6px;
+			max-width: 620px;
+		}
+
+		/* The link is the longer of the two, so it gets the wider share. */
+		.mtl-links-row .mtl-links-label {
+			flex: 1 1 38%;
+			min-width: 0;
+		}
+
+		.mtl-links-row .mtl-links-url {
+			flex: 1 1 62%;
+			min-width: 0;
+		}
+
+		.mtl-links-remove {
+			flex: 0 0 auto;
+			line-height: 1.6;
+		}
+
+		.mtl-links-actions {
+			margin: 8px 0 0 0;
+		}
+
+		.mtl-links-json {
+			width: 100%;
+			max-width: 620px;
+			font-family: Consolas, Menlo, monospace;
+			font-size: 0.85em;
+		}
+
+		.mtl-links-pane[hidden] {
+			display: none;
+		}
+	</style>
+	<script>
+		document.querySelectorAll( '.mtl-links-editor' ).forEach( function ( editor ) {
+			var modeInput = editor.querySelector( '.mtl-links-mode' );
+			var rowsPane  = editor.querySelector( '.mtl-links-pane-rows' );
+			var jsonPane  = editor.querySelector( '.mtl-links-pane-json' );
+			var rowsWrap  = editor.querySelector( '.mtl-links-rows' );
+			var jsonBox   = editor.querySelector( '.mtl-links-json' );
+			var toggle    = editor.querySelector( '.mtl-links-toggle' );
+			var addButton = editor.querySelector( '.mtl-links-add' );
+			if ( ! modeInput || ! rowsPane || ! jsonPane || ! rowsWrap || ! jsonBox || ! toggle || ! addButton ) {
+				return;
+			}
+
+			// The first row is the template for every added one, so the
+			// placeholders and aria-labels stay whatever PHP wrote for this
+			// list rather than being repeated in here.
+			var template = rowsWrap.querySelector( '.mtl-links-row' );
+			if ( ! template ) {
+				return;
+			}
+
+			// Rows post as mtl_links[<list>][<n>][label|url], so each pair is
+			// bound by its own index rather than by two parallel lists lining
+			// up. Removing one leaves a gap, hence a counter rather than the
+			// row count.
+			var nextIndex = rowsWrap.querySelectorAll( '.mtl-links-row' ).length;
+
+			function addRow( label, url ) {
+				var row  = template.cloneNode( true );
+				var name = row.querySelector( '.mtl-links-label' );
+				var link = row.querySelector( '.mtl-links-url' );
+
+				name.name = name.name.replace( /\[\d+\]\[label\]$/, '[' + nextIndex + '][label]' );
+				link.name = link.name.replace( /\[\d+\]\[url\]$/, '[' + nextIndex + '][url]' );
+				// Assigned as values, never as markup: a pasted name is text
+				// to show, not HTML to run in the admin's own browser.
+				name.value = label || '';
+				link.value = url || '';
+				nextIndex++;
+
+				rowsWrap.appendChild( row );
+				return row;
+			}
+
+			// Always leave one row standing, so emptying the list never leaves
+			// nothing to type into.
+			function ensureSpareRow() {
+				if ( ! rowsWrap.querySelector( '.mtl-links-row' ) ) {
+					addRow( '', '' );
+				}
+			}
+
+			function setMode( mode ) {
+				modeInput.value = mode;
+				rowsPane.hidden = ( 'json' === mode );
+				jsonPane.hidden = ( 'json' !== mode );
+				toggle.textContent = toggle.getAttribute( 'json' === mode ? 'data-label-rows' : 'data-label-json' );
+			}
+
+			// Boxes -> JSON. Returns a message instead of switching when the
+			// boxes hold something an object cannot hold.
+			function rowsToJson() {
+				// Null prototype, so a link named "__proto__" is an ordinary
+				// key rather than an assignment the object swallows.
+				var map  = Object.create( null );
+				var rows = rowsWrap.querySelectorAll( '.mtl-links-row' );
+				for ( var i = 0; i < rows.length; i++ ) {
+					var label = rows[ i ].querySelector( '.mtl-links-label' ).value.trim();
+					var url   = rows[ i ].querySelector( '.mtl-links-url' ).value.trim();
+					if ( '' === label && '' === url ) {
+						continue;
+					}
+					// The two things a JSON object cannot hold. One message for
+					// both, so the server keeps sole ownership of the wording it
+					// repeats on save.
+					if ( '' === label || Object.prototype.hasOwnProperty.call( map, label ) ) {
+						return 'These can’t be written as JSON yet: every link needs a name, and no two can share one.';
+					}
+					map[ label ] = url;
+				}
+				jsonBox.value = Object.keys( map ).length ? JSON.stringify( map, null, 4 ) : '';
+				return '';
+			}
+
+			// JSON -> boxes. The server's rules for a pasted object, applied
+			// here while it is still on screen.
+			function jsonToRows() {
+				var text = jsonBox.value.trim();
+				var parsed;
+
+				if ( '' !== text ) {
+					try {
+						parsed = JSON.parse( text );
+					} catch ( e ) {
+						return 'That JSON could not be read: ' + e.message;
+					}
+					if ( null === parsed || 'object' !== typeof parsed || Array.isArray( parsed ) ) {
+						return 'This has to be an object of name and link pairs, like ' + ( jsonBox.placeholder || '{"Name": "example.com"}' ) + '.';
+					}
+				}
+
+				rowsWrap.textContent = '';
+				Object.keys( parsed || {} ).forEach( function ( label ) {
+					var url = parsed[ label ];
+					addRow( label, ( null === url || 'object' === typeof url ) ? '' : String( url ) );
+				} );
+				ensureSpareRow();
+				return '';
+			}
+
+			// Revealed here, not in the markup, so a browser with JavaScript off
+			// never sees a button that does nothing.
+			toggle.hidden = false;
+			toggle.addEventListener( 'click', function () {
+				var target  = 'json' === modeInput.value ? 'rows' : 'json';
+				var problem = 'json' === target ? rowsToJson() : jsonToRows();
+				if ( problem ) {
+					window.alert( problem );
+					return;
+				}
+				setMode( target );
+			} );
+
+			addButton.addEventListener( 'click', function () {
+				addRow( '', '' ).querySelector( '.mtl-links-label' ).focus();
+			} );
+
+			// Delegated, so rows added after this runs are covered too.
+			rowsWrap.addEventListener( 'click', function ( e ) {
+				var remove = e.target.closest( '.mtl-links-remove' );
+				if ( ! remove ) {
+					return;
+				}
+				remove.closest( '.mtl-links-row' ).remove();
+				ensureSpareRow();
+			} );
+		} );
+	</script>
+	<?php
+}
+
+/**
  * Renders the shared set of tool fields used by both the "Add a New Tool"
  * and "Edit Tool" forms, so the two stay in sync automatically.
  *
@@ -353,28 +737,26 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 		<th scope="row"><label for="<?php echo $field_id( 'tool_name' ); ?>">Tool Name *</label></th>
 		<td>
 			<input type="text" name="tool_name" id="<?php echo $field_id( 'tool_name' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['tool_name'] ); ?>" required>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. The common name of the tool (e.g. &ldquo;Cordless Drill&rdquo;).</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'barcode' ); ?>">Barcode *</label></th>
 		<td>
 			<input type="text" name="barcode" id="<?php echo $field_id( 'barcode' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['barcode'] ); ?>" required>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Required. Scan or type the barcode printed on the tool&rsquo;s label (usually numbers, but letters are allowed). Each barcode must be unique, so no two tools can share the same one.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Numbers or letters. No two tools can share a barcode.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'brand' ); ?>">Brand</label></th>
 		<td>
 			<input type="text" name="brand" id="<?php echo $field_id( 'brand' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['brand'] ); ?>">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Leave blank if unknown.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'location' ); ?>">Location</label></th>
 		<td>
 			<input type="text" name="location" id="<?php echo $field_id( 'location' ); ?>" class="regular-text" maxlength="100" value="<?php echo esc_attr( $values['location'] ); ?>" placeholder="e.g. Aisle 3, Shelf 4">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Where this tool lives on the shelf, written however your library already labels its storage &mdash; &ldquo;Aisle 3, Shelf 4&rdquo;, &ldquo;113&rdquo; and &ldquo;K4-1&rdquo; are all fine. Staff always see it in this tool&rsquo;s detail view below; whether members do is the <strong>Shelf Location</strong> switch under Setup &rarr; Reservations &amp; Loans. Leave blank if unknown.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Where it sits in storage. Staff always see it; members only if <strong>Shelf Location</strong> is on under Setup.</p>
 		</td>
 	</tr>
 	<tr>
@@ -385,7 +767,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 					<option value="<?php echo esc_attr( $cat->category_id ); ?>" <?php echo in_array( (int) $cat->category_id, $values['category_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $cat->category_name ); ?></option>
 				<?php endforeach; ?>
 			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every category that applies, since a tool can belong to more than one. Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to select or unselect multiple. Drag the bottom-right corner to resize the box. Leave blank if none apply.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to pick more than one.</p>
 		</td>
 	</tr>
 	<tr>
@@ -396,7 +778,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 					<option value="<?php echo esc_attr( $tag->tag_id ); ?>" <?php echo in_array( (int) $tag->tag_id, $values['tag_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $tag->tag_name ); ?></option>
 				<?php endforeach; ?>
 			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every tag that applies, since a tool can have more than one. Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to select or unselect multiple. Drag the bottom-right corner to resize the box. Leave blank if none apply.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Hold <strong>Ctrl</strong> (Windows) or <strong>&#8984; Cmd</strong> (Mac) to pick more than one.</p>
 		</td>
 	</tr>
 	<tr>
@@ -407,7 +789,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 					<option value="<?php echo esc_attr( $training->training_id ); ?>" <?php echo in_array( (int) $training->training_id, $values['training_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $training->training_name ); ?></option>
 				<?php endforeach; ?>
 			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Select every training a member must hold before borrowing this tool. Checkout warns staff when a member is missing one or their certification has lapsed, but never blocks the loan. Leave blank if none are needed.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Checkout warns staff about a missing or lapsed training, but never blocks the loan.</p>
 		</td>
 	</tr>
 	<tr>
@@ -450,21 +832,19 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 				<?php endforeach; ?>
 				<p class="mtl-subcat-empty" style="font-size: 0.85em; color: #666; margin: 0;">Choose a category above to pick a sub-category.</p>
 			</div>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Optional. Each category you selected can take one sub-category.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'photo_url' ); ?>">Photo URL</label></th>
 		<td>
 			<input type="url" name="photo_url" id="<?php echo $field_id( 'photo_url' ); ?>" class="regular-text" value="<?php echo esc_url( $values['photo_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Leave blank if unknown. Please make sure the picture link&rsquo;s viewing permissions are set so anyone can view it.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Make sure the link is viewable by anyone.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'initial_cash_value' ); ?>">Initial Cash Value ($)</label></th>
 		<td>
 			<input type="number" step="0.01" min="0" name="initial_cash_value" id="<?php echo $field_id( 'initial_cash_value' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['initial_cash_value'] ); ?>" placeholder="0.00">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Leave blank or enter 0.00 if unknown.</p>
 		</td>
 	</tr>
 	<tr>
@@ -475,14 +855,13 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 			<br>
 			<label for="<?php echo $field_id( 'annual_depreciation_percent' ); ?>" style="display:inline-block; min-width: 100px; margin-top: 6px;">Percent (%)</label>
 			<input type="number" step="0.01" min="0" max="100" name="annual_depreciation_percent" id="<?php echo $field_id( 'annual_depreciation_percent' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['annual_depreciation_percent'] ); ?>" placeholder="0.00" style="max-width: 150px;">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Enter <strong>either</strong> a dollar amount <strong>or</strong> a percentage of the Initial Cash Value above, not both. A percentage is converted to a dollar amount and stored as one, same as if you&rsquo;d typed it directly. Leave both blank or enter 0 if unknown.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Fill in one or the other, not both. A percentage is stored as the dollar amount it works out to.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'date_acquired' ); ?>">Date Acquired</label></th>
 		<td>
 			<input type="date" name="date_acquired" id="<?php echo $field_id( 'date_acquired' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['date_acquired'] ); ?>">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Defaults to today. Change it if the tool was acquired on a different date.</p>
 		</td>
 	</tr>
 	<tr>
@@ -492,28 +871,35 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 				<input type="text" name="donated_by" id="<?php echo $field_id( 'donated_by' ); ?>" class="regular-text mtl-donor-search" autocomplete="off" value="<?php echo esc_attr( $values['donated_by'] ); ?>" placeholder="Name, or type to search members...">
 				<div class="mtl-ql-dropdown" style="display: none;"></div>
 			</div>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Type a member&rsquo;s name or email to find and select them. Selecting one stores their email so they&rsquo;re automatically credited as a donor. Or just type any name for a non-member donor. Leave blank if unknown.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Pick a member to credit them as a donor, or type any name for someone who isn&rsquo;t one.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'components' ); ?>">Components</label></th>
 		<td>
 			<textarea name="components" id="<?php echo $field_id( 'components' ); ?>" rows="3" style="width: 100%; max-width: 400px;"><?php echo esc_textarea( $values['components'] ); ?></textarea>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">List any parts that must be returned with the tool, separated by commas (e.g. &ldquo;Battery, Charger, Carrying Case&rdquo;). Leave blank if none apply.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Parts that must come back with the tool, comma separated (e.g. &ldquo;Battery, Charger, Case&rdquo;).</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'description' ); ?>">Description</label></th>
 		<td>
 			<textarea name="description" id="<?php echo $field_id( 'description' ); ?>" rows="4" style="width: 100%; max-width: 400px;"><?php echo esc_textarea( $values['description'] ); ?></textarea>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Leave blank if unknown.</p>
 		</td>
 	</tr>
+	<?php
+	// Straight off mtl_tool_link_lists(), so a list added there appears on this
+	// form with nothing here to edit.
+	foreach ( mtl_tool_link_lists() as $links_key => $links_list ) {
+		$links_state = isset( $values['links'][ $links_key ] ) ? $values['links'][ $links_key ] : array();
+		mtl_render_tool_links_field( $links_key, $links_list, $links_state );
+	}
+	?>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'private_notes' ); ?>">Private Notes</label></th>
 		<td>
 			<textarea name="private_notes" id="<?php echo $field_id( 'private_notes' ); ?>" rows="4" style="width: 100%; max-width: 400px;"><?php echo esc_textarea( $values['private_notes'] ); ?></textarea>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Staff-only.</strong> Never shown on the public catalog or anywhere a member can see it. It is visible only here and in this tool&rsquo;s detail view on this page. Leave blank if none.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Staff-only.</strong> Never shown to members.</p>
 		</td>
 	</tr>
 	<?php
@@ -567,6 +953,9 @@ function mtl_render_inventory_page() {
 		'components'                  => '',
 		'description'                 => '',
 		'private_notes'               => '',
+		// Each editor defaults its own missing keys, so an empty array is a
+		// blank set of links.
+		'links'                       => array(),
 		'category_ids'                => array(),
 		'tag_ids'                     => array(),
 		'subcategory_ids'             => array(),
@@ -628,6 +1017,8 @@ function mtl_render_inventory_page() {
 			$posted_subcategories = isset( $_POST['subcategory_id'] ) ? array_map( 'absint', (array) wp_unslash( $_POST['subcategory_id'] ) ) : array();
 			$subcategory_pairs    = mtl_resolve_tool_subcategories( $posted_subcategories, $category_ids, $subcategories );
 
+			$links = mtl_collect_posted_tool_links();
+
 			// --- Validate ---
 			$error         = false;
 			$error_message = '';
@@ -635,6 +1026,9 @@ function mtl_render_inventory_page() {
 			if ( '' !== $depreciation_resolved['error'] ) {
 				$error         = true;
 				$error_message = $depreciation_resolved['error'];
+			} elseif ( '' !== $links['error'] ) {
+				$error         = true;
+				$error_message = $links['error'];
 			} elseif ( '' === $barcode ) {
 				// Barcode is required. The HTML "required" attribute normally
 				// stops this client-side; this is a re-check in case it is bypassed.
@@ -659,27 +1053,31 @@ function mtl_render_inventory_page() {
 
 			// --- Insert (only if validation passed) ---
 			if ( ! $error ) {
-				$inserted = $wpdb->insert(
-					$tbl_inventory,
-					array(
-						'tool_name'                  => $tool_name,
-						'barcode'                    => $barcode,
-						'brand'                      => $brand,
-						'description'                => $description,
-						'components'                 => $components,
-						'photo_url'                  => $photo_url,
-						'initial_cash_value'         => $initial_value,
-						'annual_depreciation_amount' => $depreciation,
-						'donated_by'                 => $donated_by,
-						'date_acquired'              => $date_acquired,
-						'private_notes'              => '' !== $private_notes ? $private_notes : null,
-						// NULL rather than '' for an unfilled location, so
-						// "nothing recorded" is one value in the column instead
-						// of two; clearing it on Edit puts it back to NULL too.
-						'location'                   => '' !== $location ? $location : null,
-					),
-					array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' )
+				$tool_data    = array(
+					'tool_name'                  => $tool_name,
+					'barcode'                    => $barcode,
+					'brand'                      => $brand,
+					'description'                => $description,
+					'components'                 => $components,
+					'photo_url'                  => $photo_url,
+					'initial_cash_value'         => $initial_value,
+					'annual_depreciation_amount' => $depreciation,
+					'donated_by'                 => $donated_by,
+					'date_acquired'              => $date_acquired,
+					'private_notes'              => '' !== $private_notes ? $private_notes : null,
+					// NULL rather than '' for an unfilled location, so
+					// "nothing recorded" is one value in the column instead
+					// of two; clearing it on Edit puts it back to NULL too.
+					'location'                   => '' !== $location ? $location : null,
 				);
+				$tool_formats = array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' );
+				// Merged rather than listed above, so the formats cannot drift
+				// when a list is added to mtl_tool_link_lists(). An empty list
+				// is NULL, which is how a tool's last link is removed.
+				$tool_data    = array_merge( $tool_data, $links['columns'] );
+				$tool_formats = array_merge( $tool_formats, array_fill( 0, count( $links['columns'] ), '%s' ) );
+
+				$inserted = $wpdb->insert( $tbl_inventory, $tool_data, $tool_formats );
 
 				if ( $inserted ) {
 					// tool_id is AUTO_INCREMENT, so read back the ID MySQL assigned.
@@ -718,6 +1116,7 @@ function mtl_render_inventory_page() {
 				$form_values['components']                  = $components;
 				$form_values['description']                 = $description;
 				$form_values['private_notes']               = $private_notes;
+				$form_values['links']                       = $links['state'];
 				$form_values['category_ids']                = $category_ids;
 				$form_values['tag_ids']                     = $tag_ids;
 				$form_values['training_ids']                = $training_ids;
@@ -948,6 +1347,30 @@ function mtl_render_inventory_page() {
 									continue;
 								}
 
+								// Held to the same rules as the Add/Edit form, so a
+								// malformed cell fails its row and is reported rather
+								// than importing a tool with its links quietly dropped.
+								$row_links      = array();
+								$row_link_error = '';
+								foreach ( mtl_tool_link_lists() as $links_key => $links_list ) {
+									$links_result = mtl_parse_tool_links_json( $get_col( $row, $links_key ), $links_list );
+									if ( '' !== $links_result['error'] ) {
+										// Those messages are written for the admin
+										// notices, which take markup; this list is
+										// esc_html()'d, so flatten it to plain text.
+										$row_link_error = wp_strip_all_tags( html_entity_decode( $links_result['error'], ENT_QUOTES, 'UTF-8' ) );
+										break;
+									}
+									$row_links[ $links_key ] = mtl_encode_tool_links( $links_result['pairs'] );
+								}
+								if ( '' !== $row_link_error ) {
+									$bulk_failed_rows[] = array(
+										'row'    => $row_number,
+										'reason' => $row_link_error,
+									);
+									continue;
+								}
+
 								$row_category_ids = $resolve_names( $row, $row_number, 'categories', $category_lookup, 'category' );
 
 								// Written qualified, as "Woodworking > Saws". A sub-category
@@ -979,24 +1402,26 @@ function mtl_render_inventory_page() {
 									}
 								}
 
-								$row_inserted = $wpdb->insert(
-									$tbl_inventory,
-									array(
-										'tool_name'     => $row_tool_name,
-										'barcode'       => $row_barcode,
-										'brand'         => $row_brand,
-										'description'   => $row_description,
-										'components'    => $row_components,
-										'photo_url'     => $row_photo_url,
-										'initial_cash_value' => $row_initial_value,
-										'annual_depreciation_amount' => $row_depreciation,
-										'donated_by'    => $row_donated_by,
-										'date_acquired' => $row_date,
-										'private_notes' => '' !== $row_private_notes ? $row_private_notes : null,
-										'location'      => '' !== $row_location ? $row_location : null,
-									),
-									array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' )
+								$row_data    = array(
+									'tool_name'          => $row_tool_name,
+									'barcode'            => $row_barcode,
+									'brand'              => $row_brand,
+									'description'        => $row_description,
+									'components'         => $row_components,
+									'photo_url'          => $row_photo_url,
+									'initial_cash_value' => $row_initial_value,
+									'annual_depreciation_amount' => $row_depreciation,
+									'donated_by'         => $row_donated_by,
+									'date_acquired'      => $row_date,
+									'private_notes'      => '' !== $row_private_notes ? $row_private_notes : null,
+									'location'           => '' !== $row_location ? $row_location : null,
 								);
+								$row_formats = array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' );
+								// Merged in lockstep, as on the Add and Edit paths.
+								$row_data    = array_merge( $row_data, $row_links );
+								$row_formats = array_merge( $row_formats, array_fill( 0, count( $row_links ), '%s' ) );
+
+								$row_inserted = $wpdb->insert( $tbl_inventory, $row_data, $row_formats );
 
 								if ( ! $row_inserted ) {
 									$bulk_failed_rows[] = array(
@@ -1113,12 +1538,17 @@ function mtl_render_inventory_page() {
 			$posted_subcategories = isset( $_POST['subcategory_id'] ) ? array_map( 'absint', (array) wp_unslash( $_POST['subcategory_id'] ) ) : array();
 			$subcategory_pairs    = mtl_resolve_tool_subcategories( $posted_subcategories, $category_ids, $subcategories );
 
+			$links = mtl_collect_posted_tool_links();
+
 			$error         = false;
 			$error_message = '';
 
 			if ( '' !== $depreciation_resolved['error'] ) {
 				$error         = true;
 				$error_message = $depreciation_resolved['error'];
+			} elseif ( '' !== $links['error'] ) {
+				$error         = true;
+				$error_message = $links['error'];
 			} elseif ( $edit_tool_id <= 0 ) {
 				$error         = true;
 				$error_message = 'Could not determine which tool to update. Please try again.';
@@ -1144,24 +1574,32 @@ function mtl_render_inventory_page() {
 			if ( ! $error ) {
 				// tool_id is intentionally excluded from this array, since it is the
 				// primary key and is never editable.
+				$tool_data    = array(
+					'tool_name'                  => $tool_name,
+					'barcode'                    => $barcode,
+					'brand'                      => $brand,
+					'description'                => $description,
+					'components'                 => $components,
+					'photo_url'                  => $photo_url,
+					'initial_cash_value'         => $initial_value,
+					'annual_depreciation_amount' => $depreciation,
+					'donated_by'                 => $donated_by,
+					'date_acquired'              => $date_acquired,
+					'private_notes'              => '' !== $private_notes ? $private_notes : null,
+					'location'                   => '' !== $location ? $location : null,
+				);
+				$tool_formats = array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' );
+				// Merged rather than listed above, so the formats cannot drift
+				// when a list is added to mtl_tool_link_lists(). An empty list
+				// is NULL, which is how a tool's last link is removed.
+				$tool_data    = array_merge( $tool_data, $links['columns'] );
+				$tool_formats = array_merge( $tool_formats, array_fill( 0, count( $links['columns'] ), '%s' ) );
+
 				$updated = $wpdb->update(
 					$tbl_inventory,
-					array(
-						'tool_name'                  => $tool_name,
-						'barcode'                    => $barcode,
-						'brand'                      => $brand,
-						'description'                => $description,
-						'components'                 => $components,
-						'photo_url'                  => $photo_url,
-						'initial_cash_value'         => $initial_value,
-						'annual_depreciation_amount' => $depreciation,
-						'donated_by'                 => $donated_by,
-						'date_acquired'              => $date_acquired,
-						'private_notes'              => '' !== $private_notes ? $private_notes : null,
-						'location'                   => '' !== $location ? $location : null,
-					),
+					$tool_data,
 					array( 'tool_id' => $edit_tool_id ),
-					array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' ),
+					$tool_formats,
 					array( '%d' )
 				);
 
@@ -1203,6 +1641,7 @@ function mtl_render_inventory_page() {
 					'components'                  => $components,
 					'description'                 => $description,
 					'private_notes'               => $private_notes,
+					'links'                       => $links['state'],
 					'category_ids'                => $category_ids,
 					'tag_ids'                     => $tag_ids,
 					'training_ids'                => $training_ids,
@@ -1518,6 +1957,7 @@ function mtl_render_inventory_page() {
 					'components'                  => stripslashes( (string) $tool_row->components ),
 					'description'                 => stripslashes( (string) $tool_row->description ),
 					'private_notes'               => stripslashes( (string) $tool_row->private_notes ),
+					'links'                       => mtl_tool_links_state_from_row( $tool_row ),
 					'category_ids'                => array_map( 'intval', $existing_cat_ids ),
 					'tag_ids'                     => array_map( 'intval', $existing_tag_ids ),
 					'training_ids'                => array_map( 'intval', $existing_training_ids ),
@@ -1541,7 +1981,8 @@ function mtl_render_inventory_page() {
 			overflow: auto;
 		}
 
-		.mtl-badge {
+		.mtl-badge,
+		.mtl-links-count {
 			display: inline-block;
 			background: #eef3f7;
 			color: #096491;
@@ -2026,13 +2467,15 @@ function mtl_render_inventory_page() {
 			color: #b32d2e;
 		}
 
-		.mtl-tool-list {
+		.mtl-tool-list,
+		.mtl-links-list {
 			list-style: none;
-			margin: 6px 0 16px 0;
+			margin: 6px 0 0 0;
 			padding: 0;
 		}
 
-		.mtl-tool-list li {
+		.mtl-tool-list li,
+		.mtl-links-list li {
 			padding: 6px 0;
 			border-top: 1px solid #eef0f2;
 			font-size: 0.9em;
@@ -2042,6 +2485,32 @@ function mtl_render_inventory_page() {
 			display: block;
 			color: #999;
 			font-size: 0.85em;
+		}
+
+		/* Resources / Partner Links in the detail panel. Collapsed rather than
+			<strong> + <p> like the fields around them, since a tool can carry a
+			lot of links and none of them are what someone opened the row to
+			read. The summary matches those headings so the column still reads
+			as one run of labelled blocks. */
+		.mtl-detail-panel .mtl-links {
+			margin: 0 0 14px 0;
+		}
+
+		.mtl-detail-panel .mtl-links > summary {
+			cursor: pointer;
+			font-weight: 600;
+		}
+
+		/* The count is one of this page's badges, so it is one of these. */
+		.mtl-detail-panel .mtl-links-count {
+			margin: 0;
+			min-width: 18px;
+			text-align: center;
+		}
+
+		.mtl-detail-panel .mtl-links-list li {
+			/* .mtl-detail-panel p sets pre-wrap for the free-text fields. */
+			white-space: normal;
 		}
 
 		.mtl-tool-fields {
@@ -2160,16 +2629,13 @@ function mtl_render_inventory_page() {
 				to get started, fill in one row per tool, then upload it below.
 			</p>
 			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
-				<li><code>tool_name</code> and <code>barcode</code> are required for every row; each barcode must be unique.</li>
-				<li>Do not include a <code>tool_id</code> column, as it is assigned automatically when each tool is added.</li>
-				<li>For <code>categories</code> and <code>tags</code>, separate multiple values with a semicolon (e.g. &ldquo;Woodworking;General Hand Tools&rdquo;). Names must match existing categories/tags exactly, so add new ones on the Setup page first if needed.</li>
-				<li>Write each <code>subcategories</code> value as &ldquo;Category &gt; Sub-category&rdquo; (e.g. &ldquo;Woodworking &gt; Saws&rdquo;), because two categories can each have a sub-category of the same name. A sub-category is skipped if the row does not also list its category.</li>
-				<li><code>trainings</code> takes training names, semicolon separated, and sets what a member must hold before borrowing the tool. Unknown names are skipped and reported.</li>
-				<li><code>annual_depreciation_amount</code> accepts either a plain dollar amount (e.g. &ldquo;5.00&rdquo;) or a percentage of that row&rsquo;s <code>initial_cash_value</code> (e.g. &ldquo;5%&rdquo;). Any value containing a % sign is converted to a dollar amount before it&rsquo;s stored.</li>
-				<li><code>donated_by</code> is plain text. If it exactly matches an existing member&rsquo;s email address (their sign-in username), that member is automatically credited as a donor. Otherwise it is just stored as-is (e.g. for a non-member donor).</li>
-				<li><code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form, but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
-				<li><code>location</code> is where the tool sits on the shelf, in whatever notation you already use (e.g. &ldquo;Aisle 3, Shelf 4&rdquo;, &ldquo;113&rdquo;, &ldquo;K4-1&rdquo;). Staff always see it; whether members do is the <strong>Shelf Location</strong> switch under Setup &rarr; Reservations &amp; Loans.</li>
-				<li>Leave a cell blank to skip that field. If a row fails, the rest of the file still gets processed, and failures are listed after upload.</li>
+				<li><code>tool_name</code> and <code>barcode</code> are required. No two tools can share a barcode.</li>
+				<li><code>categories</code>, <code>subcategories</code>, <code>trainings</code> and <code>tags</code> are semicolon separated and must match names that already exist. Write a sub-category as &ldquo;Category &gt; Sub-category&rdquo;.</li>
+				<li><code>annual_depreciation_amount</code> takes a dollar amount, or a percentage of that row&rsquo;s <code>initial_cash_value</code> if it contains a % (e.g. &ldquo;5%&rdquo;).</li>
+				<li><code>donated_by</code> credits a member if it matches their email exactly; anything else is stored as plain text.</li>
+				<li><code>resources</code> and <code>partner_links</code> take the JSON from the Add/Edit form&rsquo;s <strong>Edit JSON</strong> box, e.g. <code>{"Chainsaw tutorial": "example.com/chainsaw-basics"}</code>.</li>
+				<li><code>private_notes</code> is staff-only, but this file isn&rsquo;t &mdash; don&rsquo;t share an import sheet with notes filled in.</li>
+				<li>A row that fails is listed after upload; the rest of the file still imports.</li>
 			</ul>
 			<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
 				<?php wp_nonce_field( 'mtl_bulk_import_action', 'mtl_bulk_import_nonce' ); ?>
@@ -2207,6 +2673,7 @@ function mtl_render_inventory_page() {
 	<?php endif; ?>
 
 	<?php mtl_subcategory_picker_script(); ?>
+	<?php mtl_tool_links_editor_script(); ?>
 	<?php mtl_taxonomy_tree_assets(); ?>
 	<?php mtl_taxonomy_matcher_script(); ?>
 
@@ -2218,10 +2685,11 @@ function mtl_render_inventory_page() {
 	// multiplying each other's values.
 	// Every {$tbl_*} fragment interpolated through the end of this
 	// data-gathering section is a table name only, built from $wpdb->prefix,
-	// never request data.
-	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	// never request data; the one concatenated fragment is
+	// mtl_tool_link_columns_sql(), which is column names from the registry.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 	$inventory = $wpdb->get_results(
-		"
+		'
         SELECT
             t.tool_id,
             t.tool_name,
@@ -2236,8 +2704,9 @@ function mtl_render_inventory_page() {
             t.date_acquired,
             t.retired_at,
             t.private_notes,
-            t.location,
-            GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,
+            t.location'
+		. mtl_tool_link_columns_sql() . "
+            , GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,
             GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags
             , GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories
             , GROUP_CONCAT(DISTINCT tr.training_name ORDER BY tr.training_name SEPARATOR ', ') AS required_trainings
@@ -2740,6 +3209,14 @@ function mtl_render_inventory_page() {
 
 										<strong>Components</strong>
 										<p><?php echo $item->components ? nl2br( esc_html( stripslashes( $item->components ) ) ) : '<span style="color:#999;">&mdash;</span>'; ?></p>
+
+										<?php
+										// Collapsed sections, absent entirely
+										// on a tool with none. Same helper the
+										// catalog calls, so the two can't
+										// drift apart.
+										echo mtl_tool_all_links_html( $item );
+										?>
 
 										<?php if ( ! empty( $item->private_notes ) ) : ?>
 											<strong>Private Notes</strong>

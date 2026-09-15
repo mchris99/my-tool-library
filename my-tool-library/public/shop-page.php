@@ -151,7 +151,8 @@ function mtl_shop_badge_pill_css() {
 			border: 1px solid #d5d8dc;
 		}
 
-		.mtl-shop-pill {
+		.mtl-shop-pill,
+		.mtl-links-count {
 			display: inline-block;
 			background: #f0f1f2;
 			color: #50575e;
@@ -193,10 +194,10 @@ function mtl_shop_tool_share_url( $tool_id, $base ) {
 
 /**
  * Renders one tool's full detail-panel body: photo, badges, availability, a
- * shareable link, categories/tags, description, components, shelf location
- * (only when the library shows it to members), and a context-aware Reserve
- * control. A retired tool reads as retired throughout and is offered no
- * Reserve control at all.
+ * shareable link, categories/tags, description, components, its resource and
+ * partner links, shelf location (only when the library shows it to members),
+ * and a context-aware Reserve control. A retired tool reads as retired
+ * throughout and is offered no Reserve control at all.
  *
  * @param object $tool Tool row from the catalog query.
  * @param string $base Base page URL.
@@ -287,6 +288,13 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 			<h4>What's included</h4>
 			<p><?php echo nl2br( esc_html( stripslashes( $tool->components ) ) ); ?></p>
 		<?php endif; ?>
+
+		<?php
+		// Resources and Partner Links: collapsed sections, and nothing at all
+		// for a tool with neither. Rendered through the same helper the admin
+		// Inventory detail calls, so the two views cannot drift apart.
+		echo mtl_tool_all_links_html( $tool );
+		?>
 
 		<?php echo mtl_shop_location_block( $tool->location ); ?>
 
@@ -544,7 +552,8 @@ function mtl_render_shop_page() {
 	// t.location is selected whatever the Setup switch says;
 	// mtl_shop_location_block() is the single place that decides whether a
 	// member is shown it, so the query does not have to be built two ways.
-	$page_sql  = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.retired_at,'
+	$page_sql  = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.retired_at'
+		. mtl_tool_link_columns_sql() . ','
 		. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 		. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
 		. " GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories,"
@@ -561,7 +570,8 @@ function mtl_render_shop_page() {
 		$sel_retired_sql = '' !== $retired_where ? ' AND ' . $retired_where : '';
 		$selected        = $wpdb->get_row(
 			$wpdb->prepare(
-				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.date_acquired, t.retired_at,'
+				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.date_acquired, t.retired_at'
+				. mtl_tool_link_columns_sql() . ','
 				. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 				. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
 				. " {$sub_loans} AS active_loans, {$sub_res} AS active_res"
@@ -1099,6 +1109,7 @@ function mtl_render_shop_page() {
 
 		/* Badges + pills */
 		<?php echo mtl_shop_badge_pill_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
+		<?php echo mtl_tool_links_css( $accent ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS; the accent is esc_html()'d inside the helper. ?>
 
 		/* Detail box */
 		.mtl-shop-detail {
@@ -1220,7 +1231,9 @@ function mtl_render_shop_page() {
 			margin: 2px 0 12px 0;
 		}
 
-		.mtl-shop-detail h4 {
+		<?php // The link sections' summaries are headings here, so they read as ones. ?>
+		.mtl-shop-detail h4,
+		.mtl-shop-detail .mtl-links > summary {
 			font-size: 0.78em;
 			text-transform: uppercase;
 			letter-spacing: 0.05em;

@@ -88,6 +88,8 @@ Table tool_inventory {
   retired_at timestamp [note: 'NULL = active/lendable. Once set, hidden from the public catalog and blocked from new loans/reservations, but reversible (just clear it); see mtl_retire_tool()/mtl_reactivate_tool()']
   private_notes text [note: 'Staff-only. Never selected by any public-facing query, shown only in the admin Inventory page detail view.']
   location varchar(100) [note: 'Where the tool sits on the shelf, free text in whatever notation the library uses ("Aisle 3, Shelf 4", "113", "K4-1"). Optional. Staff always see it; members see it on a tool detail view only while the Setup page option mtl_show_tool_location is on, and see nothing at all in its place when it is off. See mtl_tool_location_visible_to_members().']
+  resources text [note: 'Links that help someone USE the tool (manual, safety video, how-to). A JSON object of link text => URL, e.g. {"Chainsaw tutorial":"https://example1.com"}; insertion order is display order, and the keys are the link text, so one tool cannot carry two with the same name. Optional, NULL when there are none. Public: shown on the Inventory detail view, the catalog and My Reservations. See mtl_tool_link_lists().']
+  partner_links text [note: 'Same shape and rules as resources, for links that help someone SUPPLY the tool: the local shops stocking its blades, belts or fuel. Kept separate because a member is asking one question or the other. See mtl_tool_link_lists().']
 
   Note: 'One row per physical tool the library owns.'
 }
