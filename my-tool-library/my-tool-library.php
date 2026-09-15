@@ -2470,50 +2470,25 @@ function mtl_sync_member_email_from_wp_user( $user_id, $old_user_data ) {
 	);
 }
 
-// ==========================================================================
-// CONSIDER GIVING
-//
-// An optional fundraising ask, shown to signed-in members on their Account
-// page and on My Reservations. Both the message and the link are set on the
-// Setup page; either one blank simply omits that part, and both blank hides
-// the section everywhere.
-//
-// The link is normalized on save rather than only escaped on output, so what
-// is stored is already known to be an ordinary web address. That keeps the
-// two display sites from each having to re-litigate whether a stored value
-// is safe to put in an href.
-// ==========================================================================
-
 /**
- * The default fundraising message, used until an admin saves their own.
+ * Cleans up a staff-entered web address for storage.
  *
- * Kept in one function because it has to be identical in two places, the
- * Setup page textarea's starting value and the member-facing fallback, and
- * a copy-paste drift between them would show members different words than
- * the admin sees in the box they think they are editing.
+ * Shared by the Setup page's giving link and by tool resource/partner links;
+ * all of them are pasted by staff into a plain text box and all of them end up
+ * in an href, so they get the same treatment rather than each inventing it.
  *
- * @return string
- */
-function mtl_default_giving_text() {
-	return 'Every tool on our shelves got here because someone chipped in. If borrowing from us has saved you a trip to the hardware store, please consider giving back so we can repair what we have, replace what wears out, and keep lending free for your neighbors.';
-}
-
-/**
- * Cleans up an admin-entered giving link for storage.
- *
- * Returns '' for anything that is not an ordinary http/https web address, so
- * a "javascript:" or "data:" URL pasted into the Setup field is discarded at
- * the point of saving instead of being stored and later rendered into a
- * button that every signed-in member sees.
+ * Returns '' for anything that is not an ordinary http/https address, so a
+ * "javascript:" or "data:" URL is discarded when it is saved instead of being
+ * stored and rendered into a link later.
  *
  * A bare host like "example.org/donate" is assumed to be https rather than
- * rejected, since admins paste addresses without the scheme constantly, and
+ * rejected, since people paste addresses without the scheme constantly, and
  * silently saving nothing would look like the field was broken.
  *
- * @param string $url Raw value from the Setup form.
+ * @param string $url Raw value from a form.
  * @return string A normalized absolute http/https URL, or '' if unusable.
  */
-function mtl_normalize_giving_url( $url ) {
+function mtl_normalize_web_url( $url ) {
 	$url = trim( (string) $url );
 	if ( '' === $url ) {
 		return '';
@@ -2546,6 +2521,35 @@ function mtl_normalize_giving_url( $url ) {
 	return ( is_string( $host ) && '' !== $host ) ? $url : '';
 }
 
+// ==========================================================================
+// CONSIDER GIVING
+//
+// An optional fundraising ask, shown to signed-in members on their Account
+// page and on My Reservations. Both the message and the link are set on the
+// Setup page; either one blank simply omits that part, and both blank hides
+// the section everywhere.
+//
+// The link is normalized on save rather than only escaped on output, so what
+// is stored is already known to be an ordinary web address. That keeps the
+// two display sites from each having to re-litigate whether a stored value
+// is safe to put in an href. See mtl_normalize_web_url(), just above.
+// ==========================================================================
+
+/**
+ * The default fundraising message, used until an admin saves their own.
+ *
+ * Kept in one function because it has to be identical in two places, the
+ * Setup page textarea's starting value and the member-facing fallback, and
+ * a copy-paste drift between them would show members different words than
+ * the admin sees in the box they think they are editing.
+ *
+ * @return string
+ */
+function mtl_default_giving_text() {
+	return 'Every tool on our shelves got here because someone chipped in. If borrowing from us has saved you a trip to the hardware store, please consider giving back so we can repair what we have, replace what wears out, and keep lending free for your neighbors.';
+}
+
+
 /**
  * The Consider Giving section, or '' when there is nothing to show.
  *
@@ -2562,7 +2566,7 @@ function mtl_giving_section_html( $extra_class = '' ) {
 	// Re-normalized on read, not trusted from storage: an option can also be
 	// set by WP-CLI, an import, or another plugin, none of which go through
 	// the Setup form's save path.
-	$url = mtl_normalize_giving_url( get_option( 'mtl_giving_url', '' ) );
+	$url = mtl_normalize_web_url( get_option( 'mtl_giving_url', '' ) );
 
 	// The message is what carries the ask, so it decides whether the section
 	// exists at all, because a bare "Give Now" button with no explanation would be
@@ -2858,6 +2862,455 @@ function mtl_reservation_collect_by( $ready_since ) {
  */
 function mtl_tool_location_visible_to_members() {
 	return '1' === (string) get_option( 'mtl_show_tool_location', '' );
+}
+
+// ==========================================================================
+// TOOL LINK LISTS: RESOURCES AND PARTNER LINKS
+//
+// Two lists of outward links a tool can carry, and one implementation.
+//
+// Resources are about USING the tool: a manual, a safety video, a how-to.
+// Partner links are about SUPPLYING it: the local stores stocking its blades,
+// belts or fuel. Kept apart because a member reading a tool's page is asking
+// one question or the other, and a merged list answers neither.
+//
+// Each list is one tool_inventory column holding a JSON object of link text =>
+// URL. Not a child table, because nothing queries, joins or counts a single
+// link: they are read back whole, for one tool, to fill one collapsed section.
+// Object order is display order, and the keys are the link text, so one tool
+// cannot carry two links with the same name in the same list.
+//
+// mtl_tool_link_lists() is what makes them one feature rather than two: the
+// editor, the three detail views (admin Inventory, the catalog, and a member's
+// own reservations) and the storage all read it instead of naming "resources"
+// or "partner_links" themselves. A third list is a registry entry, a column in schema.sql, and
+// the same column in mtl_maybe_upgrade_schema()'s frozen map.
+//
+// Links are normalized to absolute http(s) on the way IN, by the same
+// mtl_normalize_web_url() the giving link uses. Reads still check the stored
+// value is http(s), since the database is not a trust boundary this owns, but
+// that check is a prefix test rather than a second full parse.
+// ==========================================================================
+
+/**
+ * The link lists a tool carries, in the order they are shown and edited.
+ *
+ * Keyed by the tool_inventory column each one lives in, which is also the key
+ * the Inventory form posts them under and the suffix on their CSS classes, so
+ * there is one name to follow from the database to the page.
+ *
+ * @return array<string, array{label:string,noun:string,name_hint:string,url_hint:string}>
+ */
+function mtl_tool_link_lists() {
+	return array(
+		'resources'     => array(
+			'label'     => 'Resources',
+			// Singular, and lower case: it is dropped into the middle of
+			// validation messages ("Every resource needs...").
+			'noun'      => 'resource',
+			'name_hint' => 'Chainsaw tutorial',
+			'url_hint'  => 'example.com/chainsaw-basics',
+		),
+		'partner_links' => array(
+			'label'     => 'Partner Links',
+			'noun'      => 'partner link',
+			'name_hint' => 'Store Name',
+			'url_hint'  => 'example.com/sanding-belts',
+		),
+	);
+}
+
+/**
+ * A worked example of the stored shape, for error messages and placeholders.
+ *
+ * Built from the list's own hints rather than written out per message, so the
+ * example a staff member is shown is always about the list they are editing.
+ *
+ * @param array $link_list List definition from mtl_tool_link_lists().
+ * @return string e.g. {"Bliffert Lumber": "example.com/sanding-belts"}
+ */
+function mtl_tool_links_example( $link_list ) {
+	return sprintf( '{"%s": "%s"}', $link_list['name_hint'], $link_list['url_hint'] );
+}
+
+/**
+ * Reads a stored link-list column into a list of pairs.
+ *
+ * Fails soft on purpose. This runs on the public catalog, so a row holding
+ * malformed JSON (a hand-edited database, a mangled backup) costs that tool
+ * one collapsed section and nothing else: unreadable and empty are the same
+ * answer here. The editor's paste path reports every problem instead; see
+ * mtl_parse_tool_links_json().
+ *
+ * NOT stripslashes()'d, unlike the free-text columns beside it. Backslashes
+ * are structural in JSON, so stripping them is how a name like
+ * "Manual \"Rev B\"" stops parsing at all.
+ *
+ * @param string $stored Raw column value; NULL/'' for a tool with none.
+ * @return array<int, array{label:string,url:string}> Pairs, in stored order.
+ */
+function mtl_parse_tool_links( $stored ) {
+	$stored = trim( (string) $stored );
+	if ( '' === $stored ) {
+		return array();
+	}
+
+	$decoded = json_decode( $stored, true );
+	if ( ! is_array( $decoded ) ) {
+		return array();
+	}
+
+	$pairs = array();
+	foreach ( $decoded as $label => $url ) {
+		// A nested object/array is not a link, and an integer key means a JSON
+		// array rather than the name => link object these columns hold.
+		if ( is_int( $label ) || ! is_scalar( $url ) ) {
+			continue;
+		}
+		$label = trim( (string) $label );
+		$url   = trim( (string) $url );
+		// Stored links are already absolute http(s), so the common case is a
+		// prefix test rather than a second esc_url_raw() for every link on
+		// every render. Anything else -- a hand-edited row, a restored backup
+		// -- still goes through the full normalizer, which is what drops a
+		// "javascript:" somebody put there by hand.
+		if ( 0 !== stripos( $url, 'http://' ) && 0 !== stripos( $url, 'https://' ) ) {
+			$url = mtl_normalize_web_url( $url );
+		}
+		if ( '' === $label || '' === $url ) {
+			continue;
+		}
+		$pairs[] = array(
+			'label' => $label,
+			'url'   => $url,
+		);
+	}
+	return $pairs;
+}
+
+/**
+ * Encodes pairs for storage, or NULL when the list is empty.
+ *
+ * NULL rather than "{}" for an empty list, so "none" is one value in the
+ * column instead of two, as location and private_notes already do.
+ *
+ * JSON_UNESCAPED_SLASHES because staff read and paste this exact text in the
+ * editor, and "https:\/\/example.com" is the same URL spelled unreadably.
+ *
+ * @param array $pairs List of array{label:string,url:string}.
+ * @return string|null Column value.
+ */
+function mtl_encode_tool_links( $pairs ) {
+	// Keying by label is where a repeated name would silently collapse, which
+	// is why mtl_validate_tool_links() refuses one first. A pair with no label
+	// yet is a half-filled editor row, and has nothing to key on.
+	$map = array();
+	foreach ( (array) $pairs as $pair ) {
+		$label = isset( $pair['label'] ) ? (string) $pair['label'] : '';
+		if ( '' === $label ) {
+			continue;
+		}
+		$map[ $label ] = isset( $pair['url'] ) ? (string) $pair['url'] : '';
+	}
+
+	if ( ! $map ) {
+		return null;
+	}
+	return wp_json_encode( $map, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+}
+
+/**
+ * Every link-list column, as a SQL fragment to paste into a SELECT list.
+ *
+ * The three queries that feed a detail view need both columns; this is so they
+ * do not each name them by hand, which is what would make "a third list is one
+ * registry entry plus a column" untrue.
+ *
+ * The keys are code constants from the registry, never request data, so there
+ * is nothing here to prepare.
+ *
+ * @param string $alias Table alias used by the caller's query.
+ * @return string e.g. ", t.resources, t.partner_links".
+ */
+function mtl_tool_link_columns_sql( $alias = 't' ) {
+	$out = '';
+	foreach ( array_keys( mtl_tool_link_lists() ) as $key ) {
+		$out .= ', ' . $alias . '.' . $key;
+	}
+	return $out;
+}
+/**
+ * Holds a list of typed or pasted links to the rules the column keeps.
+ *
+ * All-or-nothing: the first problem stops the save, rather than the good rows
+ * landing while a bad one is dropped. Someone who added four links and was
+ * told "saved" has no way to notice only three are there.
+ *
+ * A row with neither a name nor a link is a spare nobody filled in, so it is
+ * skipped rather than refused.
+ *
+ * @param array $raw_pairs List of array{label:string,url:string}, already
+ *                         sanitized by the caller.
+ * @param array $link_list      List definition from mtl_tool_link_lists(), which
+ *                         supplies the wording so the message names the list
+ *                         the staff member is actually looking at.
+ * @return array{pairs:array,error:string} pairs is in submitted order, and is
+ *         empty on error; error is '' on success.
+ */
+function mtl_validate_tool_links( $raw_pairs, $link_list ) {
+	$pairs = array();
+	$seen  = array();
+
+	foreach ( (array) $raw_pairs as $raw ) {
+		$label = is_array( $raw ) && isset( $raw['label'] ) ? trim( (string) $raw['label'] ) : '';
+		$url   = is_array( $raw ) && isset( $raw['url'] ) ? trim( (string) $raw['url'] ) : '';
+
+		if ( '' === $label && '' === $url ) {
+			continue;
+		}
+
+		if ( '' === $label || '' === $url ) {
+			return array(
+				'pairs' => array(),
+				'error' => sprintf( 'Every %s needs both a name and a link. ', esc_html( $link_list['noun'] ) ) . (
+					'' === $label
+						? sprintf( 'The link &ldquo;%s&rdquo; has no name to show for it.', esc_html( $url ) )
+						: sprintf( 'The %s &ldquo;%s&rdquo; has no link.', esc_html( $link_list['noun'] ), esc_html( $label ) )
+				),
+			);
+		}
+
+		$safe_url = mtl_normalize_web_url( $url );
+		if ( '' === $safe_url ) {
+			return array(
+				'pairs' => array(),
+				'error' => sprintf(
+					'&ldquo;%1$s&rdquo; is not a web address this can link to. A %2$s has to be an ordinary http:// or https:// address, such as <code>%3$s</code>.',
+					esc_html( $url ),
+					esc_html( $link_list['noun'] ),
+					esc_html( $link_list['url_hint'] )
+				),
+			);
+		}
+
+		// Link text is the JSON key, so a repeat would overwrite the earlier
+		// link rather than sit beside it.
+		if ( isset( $seen[ $label ] ) ) {
+			return array(
+				'pairs' => array(),
+				'error' => sprintf(
+					'Two entries under %1$s are both named &ldquo;%2$s&rdquo;. Each one needs its own name, since that is the text people click.',
+					esc_html( $link_list['label'] ),
+					esc_html( $label )
+				),
+			);
+		}
+		$seen[ $label ] = true;
+
+		$pairs[] = array(
+			'label' => $label,
+			'url'   => $safe_url,
+		);
+	}
+
+	return array(
+		'pairs' => $pairs,
+		'error' => '',
+	);
+}
+
+/**
+ * Reads the JSON a staff member pasted into a list's Edit JSON box.
+ *
+ * Loud where mtl_parse_tool_links() is quiet: somebody is looking at this text
+ * right now and can fix it, so a stray comma earns a message rather than a
+ * silent save of nothing.
+ *
+ * @param string $json Raw pasted text.
+ * @param array  $link_list List definition from mtl_tool_link_lists().
+ * @return array{pairs:array,error:string}
+ */
+function mtl_parse_tool_links_json( $json, $link_list ) {
+	$json = trim( (string) $json );
+	if ( '' === $json ) {
+		return array(
+			'pairs' => array(),
+			'error' => '',
+		);
+	}
+
+	$example = '<code>' . esc_html( mtl_tool_links_example( $link_list ) ) . '</code>';
+	$decoded = json_decode( $json, true );
+
+	if ( JSON_ERROR_NONE !== json_last_error() ) {
+		return array(
+			'pairs' => array(),
+			'error' => sprintf(
+				'The %1$s JSON could not be read (%2$s). It should look like %3$s.',
+				esc_html( $link_list['label'] ),
+				esc_html( json_last_error_msg() ),
+				$example
+			),
+		);
+	}
+
+	if ( ! is_array( $decoded ) ) {
+		return array(
+			'pairs' => array(),
+			'error' => sprintf(
+				'The %1$s JSON has to be an object of name and link pairs, like %2$s.',
+				esc_html( $link_list['label'] ),
+				$example
+			),
+		);
+	}
+
+	$raw_pairs = array();
+	foreach ( $decoded as $label => $url ) {
+		// A JSON array ("[ ... ]") decodes to integer keys, and carries no link
+		// text to show anybody.
+		if ( is_int( $label ) ) {
+			return array(
+				'pairs' => array(),
+				'error' => sprintf(
+					'The %1$s JSON is a list, not an object of name and link pairs. Every entry needs the text to show as its name, like %2$s.',
+					esc_html( $link_list['label'] ),
+					$example
+				),
+			);
+		}
+		if ( ! is_scalar( $url ) ) {
+			return array(
+				'pairs' => array(),
+				'error' => sprintf(
+					'The %1$s JSON entry &ldquo;%2$s&rdquo; is not a link. Each name has to be paired with a single web address.',
+					esc_html( $link_list['label'] ),
+					esc_html( (string) $label )
+				),
+			);
+		}
+		$raw_pairs[] = array(
+			'label' => sanitize_text_field( (string) $label ),
+			// Not sanitize_url(): it prepends http:// to a scheme-less address,
+			// which would beat mtl_normalize_web_url() to that decision and
+			// downgrade every bare hostname a staff member typed.
+			'url'   => wp_strip_all_tags( (string) $url ),
+		);
+	}
+
+	return mtl_validate_tool_links( $raw_pairs, $link_list );
+}
+
+/**
+ * One tool's link list as a <details> section, closed by default, holding one
+ * link per entry, each opening in a new tab.
+ *
+ * A native <details>, not a scripted toggle: the public catalog renders with
+ * no JavaScript, and on the admin side this already sits inside a
+ * click-to-expand table row.
+ *
+ * Returns '' for an empty list, so callers can echo it unconditionally without
+ * growing an empty heading.
+ *
+ * @param array $pairs     Pairs from mtl_parse_tool_links().
+ * @param array $link_list List definition from mtl_tool_link_lists().
+ * @return string HTML markup, or ''.
+ */
+function mtl_tool_links_html( $pairs, $link_list ) {
+	if ( ! $pairs ) {
+		return '';
+	}
+
+	$out = '<details class="mtl-links">';
+	// The count goes in the summary: closed by default, it is the only hint
+	// that opening it is worth the click.
+	$out .= '<summary>' . esc_html( $link_list['label'] )
+		. ' <span class="mtl-links-count">' . esc_html( (string) count( $pairs ) ) . '</span></summary>';
+	$out .= '<ul class="mtl-links-list">';
+	foreach ( $pairs as $pair ) {
+		// target="_blank" is the point: the tool's page stays put while the
+		// manual opens beside it. noopener/noreferrer is the cost of that on
+		// third-party links, and nofollow keeps the catalog from being worth
+		// spamming.
+		$out .= '<li><a href="' . esc_url( $pair['url'] ) . '" target="_blank" rel="noopener noreferrer nofollow">'
+			. esc_html( $pair['label'] ) . '</a></li>';
+	}
+	$out .= '</ul></details>';
+
+	return $out;
+}
+
+/**
+ * The front-end CSS for what mtl_tool_links_html() renders.
+ *
+ * The catalog and My Reservations both show these sections, so this lives
+ * beside the renderer for the same reason mtl_shop_badge_pill_css() does: one
+ * copy, so restyling a link list restyles it on both. The count's pill shape
+ * comes from that helper; only its spacing is set here.
+ *
+ * Each page styles its own <summary> typography, so the section heading
+ * matches the headings around it rather than importing the other page's.
+ *
+ * @param string $accent The site's accent colour, for the link text.
+ * @return string CSS, ready to drop inside a <style> block.
+ */
+function mtl_tool_links_css( $accent ) {
+	ob_start();
+	?>
+		.mtl-links {
+			margin: 0;
+		}
+
+		.mtl-links > summary {
+			cursor: pointer;
+		}
+
+		.mtl-links-count {
+			margin: 0;
+			min-width: 16px;
+			text-align: center;
+		}
+
+		.mtl-links-list {
+			list-style: none;
+			margin: 0;
+			padding: 0;
+		}
+
+		.mtl-links-list li {
+			padding: 5px 0;
+			border-top: 1px solid #f0f1f2;
+		}
+
+		.mtl-links-list a {
+			color: <?php echo esc_html( $accent ); ?>;
+			text-decoration: none;
+		}
+
+		.mtl-links-list a:hover,
+		.mtl-links-list a:focus {
+			text-decoration: underline;
+		}
+	<?php
+	return ob_get_clean();
+}
+
+/**
+ * Every link list a tool carries, rendered in registry order.
+ *
+ * One call per detail view, so the three that show a tool cannot drift apart,
+ * and a list added to the registry appears on all of them untouched.
+ *
+ * @param object $tool Row carrying one column per list key.
+ * @return string HTML markup, or '' when the tool has no links at all.
+ */
+function mtl_tool_all_links_html( $tool ) {
+	$out = '';
+	foreach ( mtl_tool_link_lists() as $key => $link_list ) {
+		$stored = isset( $tool->$key ) ? $tool->$key : '';
+		$out   .= mtl_tool_links_html( mtl_parse_tool_links( $stored ), $link_list );
+	}
+	return $out;
 }
 
 /**
@@ -5783,7 +6236,7 @@ function mtl_register_staff_capabilities() {
 }
 
 // Plain counter, not the plugin version: bump when a table or column is added.
-define( 'MTL_DB_VERSION', 5 );
+define( 'MTL_DB_VERSION', 6 );
 
 // admin_init, not init: nothing reads these tables on the front end, and it
 // covers exactly the requests that can write them.
@@ -5815,7 +6268,15 @@ function mtl_maybe_upgrade_schema() {
 	// here because the guard that follows needs its table names.
 	$columns = array(
 		'tool_inventory'    => array(
-			'location' => 'VARCHAR(100) DEFAULT NULL',
+			'location'      => 'VARCHAR(100) DEFAULT NULL',
+			// The two link lists (see mtl_tool_link_lists()). Tools that
+			// existed before these shipped keep a NULL in each, which reads as
+			// an empty list, the same as a tool nobody has added links to.
+			// There is nothing to backfill: a link to a manual or to the shop
+			// that stocks the blades is something a person knows, not something
+			// the row implies.
+			'resources'     => 'TEXT DEFAULT NULL',
+			'partner_links' => 'TEXT DEFAULT NULL',
 		),
 		// Reservations closed before this shipped keep a NULL reason, which
 		// reads as "not recorded". Backfilling would mean guessing, and the

@@ -757,7 +757,9 @@ function mtl_member_page_styles() {
 			margin: 2px 0 0 0;
 		}
 
-		.mtl-res-detail-body h4 {
+		<?php // The link sections' summaries are headings here, so they read as ones. ?>
+		.mtl-res-detail-body h4,
+		.mtl-res-detail-body .mtl-links > summary {
 			margin: 16px 0 6px 0;
 			font-size: 0.95em;
 		}
@@ -874,6 +876,7 @@ function mtl_member_page_styles() {
 			own mtl_shop_status_badges() / mtl_shop_pills() helpers, so they take
 			the shop's rules verbatim from public/shop-page.php. */
 		<?php echo mtl_shop_badge_pill_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
+		<?php echo mtl_tool_links_css( $accent ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS; the accent is esc_html()'d inside the helper. ?>
 	</style>
 	<?php
 	return ob_get_clean();
@@ -1832,6 +1835,13 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 		<?php endif; ?>
 
 		<?php
+		// Last, after everything describing the tool, the same place the
+		// catalog puts them. Same helper too, so a member waiting on a tool
+		// sees exactly the links everyone else does.
+		echo mtl_tool_all_links_html( $r );
+		?>
+
+		<?php
 		$mtl_cancel_url = add_query_arg(
 			array(
 				'mtl_confirm' => 'one',
@@ -1988,11 +1998,12 @@ function mtl_render_member_reservations_page() {
 	// queue_place counts same-tool reservations ahead in line (earlier
 	// reservation_date, ties broken by reservation_id), the same
 	// derivation the admin Loans & Reservations page uses. ---
-	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- table names only, built from $wpdb->prefix, not user input; the one concatenated fragment is mtl_tool_link_columns_sql(), which is column names from the registry.
 	$rows = $wpdb->get_results(
 		$wpdb->prepare(
-			"SELECT r.reservation_id, r.tool_id, r.reservation_date, r.ready_since,
-                t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location,
+			'SELECT r.reservation_id, r.tool_id, r.reservation_date, r.ready_since,
+                t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location'
+			. mtl_tool_link_columns_sql() . ",
                 (SELECT COUNT(*) FROM {$tbl_res} r2
                     WHERE r2.tool_id = r.tool_id AND r2.expiry_date IS NULL
                       AND (r2.reservation_date < r.reservation_date
@@ -2023,7 +2034,7 @@ function mtl_render_member_reservations_page() {
 			(int) $member->member_id
 		)
 	);
-	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 
 	// --- Confirmation step (zero-JS): Cancel links just render an "Are you
 	// sure?" prompt via ?mtl_confirm=one|all; nothing is cancelled until

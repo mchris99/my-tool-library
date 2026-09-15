@@ -619,13 +619,13 @@ function mtl_render_setup_page() {
 			update_option( 'mtl_giving_text', isset( $_POST['mtl_giving_text'] ) ? sanitize_textarea_field( wp_unslash( $_POST['mtl_giving_text'] ) ) : '' );
 
 			// The giving link is stored normalized so the member-facing button
-			// can never point somewhere unexpected. mtl_normalize_giving_url()
+			// can never point somewhere unexpected. mtl_normalize_web_url()
 			// drops anything that is not http/https, so a pasted "javascript:" or
 			// "data:" URL saves as blank rather than becoming a button.
 			update_option(
 				'mtl_giving_url',
 				isset( $_POST['mtl_giving_url'] )
-					? mtl_normalize_giving_url( sanitize_text_field( wp_unslash( $_POST['mtl_giving_url'] ) ) )
+					? mtl_normalize_web_url( sanitize_text_field( wp_unslash( $_POST['mtl_giving_url'] ) ) )
 					: ''
 			);
 
@@ -1573,7 +1573,7 @@ function mtl_render_setup_page() {
 	// the member-facing button would use. Comparing the two makes a rejected
 	// link visible instead of it silently appearing blank on the next load.
 	$giving_url_raw = trim( (string) get_option( 'mtl_giving_url', '' ) );
-	$giving_url     = mtl_normalize_giving_url( $giving_url_raw );
+	$giving_url     = mtl_normalize_web_url( $giving_url_raw );
 
 	// Shown as chips next to the "add new" mini-forms below.
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.

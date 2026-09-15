@@ -119,6 +119,25 @@ CREATE TABLE {{prefix}}member_verifications (
 -- private_notes it is only conditionally staff-only: staff always see it,
 -- members see it only while the Setup page's "Shelf Location" switch is on.
 -- See mtl_tool_location_visible_to_members().
+-- resources and partner_links are the tool's two lists of outward links.
+-- resources is about USING the tool (a manual, a safety video, a how-to);
+-- partner_links is about SUPPLYING it (the local shops that stock its blades,
+-- belts or fuel). Two columns rather than one, because a member reading a
+-- tool's page is asking one question or the other and a merged list answers
+-- neither.
+--
+-- Both hold a JSON object of link text => URL, e.g.
+-- {"Chainsaw tutorial":"https://example1.com"}, in one column rather than a
+-- child table because nothing ever queries, joins or counts an individual
+-- link; they are only ever read back whole, for one tool, to be listed on
+-- that tool's detail view. The object's insertion order is the display order,
+-- and its keys are the link text, so one tool cannot carry two links with the
+-- same name in the same list. Optional, and NULL for a tool with none.
+--
+-- Links are stored already normalized to an absolute http(s) URL; see
+-- mtl_normalize_web_url(). Both are public, unlike private_notes: members see
+-- them on the catalog and on My Reservations, with no switch to turn them
+-- off. See mtl_tool_link_lists(), the registry both columns are driven from.
 CREATE TABLE {{prefix}}tool_inventory (
     tool_id INT AUTO_INCREMENT PRIMARY KEY,
     tool_name VARCHAR(100) NOT NULL,
@@ -133,7 +152,9 @@ CREATE TABLE {{prefix}}tool_inventory (
     date_acquired DATE DEFAULT (CURRENT_DATE),
     retired_at TIMESTAMP NULL DEFAULT NULL,
     private_notes TEXT DEFAULT NULL,
-    location VARCHAR(100) DEFAULT NULL
+    location VARCHAR(100) DEFAULT NULL,
+    resources TEXT DEFAULT NULL,
+    partner_links TEXT DEFAULT NULL
 );
 
 -- ==========================================

@@ -134,8 +134,9 @@ Go to **My Tool Library > Inventory**.
 4. Fill in the financial tracking fields: initial cash value, annual depreciation amount, who donated it, and date acquired.
 5. Select one or more **categories** and **tags**, set up during Initial Setup.
 6. Optionally, record where the tool lives on the shelf in **Location**: see below.
-7. Optionally, add **Private Notes**: see below.
-8. Save. The tool immediately appears in the public catalog.
+7. Optionally, add **Resources** and **Partner Links**: see below.
+8. Optionally, add **Private Notes**: see below.
+9. Save. The tool immediately appears in the public catalog.
 
 ### Adding many tools at once
 
@@ -155,6 +156,30 @@ Whether **members** see it is one switch, under **Setup > Reservations & Loans >
 - **On**: the location appears under "Where to find it" when a member opens that tool in the catalog, and on My Reservations for a tool they're waiting on.
 
 Either way, a tool with no location recorded shows members nothing.
+
+### Resources and Partner Links
+
+Two lists of links a tool can carry, both optional and both public:
+
+- **Resources** are about using the tool: the manufacturer's manual, a safety video, a how-to article.
+- **Partner Links** are about supplying it: the local shops that stock its blades, belts, sandpaper or fuel.
+
+They're kept apart because someone reading a tool's page is asking one question or the other. A tool can have any number of either, or none.
+
+Each entry is a **name** and a **link**. The name is the words people click, so write it for a reader ("Chainsaw tutorial", "Bliffert Lumber"), not as a URL. The link can skip the `https://` &mdash; typing `example.com/manual` is enough. Two entries in the same list can't share a name.
+
+Add them on the Add/Edit form: fill in a row, hit **+ Add resource** (or **+ Add partner link**) for another, and the **&times;** button removes one. If you'd rather work with the whole list at once, **Edit JSON** swaps the boxes for the stored text, which is an object of name and link pairs:
+
+```json
+{
+    "Chainsaw tutorial": "example.com/chainsaw-basics",
+    "Bliffert Lumber": "example.com/sanding-belts"
+}
+```
+
+Paste a list in, hit **Edit as boxes** to check it, and save. Handy for copying a set from one tool to another, or in from a spreadsheet. The button refuses to switch if the boxes hold something JSON can't, such as a link you haven't named yet or two entries with the same name.
+
+Both appear as collapsed **Resources** and **Partner Links** sections wherever a tool's details are shown: the Inventory page, the public catalog, and a member's own **My Reservations** page, so someone about to collect a tool has its manual to hand. Links open in a new tab, and a tool with no links of a given kind shows no section for it.
 
 ### Private Notes (staff-only)
 
