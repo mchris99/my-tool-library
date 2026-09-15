@@ -177,7 +177,7 @@ Add them on the Add/Edit form: fill in a row, hit **+ Add resource** (or **+ Add
 }
 ```
 
-Paste a list in, hit **Edit as boxes** to check it, and save. Handy for copying a set from one tool to another, or in from a spreadsheet. The button refuses to switch if the boxes hold something JSON can't, such as a link you haven't named yet or two entries with the same name.
+Paste a list in, hit **Edit as boxes** to check it, and save. Handy for copying a set from one tool to another, or in from a spreadsheet. The CSV bulk import takes the same JSON in its `resources` and `partner_links` columns, so a whole inventory can arrive with its links already attached; a cell that isn't readable JSON fails that row and is reported rather than importing the tool without them. The button refuses to switch if the boxes hold something JSON can't, such as a link you haven't named yet or two entries with the same name.
 
 Both appear as collapsed **Resources** and **Partner Links** sections wherever a tool's details are shown: the Inventory page, the public catalog, and a member's own **My Reservations** page, so someone about to collect a tool has its manual to hand. Links open in a new tab, and a tool with no links of a given kind shows no section for it.
 

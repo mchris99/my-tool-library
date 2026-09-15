@@ -143,50 +143,58 @@ function mtl_maybe_serve_csv_template() {
 	header( 'Content-Disposition: attachment; filename="tool-inventory-template.csv"' );
 
 	$out = fopen( 'php://output', 'w' );
-	fputcsv(
-		$out,
-		array(
-			'tool_name',
-			'barcode',
-			'brand',
-			'location',
-			'description',
-			'components',
-			'photo_url',
-			'initial_cash_value',
-			'annual_depreciation_amount',
-			'donated_by',
-			'date_acquired',
-			'categories',
-			'subcategories',
-			'trainings',
-			'tags',
-			'private_notes',
-		)
+
+	// Header and example row are built in step, with the link lists appended
+	// from the registry so a third one needs no edit here.
+	$header = array(
+		'tool_name',
+		'barcode',
+		'brand',
+		'location',
+		'description',
+		'components',
+		'photo_url',
+		'initial_cash_value',
+		'annual_depreciation_amount',
+		'donated_by',
+		'date_acquired',
+		'categories',
+		'subcategories',
+		'trainings',
+		'tags',
+		'private_notes',
 	);
 	// Clearly-fake example row so admins can see the expected format; delete/overwrite before uploading real data.
-	fputcsv(
-		$out,
-		array(
-			'Example Tool - Delete This Row',
-			'EXAMPLE-0000',
-			'ExampleBrand',
-			'Aisle 3, Shelf 4',
-			'A short description of the tool.',
-			'Battery;Charger;Case',
-			'https://example.com/photo.jpg',
-			'49.99',
-			'5.00',
-			'Jane Doe',
-			// The importer accepts any date string strtotime() understands, but the template shows the site-wide MM/DD/YYYY convention.
-			gmdate( 'm/d/Y' ),
-			'Woodworking;General Hand Tools',
-			'Woodworking > Saws;General Hand Tools > Drills & Drivers',
-			'Table Saw Safety',
-			'Cordless;Heavy-Duty',
-			'Staff-only, never shown publicly.',
-		)
+	$example = array(
+		'Example Tool - Delete This Row',
+		'EXAMPLE-0000',
+		'ExampleBrand',
+		'Aisle 3, Shelf 4',
+		'A short description of the tool.',
+		'Battery;Charger;Case',
+		'https://example.com/photo.jpg',
+		'49.99',
+		'5.00',
+		'Jane Doe',
+		// The importer accepts any date string strtotime() understands, but the template shows the site-wide MM/DD/YYYY convention.
+		gmdate( 'm/d/Y' ),
+		'Woodworking;General Hand Tools',
+		'Woodworking > Saws;General Hand Tools > Drills & Drivers',
+		'Table Saw Safety',
+		'Cordless;Heavy-Duty',
+		'Staff-only, never shown publicly.',
 	);
+
+	// The link lists travel as the raw JSON object each column stores, which is
+	// the same text the Add/Edit form's Edit JSON pane shows. fputcsv() quotes
+	// it and fgetcsv() unquotes it, so it needs no format of its own.
+	foreach ( mtl_tool_link_lists() as $links_key => $links_list ) {
+		$header[]  = $links_key;
+		$example[] = mtl_tool_links_example( $links_list );
+	}
+
+	fputcsv( $out, $header );
+	fputcsv( $out, $example );
 	fclose( $out );
 	exit;
 }
@@ -1345,6 +1353,30 @@ function mtl_render_inventory_page() {
 									continue;
 								}
 
+								// Held to the same rules as the Add/Edit form, so a
+								// malformed cell fails its row and is reported rather
+								// than importing a tool with its links quietly dropped.
+								$row_links      = array();
+								$row_link_error = '';
+								foreach ( mtl_tool_link_lists() as $links_key => $links_list ) {
+									$links_result = mtl_parse_tool_links_json( $get_col( $row, $links_key ), $links_list );
+									if ( '' !== $links_result['error'] ) {
+										// Those messages are written for the admin
+										// notices, which take markup; this list is
+										// esc_html()'d, so flatten it to plain text.
+										$row_link_error = wp_strip_all_tags( html_entity_decode( $links_result['error'], ENT_QUOTES, 'UTF-8' ) );
+										break;
+									}
+									$row_links[ $links_key ] = mtl_encode_tool_links( $links_result['pairs'] );
+								}
+								if ( '' !== $row_link_error ) {
+									$bulk_failed_rows[] = array(
+										'row'    => $row_number,
+										'reason' => $row_link_error,
+									);
+									continue;
+								}
+
 								$row_category_ids = $resolve_names( $row, $row_number, 'categories', $category_lookup, 'category' );
 
 								// Written qualified, as "Woodworking > Saws". A sub-category
@@ -1376,24 +1408,26 @@ function mtl_render_inventory_page() {
 									}
 								}
 
-								$row_inserted = $wpdb->insert(
-									$tbl_inventory,
-									array(
-										'tool_name'     => $row_tool_name,
-										'barcode'       => $row_barcode,
-										'brand'         => $row_brand,
-										'description'   => $row_description,
-										'components'    => $row_components,
-										'photo_url'     => $row_photo_url,
-										'initial_cash_value' => $row_initial_value,
-										'annual_depreciation_amount' => $row_depreciation,
-										'donated_by'    => $row_donated_by,
-										'date_acquired' => $row_date,
-										'private_notes' => '' !== $row_private_notes ? $row_private_notes : null,
-										'location'      => '' !== $row_location ? $row_location : null,
-									),
-									array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' )
+								$row_data    = array(
+									'tool_name'          => $row_tool_name,
+									'barcode'            => $row_barcode,
+									'brand'              => $row_brand,
+									'description'        => $row_description,
+									'components'         => $row_components,
+									'photo_url'          => $row_photo_url,
+									'initial_cash_value' => $row_initial_value,
+									'annual_depreciation_amount' => $row_depreciation,
+									'donated_by'         => $row_donated_by,
+									'date_acquired'      => $row_date,
+									'private_notes'      => '' !== $row_private_notes ? $row_private_notes : null,
+									'location'           => '' !== $row_location ? $row_location : null,
 								);
+								$row_formats = array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' );
+								// Merged in lockstep, as on the Add and Edit paths.
+								$row_data    = array_merge( $row_data, $row_links );
+								$row_formats = array_merge( $row_formats, array_fill( 0, count( $row_links ), '%s' ) );
+
+								$row_inserted = $wpdb->insert( $tbl_inventory, $row_data, $row_formats );
 
 								if ( ! $row_inserted ) {
 									$bulk_failed_rows[] = array(
@@ -2610,7 +2644,7 @@ function mtl_render_inventory_page() {
 				<li><code>donated_by</code> is plain text. If it exactly matches an existing member&rsquo;s email address (their sign-in username), that member is automatically credited as a donor. Otherwise it is just stored as-is (e.g. for a non-member donor).</li>
 				<li><code>private_notes</code> is staff-only and never shown publicly, same as typing it into the Add/Edit form, but remember that unlike the form, the CSV file itself isn&rsquo;t private once it leaves this page, so avoid emailing or sharing an import file that has sensitive notes filled in.</li>
 				<li><code>location</code> is where the tool sits on the shelf, in whatever notation you already use (e.g. &ldquo;Aisle 3, Shelf 4&rdquo;, &ldquo;113&rdquo;, &ldquo;K4-1&rdquo;). Staff always see it; whether members do is the <strong>Shelf Location</strong> switch under Setup &rarr; Reservations &amp; Loans.</li>
-				<li><strong>Resources</strong> and <strong>Partner Links</strong> can&rsquo;t be imported. Columns for them are ignored, so add those links per tool on the Add/Edit form after the import.</li>
+				<li><code>resources</code> and <code>partner_links</code> each take the same JSON object the Add/Edit form&rsquo;s <strong>Edit JSON</strong> box shows, e.g. <code>{"Chainsaw tutorial": "example.com/chainsaw-basics"}</code>. Leave a cell blank for a tool with none. A cell that isn&rsquo;t readable JSON fails its row and is reported, rather than importing the tool without its links.</li>
 				<li>Leave a cell blank to skip that field. If a row fails, the rest of the file still gets processed, and failures are listed after upload.</li>
 			</ul>
 			<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
