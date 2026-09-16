@@ -87,6 +87,133 @@ function mtl_resolve_depreciation_csv_value( $raw_value, $initial_value ) {
 }
 
 /**
+ * Usable life left in a tool, derived on the fly from its straight-line
+ * depreciation rather than stored: a tool wears out over
+ * initial_cash_value / annual_depreciation_amount years, so what is left of
+ * that span, as a percentage, is the same ratio as its depreciated value
+ * over its initial value. Nothing to migrate, and editing either figure
+ * re-reads the meter immediately.
+ *
+ * A tool needs both a value and a depreciation rate to have an end of life
+ * to count down to, and a usable date to count from, so a row missing any of
+ * the three reports 'known' => false with a 'reason' naming which one, and
+ * the caller says so rather than showing a full or empty bar it can't back
+ * up. A date_acquired in the future is refused the same way: clamping it to
+ * "brand new" would dress a typo'd year as a confident full bar.
+ *
+ * @param float  $initial_value       tool_inventory.initial_cash_value.
+ * @param float  $annual_depreciation tool_inventory.annual_depreciation_amount.
+ * @param string $date_acquired       tool_inventory.date_acquired (Y-m-d).
+ * @return array{known:bool, percent:float, display:int, years_left:float, lifespan:float, band:string, label:string, reason:string, acquired_ts:int}
+ */
+function mtl_tool_usable_life( $initial_value, $annual_depreciation, $date_acquired ) {
+	$initial  = (float) $initial_value;
+	$annual   = (float) $annual_depreciation;
+	$now      = time();
+	$raw_date = trim( (string) $date_acquired );
+	$acquired = '' !== $raw_date ? strtotime( $raw_date ) : false;
+
+	// Named in the order an admin would fix them, so the meter points at the
+	// one field to go and fill in instead of listing everything it wanted.
+	$reason = '';
+	if ( $initial <= 0 ) {
+		$reason = 'Set an initial value to track this.';
+	} elseif ( $annual <= 0 ) {
+		$reason = 'Set an annual depreciation amount to track this.';
+	} elseif ( false === $acquired ) {
+		$reason = 'Set an acquired date to track this.';
+	} elseif ( $acquired > $now ) {
+		$reason = 'The acquired date is in the future.';
+	}
+
+	if ( '' !== $reason ) {
+		return array(
+			'known'       => false,
+			'percent'     => 0.0,
+			'display'     => 0,
+			'years_left'  => 0.0,
+			'lifespan'    => 0.0,
+			'band'        => 'unknown',
+			'label'       => 'Not estimated',
+			'reason'      => $reason,
+			'acquired_ts' => 0,
+		);
+	}
+
+	// 31557600 = seconds in a Julian year, matching the age arithmetic the
+	// dashboard's asset panels use so the two can't report different ages.
+	$age_years  = max( 0, ( $now - $acquired ) / 31557600 );
+	$lifespan   = $initial / $annual;
+	$years_left = max( 0, $lifespan - $age_years );
+	$percent    = max( 0, min( 100, ( $years_left / $lifespan ) * 100 ) );
+
+	// The band comes off the rounded figure, not the raw one, because that is
+	// the number on screen: banding 19.6 as "Replace soon" while the caption
+	// reads "20%" puts a red bar and an amber bar side by side both labelled
+	// 20%. The unrounded value is kept for sorting, where ties are noise.
+	$display = (int) round( $percent );
+
+	// Four states rather than a smooth gradient, so "which of these do we
+	// replace" is answerable at a glance instead of by comparing hues. The
+	// exhausted band is split off from the merely low one because a tool
+	// already past its modelled life is a different conversation.
+	if ( $display >= 50 ) {
+		$band  = 'good';
+		$label = 'Healthy';
+	} elseif ( $display >= 20 ) {
+		$band  = 'warn';
+		$label = 'Aging';
+	} elseif ( $display > 0 ) {
+		$band  = 'bad';
+		$label = 'Replace soon';
+	} else {
+		$band  = 'spent';
+		$label = 'Fully depreciated';
+	}
+
+	return array(
+		'known'       => true,
+		'percent'     => $percent,
+		'display'     => $display,
+		'years_left'  => $years_left,
+		'lifespan'    => $lifespan,
+		'band'        => $band,
+		'label'       => $label,
+		'reason'      => '',
+		'acquired_ts' => $acquired,
+	);
+}
+
+/**
+ * Phrases the tail of mtl_tool_usable_life() for the meter caption. Kept in
+ * words rather than a bare number because "18%" reads very differently on a
+ * 3-year hand tool than on a 20-year machine, and staff are reading the two
+ * side by side.
+ *
+ * @param float $years_left Years of modelled life left; 0 once it is spent.
+ * @return string Caption fragment, e.g. "about 4 years left".
+ */
+function mtl_format_years_remaining( $years_left ) {
+	$years_left = max( 0, (float) $years_left );
+
+	if ( $years_left <= 0 ) {
+		return 'past its expected life';
+	}
+
+	$months = (int) round( $years_left * 12 );
+	if ( $months < 1 ) {
+		return 'under a month left';
+	}
+	if ( $months < 24 ) {
+		return sprintf( 'about %d month%s left', $months, 1 === $months ? '' : 's' );
+	}
+
+	// Whole years past the two-year mark: the extra precision of "4.3 years"
+	// is false comfort on a straight-line estimate.
+	return sprintf( 'about %d years left', (int) round( $years_left ) );
+}
+
+/**
  * If $donated_by matches an existing member's email (their WP username),
  * since members sign in with their email (see mtl_render_tool_form_fields()'s
  * donor autocomplete, which fills this field with a selected member's email;
@@ -2530,6 +2657,83 @@ function mtl_render_inventory_page() {
 			color: #787c82;
 		}
 
+		/* ---- Usable life meter ---- */
+		/* A depreciation read-out staff can triage by color: the fill's
+			width is the percentage of modelled life left and its color is
+			the band that percentage falls in, so a shelf of red bars is the
+			replacement list. Bands, not a gradient, so two tools are
+			comparable at a glance. See mtl_tool_usable_life(). */
+		.mtl-life-meter {
+			margin: 6px 0 16px 0;
+		}
+
+		.mtl-life-track {
+			height: 10px;
+			border-radius: 5px;
+			background: #eef0f2;
+			border: 1px solid #e2e5e8;
+			overflow: hidden;
+		}
+
+		.mtl-life-fill {
+			height: 100%;
+			border-radius: 5px 0 0 5px;
+			/* A tool with 1% left still gets a visible sliver rather than a
+				bar that reads as "no data". */
+			min-width: 3px;
+			background: #1e7e34;
+		}
+
+		.mtl-life-warn .mtl-life-fill {
+			background: #dba617;
+		}
+
+		.mtl-life-bad .mtl-life-fill {
+			background: #b32d2e;
+		}
+
+		/* Nothing left to fill, so the track itself carries the warning
+			instead of showing an empty bar that looks like missing data. */
+		.mtl-life-spent .mtl-life-track {
+			background: #fcf0f1;
+			border-color: #e6b3b3;
+		}
+
+		.mtl-life-unknown .mtl-life-track {
+			background: repeating-linear-gradient(135deg, #f6f7f7, #f6f7f7 4px, #eef0f2 4px, #eef0f2 8px);
+		}
+
+		.mtl-life-caption {
+			display: flex;
+			align-items: baseline;
+			gap: 8px;
+			margin-top: 5px;
+			font-size: 0.85em;
+		}
+
+		.mtl-life-pct {
+			font-weight: 700;
+			color: #1e7e34;
+		}
+
+		.mtl-life-warn .mtl-life-pct {
+			color: #8a6d00;
+		}
+
+		.mtl-life-bad .mtl-life-pct,
+		.mtl-life-spent .mtl-life-pct {
+			color: #b32d2e;
+		}
+
+		.mtl-life-unknown .mtl-life-pct {
+			color: #787c82;
+			font-weight: 600;
+		}
+
+		.mtl-life-note {
+			color: #787c82;
+		}
+
 		/* Pagination bars (above + below the table). */
 		.mtl-pagination-bar {
 			display: flex;
@@ -2815,7 +3019,8 @@ function mtl_render_inventory_page() {
 			<input type="text" id="mtl-search" placeholder="Quick filter..." style="padding: 5px 10px; width: 220px; border: 1px solid #8c8f94; border-radius: 4px;">
 			<?php
 			// Sorting also covers fields that live in the detail panel
-			// rather than in a column (value, depreciation, acquired, donor).
+			// rather than in a column (value, depreciation, usable life,
+			// acquired, donor).
 			?>
 			<label class="mtl-sort-label">Sort:
 				<select id="mtl-sort-field">
@@ -2827,6 +3032,7 @@ function mtl_render_inventory_page() {
 					<option value="value">Initial Value</option>
 					<option value="curvalue">Current Value</option>
 					<option value="deprec">Depreciation</option>
+					<option value="life">Usable Life Remaining</option>
 					<option value="acquired">Acquired Date</option>
 					<option value="donor">Donor</option>
 				</select>
@@ -2907,6 +3113,19 @@ function mtl_render_inventory_page() {
 					<div>
 						<label for="adv-value-max">Max Value ($)</label>
 						<input type="number" step="0.01" id="adv-value-max">
+					</div>
+					<?php
+					// The full 0-100 span is every tool, so these two default to
+					// the ends of the scale and only start excluding rows once
+					// one of them is moved. See mtl_tool_usable_life().
+					?>
+					<div>
+						<label for="adv-life-min">Min Life Left (%)</label>
+						<input type="number" step="1" min="0" max="100" id="adv-life-min" value="0">
+					</div>
+					<div>
+						<label for="adv-life-max">Max Life Left (%)</label>
+						<input type="number" step="1" min="0" max="100" id="adv-life-max" value="100">
 					</div>
 				</div>
 			</fieldset>
@@ -3045,6 +3264,11 @@ function mtl_render_inventory_page() {
 						// same calculation the dashboard's asset panels use.
 						$age_years  = max( 0, ( time() - strtotime( $item->date_acquired ) ) / 31557600 );
 						$t_curvalue = max( 0, (float) $item->initial_cash_value - ( (float) $item->annual_depreciation_amount * $age_years ) );
+
+						// Share of that same straight-line model still unspent,
+						// backing the meter in the detail panel and the life
+						// range filter. Derived per render, never stored.
+						$t_life = mtl_tool_usable_life( $item->initial_cash_value, $item->annual_depreciation_amount, $item->date_acquired );
 						?>
 						<tr
 							class="mtl-tool-row"
@@ -3068,6 +3292,12 @@ function mtl_render_inventory_page() {
 							?>
 							data-curvalue="<?php echo esc_attr( number_format( $t_curvalue, 2, '.', '' ) ); ?>"
 							data-deprec="<?php echo esc_attr( $item->annual_depreciation_amount ); ?>"
+							<?php
+							// Blank when the tool has no estimate, which sinks it
+							// to the bottom of a usable-life sort and drops it from
+							// any narrowed life range. See mtl_tool_usable_life().
+							?>
+							data-life="<?php echo $t_life['known'] ? esc_attr( number_format( $t_life['percent'], 2, '.', '' ) ) : ''; ?>"
 							<?php
 							// Boolean flags backing the availability filters ("1" / "0").
 							?>
@@ -3274,6 +3504,58 @@ function mtl_render_inventory_page() {
 											<p style="color: #999;">No one is waiting for this tool.</p>
 										<?php endif; ?>
 
+										<?php
+										// Depreciation as a health bar, so a shelf's worth
+										// of tools can be triaged by color instead of by
+										// reading every current-value figure in turn. The
+										// hover text shows the arithmetic behind the bar,
+										// since a percentage nobody can check is a
+										// percentage nobody trusts.
+										// gmdate() rather than mtl_format_date(), which returns
+										// esc_html()'d markup that esc_attr() would then escape a
+										// second time. The helper has already vouched for the
+										// timestamp, so there is no unparseable case left to handle.
+										$t_life_title = $t_life['known']
+											? sprintf(
+												'Straight-line: $%s initial value at $%s a year is about a %s-year life, running from %s.',
+												number_format( (float) $item->initial_cash_value, 2 ),
+												number_format( (float) $item->annual_depreciation_amount, 2 ),
+												number_format( $t_life['lifespan'], 1 ),
+												gmdate( 'm/d/Y', $t_life['acquired_ts'] )
+											)
+											: $t_life['reason'];
+
+										// The same sentence goes on the bar itself: a title
+										// attribute on a div is mouse-only, so without this the
+										// arithmetic the comment above calls essential is exactly
+										// what a keyboard or screen-reader user never gets.
+										$t_life_spoken = $t_life['known']
+											? $t_life['display'] . '%, ' . $t_life['label'] . ', ' . mtl_format_years_remaining( $t_life['years_left'] ) . '. ' . $t_life_title
+											: 'Not estimated. ' . $t_life['reason'];
+										?>
+										<strong>Usable life remaining</strong>
+										<div class="mtl-life-meter mtl-life-<?php echo esc_attr( $t_life['band'] ); ?>" title="<?php echo esc_attr( $t_life_title ); ?>">
+											<div class="mtl-life-track" role="progressbar" aria-label="Usable life remaining" aria-valuemin="0" aria-valuemax="100"
+												<?php if ( $t_life['known'] ) : ?>
+													aria-valuenow="<?php echo esc_attr( $t_life['display'] ); ?>"
+												<?php endif; ?>
+												aria-valuetext="<?php echo esc_attr( $t_life_spoken ); ?>">
+												<?php // Gated on the rounded figure too, so a bar captioned "0%" is never drawn with a visible sliver. ?>
+												<?php if ( $t_life['display'] > 0 ) : ?>
+													<div class="mtl-life-fill" style="width: <?php echo esc_attr( number_format( $t_life['percent'], 2, '.', '' ) ); ?>%;"></div>
+												<?php endif; ?>
+											</div>
+											<div class="mtl-life-caption">
+												<?php if ( $t_life['known'] ) : ?>
+													<span class="mtl-life-pct"><?php echo esc_html( $t_life['display'] . '%' ); ?></span>
+													<span class="mtl-life-note"><?php echo esc_html( $t_life['label'] ); ?> &middot; <?php echo esc_html( mtl_format_years_remaining( $t_life['years_left'] ) ); ?></span>
+												<?php else : ?>
+													<span class="mtl-life-pct">Not estimated</span>
+													<span class="mtl-life-note"><?php echo esc_html( $t_life['reason'] ); ?></span>
+												<?php endif; ?>
+											</div>
+										</div>
+
 										<strong>Value &amp; Acquisition</strong>
 										<div class="mtl-tool-fields">
 											<div class="mtl-tool-field"><span>Initial value</span><span>$<?php echo esc_html( number_format( $item->initial_cash_value, 2 ) ); ?></span></div>
@@ -3445,6 +3727,8 @@ function mtl_render_inventory_page() {
 				acquiredTo: document.getElementById('adv-acquired-to'),
 				valueMin: document.getElementById('adv-value-min'),
 				valueMax: document.getElementById('adv-value-max'),
+				lifeMin: document.getElementById('adv-life-min'),
+				lifeMax: document.getElementById('adv-life-max'),
 				onLoan: document.getElementById('adv-onloan'),
 				overdue: document.getElementById('adv-overdue'),
 				reserved: document.getElementById('adv-reserved'),
@@ -3472,6 +3756,15 @@ function mtl_render_inventory_page() {
 			// Whether a row's comma-separated list (its categories or its tags)
 			// contains ANY of the picked values. Split rather than substring-
 			// matched, so picking "Saw" can't also drag in "Sawhorse".
+			// One end of the usable-life range: blank or unreadable falls back to
+			// that end of the scale, anything else is pinned inside 0-100.
+			function clampPercent(raw, fallback) {
+				if (raw === '') return fallback;
+				const n = parseFloat(raw);
+				if (isNaN(n)) return fallback;
+				return Math.min(100, Math.max(0, n));
+			}
+
 			function listMatchesAny(rowList, picked) {
 				if (!picked.length) return true;
 				const values = rowList ? rowList.split(', ') : [];
@@ -3501,6 +3794,13 @@ function mtl_render_inventory_page() {
 					acquiredTo: advFields.acquiredTo.value,
 					valueMin: advFields.valueMin.value !== '' ? parseFloat(advFields.valueMin.value) : null,
 					valueMax: advFields.valueMax.value !== '' ? parseFloat(advFields.valueMax.value) : null,
+					// Emptied boxes fall back to the ends of the scale, so a
+					// cleared field means "no limit" exactly like a 0 or a 100.
+					// Clamped because the min/max attributes only bind inside a
+					// submitted form: a typed -1 still reads back as -1, and left
+					// alone it would silently switch the whole filter off.
+					lifeMin: clampPercent(advFields.lifeMin.value, 0),
+					lifeMax: clampPercent(advFields.lifeMax.value, 100),
 					onLoan: advFields.onLoan.value,
 					overdue: advFields.overdue.value,
 					reserved: advFields.reserved.value,
@@ -3547,6 +3847,20 @@ function mtl_render_inventory_page() {
 						const value = parseFloat(d.value);
 						if (f.valueMin !== null && value < f.valueMin) visible = false;
 						if (f.valueMax !== null && value > f.valueMax) visible = false;
+					}
+
+					// Usable life left. 0-100 is the whole scale, so the filter
+					// only bites once an end is moved off its default; that is
+					// also what decides the tools with no estimate (blank
+					// data-life), which belong in an unfiltered list but can't
+					// honestly be claimed to sit inside a narrowed range.
+					if (visible && (f.lifeMin > 0 || f.lifeMax < 100)) {
+						if (d.life === '') {
+							visible = false;
+						} else {
+							const life = parseFloat(d.life);
+							if (life < f.lifeMin || life > f.lifeMax) visible = false;
+						}
 					}
 
 					// Availability booleans. The selects use "1"/"0" matching the
@@ -3655,8 +3969,17 @@ function mtl_render_inventory_page() {
 						Array.from(el.options).forEach(function(opt) {
 							opt.selected = false;
 						});
+					} else if ('SELECT' === el.tagName) {
+						// The first option is the "no opinion" one on every select
+						// here ("Any", or "Active only" for retired). Said as an
+						// index rather than as value = '', which only lands on the
+						// right option while that option's value stays empty.
+						el.selectedIndex = 0;
 					} else {
-						el.value = '';
+						// Back to the value in the markup: empty for every box but
+						// the usable-life range, which resets to the full 0-100
+						// scale rather than to two blank fields.
+						el.value = el.defaultValue;
 					}
 				});
 				window.mtlTaxonomyClear(invTaxonomyTree);
@@ -3672,7 +3995,7 @@ function mtl_render_inventory_page() {
 			const headers = document.querySelectorAll('#mtl-inventory-table th.sortable');
 			const sortFieldSelect = document.getElementById('mtl-sort-field');
 			const sortDirBtn = document.getElementById('mtl-sort-dir');
-			const NUMERIC_SORT_FIELDS = ['toolId', 'value', 'curvalue', 'deprec'];
+			const NUMERIC_SORT_FIELDS = ['toolId', 'value', 'curvalue', 'deprec', 'life'];
 
 			// Defaults mirror the order the SQL already returns (tool id, newest
 			// first), so the controls describe the table accurately on load.
