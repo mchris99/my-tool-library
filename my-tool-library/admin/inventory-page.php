@@ -2838,7 +2838,7 @@ function mtl_render_inventory_page() {
 				<li><code>annual_depreciation_amount</code> takes a dollar amount, or a percentage of that row&rsquo;s <code>initial_cash_value</code> if it contains a % (e.g. &ldquo;5%&rdquo;).</li>
 				<li><code>donated_by</code> credits a member if it matches their email exactly; anything else is stored as plain text.</li>
 				<li><code>resources</code> and <code>partner_links</code> take the JSON from the Add/Edit form&rsquo;s <strong>Edit JSON</strong> box, e.g. <code>{"Chainsaw tutorial": "example.com/chainsaw-basics"}</code>.</li>
-				<li><code>private_notes</code> is staff-only, but this file isn&rsquo;t &mdash; don&rsquo;t share an import sheet with notes filled in.</li>
+				<li><code>private_notes</code> is staff-only.</li>
 				<li>A row that fails is listed after upload; the rest of the file still imports.</li>
 			</ul>
 			<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
