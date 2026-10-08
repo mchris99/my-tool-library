@@ -4050,22 +4050,25 @@ function mtl_render_membership_page() {
 			<thead>
 				<tr>
 					<th class="sortable" style="cursor: pointer; width: 50px;" title="Click to sort">ID ↕</th>
-					<th class="sortable" style="cursor: pointer;" title="Click to sort">Name ↕</th>
+					<?php
+					// A set width stands in for a minimum: the table uses fixed
+					// layout, which ignores min-width, so this keeps names on one
+					// line while Email (truncated with an ellipsis) absorbs any
+					// squeeze on narrow screens.
+					?>
+					<th class="sortable" style="cursor: pointer; width: 180px;" title="Click to sort">Name ↕</th>
 					<th class="sortable" style="cursor: pointer;" title="Click to sort">Email ↕</th>
 					<th style="width: 120px;">Phone</th>
-					<th>Address</th>
 					<?php
-					// data-date-col marks this as a date column for the sort handler below,
-							// which must compare the row's ISO data-signup attribute rather than the
-							// visible MM/DD/YYYY cell text (MM/DD/YYYY strings don't sort lexicographically
-							// in date order the way YYYY-MM-DD strings do).
+					// Address and sign-up date live in the detail panel below, so the
+					// table fits without scrolling sideways.
 					?>
-					<th class="sortable" data-date-col="signup" style="cursor: pointer; width: 100px;" title="Click to sort">Signed Up ↕</th>
 					<th class="sortable" style="cursor: pointer; width: 90px;" title="Click to sort">Donation ↕</th>
 					<th style="width: 90px;">Donated Tools?</th>
 					<th style="width: 100px;">Verified</th>
 					<th style="width: 110px;">Sign-in</th>
-					<th style="width: 140px;">Actions</th>
+					<?php // Wide enough for Edit, Send setup link and Delete on one line. ?>
+					<th style="width: 250px;">Actions</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -4164,8 +4167,6 @@ function mtl_render_membership_page() {
 							<td><strong><?php echo esc_html( $full_name ); ?></strong></td>
 							<td class="mtl-truncate" title="<?php echo esc_attr( $member->email ); ?>"><?php echo esc_html( $member->email ); ?></td>
 							<td><?php echo esc_html( stripslashes( $member->phone_number ) ); ?></td>
-							<td class="mtl-truncate" title="<?php echo esc_attr( mtl_member_address_single_line( $member ) ); ?>"><?php echo esc_html( mtl_member_address_single_line( $member ) ); ?></td>
-							<td><?php echo mtl_format_date( $member->signup_date ); ?></td>
 							<td>$<?php echo esc_html( number_format( $member->recurring_donation_amount, 2 ) ); ?></td>
 							<td><?php echo 'Y' === $member->has_donated_tools ? 'Yes' : 'No'; ?></td>
 							<td>
@@ -4257,12 +4258,15 @@ function mtl_render_membership_page() {
 							open/closed by clicking anywhere on the row above.
 						-->
 						<tr class="mtl-detail-row" id="mtl-detail-<?php echo esc_attr( $member->member_id ); ?>" style="display: none;">
-							<td colspan="11">
+							<td colspan="9">
 								<div class="mtl-detail-panel">
 									<div class="mtl-detail-col">
 										<strong>Full Address</strong>
 										<?php $mtl_addr_lines = mtl_member_address_lines( $member ); ?>
 										<p><?php echo esc_html( $mtl_addr_lines[0] ); ?><br><?php echo esc_html( $mtl_addr_lines[1] ); ?></p>
+
+										<strong>Signed Up</strong>
+										<p><?php echo mtl_format_date( $member->signup_date ); ?></p>
 
 										<strong>Verification Documents</strong>
 										<?php if ( ! empty( $member->photo_id_scan_url ) || ! empty( $member->address_proof_scan_url ) ) : ?>
@@ -4549,7 +4553,7 @@ function mtl_render_membership_page() {
 					<?php endforeach; ?>
 				<?php else : ?>
 					<tr>
-						<td colspan="11" style="text-align: center; padding: 20px;">
+						<td colspan="9" style="text-align: center; padding: 20px;">
 							No members found in the database. Open the panel above to add one!
 						</td>
 					</tr>
@@ -5070,11 +5074,11 @@ function mtl_render_membership_page() {
 					// works post-sort.
 					const rows = Array.from(tbody.querySelectorAll('tr.mtl-member-row'));
 
-					// Date columns (currently just "Signed Up") are marked with
-					// data-date-col on the <th> and compare the row's ISO
-					// data-* attribute instead of the visible cell text: the
-					// cell now reads MM/DD/YYYY, which does not sort into date
-					// order as a plain string the way YYYY-MM-DD does.
+					// Date columns (none at the moment; Signed Up moved to the
+					// detail panel) are marked with data-date-col on the <th>
+					// and compare the row's ISO data-* attribute instead of the
+					// visible cell text: a cell reading MM/DD/YYYY does not sort
+					// into date order as a plain string the way YYYY-MM-DD does.
 					const dateCol = header.dataset.dateCol;
 
 					rows.sort((a, b) => {
