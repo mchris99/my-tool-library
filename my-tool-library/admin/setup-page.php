@@ -628,6 +628,20 @@ function mtl_render_setup_page() {
 					? mtl_normalize_web_url( sanitize_text_field( wp_unslash( $_POST['mtl_giving_url'] ) ) )
 					: ''
 			);
+			update_option(
+				'mtl_giving_wishlist_url',
+				isset( $_POST['mtl_giving_wishlist_url'] )
+					? mtl_normalize_web_url( sanitize_text_field( wp_unslash( $_POST['mtl_giving_wishlist_url'] ) ) )
+					: ''
+			);
+
+			update_option( 'mtl_tool_request_text', isset( $_POST['mtl_tool_request_text'] ) ? sanitize_textarea_field( wp_unslash( $_POST['mtl_tool_request_text'] ) ) : '' );
+			update_option(
+				'mtl_tool_request_url',
+				isset( $_POST['mtl_tool_request_url'] )
+					? mtl_normalize_web_url( sanitize_text_field( wp_unslash( $_POST['mtl_tool_request_url'] ) ) )
+					: ''
+			);
 
 			echo '<div class="notice notice-success is-dismissible"><p><strong>Success:</strong> Settings have been saved.</p></div>';
 		}
@@ -1575,6 +1589,14 @@ function mtl_render_setup_page() {
 	$giving_url_raw = trim( (string) get_option( 'mtl_giving_url', '' ) );
 	$giving_url     = mtl_normalize_web_url( $giving_url_raw );
 
+	$wishlist_url_raw = trim( (string) get_option( 'mtl_giving_wishlist_url', '' ) );
+	$wishlist_url     = mtl_normalize_web_url( $wishlist_url_raw );
+
+	// Same treatment as the giving message and link above.
+	$tool_request_text    = get_option( 'mtl_tool_request_text', mtl_default_tool_request_text() );
+	$tool_request_url_raw = trim( (string) get_option( 'mtl_tool_request_url', '' ) );
+	$tool_request_url     = mtl_normalize_web_url( $tool_request_url_raw );
+
 	// Shown as chips next to the "add new" mini-forms below.
 	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, no request-derived data.
 	$categories = $wpdb->get_results( "SELECT category_id, category_name FROM {$tbl_categories} ORDER BY category_name ASC" );
@@ -2042,6 +2064,37 @@ function mtl_render_setup_page() {
 							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">
 								Where the <strong>Give Now</strong> button sends members. Opens in a new tab. Leave blank to show the message without a button.
 								<?php if ( '' !== $giving_url_raw && '' === $giving_url ) : ?>
+									<br><span style="color: #b32d2e;"><strong>The link you last saved was discarded.</strong> Only ordinary web addresses starting with <code>http://</code> or <code>https://</code> can be used here.</span>
+								<?php endif; ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mtl_giving_wishlist_url">Consider Giving Wishlist Link</label></th>
+						<td>
+							<input type="url" name="mtl_giving_wishlist_url" id="mtl_giving_wishlist_url" class="large-text" value="<?php echo esc_attr( $wishlist_url ); ?>" placeholder="https://example.org/wishlist">
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">
+								Where the <strong>Wishlist</strong> button sends members, such as a list of items you want to buy. Opens in a new tab. Blank hides the button.
+								<?php if ( '' !== $wishlist_url_raw && '' === $wishlist_url ) : ?>
+									<br><span style="color: #b32d2e;"><strong>The link you last saved was discarded.</strong> Only ordinary web addresses starting with <code>http://</code> or <code>https://</code> can be used here.</span>
+								<?php endif; ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mtl_tool_request_text">Tool Request Message</label></th>
+						<td>
+							<textarea name="mtl_tool_request_text" id="mtl_tool_request_text" class="large-text" rows="3"><?php echo esc_textarea( $tool_request_text ); ?></textarea>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown on the public catalog when a search finds no tools, and on members&rsquo; Account page. Blank hides it.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mtl_tool_request_url">Tool Request Link</label></th>
+						<td>
+							<input type="url" name="mtl_tool_request_url" id="mtl_tool_request_url" class="large-text" value="<?php echo esc_attr( $tool_request_url ); ?>" placeholder="https://example.org/request-a-tool">
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">
+								Where the <strong>Request a Tool</strong> button sends people, such as a request form. Opens in a new tab. Blank hides the button.
+								<?php if ( '' !== $tool_request_url_raw && '' === $tool_request_url ) : ?>
 									<br><span style="color: #b32d2e;"><strong>The link you last saved was discarded.</strong> Only ordinary web addresses starting with <code>http://</code> or <code>https://</code> can be used here.</span>
 								<?php endif; ?>
 							</p>

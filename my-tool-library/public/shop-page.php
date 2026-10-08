@@ -1315,6 +1315,15 @@ function mtl_render_shop_page() {
 			text-align: center;
 			color: #787c82;
 		}
+
+		.mtl-shop-request-text {
+			margin: 16px 0 0;
+			color: #3c434a;
+		}
+
+		.mtl-shop-request-action {
+			margin: 16px 0 0;
+		}
 	</style>
 
 	<?php
@@ -1479,8 +1488,23 @@ function mtl_render_shop_page() {
 		<div class="mtl-shop-layout">
 			<div class="mtl-shop-main">
 				<?php if ( empty( $tools ) ) : ?>
+					<?php
+					// Optional "request a tool" ask from the Setup page. The
+					// message and link are independent; either blank is left out.
+					// The link is re-normalized on read, like the giving link.
+					$request_text = trim( (string) get_option( 'mtl_tool_request_text', mtl_default_tool_request_text() ) );
+					$request_url  = mtl_normalize_web_url( get_option( 'mtl_tool_request_url', '' ) );
+					?>
 					<div class="mtl-shop-empty">
 						<p style="margin:0;">No tools match your search. Try removing a filter or searching for something else.</p>
+						<?php if ( '' !== $request_text ) : ?>
+							<p class="mtl-shop-request-text"><?php echo nl2br( esc_html( $request_text ) ); ?></p>
+						<?php endif; ?>
+						<?php if ( '' !== $request_url ) : ?>
+							<p class="mtl-shop-request-action">
+								<a class="mtl-shop-btn" href="<?php echo esc_url( $request_url ); ?>" target="_blank" rel="noopener noreferrer nofollow">Request a Tool</a>
+							</p>
+						<?php endif; ?>
 					</div>
 				<?php elseif ( 'rows' === $view ) : ?>
 					<div class="mtl-shop-rows">

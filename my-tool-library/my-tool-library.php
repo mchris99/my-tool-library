@@ -2566,12 +2566,13 @@ function mtl_giving_section_html( $extra_class = '' ) {
 	// Re-normalized on read, not trusted from storage: an option can also be
 	// set by WP-CLI, an import, or another plugin, none of which go through
 	// the Setup form's save path.
-	$url = mtl_normalize_web_url( get_option( 'mtl_giving_url', '' ) );
+	$url          = mtl_normalize_web_url( get_option( 'mtl_giving_url', '' ) );
+	$wishlist_url = mtl_normalize_web_url( get_option( 'mtl_giving_wishlist_url', '' ) );
 
 	// The message is what carries the ask, so it decides whether the section
-	// exists at all, because a bare "Give Now" button with no explanation would be
-	// worse than showing nothing. The link is independent: without it the
-	// message still stands on its own, just without a button.
+	// exists at all, because bare buttons with no explanation would be worse
+	// than showing nothing. The links are independent: each one only adds its
+	// own button, and without either the message stands on its own.
 	if ( '' === $text ) {
 		return '';
 	}
@@ -2584,13 +2585,77 @@ function mtl_giving_section_html( $extra_class = '' ) {
 	$html  = '<div class="' . esc_attr( $classes ) . '">';
 	$html .= '<strong>Consider Giving</strong>';
 	$html .= '<p class="mtl-member-giving-text">' . nl2br( esc_html( $text ) ) . '</p>';
-	if ( '' !== $url ) {
+	if ( '' !== $url || '' !== $wishlist_url ) {
 		// Opens in a new tab so a member part-way through renewing a loan or
 		// cancelling a reservation does not lose that page. rel="noopener"
 		// stops the opened page from reaching back through window.opener.
 		$html .= '<p class="mtl-member-giving-action">';
-		$html .= '<a class="mtl-member-btn mtl-member-btn-giving" href="' . esc_url( $url ) . '"';
-		$html .= ' target="_blank" rel="noopener noreferrer nofollow">Give Now</a>';
+		if ( '' !== $url ) {
+			$html .= '<a class="mtl-member-btn mtl-member-btn-giving" href="' . esc_url( $url ) . '"';
+			$html .= ' target="_blank" rel="noopener noreferrer nofollow">Give Now</a>';
+		}
+		if ( '' !== $wishlist_url ) {
+			// Outlined so Give Now stays the primary ask when both are shown.
+			$html .= '<a class="mtl-member-btn mtl-member-btn-ghost mtl-member-btn-giving" href="' . esc_url( $wishlist_url ) . '"';
+			$html .= ' target="_blank" rel="noopener noreferrer nofollow">Wishlist</a>';
+		}
+		$html .= '</p>';
+	}
+	$html .= '</div>';
+
+	return $html;
+}
+
+// ==========================================================================
+// TOOL REQUESTS
+//
+// An optional message and link inviting people to ask for a tool the library
+// doesn't have, shown on the public catalog's "0 tools found" state and on a
+// signed-in member's Account page. Both are set on the Setup page and are
+// independent: a blank message or a blank link just leaves that part out.
+// The link is normalized the same way as the giving link above.
+// ==========================================================================
+
+/**
+ * The default tool request message, used until an admin saves their own.
+ *
+ * Shared by the Setup page textarea and the catalog fallback for the same
+ * reason as mtl_default_giving_text().
+ *
+ * @return string
+ */
+function mtl_default_tool_request_text() {
+	return "Don't see the tool you need? Let us know what you'd like to borrow and we'll consider adding it to our catalog.";
+}
+
+/**
+ * The Request a Tool card for the Account page, or '' when there is nothing
+ * to show.
+ *
+ * Laid out like mtl_giving_section_html(). Unlike the giving card, the link
+ * alone is enough to show it: the card's heading already says what the
+ * button is for, so it is not a bare button with no explanation.
+ *
+ * @return string Ready-to-echo HTML, fully escaped.
+ */
+function mtl_tool_request_section_html() {
+	$text = trim( (string) get_option( 'mtl_tool_request_text', mtl_default_tool_request_text() ) );
+	// Re-normalized on read, for the same reason as the giving link.
+	$url = mtl_normalize_web_url( get_option( 'mtl_tool_request_url', '' ) );
+
+	if ( '' === $text && '' === $url ) {
+		return '';
+	}
+
+	$html  = '<div class="mtl-member-card mtl-member-request">';
+	$html .= '<strong>Can&rsquo;t Find a Tool?</strong>';
+	if ( '' !== $text ) {
+		$html .= '<p class="mtl-member-request-text">' . nl2br( esc_html( $text ) ) . '</p>';
+	}
+	if ( '' !== $url ) {
+		$html .= '<p class="mtl-member-request-action">';
+		$html .= '<a class="mtl-member-btn mtl-member-btn-request" href="' . esc_url( $url ) . '"';
+		$html .= ' target="_blank" rel="noopener noreferrer nofollow">Request a Tool</a>';
 		$html .= '</p>';
 	}
 	$html .= '</div>';

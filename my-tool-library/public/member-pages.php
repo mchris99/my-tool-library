@@ -464,15 +464,25 @@ function mtl_member_page_styles() {
 			page and My Reservations. Styled as an ordinary card rather than a
 			banner, since it is a standing invitation rather than an alert, and members
 			see it on every visit. */
-		.mtl-member-giving-text {
+		.mtl-member-giving-text,
+		.mtl-member-request-text {
 			margin: 6px 0 0 0;
 		}
 
-		.mtl-member-giving-action {
+		.mtl-member-giving-action,
+		.mtl-member-request-action {
 			margin: 14px 0 0 0;
 		}
 
-		.mtl-member-btn-giving {
+		/* Give Now and Wishlist side by side, wrapping on narrow screens. */
+		.mtl-member-giving-action {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 10px;
+		}
+
+		.mtl-member-btn-giving,
+		.mtl-member-btn-request {
 			display: inline-block;
 		}
 
@@ -2813,6 +2823,11 @@ function mtl_render_account_page() {
 			// mtl_giving_section_html(); returns '' when the admin has left
 			// both the message and the link blank on the Setup page.
 			echo mtl_giving_section_html();
+
+			// Request a Tool, right under Consider Giving. Escaped inside
+			// mtl_tool_request_section_html(); returns '' when the admin has
+			// left both the message and the link blank on the Setup page.
+			echo mtl_tool_request_section_html();
 			?>
 
 			<?php
