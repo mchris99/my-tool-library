@@ -2423,6 +2423,11 @@ function mtl_render_inventory_page() {
 			color: #8a6d00;
 		}
 
+		/* An overdue loan, in the same red as the Dashboard's Overdue panel. */
+		.mtl-detail-actions-overdue {
+			color: #b32d2e;
+		}
+
 		/* ---- Quick Loan modal ---- */
 		.mtl-ql-overlay {
 			position: fixed;
@@ -3451,9 +3456,18 @@ function mtl_render_inventory_page() {
 														<?php echo mtl_return_date_field_html( $active_loan->loan_date, '', false ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-escaped markup from the helper. ?>
 														<button type="submit" name="mtl_mark_returned" class="button button-primary">Mark Returned</button>
 													</form>
-													<span class="mtl-detail-actions-hint mtl-detail-actions-out">
+													<?php
+													// Same overdue test as the row's Overdue filter and the
+													// "Out / Overdue" stat below, so the three always agree.
+													$loan_late = $t_overdue > 0;
+													$late_days = max( 1, (int) floor( ( strtotime( current_time( 'Y-m-d' ) ) - strtotime( $active_loan->due_date ) ) / DAY_IN_SECONDS ) );
+													?>
+													<span class="mtl-detail-actions-hint <?php echo $loan_late ? 'mtl-detail-actions-overdue' : 'mtl-detail-actions-out'; ?>">
 														On loan to <?php echo esc_html( trim( stripslashes( (string) $active_loan->first_name ) . ' ' . stripslashes( (string) $active_loan->last_name ) ) ); ?>,
 														due <?php echo mtl_format_date( $active_loan->due_date ); ?>.
+														<?php if ( $loan_late ) : ?>
+															<strong>Overdue by <?php echo esc_html( $late_days . ' day' . ( 1 === $late_days ? '' : 's' ) ); ?>.</strong>
+														<?php endif; ?>
 													</span>
 												<?php else : ?>
 													<span class="mtl-detail-actions-hint mtl-detail-actions-out">This tool is currently on loan, so it must be returned before it can be loaned again.</span>

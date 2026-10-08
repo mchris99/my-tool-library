@@ -239,7 +239,8 @@ function mtl_dash_tool_history_html( $tool_id ) {
 		$wpdb->prepare(
 			"SELECT m.member_id, m.first_name, m.last_name, m.email,
                     COUNT(l.loan_id) AS loan_count, MAX(l.loan_date) AS last_loan,
-                    SUM(CASE WHEN l.return_date IS NULL THEN 1 ELSE 0 END) AS currently_out
+                    SUM(CASE WHEN l.return_date IS NULL THEN 1 ELSE 0 END) AS currently_out,
+                    SUM(CASE WHEN l.return_date IS NULL AND l.due_date < CURDATE() THEN 1 ELSE 0 END) AS overdue_out
              FROM {$tbl_loans} l
              JOIN {$tbl_members} m ON m.member_id = l.member_id
              WHERE l.tool_id = %d
@@ -291,7 +292,16 @@ function mtl_dash_tool_history_html( $tool_id ) {
 							<td><?php echo esc_html( trim( stripslashes( $r->first_name ) . ' ' . stripslashes( $r->last_name ) ) ); ?><br><span style="color:#999;"><?php echo esc_html( $r->email ); ?></span></td>
 							<td><strong><?php echo esc_html( $r->loan_count ); ?></strong></td>
 							<td><?php echo mtl_format_date( $r->last_loan ); ?></td>
-							<td><?php echo ( (int) $r->currently_out > 0 ) ? '<span class="mtl-wait-pill">Currently has it</span>' : ''; ?></td>
+							<td>
+								<?php
+								// Overdue first: a late loan is what staff need to act on.
+								if ( (int) $r->overdue_out > 0 ) {
+									echo '<span class="mtl-bad-pill">Has it, overdue</span>';
+								} elseif ( (int) $r->currently_out > 0 ) {
+									echo '<span class="mtl-wait-pill">Currently has it</span>';
+								}
+								?>
+							</td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
@@ -752,6 +762,7 @@ function mtl_render_dashboard_page() {
                t.tool_name, t.barcode, t.maintenance_at,
                m.first_name, m.last_name, m.email,
                l.loan_id AS tool_out_loan_id,
+               (l.due_date < CURDATE()) AS tool_out_overdue,
                (SELECT COUNT(*) FROM {$tbl_reservations} r2
                   WHERE r2.tool_id = r.tool_id
                     AND r2.expiry_date IS NULL
@@ -1428,6 +1439,17 @@ function mtl_render_dashboard_page() {
 			padding: 1px 8px;
 		}
 
+		/* An overdue loan, wherever one shows up; same red as the Overdue panel. */
+		.mtl-bad-pill {
+			background: #fcf0f1;
+			color: #b32d2e;
+			border: 1px solid #f0b8b9;
+			border-radius: 999px;
+			font-size: 0.75em;
+			font-weight: 600;
+			padding: 1px 8px;
+		}
+
 		/* "View full data" expanders inside chart panels */
 		.mtl-panel-more {
 			margin-top: 12px;
@@ -1711,7 +1733,10 @@ function mtl_render_dashboard_page() {
 									<td><?php echo esc_html( '#' . $row->queue_place . ' of ' . $row->queue_size ); ?></td>
 									<td>
 									<?php
-									if ( $row->tool_out_loan_id ) {
+									if ( $row->tool_out_loan_id && (int) $row->tool_out_overdue ) {
+										// The loan they're waiting behind is late.
+										echo '<span class="mtl-bad-pill">Waiting, tool overdue</span>';
+									} elseif ( $row->tool_out_loan_id ) {
 										echo '<span class="mtl-wait-pill">Waiting, tool out</span>';
 									} elseif ( ! empty( $row->maintenance_at ) ) {
 										echo '<span class="mtl-wait-pill">Waiting, under maintenance</span>';
