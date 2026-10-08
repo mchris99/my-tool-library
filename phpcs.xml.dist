@@ -109,6 +109,8 @@
                 <element value="mtl_tool_all_links_html"/>
                 <element value="mtl_markdown_to_html"/>
                 <element value="mtl_giving_section_html"/>
+                <element value="mtl_tool_request_section_html"/>
+                <element value="mtl_shop_location_block"/>
             </property>
         </properties>
     </rule>

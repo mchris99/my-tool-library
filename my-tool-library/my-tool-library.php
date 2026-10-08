@@ -2834,7 +2834,7 @@ function mtl_resolve_return_timestamp( $loan_id, $posted_date ) {
 /**
  * Every way a reservation can stop being active, and how to say each one.
  *
- * tool_reservations.expiry_date records WHEN a reservation ended;
+ * The tool_reservations.expiry_date column records WHEN a reservation ended;
  * closed_reason records WHY, because the timestamp alone cannot tell a
  * reservation that turned into a loan from one nobody came to collect. The
  * keys here are the only values that column ever holds, and this map is the
@@ -6331,9 +6331,13 @@ function mtl_register_staff_capabilities() {
 // Plain counter, not the plugin version: bump when a table or column is added.
 define( 'MTL_DB_VERSION', 7 );
 
-// admin_init, not init: nothing reads these tables on the front end, and it
-// covers exactly the requests that can write them.
-add_action( 'admin_init', 'mtl_maybe_upgrade_schema' );
+// init, not admin_init: the public catalog and member pages read these
+// columns too, so a visitor arriving after a plugin update, before any staff
+// member has opened the admin, must not hit a missing column. Priority 0 so
+// it finishes before the other init work that queries the tables, such as
+// mtl_expire_stale_reservations(). Once current it costs one autoloaded
+// option read per request.
+add_action( 'init', 'mtl_maybe_upgrade_schema', 0 );
 
 /**
  * Creates tables and columns added after this site's database was first set
@@ -6361,7 +6365,7 @@ function mtl_maybe_upgrade_schema() {
 	// here because the guard that follows needs its table names.
 	$columns = array(
 		'tool_inventory'    => array(
-			'location'      => 'VARCHAR(100) DEFAULT NULL',
+			'location'       => 'VARCHAR(100) DEFAULT NULL',
 			// The two link lists (see mtl_tool_link_lists()). Tools that
 			// existed before these shipped keep a NULL in each, which reads as
 			// an empty list, the same as a tool nobody has added links to.
