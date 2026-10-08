@@ -252,7 +252,7 @@ function mtl_front_notice( $key ) {
 		'reservation_cancelled'  => array( 'success', 'Your reservation has been cancelled.' ),
 		'reservations_cancelled' => array( 'success', 'All of your reservations have been cancelled.' ),
 		'account_updated'        => array( 'success', 'Your account details have been updated.' ),
-		'account_verif_removed'  => array( 'success', 'Your details were updated. Because your address changed, your verified status has been reset, and an administrator will need to re-verify your account.' ),
+		'account_verif_removed'  => array( 'success', 'Your details were updated. Because your personal information changed, your verified status has been reset, and an administrator will need to re-verify your account.' ),
 		'account_deleted'        => array( 'success', 'Your account and personal data have been deleted. You&rsquo;re welcome to browse the catalog, but you&rsquo;ll need to sign up again if you&rsquo;d like to reserve a tool.' ),
 		// The reserve gate sends members here. The wording explains what
 		// happened and what to do, because the alternative, a reservation
@@ -608,6 +608,25 @@ function mtl_member_page_styles() {
 			gap: 10px;
 			flex-wrap: wrap;
 			align-items: center;
+		}
+
+		/* Warning shown before a verified member saves changes to Your details. */
+		.mtl-member-dialog {
+			width: calc(100% - 32px);
+			max-width: 460px;
+			padding: 24px;
+			border: 1px solid #dcdcde;
+			border-radius: 8px;
+			box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+			color: #1d2327;
+		}
+
+		.mtl-member-dialog::backdrop {
+			background: rgba(0, 0, 0, 0.45);
+		}
+
+		.mtl-member-dialog p {
+			margin: 8px 0 18px 0;
 		}
 
 		/* Tables (reservations queue, past loans) */
@@ -2426,15 +2445,35 @@ function mtl_render_account_page() {
 			}
 
 			if ( empty( $errors ) ) {
-				// Verification is tied to the address on file, so any change
-				// to any of the 6 address fields invalidates a prior verification.
-				$address_changed = (
-					trim( $address1 ) !== trim( (string) $member->address_line1 )
-					|| trim( $address2 ) !== trim( (string) $member->address_line2 )
-					|| trim( $city ) !== trim( (string) $member->city )
-					|| trim( $state ) !== trim( (string) $member->state )
-					|| trim( $zip_code ) !== trim( (string) $member->zip_code )
-					|| trim( $country ) !== trim( (string) $member->country )
+				// Verification is tied to the personal information on file, so
+				// a change to the name, phone number or any of the 6 address
+				// fields invalidates a prior verification. Stored values are
+				// compared as the form displays them (stripslashes), so saving
+				// the form untouched never counts as a change.
+				$stored_text = static function ( $value ) {
+					return trim( stripslashes( (string) $value ) );
+				};
+
+				// The stored phone is re-run through the formatter before
+				// comparing, so a legacy value saved before the "+code" format
+				// existed is not mistaken for a change when the member saves
+				// the same number again.
+				$stored_phone      = mtl_parse_stored_phone_number( $member->phone_number );
+				$stored_phone_norm = mtl_format_phone_number( $stored_phone['iso'], $stored_phone['national'] )['value'];
+				if ( '' === $stored_phone_norm ) {
+					$stored_phone_norm = trim( (string) $member->phone_number );
+				}
+
+				$details_changed = (
+					trim( $first ) !== $stored_text( $member->first_name )
+					|| trim( $last ) !== $stored_text( $member->last_name )
+					|| $phone_result['value'] !== $stored_phone_norm
+					|| trim( $address1 ) !== $stored_text( $member->address_line1 )
+					|| trim( $address2 ) !== $stored_text( $member->address_line2 )
+					|| trim( $city ) !== $stored_text( $member->city )
+					|| trim( $state ) !== $stored_text( $member->state )
+					|| trim( $zip_code ) !== $stored_text( $member->zip_code )
+					|| trim( $country ) !== $stored_text( $member->country )
 				);
 				$was_verified    = mtl_member_is_verified( $member->member_id );
 
@@ -2467,7 +2506,7 @@ function mtl_render_account_page() {
 				);
 
 				$removed_verif = false;
-				if ( $address_changed && $was_verified ) {
+				if ( $details_changed && $was_verified ) {
 					$wpdb->delete( $tbl_verif, array( 'member_id' => (int) $member->member_id ), array( '%d' ) );
 					$removed_verif = true;
 				}
@@ -2486,7 +2525,7 @@ function mtl_render_account_page() {
 
 	// --- Handle "Delete Account and Remove Personal Data" (POST + nonce). ---
 	// The confirmation step is the GET link to ?mtl_confirm_delete=1 below
-	// (this page has no JavaScript, so there's no confirm() dialog), this
+	// (a server-side step, so it works without JavaScript), this
 	// handler only runs on the follow-up POST from that confirmation form.
 	if ( mtl_is_post_request() && isset( $_POST['mtl_delete_account'] ) ) {
 		if ( ! isset( $_POST['mtl_delete_account_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_account_nonce'] ) ), 'mtl_delete_account_action' ) ) {
@@ -2795,7 +2834,7 @@ function mtl_render_account_page() {
 			<details class="mtl-member-card" <?php echo ! empty( $errors ) ? 'open' : ''; ?>>
 				<summary class="mtl-member-summary">Your details</summary>
 				<div class="mtl-member-collapsible-body">
-				<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">
+				<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>" id="mtl-account-form">
 					<?php wp_nonce_field( 'mtl_account_action', 'mtl_account_nonce' ); ?>
 
 					<div class="mtl-member-row">
@@ -2859,7 +2898,7 @@ function mtl_render_account_page() {
 							</select>
 						</div>
 					</div>
-					<p class="mtl-member-hint"><strong>Note:</strong> changing your address will reset your verified status, and staff will need to re-verify your account.</p>
+					<p class="mtl-member-hint"><strong>Note:</strong> changing your personal information will reset your verified status, and staff will need to re-verify your account.</p>
 
 					<p style="margin: 18px 0 0 0;">
 						<button type="submit" name="mtl_update_account" value="1" class="mtl-member-btn">Save Changes</button>
@@ -2867,6 +2906,72 @@ function mtl_render_account_page() {
 				</form>
 				</div>
 			</details>
+
+			<?php if ( $is_verified ) : ?>
+				<?php
+				// Confirmation before a verified member saves a change that will
+				// reset their verification (see the profile update handler).
+				// Progressive enhancement: without JavaScript the form still
+				// submits, and the note above the button gives the same warning.
+				?>
+				<dialog class="mtl-member-dialog" id="mtl-account-verif-dialog" aria-labelledby="mtl-account-verif-title">
+					<strong id="mtl-account-verif-title">You&rsquo;ll lose your verified status</strong>
+					<p>Saving these changes to your personal information will reset your verified status. Staff will need to re-verify your account before you can check out tools.</p>
+					<div class="mtl-member-confirm-actions">
+						<button type="button" class="mtl-member-btn" data-mtl-verif-confirm>Yes, save my changes</button>
+						<button type="button" class="mtl-member-btn mtl-member-btn-ghost" data-mtl-verif-cancel autofocus>No, keep editing</button>
+					</div>
+				</dialog>
+				<script>
+					(function() {
+						var form   = document.getElementById('mtl-account-form');
+						var dialog = document.getElementById('mtl-account-verif-dialog');
+						if (!form || !dialog) { return; }
+
+						// The same fields the server compares. Phone digits only,
+						// since the live formatter rewrites the punctuation.
+						var names = ['first_name', 'last_name', 'phone_country', 'phone_national', 'address_line1', 'address_line2', 'city', 'state', 'zip_code', 'country'];
+						function snapshot() {
+							return names.map(function(n) {
+								var el = form.elements[n];
+								var v  = el ? String(el.value).trim() : '';
+								return 'phone_national' === n ? v.replace(/\D+/g, '') : v;
+							}).join('\u0000');
+						}
+						var initial = snapshot();
+
+						function submitForReal() {
+							// form.submit() skips the submit event (so this
+							// handler doesn't fire again) but also drops the
+							// clicked button, which the server looks for.
+							var flag   = document.createElement('input');
+							flag.type  = 'hidden';
+							flag.name  = 'mtl_update_account';
+							flag.value = '1';
+							form.appendChild(flag);
+							HTMLFormElement.prototype.submit.call(form);
+						}
+
+						form.addEventListener('submit', function(e) {
+							if (snapshot() === initial) { return; }
+							e.preventDefault();
+							if ('function' === typeof dialog.showModal) {
+								dialog.showModal();
+							} else if (window.confirm('Saving these changes will reset your verified status, and staff will need to re-verify your account. Save anyway?')) {
+								submitForReal();
+							}
+						});
+
+						dialog.querySelector('[data-mtl-verif-confirm]').addEventListener('click', function() {
+							dialog.close();
+							submitForReal();
+						});
+						dialog.querySelector('[data-mtl-verif-cancel]').addEventListener('click', function() {
+							dialog.close();
+						});
+					})();
+				</script>
+			<?php endif; ?>
 
 			<details class="mtl-member-card">
 				<summary class="mtl-member-summary">Your loan history</summary>

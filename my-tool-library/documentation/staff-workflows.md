@@ -246,6 +246,8 @@ Verification records that staff have checked the member's photo ID and a proof-o
 
 To remove a document, clear its URL field on Edit and save. Clearing just one downgrades a verified member to unverified and leaves the other on file; clearing both deletes their verification record entirely.
 
+**If a verified member changes their name, phone number or address** on their own Account page, their verification record is deleted and they'll need to be verified again. They're warned in a pop-up before saving. Edits staff make on the Membership page don't do this.
+
 > **Note:** If member verification is not important to your organization, an admin can type any URL into both fields to mark the member verified. You may also tell members that verification is not necessary **(see Setup > Member Verification Directions)**.
 
 ### Hosting Photos and Documents
