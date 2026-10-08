@@ -2775,49 +2775,6 @@ function mtl_render_account_page() {
 				</p>
 			</div>
 
-			<?php if ( ! empty( $my_trainings ) ) : ?>
-				<details class="mtl-member-card">
-					<summary class="mtl-member-summary">Trainings</summary>
-					<div class="mtl-member-collapsible-body">
-						<p class="mtl-member-hint" style="margin-top:0;">Every training you&rsquo;ve completed, including any that have since expired. Ask library staff if you&rsquo;d like to retake one.</p>
-						<table class="mtl-member-table">
-							<thead>
-								<tr>
-									<th>Training</th>
-									<th>Completed</th>
-									<th>Valid For</th>
-									<th>Expires</th>
-									<th>Status</th>
-								</tr>
-							</thead>
-							<tbody>
-								<?php foreach ( $my_trainings as $mtl_training ) : ?>
-									<tr>
-										<td><?php echo esc_html( $mtl_training['name'] ); ?></td>
-										<td><?php echo mtl_format_date( $mtl_training['start_date'] ); ?></td>
-										<td>
-											<?php
-											echo $mtl_training['months'] > 0
-												? esc_html( $mtl_training['months'] . ' month' . ( 1 === $mtl_training['months'] ? '' : 's' ) )
-												: '<span style="color:#8c8f94;">&mdash;</span>';
-											?>
-										</td>
-										<td><?php echo '' !== $mtl_training['expiry_date'] ? mtl_format_date( $mtl_training['expiry_date'] ) : '<span style="color:#8c8f94;">Never</span>'; ?></td>
-										<td>
-											<?php if ( $mtl_training['is_current'] ) : ?>
-												<span class="mtl-pill mtl-pill-green">Current</span>
-											<?php else : ?>
-												<span class="mtl-pill mtl-pill-grey">Expired</span>
-											<?php endif; ?>
-										</td>
-									</tr>
-								<?php endforeach; ?>
-							</tbody>
-						</table>
-					</div>
-				</details>
-			<?php endif; ?>
-
 			<?php
 			// Fundraising ask, above Your details. Escaped inside
 			// mtl_giving_section_html(); returns '' when the admin has left
@@ -2961,6 +2918,49 @@ function mtl_render_account_page() {
 				<?php endif; ?>
 				</div>
 			</details>
+
+			<?php if ( ! empty( $my_trainings ) ) : ?>
+				<details class="mtl-member-card">
+					<summary class="mtl-member-summary">Trainings</summary>
+					<div class="mtl-member-collapsible-body">
+						<p class="mtl-member-hint" style="margin-top:0;">Every training you&rsquo;ve completed, including any that have since expired. Ask library staff if you&rsquo;d like to retake one.</p>
+						<table class="mtl-member-table">
+							<thead>
+								<tr>
+									<th>Training</th>
+									<th>Completed</th>
+									<th>Valid For</th>
+									<th>Expires</th>
+									<th>Status</th>
+								</tr>
+							</thead>
+							<tbody>
+								<?php foreach ( $my_trainings as $mtl_training ) : ?>
+									<tr>
+										<td><?php echo esc_html( $mtl_training['name'] ); ?></td>
+										<td><?php echo mtl_format_date( $mtl_training['start_date'] ); ?></td>
+										<td>
+											<?php
+											echo $mtl_training['months'] > 0
+												? esc_html( $mtl_training['months'] . ' month' . ( 1 === $mtl_training['months'] ? '' : 's' ) )
+												: '<span style="color:#8c8f94;">&mdash;</span>';
+											?>
+										</td>
+										<td><?php echo '' !== $mtl_training['expiry_date'] ? mtl_format_date( $mtl_training['expiry_date'] ) : '<span style="color:#8c8f94;">Never</span>'; ?></td>
+										<td>
+											<?php if ( $mtl_training['is_current'] ) : ?>
+												<span class="mtl-pill mtl-pill-green">Current</span>
+											<?php else : ?>
+												<span class="mtl-pill mtl-pill-grey">Expired</span>
+											<?php endif; ?>
+										</td>
+									</tr>
+								<?php endforeach; ?>
+							</tbody>
+						</table>
+					</div>
+				</details>
+			<?php endif; ?>
 
 			<?php if ( $mtl_ag_receipt ) : ?>
 				<div class="mtl-member-card">
