@@ -223,6 +223,7 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 	<?php endif; ?>
 	<div class="mtl-shop-detail-body">
 		<p class="mtl-shop-detail-name"><?php echo esc_html( stripslashes( $tool->tool_name ) ); ?></p>
+		<p class="mtl-shop-detail-id">Tool ID #<?php echo (int) $tool_id; ?></p>
 		<?php if ( ! empty( $tool->brand ) ) : ?>
 			<p class="mtl-shop-detail-brand"><?php echo esc_html( stripslashes( $tool->brand ) ); ?></p>
 		<?php endif; ?>
@@ -1231,6 +1232,12 @@ function mtl_render_shop_page() {
 			margin: 2px 0 12px 0;
 		}
 
+		.mtl-shop-detail-id {
+			color: #787c82;
+			font-size: 0.85em;
+			margin: 2px 0 0 0;
+		}
+
 		<?php // The link sections' summaries are headings here, so they read as ones. ?>
 		.mtl-shop-detail h4,
 		.mtl-shop-detail .mtl-links > summary {
@@ -1314,6 +1321,15 @@ function mtl_render_shop_page() {
 			padding: 40px 20px;
 			text-align: center;
 			color: #787c82;
+		}
+
+		.mtl-shop-request-text {
+			margin: 16px 0 0;
+			color: #3c434a;
+		}
+
+		.mtl-shop-request-action {
+			margin: 16px 0 0;
 		}
 	</style>
 
@@ -1479,8 +1495,23 @@ function mtl_render_shop_page() {
 		<div class="mtl-shop-layout">
 			<div class="mtl-shop-main">
 				<?php if ( empty( $tools ) ) : ?>
+					<?php
+					// Optional "request a tool" ask from the Setup page. The
+					// message and link are independent; either blank is left out.
+					// The link is re-normalized on read, like the giving link.
+					$request_text = trim( (string) get_option( 'mtl_tool_request_text', mtl_default_tool_request_text() ) );
+					$request_url  = mtl_normalize_web_url( get_option( 'mtl_tool_request_url', '' ) );
+					?>
 					<div class="mtl-shop-empty">
 						<p style="margin:0;">No tools match your search. Try removing a filter or searching for something else.</p>
+						<?php if ( '' !== $request_text ) : ?>
+							<p class="mtl-shop-request-text"><?php echo nl2br( esc_html( $request_text ) ); ?></p>
+						<?php endif; ?>
+						<?php if ( '' !== $request_url ) : ?>
+							<p class="mtl-shop-request-action">
+								<a class="mtl-shop-btn" href="<?php echo esc_url( $request_url ); ?>" target="_blank" rel="noopener noreferrer nofollow">Request a Tool</a>
+							</p>
+						<?php endif; ?>
 					</div>
 				<?php elseif ( 'rows' === $view ) : ?>
 					<div class="mtl-shop-rows">

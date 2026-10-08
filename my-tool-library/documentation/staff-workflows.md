@@ -82,7 +82,8 @@ Do this once, when the plugin is first installed on the site.
     - **Categories & Tags**: the tool categories (e.g. Woodworking, Plumbing) and tags (e.g. Cordless, Requires PPE) staff pick from when adding inventory.
     - **Member Trainings**: the trainings you offer. Each has a **name**, an optional **Badge Image URL** (upload the image to the WordPress Media Library and paste its File URL), and **Valid For**, how many months it stays current after someone completes it, or blank if it never expires. All three are changeable later. See [Trainings and certifications](#trainings-and-certifications).
     - **Member Agreements**: the statements a member must agree to before creating an account (e.g. a liability waiver). Choose a mode at the top of the section: **Off**, **Track signed paper only**, or **Full: members agree online**. See [Member Agreements](#6-member-agreements) for what each mode does.
-    - **Consider Giving Message** and **Consider Giving Link**: an optional fundraising ask. See [Asking members to give](#asking-members-to-give).
+    - **Consider Giving Message**, **Consider Giving Link** and **Consider Giving Wishlist Link**: an optional fundraising ask. See [Asking members to give](#asking-members-to-give).
+    - **Tool Request Message** and **Tool Request Link**: an optional invitation for people to ask you to add a tool, shown on the public catalog when a search finds no tools and on members' Account page. See [Letting people request tools](#letting-people-request-tools).
 6. **If you want agreement tracking, set it up now, before anyone joins.** This is the one part of Setup where doing it later means more work for members and staff. See [Member Agreements](#6-member-agreements).
 7. Configure outgoing email through an SMTP plugin (recommended: WP Mail SMTP, Post SMTP, or FluentSMTP). This is required to send emails to members. Set the from address to a mailbox on your domain. Add SPF and DKIM DNS records for whichever service you chose.
 8. Copy the **Public Page Link** from the Setup page into your site's navigation menu, or link to it from any page, post or button. This is the one link your community needs to browse the catalog, reserve tools, and sign up.
@@ -244,6 +245,8 @@ Verification records that staff have checked the member's photo ID and a proof-o
 6. They now show as **Verified** throughout the staff pages, including the Loans & Reservations detail panel so staff can check at pickup, and on their own account page.
 
 To remove a document, clear its URL field on Edit and save. Clearing just one downgrades a verified member to unverified and leaves the other on file; clearing both deletes their verification record entirely.
+
+**If a verified member changes their name, phone number or address** on their own Account page, their verification record is deleted and they'll need to be verified again. They're warned in a pop-up before saving. Edits staff make on the Membership page don't do this.
 
 > **Note:** If member verification is not important to your organization, an admin can type any URL into both fields to mark the member verified. You may also tell members that verification is not necessary **(see Setup > Member Verification Directions)**.
 
@@ -415,14 +418,24 @@ You can also cancel a reservation from **Loans & Reservations** by opening its d
 
 #### Asking members to give
 
-**Setup > General Details** has two optional fields that put a **Consider Giving** section in front of signed-in members, on their **Account** page above Your details and on **My Loans & Reservations** below My Reservations.
+**Setup > General Details** has three optional fields that put a **Consider Giving** section in front of signed-in members, on their **Account** page above Your details and on **My Loans & Reservations** below My Reservations.
 
 - **Consider Giving Message**: your message to members asking for a donation.
 - **Consider Giving Link**: where the **Give Now** button sends people: your donation page, a fundraising platform, and so on.
+- **Consider Giving Wishlist Link**: where the **Wishlist** button sends people: a list of items you'd like to buy or have donated, such as an online wishlist.
 
-**The message controls whether the section appears at all**, so clearing it removes the section from both pages. **The link only controls the button**, so leave it blank to hide the button but keep the message, if you'd rather people give in person.
+**The message controls whether the section appears at all**, so clearing it removes the section from both pages. **Each link only controls its own button**, so leave one blank to hide that button but keep the message, if you'd rather people give in person.
 
-> **Note:** Only ordinary `http://` and `https://` web addresses are accepted for the link.
+> **Note:** Only ordinary `http://` and `https://` web addresses are accepted for the links.
+
+#### Letting people request tools
+
+When a search on the public catalog finds nothing, it always says **0 tools found** and suggests changing the search. Two optional fields on **Setup > General Details** add an invitation to ask for the tool underneath. The same message and button also appear in a **Can't Find a Tool?** box on signed-in members' **Account** page, just below Consider Giving:
+
+- **Tool Request Message**: a short note inviting people to request a tool. It comes filled in with a sample you can edit.
+- **Tool Request Link**: where the **Request a Tool** button sends people, usually a request form (a Google Form, a page on your site, and so on).
+
+The two are independent: clear the message to hide it, and leave the link blank to hide the button. Clearing both removes the Account page box. Only ordinary `http://` and `https://` web addresses are accepted for the link.
 
 #### Sub-categories
 

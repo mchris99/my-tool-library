@@ -47,6 +47,7 @@ $mtl_options = array(
 	'mtl_header_weight',
 	'mtl_giving_text',
 	'mtl_giving_url',
+	'mtl_giving_wishlist_url',
 	'mtl_home_url',
 	'mtl_link_color',
 	'mtl_link_decoration',
@@ -56,6 +57,8 @@ $mtl_options = array(
 	'mtl_org_name',
 	'mtl_pickup_directions',
 	'mtl_show_tool_location',
+	'mtl_tool_request_text',
+	'mtl_tool_request_url',
 	'mtl_verification_directions',
 );
 
