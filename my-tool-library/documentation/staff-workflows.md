@@ -620,7 +620,7 @@ Deletion and anonymization are the two actions in this plugin that can't be undo
 
 The **Dashboard** offers configurable, resizable stat panels. Drag panels to reorder or resize them; your layout is saved per-user.
 
-Two panels are search-driven rather than always-on: **Tool History Lookup** and **Member History Lookup**. Type a tool or member's name into the search box, pick it from the dropdown, and click **View History** to see more than the Inventory/Membership pages show on their own:
+Two panels are search-driven rather than always-on: **Tool History Lookup** and **Member History Lookup**. Type a tool or member's name into the search box and pick it from the dropdown (click it, or use the arrow keys and Enter). The history appears straight away, without reloading the page, and shows more than the Inventory/Membership pages do on their own:
 
 - **Tool History Lookup** shows who has rented that tool and how many times each person has, plus a full loan-by-loan log with dates, due dates, and returned/late/still-out status.
 - **Member History Lookup** shows that member's complete loan history, not just the currently active loans Membership's own detail panel shows, plus their full reservation history including past and expired ones.

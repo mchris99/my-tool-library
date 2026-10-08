@@ -203,6 +203,328 @@ function mtl_dash_bars( $items, $bar_color_var = '--mtl-header-color' ) {
 }
 
 /**
+ * The Tool History Lookup result for one tool: who has rented it, grouped by
+ * member, plus the full loan-by-loan log.
+ *
+ * Shared by the Dashboard's first render (a tool id in the URL) and the
+ * in-place lookup (mtl_ajax_dash_history()), so both show the same thing.
+ *
+ * @param int $tool_id Tool row ID, or 0 for nothing picked yet.
+ * @return string Ready-to-echo HTML, fully escaped; '' when nothing is picked.
+ */
+function mtl_dash_tool_history_html( $tool_id ) {
+	global $wpdb;
+
+	// Nothing picked: the panel is just its search box.
+	$tool_id = (int) $tool_id;
+	if ( $tool_id <= 0 ) {
+		return '';
+	}
+
+	$tbl_members   = $wpdb->prefix . 'members';
+	$tbl_inventory = $wpdb->prefix . 'tool_inventory';
+	$tbl_loans     = $wpdb->prefix . 'loans';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	$tool = $wpdb->get_row(
+		$wpdb->prepare(
+			"SELECT tool_id, tool_name, barcode, brand, retired_at, maintenance_at FROM {$tbl_inventory} WHERE tool_id = %d",
+			$tool_id
+		)
+	);
+	if ( ! $tool ) {
+		return '<p class="mtl-empty">That tool could not be found.</p>';
+	}
+	$by_member = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT m.member_id, m.first_name, m.last_name, m.email,
+                    COUNT(l.loan_id) AS loan_count, MAX(l.loan_date) AS last_loan,
+                    SUM(CASE WHEN l.return_date IS NULL THEN 1 ELSE 0 END) AS currently_out
+             FROM {$tbl_loans} l
+             JOIN {$tbl_members} m ON m.member_id = l.member_id
+             WHERE l.tool_id = %d
+             GROUP BY m.member_id
+             ORDER BY loan_count DESC, last_loan DESC",
+			$tool_id
+		)
+	);
+	$loans     = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT l.loan_id, l.loan_date, l.due_date, l.return_date, m.first_name, m.last_name, m.email
+             FROM {$tbl_loans} l
+             JOIN {$tbl_members} m ON m.member_id = l.member_id
+             WHERE l.tool_id = %d
+             ORDER BY l.loan_date DESC",
+			$tool_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	$total = 0;
+	foreach ( $by_member as $r ) {
+		$total += (int) $r->loan_count;
+	}
+
+	ob_start();
+	?>
+	<div class="mtl-dash-lookup-header">
+		<h5><?php echo esc_html( stripslashes( $tool->tool_name ) ); ?> <span style="color:#999; font-weight:400;">(<?php echo esc_html( $tool->barcode ); ?>)</span><?php echo ! empty( $tool->retired_at ) ? ' <span style="color:#999; font-weight:400;">(retired)</span>' : ''; ?><?php echo empty( $tool->retired_at ) && ! empty( $tool->maintenance_at ) ? ' <span style="color:#999; font-weight:400;">(under maintenance)</span>' : ''; ?></h5>
+		<span><strong><?php echo esc_html( $total ); ?></strong> total loan<?php echo 1 === $total ? '' : 's'; ?></span>
+	</div>
+
+	<?php if ( empty( $by_member ) ) : ?>
+		<p class="mtl-empty">This tool has never been rented.</p>
+	<?php else : ?>
+		<div class="mtl-scroll-table">
+			<table>
+				<thead>
+					<tr>
+						<th>Member</th>
+						<th>Times Rented</th>
+						<th>Last Rented</th>
+						<th>Status</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $by_member as $r ) : ?>
+						<tr>
+							<td><?php echo esc_html( trim( stripslashes( $r->first_name ) . ' ' . stripslashes( $r->last_name ) ) ); ?><br><span style="color:#999;"><?php echo esc_html( $r->email ); ?></span></td>
+							<td><strong><?php echo esc_html( $r->loan_count ); ?></strong></td>
+							<td><?php echo mtl_format_date( $r->last_loan ); ?></td>
+							<td><?php echo ( (int) $r->currently_out > 0 ) ? '<span class="mtl-wait-pill">Currently has it</span>' : ''; ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
+
+		<details class="mtl-panel-more">
+			<summary>View full loan-by-loan log (<?php echo count( $loans ); ?>)</summary>
+			<div class="mtl-scroll-table" style="margin-top: 8px;">
+				<table>
+					<thead>
+						<tr>
+							<th>Member</th>
+							<th>Loaned</th>
+							<th>Due</th>
+							<th>Returned</th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php
+						foreach ( $loans as $l ) :
+							$late        = ( null !== $l->return_date && gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
+							$out_overdue = ( null === $l->return_date && $l->due_date < gmdate( 'Y-m-d' ) );
+							?>
+							<tr>
+								<td><?php echo esc_html( trim( stripslashes( $l->first_name ) . ' ' . stripslashes( $l->last_name ) ) ); ?></td>
+								<td><?php echo mtl_format_date( $l->loan_date ); ?></td>
+								<td><?php echo mtl_format_date( $l->due_date ); ?></td>
+								<td>
+									<?php if ( $l->return_date ) : ?>
+										<?php echo mtl_format_date( $l->return_date ); ?><?php echo $late ? ' <span class="mtl-overdue-days">(late)</span>' : ''; ?>
+									<?php elseif ( $out_overdue ) : ?>
+										<span class="mtl-overdue-days">Still out, overdue</span>
+									<?php else : ?>
+										Still out
+									<?php endif; ?>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			</div>
+		</details>
+	<?php endif; ?>
+	<?php
+	return ob_get_clean();
+}
+
+/**
+ * The Member History Lookup result for one member: full loan history plus
+ * every reservation, past and present (Membership's own detail panel only
+ * shows the active ones).
+ *
+ * Shared the same way as mtl_dash_tool_history_html().
+ *
+ * @param int $member_id Member row ID, or 0 for nothing picked yet.
+ * @return string Ready-to-echo HTML, fully escaped; '' when nothing is picked.
+ */
+function mtl_dash_member_history_html( $member_id ) {
+	global $wpdb;
+
+	// Nothing picked: the panel is just its search box.
+	$member_id = (int) $member_id;
+	if ( $member_id <= 0 ) {
+		return '';
+	}
+
+	$tbl_members       = $wpdb->prefix . 'members';
+	$tbl_verifications = $wpdb->prefix . 'member_verifications';
+	$tbl_inventory     = $wpdb->prefix . 'tool_inventory';
+	$tbl_loans         = $wpdb->prefix . 'loans';
+	$tbl_reservations  = $wpdb->prefix . 'tool_reservations';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
+	$member = $wpdb->get_row(
+		$wpdb->prepare(
+			"SELECT m.member_id, m.first_name, m.last_name, m.email, m.signup_date, m.anonymized_at,
+                (v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS is_verified
+             FROM {$tbl_members} m
+             LEFT JOIN {$tbl_verifications} v ON v.member_id = m.member_id
+             WHERE m.member_id = %d",
+			$member_id
+		)
+	);
+	if ( ! $member ) {
+		return '<p class="mtl-empty">That member could not be found.</p>';
+	}
+	$loans        = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT l.loan_id, l.loan_date, l.due_date, l.return_date, t.tool_name, t.barcode
+             FROM {$tbl_loans} l
+             JOIN {$tbl_inventory} t ON t.tool_id = l.tool_id
+             WHERE l.member_id = %d
+             ORDER BY l.loan_date DESC",
+			$member_id
+		)
+	);
+	$reservations = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT r.reservation_id, r.reservation_date, r.expiry_date, t.tool_name, t.barcode
+             FROM {$tbl_reservations} r
+             JOIN {$tbl_inventory} t ON t.tool_id = r.tool_id
+             WHERE r.member_id = %d
+             ORDER BY r.reservation_date DESC",
+			$member_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	$total  = count( $loans );
+	$active = 0;
+	foreach ( $loans as $l ) {
+		if ( ! $l->return_date ) {
+			++$active;
+		}
+	}
+	$active_res = 0;
+	foreach ( $reservations as $r ) {
+		if ( ! $r->expiry_date ) {
+			++$active_res;
+		}
+	}
+
+	ob_start();
+	?>
+	<div class="mtl-dash-lookup-header">
+		<h5><?php echo esc_html( trim( stripslashes( $member->first_name ) . ' ' . stripslashes( $member->last_name ) ) ); ?> <span style="color:#999; font-weight:400;">(<?php echo esc_html( $member->email ); ?>)</span></h5>
+		<span><?php echo (bool) $member->is_verified ? '<span class="mtl-ok-pill">Verified</span>' : '<span class="mtl-wait-pill">Not verified</span>'; ?></span>
+	</div>
+
+	<?php if ( ! empty( $member->anonymized_at ) ) : ?>
+		<p class="mtl-insight">Account deleted. Loan history is kept for library statistics.</p>
+	<?php endif; ?>
+
+	<?php if ( empty( $loans ) ) : ?>
+		<p class="mtl-empty">This member has never rented a tool.</p>
+	<?php else : ?>
+		<p class="mtl-panel-sub"><strong><?php echo esc_html( $total ); ?></strong> loan<?php echo 1 === $total ? '' : 's'; ?> on record<?php echo $active > 0 ? ', <strong>' . esc_html( $active ) . '</strong> currently out' : ''; ?>.</p>
+		<div class="mtl-scroll-table">
+			<table>
+				<thead>
+					<tr>
+						<th>Tool</th>
+						<th>Loaned</th>
+						<th>Due</th>
+						<th>Returned</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php
+					foreach ( $loans as $l ) :
+						$late        = ( null !== $l->return_date && gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
+						$out_overdue = ( null === $l->return_date && $l->due_date < gmdate( 'Y-m-d' ) );
+						?>
+						<tr>
+							<td><strong><?php echo esc_html( stripslashes( $l->tool_name ) ); ?></strong><br><span style="color:#999;"><?php echo esc_html( stripslashes( $l->barcode ) ); ?></span></td>
+							<td><?php echo mtl_format_date( $l->loan_date ); ?></td>
+							<td><?php echo mtl_format_date( $l->due_date ); ?></td>
+							<td>
+								<?php if ( $l->return_date ) : ?>
+									<?php echo mtl_format_date( $l->return_date ); ?><?php echo $late ? ' <span class="mtl-overdue-days">(late)</span>' : ''; ?>
+								<?php elseif ( $out_overdue ) : ?>
+									<span class="mtl-overdue-days">Still out, overdue</span>
+								<?php else : ?>
+									Still out
+								<?php endif; ?>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
+	<?php endif; ?>
+
+	<p class="mtl-panel-sub" style="margin-top: 16px;">Reservations: <strong><?php echo esc_html( count( $reservations ) ); ?></strong> on record<?php echo $active_res > 0 ? ', <strong>' . esc_html( $active_res ) . '</strong> active' : ''; ?>.</p>
+	<?php if ( empty( $reservations ) ) : ?>
+		<p class="mtl-empty">This member has no reservations on record.</p>
+	<?php else : ?>
+		<div class="mtl-scroll-table">
+			<table>
+				<thead>
+					<tr>
+						<th>Tool</th>
+						<th>Reserved</th>
+						<th>Status</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $reservations as $r ) : ?>
+						<tr>
+							<td><?php echo esc_html( stripslashes( $r->tool_name ) ); ?><br><span style="color:#999;"><?php echo esc_html( stripslashes( $r->barcode ) ); ?></span></td>
+							<td><?php echo mtl_format_date( $r->reservation_date ); ?></td>
+							<td><?php echo $r->expiry_date ? 'Closed ' . mtl_format_date( $r->expiry_date ) : '<span class="mtl-ok-pill">Active</span>'; ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
+	<?php endif; ?>
+	<?php
+	return ob_get_clean();
+}
+
+add_action( 'wp_ajax_mtl_dash_history', 'mtl_ajax_dash_history' );
+
+/**
+ * Returns one Tool or Member History Lookup result, so the Dashboard can show
+ * it in place instead of reloading the whole page.
+ *
+ * Staff only, with a nonce, like every form on the Dashboard. Expects POST
+ * kind ('tool' or 'member') and id; sends back {html} built by the same
+ * helpers the page itself uses.
+ *
+ * @return void Sends JSON and exits.
+ */
+function mtl_ajax_dash_history() {
+	if ( ! mtl_can_manage_library() ) {
+		wp_send_json_error( null, 403 );
+	}
+	check_ajax_referer( 'mtl_dash_history', 'nonce' );
+
+	$kind = isset( $_POST['kind'] ) ? sanitize_key( wp_unslash( $_POST['kind'] ) ) : '';
+	$id   = isset( $_POST['id'] ) ? absint( $_POST['id'] ) : 0;
+
+	if ( 'tool' === $kind ) {
+		wp_send_json_success( array( 'html' => mtl_dash_tool_history_html( $id ) ) );
+	} elseif ( 'member' === $kind ) {
+		wp_send_json_success( array( 'html' => mtl_dash_member_history_html( $id ) ) );
+	}
+	wp_send_json_error( null, 400 );
+}
+
+/**
  * Renders the Dashboard admin page.
  */
 function mtl_render_dashboard_page() {
@@ -500,51 +822,108 @@ function mtl_render_dashboard_page() {
 		)
 	);
 
-	// --- Member rental leaderboard (optionally date-filtered) ---
-	$rent_on     = 'l.member_id = m.member_id';
-	$rent_params = array();
-	if ( '' !== $date_from ) {
-		$rent_on      .= ' AND l.loan_date >= %s';
-		$rent_params[] = $date_from;
-	}
-	if ( '' !== $date_to ) {
-		// Same DATE() reasoning as the popularity query above.
-		$rent_on      .= ' AND DATE(l.loan_date) <= %s';
-		$rent_params[] = $date_to;
-	}
-	$rent_sql = "
-        SELECT m.member_id, m.first_name, m.last_name, m.email,
-               COUNT(l.loan_id) AS loan_count, MAX(l.loan_date) AS last_loan
-        FROM {$tbl_members} m
-        LEFT JOIN {$tbl_loans} l ON {$rent_on}
-        WHERE m.anonymized_at IS NULL
-        GROUP BY m.member_id
-        HAVING loan_count > 0
-        ORDER BY loan_count DESC, last_loan DESC
-    ";
-	if ( $rent_params ) {
-		$rent_sql = $wpdb->prepare( $rent_sql, $rent_params );
-	}
-	$renter_rows = $wpdb->get_results( $rent_sql );
-
-	// --- Donor leaderboard (all time; donated_by is free text on tools) ---
-	$donor_rows = $wpdb->get_results(
-		"
-        SELECT donated_by, COUNT(*) AS items_donated, SUM(initial_cash_value) AS total_value
-        FROM {$tbl_inventory}
-        WHERE donated_by IS NOT NULL AND donated_by != ''
-        GROUP BY donated_by
-        ORDER BY total_value DESC
-    "
+	// --- Leaderboard periods ---
+	// Both leaderboards switch between these in the browser, so each period's
+	// rows are fetched up front. Every period runs from its start to now, in
+	// the site's timezone; the week starts on the day set under Settings >
+	// General, the same one the WordPress calendar uses.
+	$lb_today      = current_time( 'Y-m-d' );
+	$lb_week_back  = ( (int) current_time( 'w' ) - (int) get_option( 'start_of_week', 1 ) + 7 ) % 7;
+	$lb_periods    = array(
+		'all'   => array(
+			'label' => 'All time',
+			'from'  => '',
+		),
+		'year'  => array(
+			'label' => 'This year',
+			'from'  => current_time( 'Y' ) . '-01-01',
+		),
+		'month' => array(
+			'label' => 'This month',
+			'from'  => current_time( 'Y-m' ) . '-01',
+		),
+		'week'  => array(
+			'label' => 'This week',
+			'from'  => gmdate( 'Y-m-d', strtotime( $lb_today . ' -' . $lb_week_back . ' days' ) ),
+		),
 	);
+	$lb_has_range  = ( '' !== $date_from || '' !== $date_to );
+	$lb_rent_start = $lb_has_range ? 'range' : 'all';
+
+	// --- Member rental leaderboard ---
+	// One query per period. 'range' is the toolbar's date range, offered only
+	// while one is applied, so the leaderboard keeps following it as before.
+	$rent_periods = $lb_periods;
+	if ( $lb_has_range ) {
+		$rent_periods = array(
+			'range' => array(
+				'label' => $range_label,
+				'from'  => $date_from,
+				'to'    => $date_to,
+			),
+		) + $rent_periods;
+	}
+	$renter_rows = array();
+	foreach ( $rent_periods as $period_key => $period ) {
+		$rent_on     = 'l.member_id = m.member_id';
+		$rent_params = array();
+		if ( '' !== $period['from'] ) {
+			$rent_on      .= ' AND l.loan_date >= %s';
+			$rent_params[] = $period['from'];
+		}
+		if ( ! empty( $period['to'] ) ) {
+			// Same DATE() reasoning as the popularity query above.
+			$rent_on      .= ' AND DATE(l.loan_date) <= %s';
+			$rent_params[] = $period['to'];
+		}
+		$rent_sql = "
+            SELECT m.member_id, m.first_name, m.last_name, m.email,
+                   COUNT(l.loan_id) AS loan_count, MAX(l.loan_date) AS last_loan
+            FROM {$tbl_members} m
+            LEFT JOIN {$tbl_loans} l ON {$rent_on}
+            WHERE m.anonymized_at IS NULL
+            GROUP BY m.member_id
+            HAVING loan_count > 0
+            ORDER BY loan_count DESC, last_loan DESC
+        ";
+		if ( $rent_params ) {
+			$rent_sql = $wpdb->prepare( $rent_sql, $rent_params );
+		}
+		$renter_rows[ $period_key ] = $wpdb->get_results( $rent_sql );
+	}
+
+	// --- Donor leaderboard ---
+	// donated_by is free text on tools. A tool's date_acquired stands in for
+	// when it was donated, which is when it joined the collection.
+	$donor_rows = array();
+	foreach ( $lb_periods as $period_key => $period ) {
+		$donor_where  = "donated_by IS NOT NULL AND donated_by != ''";
+		$donor_params = array();
+		if ( '' !== $period['from'] ) {
+			$donor_where   .= ' AND date_acquired >= %s';
+			$donor_params[] = $period['from'];
+		}
+		$donor_sql = "
+            SELECT donated_by, COUNT(*) AS items_donated, SUM(initial_cash_value) AS total_value
+            FROM {$tbl_inventory}
+            WHERE {$donor_where}
+            GROUP BY donated_by
+            ORDER BY total_value DESC, items_donated DESC
+        ";
+		if ( $donor_params ) {
+			$donor_sql = $wpdb->prepare( $donor_sql, $donor_params );
+		}
+		$donor_rows[ $period_key ] = $wpdb->get_results( $donor_sql );
+	}
 
 	// --- Tool History Lookup / Member History Lookup panels ---
 	// Both panels are search-first: staff type a name into an autocomplete
 	// box (preloaded below, same client-side pattern as Quick Loan on the
-	// Inventory page) and the page reloads with the picked id in the query
-	// string. The actual detail queries only run once something is picked;
-	// there is no reason to compute a full history for every tool/member on
-	// every dashboard load.
+	// Inventory page), and picking one loads that history into the panel in
+	// place (mtl_ajax_dash_history()) and records the id in the URL. The ids
+	// read here are for a page opened from such a URL. The detail queries
+	// only run for whatever is picked; there is no reason to compute a full
+	// history for every tool/member on every dashboard load.
 	$th_tool_id   = isset( $_GET['mtl_th_tool'] ) ? intval( $_GET['mtl_th_tool'] ) : 0;
 	$mh_member_id = isset( $_GET['mtl_mh_member'] ) ? intval( $_GET['mtl_mh_member'] ) : 0;
 
@@ -587,83 +966,22 @@ function mtl_render_dashboard_page() {
 		$donor_name_by_email[ strtolower( $m['sub'] ) ] = $m['name'];
 	}
 
-	// --- Selected tool's detail: who has rented it, grouped by member, plus
-	// the full loan-by-loan log. ---
-	$th_tool      = null;
-	$th_by_member = array();
-	$th_loans     = array();
-	if ( $th_tool_id > 0 ) {
-		$th_tool = $wpdb->get_row(
-			$wpdb->prepare(
-				"SELECT tool_id, tool_name, barcode, brand, retired_at, maintenance_at FROM {$tbl_inventory} WHERE tool_id = %d",
-				$th_tool_id
-			)
-		);
-		if ( $th_tool ) {
-			$th_by_member = $wpdb->get_results(
-				$wpdb->prepare(
-					"SELECT m.member_id, m.first_name, m.last_name, m.email,
-                        COUNT(l.loan_id) AS loan_count, MAX(l.loan_date) AS last_loan,
-                        SUM(CASE WHEN l.return_date IS NULL THEN 1 ELSE 0 END) AS currently_out
-                 FROM {$tbl_loans} l
-                 JOIN {$tbl_members} m ON m.member_id = l.member_id
-                 WHERE l.tool_id = %d
-                 GROUP BY m.member_id
-                 ORDER BY loan_count DESC, last_loan DESC",
-					$th_tool_id
-				)
-			);
-			$th_loans     = $wpdb->get_results(
-				$wpdb->prepare(
-					"SELECT l.loan_id, l.loan_date, l.due_date, l.return_date, m.first_name, m.last_name, m.email
-                 FROM {$tbl_loans} l
-                 JOIN {$tbl_members} m ON m.member_id = l.member_id
-                 WHERE l.tool_id = %d
-                 ORDER BY l.loan_date DESC",
-					$th_tool_id
-				)
-			);
+	// The picked tool's/member's label, to pre-fill its search box when the
+	// page opens with one in the URL. The history itself is built by
+	// mtl_dash_tool_history_html() / mtl_dash_member_history_html(), the same
+	// helpers the in-place lookup calls.
+	$th_label = '';
+	foreach ( $dash_tool_options as $opt ) {
+		if ( $opt['id'] === $th_tool_id ) {
+			$th_label = $opt['label'];
+			break;
 		}
 	}
-
-	// --- Selected member's detail: full loan history, plus reservation
-	// history (including past/expired ones, which Membership's own detail panel
-	// only shows currently-active reservations, not the full record). ---
-	$mh_member       = null;
-	$mh_loans        = array();
-	$mh_reservations = array();
-	if ( $mh_member_id > 0 ) {
-		$mh_member = $wpdb->get_row(
-			$wpdb->prepare(
-				"SELECT m.member_id, m.first_name, m.last_name, m.email, m.signup_date, m.anonymized_at,
-                    (v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS is_verified
-             FROM {$tbl_members} m
-             LEFT JOIN {$tbl_verifications} v ON v.member_id = m.member_id
-             WHERE m.member_id = %d",
-				$mh_member_id
-			)
-		);
-		if ( $mh_member ) {
-			$mh_loans        = $wpdb->get_results(
-				$wpdb->prepare(
-					"SELECT l.loan_id, l.loan_date, l.due_date, l.return_date, t.tool_name, t.barcode
-                 FROM {$tbl_loans} l
-                 JOIN {$tbl_inventory} t ON t.tool_id = l.tool_id
-                 WHERE l.member_id = %d
-                 ORDER BY l.loan_date DESC",
-					$mh_member_id
-				)
-			);
-			$mh_reservations = $wpdb->get_results(
-				$wpdb->prepare(
-					"SELECT r.reservation_id, r.reservation_date, r.expiry_date, t.tool_name, t.barcode
-                 FROM {$tbl_reservations} r
-                 JOIN {$tbl_inventory} t ON t.tool_id = r.tool_id
-                 WHERE r.member_id = %d
-                 ORDER BY r.reservation_date DESC",
-					$mh_member_id
-				)
-			);
+	$mh_label = '';
+	foreach ( $dash_member_options as $opt ) {
+		if ( $opt['id'] === $mh_member_id ) {
+			$mh_label = $opt['label'];
+			break;
 		}
 	}
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
@@ -862,6 +1180,15 @@ function mtl_render_dashboard_page() {
 			font-size: 0.8em;
 			color: #787c82;
 			margin: -6px 0 10px 0;
+		}
+
+		/* Period picker on the two leaderboards; see the script below. */
+		.mtl-lb-controls {
+			margin: -4px 0 10px 0;
+		}
+
+		.mtl-lb-view[hidden] {
+			display: none;
 		}
 
 		.mtl-insight {
@@ -1180,6 +1507,16 @@ function mtl_render_dashboard_page() {
 		.mtl-dash-option:hover,
 		.mtl-dash-option.mtl-dash-option-active {
 			background: #f0f7fb;
+		}
+
+		/* WordPress's .button sets display, which would beat [hidden]. */
+		.mtl-dash-lookup-clear[hidden] {
+			display: none;
+		}
+
+		/* Dimmed while a picked history is on its way. */
+		.mtl-dash-lookup-result.mtl-loading {
+			opacity: 0.5;
 		}
 
 		.mtl-dash-option .mtl-dash-option-sub {
@@ -1501,319 +1838,151 @@ function mtl_render_dashboard_page() {
 				break;
 
 			case 'renters':
-				// See 'popular' case above re: $range_label escaping.
-				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $range_label is built from mtl_format_date() (self-escaping) plus literal text; esc_html() here would corrupt the &mdash;/&ndash; entities.
-				echo '<p class="mtl-panel-sub">' . $range_label . '</p>';
-				if ( empty( $renter_rows ) ) {
-					echo '<p class="mtl-empty">No loans recorded in this period.</p>';
-					break;
-				}
 				$medals = array( '🥇', '🥈', '🥉' );
 				?>
-				<div class="mtl-scroll-table">
-					<table>
-						<thead>
-							<tr>
-								<th>#</th>
-								<th>Member</th>
-								<th>Loans</th>
-								<th>Last Loan</th>
-							</tr>
-						</thead>
-						<tbody>
-							<?php foreach ( $renter_rows as $i => $row ) : ?>
-								<tr>
-									<td><?php echo esc_html( isset( $medals[ $i ] ) ? $medals[ $i ] : $i + 1 ); ?></td>
-									<td><?php echo esc_html( stripslashes( $row->first_name . ' ' . $row->last_name ) ); ?><br><span style="color:#999;"><?php echo esc_html( $row->email ); ?></span></td>
-									<td><strong><?php echo esc_html( $row->loan_count ); ?></strong></td>
-									<td><?php echo mtl_format_date( $row->last_loan ); ?></td>
-								</tr>
-							<?php endforeach; ?>
-						</tbody>
-					</table>
+				<div class="mtl-lb-controls">
+					<select class="mtl-lb-period" aria-label="Leaderboard period">
+						<?php foreach ( $rent_periods as $period_key => $period ) : ?>
+							<?php // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- the 'range' label is $range_label, built from mtl_format_date() (self-escaping) plus literal text; the rest are literals. ?>
+							<option value="<?php echo esc_attr( $period_key ); ?>" <?php selected( $period_key, $lb_rent_start ); ?>><?php echo $period['label']; ?></option>
+						<?php endforeach; ?>
+					</select>
 				</div>
-				<?php
-				break;
-
-			case 'donors':
-				if ( empty( $donor_rows ) ) {
-					echo '<p class="mtl-empty">No donated tools recorded yet.</p>';
-					break;
-				}
-				$medals        = array( '🥇', '🥈', '🥉' );
-				$donated_total = 0;
-				foreach ( $donor_rows as $row ) {
-					$donated_total += (float) $row->total_value;
-				}
-				?>
-				<div class="mtl-scroll-table">
-					<table>
-						<thead>
-							<tr>
-								<th>#</th>
-								<th>Donor</th>
-								<th>Items</th>
-								<th>Total Value</th>
-							</tr>
-						</thead>
-						<tbody>
-							<?php
-							foreach ( $donor_rows as $i => $row ) :
-								$row_donor = trim( (string) $row->donated_by );
-								if ( isset( $donor_name_by_email[ strtolower( $row_donor ) ] ) ) {
-									// Matches a member's email (their username), so show "Name, username" instead of the raw email.
-									$row_donor_display = $donor_name_by_email[ strtolower( $row_donor ) ] . ', ' . $row_donor;
-								} else {
-									// No matching member, so plain text as entered (e.g. a non-member donor).
-									$row_donor_display = stripslashes( $row_donor );
-								}
-								?>
-								<tr>
-									<td><?php echo esc_html( isset( $medals[ $i ] ) ? $medals[ $i ] : $i + 1 ); ?></td>
-									<td><?php echo esc_html( $row_donor_display ); ?></td>
-									<td><strong><?php echo esc_html( $row->items_donated ); ?></strong></td>
-									<td><?php echo esc_html( $currency . number_format( (float) $row->total_value, 2 ) ); ?></td>
-								</tr>
-							<?php endforeach; ?>
-						</tbody>
-					</table>
-				</div>
-				<p class="mtl-insight">Donated tools account for <strong><?php echo esc_html( $currency . number_format( $donated_total, 2 ) ); ?></strong> of inventory value (<?php echo esc_html( $total_initial > 0 ? round( $donated_total / $total_initial * 100 ) : 0 ); ?>%).</p>
-				<?php
-				break;
-
-			case 'tool_history':
-				?>
-				<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>">
-					<input type="hidden" name="page" value="mtl-dashboard">
-					<?php
-					if ( '' !== $date_from ) :
-						?>
-						<input type="hidden" name="mtl_from" value="<?php echo esc_attr( $date_from ); ?>"><?php endif; ?>
-					<?php
-					if ( '' !== $date_to ) :
-						?>
-						<input type="hidden" name="mtl_to" value="<?php echo esc_attr( $date_to ); ?>"><?php endif; ?>
-					<input type="hidden" name="mtl_th_tool" id="mtl-th-tool-id" value="<?php echo esc_attr( $th_tool_id > 0 ? $th_tool_id : '' ); ?>">
-					<label class="mtl-dash-lookup-label" for="mtl-th-search">Tool name or barcode</label>
-					<div class="mtl-dash-lookup-row">
-						<div class="mtl-dash-autocomplete">
-							<input type="text" id="mtl-th-search" autocomplete="off" placeholder="Start typing a tool name..." value="<?php echo $th_tool ? esc_attr( stripslashes( $th_tool->tool_name ) . ' (' . $th_tool->barcode . ')' ) : ''; ?>">
-							<div class="mtl-dash-dropdown" id="mtl-th-dropdown" style="display: none;"></div>
-						</div>
-						<button type="submit" class="button button-primary">View History</button>
-						<?php if ( $th_tool_id > 0 ) : ?>
-							<a class="button" href="<?php echo esc_url( remove_query_arg( 'mtl_th_tool' ) ); ?>">Clear</a>
-						<?php endif; ?>
-					</div>
-				</form>
-				<?php
-				if ( $th_tool ) :
-					$th_total = 0;
-					foreach ( $th_by_member as $r ) {
-						$th_total += (int) $r->loan_count;
-					}
-					?>
-					<div class="mtl-dash-lookup-header">
-						<h5><?php echo esc_html( stripslashes( $th_tool->tool_name ) ); ?> <span style="color:#999; font-weight:400;">(<?php echo esc_html( $th_tool->barcode ); ?>)</span><?php echo ! empty( $th_tool->retired_at ) ? ' <span style="color:#999; font-weight:400;">(retired)</span>' : ''; ?><?php echo empty( $th_tool->retired_at ) && ! empty( $th_tool->maintenance_at ) ? ' <span style="color:#999; font-weight:400;">(under maintenance)</span>' : ''; ?></h5>
-						<span><strong><?php echo esc_html( $th_total ); ?></strong> total loan<?php echo 1 === $th_total ? '' : 's'; ?></span>
-					</div>
-
-					<?php if ( empty( $th_by_member ) ) : ?>
-						<p class="mtl-empty">This tool has never been rented.</p>
-					<?php else : ?>
-						<p class="mtl-panel-sub">Rented by, grouped by member: how many times each person has rented this specific tool.</p>
-						<div class="mtl-scroll-table">
-							<table>
-								<thead>
-									<tr>
-										<th>Member</th>
-										<th>Times Rented</th>
-										<th>Last Rented</th>
-										<th>Status</th>
-									</tr>
-								</thead>
-								<tbody>
-									<?php foreach ( $th_by_member as $r ) : ?>
-										<tr>
-											<td><?php echo esc_html( trim( stripslashes( $r->first_name ) . ' ' . stripslashes( $r->last_name ) ) ); ?><br><span style="color:#999;"><?php echo esc_html( $r->email ); ?></span></td>
-											<td><strong><?php echo esc_html( $r->loan_count ); ?></strong></td>
-											<td><?php echo mtl_format_date( $r->last_loan ); ?></td>
-											<td><?php echo ( (int) $r->currently_out > 0 ) ? '<span class="mtl-wait-pill">Currently has it</span>' : ''; ?></td>
-										</tr>
-									<?php endforeach; ?>
-								</tbody>
-							</table>
-						</div>
-
-						<details class="mtl-panel-more">
-							<summary>View full loan-by-loan log (<?php echo count( $th_loans ); ?>)</summary>
-							<div class="mtl-scroll-table" style="margin-top: 8px;">
+				<?php foreach ( $renter_rows as $period_key => $rows ) : ?>
+					<div class="mtl-lb-view" data-period="<?php echo esc_attr( $period_key ); ?>"<?php echo $period_key === $lb_rent_start ? '' : ' hidden'; ?>>
+						<?php if ( empty( $rows ) ) : ?>
+							<p class="mtl-empty">No loans recorded in this period.</p>
+						<?php else : ?>
+							<div class="mtl-scroll-table">
 								<table>
 									<thead>
 										<tr>
+											<th>#</th>
 											<th>Member</th>
-											<th>Loaned</th>
-											<th>Due</th>
-											<th>Returned</th>
+											<th>Loans</th>
+											<th>Last Loan</th>
 										</tr>
 									</thead>
 									<tbody>
-										<?php
-										foreach ( $th_loans as $l ) :
-											$late        = ( null !== $l->return_date && gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
-											$out_overdue = ( null === $l->return_date && $l->due_date < gmdate( 'Y-m-d' ) );
-											?>
+										<?php foreach ( $rows as $i => $row ) : ?>
 											<tr>
-												<td><?php echo esc_html( trim( stripslashes( $l->first_name ) . ' ' . stripslashes( $l->last_name ) ) ); ?></td>
-												<td><?php echo mtl_format_date( $l->loan_date ); ?></td>
-												<td><?php echo mtl_format_date( $l->due_date ); ?></td>
-												<td>
-													<?php if ( $l->return_date ) : ?>
-														<?php echo mtl_format_date( $l->return_date ); ?><?php echo $late ? ' <span class="mtl-overdue-days">(late)</span>' : ''; ?>
-													<?php elseif ( $out_overdue ) : ?>
-														<span class="mtl-overdue-days">Still out, overdue</span>
-													<?php else : ?>
-														Still out
-													<?php endif; ?>
-												</td>
+												<td><?php echo esc_html( isset( $medals[ $i ] ) ? $medals[ $i ] : $i + 1 ); ?></td>
+												<td><?php echo esc_html( stripslashes( $row->first_name . ' ' . $row->last_name ) ); ?><br><span style="color:#999;"><?php echo esc_html( $row->email ); ?></span></td>
+												<td><strong><?php echo esc_html( $row->loan_count ); ?></strong></td>
+												<td><?php echo mtl_format_date( $row->last_loan ); ?></td>
 											</tr>
 										<?php endforeach; ?>
 									</tbody>
 								</table>
 							</div>
-						</details>
-					<?php endif; ?>
-				<?php elseif ( $th_tool_id > 0 ) : ?>
-					<p class="mtl-empty">That tool could not be found.</p>
-				<?php else : ?>
-					<p class="mtl-empty">Search for a tool above to see who has rented it and how often.</p>
-				<?php endif; ?>
+						<?php endif; ?>
+					</div>
+				<?php endforeach; ?>
 				<?php
 				break;
 
-			case 'member_history':
+			case 'donors':
+				$medals = array( '🥇', '🥈', '🥉' );
 				?>
-				<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>">
-					<input type="hidden" name="page" value="mtl-dashboard">
-					<?php
-					if ( '' !== $date_from ) :
-						?>
-						<input type="hidden" name="mtl_from" value="<?php echo esc_attr( $date_from ); ?>"><?php endif; ?>
-					<?php
-					if ( '' !== $date_to ) :
-						?>
-						<input type="hidden" name="mtl_to" value="<?php echo esc_attr( $date_to ); ?>"><?php endif; ?>
-					<input type="hidden" name="mtl_mh_member" id="mtl-mh-member-id" value="<?php echo esc_attr( $mh_member_id > 0 ? $mh_member_id : '' ); ?>">
-					<label class="mtl-dash-lookup-label" for="mtl-mh-search">Member name or email</label>
-					<div class="mtl-dash-lookup-row">
-						<div class="mtl-dash-autocomplete">
-							<input type="text" id="mtl-mh-search" autocomplete="off" placeholder="Start typing a member&rsquo;s name..." value="<?php echo $mh_member ? esc_attr( trim( stripslashes( $mh_member->first_name ) . ' ' . stripslashes( $mh_member->last_name ) ) . ' (' . $mh_member->email . ')' ) : ''; ?>">
-							<div class="mtl-dash-dropdown" id="mtl-mh-dropdown" style="display: none;"></div>
-						</div>
-						<button type="submit" class="button button-primary">View History</button>
-						<?php if ( $mh_member_id > 0 ) : ?>
-							<a class="button" href="<?php echo esc_url( remove_query_arg( 'mtl_mh_member' ) ); ?>">Clear</a>
+				<div class="mtl-lb-controls">
+					<select class="mtl-lb-period" aria-label="Leaderboard period">
+						<?php foreach ( $lb_periods as $period_key => $period ) : ?>
+							<option value="<?php echo esc_attr( $period_key ); ?>" <?php selected( $period_key, 'all' ); ?>><?php echo esc_html( $period['label'] ); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				<?php
+				foreach ( $donor_rows as $period_key => $rows ) :
+					$donated_total = 0;
+					foreach ( $rows as $row ) {
+						$donated_total += (float) $row->total_value;
+					}
+					?>
+					<div class="mtl-lb-view" data-period="<?php echo esc_attr( $period_key ); ?>"<?php echo 'all' === $period_key ? '' : ' hidden'; ?>>
+						<?php if ( empty( $rows ) ) : ?>
+							<p class="mtl-empty"><?php echo 'all' === $period_key ? 'No donated tools recorded yet.' : 'No tools donated in this period.'; ?></p>
+						<?php else : ?>
+							<div class="mtl-scroll-table">
+								<table>
+									<thead>
+										<tr>
+											<th>#</th>
+											<th>Donor</th>
+											<th>Items</th>
+											<th>Total Value</th>
+										</tr>
+									</thead>
+									<tbody>
+										<?php
+										foreach ( $rows as $i => $row ) :
+											$row_donor = trim( (string) $row->donated_by );
+											if ( isset( $donor_name_by_email[ strtolower( $row_donor ) ] ) ) {
+												// Matches a member's email (their username), so show "Name, username" instead of the raw email.
+												$row_donor_display = $donor_name_by_email[ strtolower( $row_donor ) ] . ', ' . $row_donor;
+											} else {
+												// No matching member, so plain text as entered (e.g. a non-member donor).
+												$row_donor_display = stripslashes( $row_donor );
+											}
+											?>
+											<tr>
+												<td><?php echo esc_html( isset( $medals[ $i ] ) ? $medals[ $i ] : $i + 1 ); ?></td>
+												<td><?php echo esc_html( $row_donor_display ); ?></td>
+												<td><strong><?php echo esc_html( $row->items_donated ); ?></strong></td>
+												<td><?php echo esc_html( $currency . number_format( (float) $row->total_value, 2 ) ); ?></td>
+											</tr>
+										<?php endforeach; ?>
+									</tbody>
+								</table>
+							</div>
+							<?php // A share of the whole collection, so only meaningful for all time. ?>
+							<?php if ( 'all' === $period_key ) : ?>
+								<p class="mtl-insight">Donated tools account for <strong><?php echo esc_html( $currency . number_format( $donated_total, 2 ) ); ?></strong> of inventory value (<?php echo esc_html( $total_initial > 0 ? round( $donated_total / $total_initial * 100 ) : 0 ); ?>%).</p>
+							<?php endif; ?>
 						<?php endif; ?>
 					</div>
-				</form>
+				<?php endforeach; ?>
 				<?php
-				if ( $mh_member ) :
-					$mh_total  = count( $mh_loans );
-					$mh_active = 0;
-					foreach ( $mh_loans as $l ) {
-						if ( ! $l->return_date ) {
-							++$mh_active;
-						}
-					}
-					?>
-					<div class="mtl-dash-lookup-header">
-						<h5><?php echo esc_html( trim( stripslashes( $mh_member->first_name ) . ' ' . stripslashes( $mh_member->last_name ) ) ); ?> <span style="color:#999; font-weight:400;">(<?php echo esc_html( $mh_member->email ); ?>)</span></h5>
-						<span><?php echo (bool) $mh_member->is_verified ? '<span class="mtl-ok-pill">Verified</span>' : '<span class="mtl-wait-pill">Not verified</span>'; ?></span>
+				break;
+
+			case 'tool_history':
+			case 'member_history':
+				// Both lookups share this markup and the script below; only the
+				// ids, labels and result differ. Picking a name loads its history
+				// into the result box without reloading the page.
+				if ( 'tool_history' === $panel_id ) {
+					$lk = array(
+						'kind'        => 'tool',
+						'prefix'      => 'mtl-th',
+						'param'       => 'mtl_th_tool',
+						'label'       => 'Tool name or barcode',
+						'placeholder' => 'Start typing a tool name...',
+						'value'       => $th_label,
+						'picked'      => $th_tool_id > 0,
+						'result'      => mtl_dash_tool_history_html( $th_tool_id ),
+					);
+				} else {
+					$lk = array(
+						'kind'        => 'member',
+						'prefix'      => 'mtl-mh',
+						'param'       => 'mtl_mh_member',
+						'label'       => 'Member name or email',
+						'placeholder' => 'Start typing a member’s name...',
+						'value'       => $mh_label,
+						'picked'      => $mh_member_id > 0,
+						'result'      => mtl_dash_member_history_html( $mh_member_id ),
+					);
+				}
+				?>
+				<div class="mtl-dash-lookup" data-kind="<?php echo esc_attr( $lk['kind'] ); ?>" data-param="<?php echo esc_attr( $lk['param'] ); ?>">
+					<label class="mtl-dash-lookup-label" for="<?php echo esc_attr( $lk['prefix'] . '-search' ); ?>"><?php echo esc_html( $lk['label'] ); ?></label>
+					<div class="mtl-dash-lookup-row">
+						<div class="mtl-dash-autocomplete">
+							<input type="text" id="<?php echo esc_attr( $lk['prefix'] . '-search' ); ?>" class="mtl-dash-lookup-input" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="<?php echo esc_attr( $lk['prefix'] . '-dropdown' ); ?>" placeholder="<?php echo esc_attr( $lk['placeholder'] ); ?>" value="<?php echo esc_attr( $lk['value'] ); ?>">
+							<div class="mtl-dash-dropdown" id="<?php echo esc_attr( $lk['prefix'] . '-dropdown' ); ?>" role="listbox" style="display: none;"></div>
+						</div>
+						<button type="button" class="button mtl-dash-lookup-clear"<?php echo $lk['picked'] ? '' : ' hidden'; ?>>Clear</button>
 					</div>
-
-					<?php if ( ! empty( $mh_member->anonymized_at ) ) : ?>
-						<p class="mtl-insight">This member&rsquo;s personal data has been anonymized (their account was deleted); their loan history below is kept on record for accurate library statistics.</p>
-					<?php endif; ?>
-
-					<?php if ( empty( $mh_loans ) ) : ?>
-						<p class="mtl-empty">This member has never rented a tool.</p>
-					<?php else : ?>
-						<p class="mtl-panel-sub"><strong><?php echo esc_html( $mh_total ); ?></strong> loan<?php echo 1 === $mh_total ? '' : 's'; ?> on record<?php echo $mh_active > 0 ? ', <strong>' . esc_html( $mh_active ) . '</strong> currently out' : ''; ?>.</p>
-						<div class="mtl-scroll-table">
-							<table>
-								<thead>
-									<tr>
-										<th>Tool</th>
-										<th>Loaned</th>
-										<th>Due</th>
-										<th>Returned</th>
-									</tr>
-								</thead>
-								<tbody>
-									<?php
-									foreach ( $mh_loans as $l ) :
-										$late        = ( null !== $l->return_date && gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
-										$out_overdue = ( null === $l->return_date && $l->due_date < gmdate( 'Y-m-d' ) );
-										?>
-										<tr>
-											<td><strong><?php echo esc_html( stripslashes( $l->tool_name ) ); ?></strong><br><span style="color:#999;"><?php echo esc_html( stripslashes( $l->barcode ) ); ?></span></td>
-											<td><?php echo mtl_format_date( $l->loan_date ); ?></td>
-											<td><?php echo mtl_format_date( $l->due_date ); ?></td>
-											<td>
-												<?php if ( $l->return_date ) : ?>
-													<?php echo mtl_format_date( $l->return_date ); ?><?php echo $late ? ' <span class="mtl-overdue-days">(late)</span>' : ''; ?>
-												<?php elseif ( $out_overdue ) : ?>
-													<span class="mtl-overdue-days">Still out, overdue</span>
-												<?php else : ?>
-													Still out
-												<?php endif; ?>
-											</td>
-										</tr>
-									<?php endforeach; ?>
-								</tbody>
-							</table>
-						</div>
-					<?php endif; ?>
-
-					<?php
-					$mh_active_res = 0;
-					foreach ( $mh_reservations as $r ) {
-						if ( ! $r->expiry_date ) {
-							++$mh_active_res;
-						}
-					}
-					?>
-					<p class="mtl-panel-sub" style="margin-top: 16px;">Reservations: <strong><?php echo esc_html( count( $mh_reservations ) ); ?></strong> on record<?php echo $mh_active_res > 0 ? ', <strong>' . esc_html( $mh_active_res ) . '</strong> active' : ''; ?>.</p>
-					<?php if ( empty( $mh_reservations ) ) : ?>
-						<p class="mtl-empty">This member has no reservations on record.</p>
-					<?php else : ?>
-						<div class="mtl-scroll-table">
-							<table>
-								<thead>
-									<tr>
-										<th>Tool</th>
-										<th>Reserved</th>
-										<th>Status</th>
-									</tr>
-								</thead>
-								<tbody>
-									<?php foreach ( $mh_reservations as $r ) : ?>
-										<tr>
-											<td><?php echo esc_html( stripslashes( $r->tool_name ) ); ?><br><span style="color:#999;"><?php echo esc_html( stripslashes( $r->barcode ) ); ?></span></td>
-											<td><?php echo mtl_format_date( $r->reservation_date ); ?></td>
-											<td><?php echo $r->expiry_date ? 'Closed ' . mtl_format_date( $r->expiry_date ) : '<span class="mtl-ok-pill">Active</span>'; ?></td>
-										</tr>
-									<?php endforeach; ?>
-								</tbody>
-							</table>
-						</div>
-					<?php endif; ?>
-				<?php elseif ( $mh_member_id > 0 ) : ?>
-					<p class="mtl-empty">That member could not be found.</p>
-				<?php else : ?>
-					<p class="mtl-empty">Search for a member above to see their full loan history.</p>
-				<?php endif; ?>
+					<div class="mtl-dash-lookup-result" aria-live="polite"><?php echo $lk['result']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built and escaped by mtl_dash_tool_history_html() / mtl_dash_member_history_html(). ?></div>				</div>
 				<?php
 				break;
 		}
@@ -1831,6 +2000,16 @@ function mtl_render_dashboard_page() {
 			const saveBtn = document.getElementById('mtl-save-layout-btn');
 			const layoutInput = document.getElementById('mtl-layout-json');
 			const sizes = ['small', 'medium', 'large'];
+
+			// Leaderboard periods: every period is already rendered, so
+			// switching just shows the matching one, with no reload.
+			document.querySelectorAll('.mtl-lb-period').forEach(function(select) {
+				select.addEventListener('change', function() {
+					select.closest('.mtl-panel-body').querySelectorAll('.mtl-lb-view').forEach(function(view) {
+						view.hidden = view.dataset.period !== select.value;
+					});
+				});
+			});
 
 			function markDirty() {
 				saveBtn.classList.add('mtl-dirty');
@@ -1948,27 +2127,51 @@ function mtl_render_dashboard_page() {
 			const dashToolOptions   = <?php echo wp_json_encode( $dash_tool_options, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>;
 			const dashMemberOptions = <?php echo wp_json_encode( $dash_member_options, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>;
 
-			function mtlDashSetupLookup(inputId, dropdownId, hiddenId, options) {
-				const input = document.getElementById(inputId);
-				const dropdown = document.getElementById(dropdownId);
-				const hidden = document.getElementById(hiddenId);
-				if (!input || !dropdown || !hidden) return;
+			const dashOptions = { tool: dashToolOptions, member: dashMemberOptions };
+			const dashAjaxUrl = <?php echo wp_json_encode( admin_url( 'admin-ajax.php' ) ); ?>;
+			const dashNonce   = <?php echo wp_json_encode( wp_create_nonce( 'mtl_dash_history' ) ); ?>;
+
+			function mtlDashSetupLookup(box) {
+				const kind     = box.dataset.kind;
+				const param    = box.dataset.param;
+				const options  = dashOptions[kind] || [];
+				const input    = box.querySelector('.mtl-dash-lookup-input');
+				const dropdown = box.querySelector('.mtl-dash-dropdown');
+				const clearBtn = box.querySelector('.mtl-dash-lookup-clear');
+				const result   = box.querySelector('.mtl-dash-lookup-result');				let matches = [];
+				let active  = -1;
+				let request = 0; // Only the newest pick's answer is shown.
 
 				function hide() {
 					dropdown.style.display = 'none';
 					dropdown.innerHTML = '';
+					input.setAttribute('aria-expanded', 'false');
+					matches = [];
+					active = -1;
 				}
 
-				function render(matches) {
+				function highlight(index) {
+					active = index;
+					dropdown.querySelectorAll('.mtl-dash-option').forEach(function(row, i) {
+						const on = i === index;
+						row.classList.toggle('mtl-dash-option-active', on);
+						row.setAttribute('aria-selected', on ? 'true' : 'false');
+						if (on) row.scrollIntoView({ block: 'nearest' });
+					});
+				}
+
+				function render() {
+					dropdown.innerHTML = '';
+					input.setAttribute('aria-expanded', 'true');
+					dropdown.style.display = 'block';
 					if (matches.length === 0) {
 						dropdown.innerHTML = '<div class="mtl-dash-empty-option">No matches</div>';
-						dropdown.style.display = 'block';
 						return;
 					}
-					dropdown.innerHTML = '';
-					matches.forEach(function(opt) {
+					matches.forEach(function(opt, i) {
 						const row = document.createElement('div');
 						row.className = 'mtl-dash-option';
+						row.setAttribute('role', 'option');
 						const name = document.createElement('span');
 						name.textContent = opt.name + ' ';
 						const sub = document.createElement('span');
@@ -1979,43 +2182,113 @@ function mtl_render_dashboard_page() {
 						// mousedown (not click) so it fires before the input's blur.
 						row.addEventListener('mousedown', function(e) {
 							e.preventDefault();
-							hidden.value = opt.id;
-							input.value = opt.label;
-							hide();
+							pick(opt);
+						});
+						row.addEventListener('mousemove', function() {
+							if (active !== i) highlight(i);
 						});
 						dropdown.appendChild(row);
 					});
-					dropdown.style.display = 'block';
+					// The first match starts highlighted, so Enter picks it.
+					highlight(0);
+				}
+
+				// Records the pick in the address bar, so a refresh, bookmark or
+				// shared link opens the same history. replaceState, not
+				// pushState: a lookup shouldn't add Back-button stops.
+				function setUrl(id) {
+					const url = new URL(window.location.href);
+					if (id) {
+						url.searchParams.set(param, id);
+					} else {
+						url.searchParams.delete(param);
+					}
+					window.history.replaceState(null, '', url);
+				}
+
+				function pick(opt) {
+					input.value = opt.label;
+					hide();
+					clearBtn.hidden = false;
+					setUrl(opt.id);
+
+					const mine = ++request;
+					result.classList.add('mtl-loading');
+					const body = new URLSearchParams({ action: 'mtl_dash_history', nonce: dashNonce, kind: kind, id: opt.id });
+					fetch(dashAjaxUrl, { method: 'POST', credentials: 'same-origin', body: body })
+						.then(function(res) { return res.json(); })
+						.then(function(data) {
+							if (mine !== request) return;
+							if (!data || !data.success) throw new Error('lookup failed');
+							// Server-built and escaped by the same PHP helpers the
+							// page renders with on first load.
+							result.innerHTML = data.data.html;
+						})
+						.catch(function() {
+							if (mine !== request) return;
+							result.innerHTML = '<p class="mtl-empty">That history couldn\'t be loaded. Please try again.</p>';
+						})
+						.finally(function() {
+							if (mine === request) result.classList.remove('mtl-loading');
+						});
 				}
 
 				input.addEventListener('input', function() {
-					// Editing the text invalidates any previously picked id.
-					hidden.value = '';
 					const q = this.value.trim().toLowerCase();
 					if (!q) {
 						hide();
 						return;
 					}
-					render(options.filter(function(opt) {
+					matches = options.filter(function(opt) {
 						return opt.search.indexOf(q) !== -1;
-					}).slice(0, 8));
+					}).slice(0, 8);
+					render();
+				});
+
+				input.addEventListener('keydown', function(e) {
+					const open = dropdown.style.display !== 'none';
+					if ('ArrowDown' === e.key || 'ArrowUp' === e.key) {
+						e.preventDefault();
+						if (!open) {
+							if (input.value.trim()) input.dispatchEvent(new Event('input'));
+							return;
+						}
+						if (!matches.length) return;
+						const step = 'ArrowDown' === e.key ? 1 : -1;
+						highlight((active + step + matches.length) % matches.length);
+					} else if ('Enter' === e.key) {
+						// Never submits anything; it only ever picks.
+						e.preventDefault();
+						if (open && active >= 0 && matches[active]) pick(matches[active]);
+					} else if ('Escape' === e.key && open) {
+						e.preventDefault();
+						hide();
+					}
 				});
 
 				input.addEventListener('focus', function() {
-					if (this.value.trim() && !hidden.value) {
+					if (this.value.trim() && clearBtn.hidden) {
 						this.dispatchEvent(new Event('input'));
 					}
 				});
 
+				clearBtn.addEventListener('click', function() {
+					++request; // Drop any answer still on its way.
+					input.value = '';
+					hide();
+					clearBtn.hidden = true;
+					result.classList.remove('mtl-loading');
+					result.innerHTML = '';
+					setUrl(0);
+					input.focus();
+				});
+
 				document.addEventListener('click', function(e) {
-					if (!e.target.closest('#' + inputId) && !e.target.closest('#' + dropdownId)) {
-						hide();
-					}
+					if (!box.contains(e.target)) hide();
 				});
 			}
 
-			mtlDashSetupLookup('mtl-th-search', 'mtl-th-dropdown', 'mtl-th-tool-id', dashToolOptions);
-			mtlDashSetupLookup('mtl-mh-search', 'mtl-mh-dropdown', 'mtl-mh-member-id', dashMemberOptions);
+			document.querySelectorAll('.mtl-dash-lookup').forEach(mtlDashSetupLookup);
 		});
 	</script>
 	<?php
