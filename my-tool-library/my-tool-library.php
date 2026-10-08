@@ -2690,9 +2690,11 @@ function mtl_tool_request_section_html() {
  *                          Membership modal sets `min` from JS instead).
  * @param string $input_id  Optional id for the input, when a label or script
  *                          needs to address it.
+ * @param bool   $show_hint Whether to show the explanation under the field.
+ *                          The Inventory page leaves it off to cut clutter.
  * @return string Field HTML, ready to echo.
  */
-function mtl_return_date_field_html( $loan_date = '', $input_id = '' ) {
+function mtl_return_date_field_html( $loan_date = '', $input_id = '', $show_hint = true ) {
 	$today = gmdate( 'Y-m-d', strtotime( current_time( 'mysql' ) ) );
 
 	$min    = '';
@@ -2710,7 +2712,9 @@ function mtl_return_date_field_html( $loan_date = '', $input_id = '' ) {
 	$html .= ' value="' . esc_attr( $today ) . '" max="' . esc_attr( $today ) . '"';
 	$html .= '' !== $min ? ' min="' . esc_attr( $min ) . '"' : '';
 	$html .= '>';
-	$html .= '<span class="mtl-return-date-hint">Leave as today for a normal drop-off. Backdate it if the tool actually came back earlier and you are catching up, so the member is not recorded as returning it late.</span>';
+	if ( $show_hint ) {
+		$html .= '<span class="mtl-return-date-hint">Leave as today for a normal drop-off. Backdate it if the tool actually came back earlier and you are catching up, so the member is not recorded as returning it late.</span>';
+	}
 	$html .= '</div>';
 
 	return $html;
@@ -3528,7 +3532,8 @@ function mtl_get_member_info_map( $member_ids ) {
  * @param int $member_id Member the row is for; 0 before one is picked, which
  *                       leaves the self/other distinctions unresolved.
  * @return array{found:bool, tool_id:int, tool_name:string, barcode:string,
- *               retired:bool, on_loan_by:int, reserved_by_self:bool,
+ *               retired:bool, maintenance:bool, on_loan_by:int,
+ *               reserved_by_self:bool,
  *               queue_size:int, display:string, can_loan:bool,
  *               loan_blocker:string, loan_warning:string, can_reserve:bool,
  *               reserve_blocker:string, reserve_skip:string}
@@ -3545,6 +3550,7 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 		'tool_name'        => '',
 		'barcode'          => '',
 		'retired'          => false,
+		'maintenance'      => false,
 		'on_loan_by'       => 0,
 		'reserved_by_self' => false,
 		'queue_size'       => 0,
@@ -3567,16 +3573,17 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$tool = $wpdb->get_row(
-		$wpdb->prepare( "SELECT tool_id, tool_name, barcode, retired_at FROM {$tbl_inventory} WHERE tool_id = %d", $tool_id )
+		$wpdb->prepare( "SELECT tool_id, tool_name, barcode, retired_at, maintenance_at FROM {$tbl_inventory} WHERE tool_id = %d", $tool_id )
 	);
 	if ( ! $tool ) {
 		return $status;
 	}
 
-	$status['found']     = true;
-	$status['tool_name'] = stripslashes( (string) $tool->tool_name );
-	$status['barcode']   = (string) $tool->barcode;
-	$status['retired']   = ! empty( $tool->retired_at );
+	$status['found']       = true;
+	$status['tool_name']   = stripslashes( (string) $tool->tool_name );
+	$status['barcode']     = (string) $tool->barcode;
+	$status['retired']     = ! empty( $tool->retired_at );
+	$status['maintenance'] = ! empty( $tool->maintenance_at );
 
 	// Who holds it, not merely whether somebody does: reserving is legal behind
 	// another member's loan and illegal behind your own.
@@ -3603,12 +3610,16 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 
 	// Precedence is what staff need to read first, so being out beats being
 	// queued for: a tool on loan with three people waiting reads "On loan".
+	// Maintenance comes after a loan for the same reason: a tool flagged while
+	// still out is, as far as the desk is concerned, still out.
 	if ( $status['retired'] ) {
 		$status['display'] = 'retired';
 	} elseif ( $on_loan_self ) {
 		$status['display'] = 'on_loan_self';
 	} elseif ( $on_loan_other ) {
 		$status['display'] = 'on_loan_other';
+	} elseif ( $status['maintenance'] ) {
+		$status['display'] = 'maintenance';
 	} elseif ( $status['reserved_by_self'] ) {
 		$status['display'] = 'reserved_self';
 	} elseif ( $queued_other ) {
@@ -3637,7 +3648,13 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 		} else {
 			$status['can_reserve'] = true;
 		}
-		if ( $queued_other ) {
+		// Under maintenance blocks lending only. Reserving stays open, so
+		// members can queue for the tool while it is being worked on.
+		if ( $status['maintenance'] ) {
+			$status['can_loan']     = false;
+			$status['loan_blocker'] = __( 'Under maintenance. Mark it back in service before lending it.', 'my-tool-library' );
+		}
+		if ( $queued_other && $status['can_loan'] ) {
 			// Allowed on purpose: staff at the desk know things the queue does
 			// not. It warns rather than blocks, because the member in front of
 			// them is real and the queue position is a policy.
@@ -3807,8 +3824,9 @@ function mtl_create_reservation( $tool_id, $member_id ) {
 /**
  * Recomputes ready_since for one tool's active reservations.
  *
- * Only the front of the queue can be ready, and only while the tool is not
- * out on loan. This clears ready_since on everyone else and stamps the front
+ * Only the front of the queue can be ready, and only while the tool is
+ * neither out on loan nor under maintenance. This clears ready_since on
+ * everyone else and stamps the front
  * reservation the first time it becomes collectable, and an already-stamped
  * reservation keeps its original timestamp, so the member's hold period is
  * never quietly restarted by unrelated activity on the same tool.
@@ -3826,13 +3844,23 @@ function mtl_sync_reservation_readiness( $tool_id ) {
 		return;
 	}
 
-	$tbl_res   = $wpdb->prefix . 'tool_reservations';
-	$tbl_loans = $wpdb->prefix . 'loans';
+	$tbl_res       = $wpdb->prefix . 'tool_reservations';
+	$tbl_loans     = $wpdb->prefix . 'loans';
+	$tbl_inventory = $wpdb->prefix . 'tool_inventory';
 
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$on_loan = (bool) $wpdb->get_var(
 		$wpdb->prepare(
 			"SELECT loan_id FROM {$tbl_loans} WHERE tool_id = %d AND return_date IS NULL LIMIT 1",
+			$tool_id
+		)
+	);
+	// Off the shelf for maintenance is the same as out on loan for this
+	// purpose: nobody can collect it, so nobody's hold period should run.
+	// The front of the queue gets a fresh clock once it is back in service.
+	$in_maintenance = (bool) $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT maintenance_at FROM {$tbl_inventory} WHERE tool_id = %d",
 			$tool_id
 		)
 	);
@@ -3850,9 +3878,9 @@ function mtl_sync_reservation_readiness( $tool_id ) {
 	);
 
 	// Anyone who is not collectable right now has no clock running. Passing
-	// 0 as the exception id when the tool is on loan clears the whole queue,
-	// since reservation_id is AUTO_INCREMENT and never 0.
-	$keep_id = ( $on_loan || $front_id <= 0 ) ? 0 : $front_id;
+	// 0 as the exception id when the tool is on loan or under maintenance
+	// clears the whole queue, since reservation_id is AUTO_INCREMENT and never 0.
+	$keep_id = ( $on_loan || $in_maintenance || $front_id <= 0 ) ? 0 : $front_id;
 	$wpdb->query(
 		$wpdb->prepare(
 			"UPDATE {$tbl_res} SET ready_since = NULL
@@ -6301,7 +6329,7 @@ function mtl_register_staff_capabilities() {
 }
 
 // Plain counter, not the plugin version: bump when a table or column is added.
-define( 'MTL_DB_VERSION', 6 );
+define( 'MTL_DB_VERSION', 7 );
 
 // admin_init, not init: nothing reads these tables on the front end, and it
 // covers exactly the requests that can write them.
@@ -6340,8 +6368,11 @@ function mtl_maybe_upgrade_schema() {
 			// There is nothing to backfill: a link to a manual or to the shop
 			// that stocks the blades is something a person knows, not something
 			// the row implies.
-			'resources'     => 'TEXT DEFAULT NULL',
-			'partner_links' => 'TEXT DEFAULT NULL',
+			'resources'      => 'TEXT DEFAULT NULL',
+			'partner_links'  => 'TEXT DEFAULT NULL',
+			// NULL for every existing tool, which reads as "in service":
+			// nothing was under maintenance before the status existed.
+			'maintenance_at' => 'TIMESTAMP NULL DEFAULT NULL',
 		),
 		// Reservations closed before this shipped keep a NULL reason, which
 		// reads as "not recorded". Backfilling would mean guessing, and the

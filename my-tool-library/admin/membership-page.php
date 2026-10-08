@@ -2597,6 +2597,8 @@ function mtl_render_membership_page() {
 					// this should be unreachable in normal use, kept as
 					// defense-in-depth, same as the checkout action's check.
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That tool is retired and can&rsquo;t be checked out.</p></div>';
+				} elseif ( $wpdb->get_var( $wpdb->prepare( "SELECT maintenance_at FROM {$tbl_inventory} WHERE tool_id = %d", (int) $sl_res->tool_id ) ) ) {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot start this loan.</strong> That tool is under maintenance. Mark it back in service on the Inventory page first.</p></div>';
 				} else {
 					// A tool is a single physical item, so it cannot be checked
 					// out while it is already out on another loan.
@@ -3820,7 +3822,7 @@ function mtl_render_membership_page() {
 	$active_res_rows      = $wpdb->get_results(
 		"
         SELECT r.reservation_id, r.member_id, r.reservation_date,
-               t.tool_name, t.barcode,
+               t.tool_name, t.barcode, t.maintenance_at,
                (SELECT COUNT(*) FROM {$tbl_reservations} r2
                   WHERE r2.tool_id = r.tool_id
                     AND r2.expiry_date IS NULL
@@ -4543,9 +4545,10 @@ function mtl_render_membership_page() {
 														data-queue-place="<?php echo (int) $res->queue_place; ?>"
 														data-queue-size="<?php echo (int) $res->queue_size; ?>"
 														data-first-in-queue="<?php echo ( 1 === (int) $res->queue_place ) ? '1' : '0'; ?>"
+														data-maintenance="<?php echo ! empty( $res->maintenance_at ) ? '1' : '0'; ?>"
 														title="Click to manage this reservation">
 														<?php echo esc_html( stripslashes( $res->tool_name ) ); ?>
-														<span class="mtl-member-list-meta"><?php echo esc_html( stripslashes( $res->barcode ) ); ?> &bull; queue #<?php echo esc_html( $res->queue_place ); ?> of <?php echo esc_html( $res->queue_size ); ?></span>
+														<span class="mtl-member-list-meta"><?php echo esc_html( stripslashes( $res->barcode ) ); ?> &bull; queue #<?php echo esc_html( $res->queue_place ); ?> of <?php echo esc_html( $res->queue_size ); ?><?php echo ! empty( $res->maintenance_at ) ? ' &bull; under maintenance' : ''; ?></span>
 													</li>
 												<?php endforeach; ?>
 											</ul>
@@ -4652,6 +4655,8 @@ function mtl_render_membership_page() {
 			</div>
 
 			<p class="mtl-lm-note" id="mtl-rm-not-first-note" style="display: none;">This member is not first in line for this tool, so the loan can't be started from here yet. Check it out from <strong>Loans &amp; Reservations</strong> instead if you need to override the queue.</p>
+
+			<p class="mtl-lm-note" id="mtl-rm-maintenance-note" style="display: none;">This tool is under maintenance, so the loan can't be started yet. Mark it back in service on the <strong>Inventory</strong> page first.</p>
 
 			<div class="mtl-lm-section">
 				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-rm-cancel-form" onsubmit="return confirm('Cancel this reservation? This ends it and removes it from the member list.');">
@@ -5259,6 +5264,7 @@ function mtl_render_membership_page() {
 			const queueLineEl       = document.getElementById('mtl-rm-queue-line');
 			const startSection      = document.getElementById('mtl-rm-start-loan-section');
 			const notFirstNote      = document.getElementById('mtl-rm-not-first-note');
+			const maintenanceNote   = document.getElementById('mtl-rm-maintenance-note');
 			const dueInput          = document.getElementById('mtl-rm-due');
 			const dueButtons        = overlay.querySelectorAll('.mtl-rm-due-btn');
 			const startReservationId = document.getElementById('mtl-rm-start-reservation-id');
@@ -5285,6 +5291,7 @@ function mtl_render_membership_page() {
 				const reservationId = li.dataset.reservationId;
 				const memberId      = li.dataset.memberId;
 				const firstInQueue  = li.dataset.firstInQueue === '1';
+				const inMaintenance = li.dataset.maintenance === '1';
 
 				toolNameEl.textContent = li.dataset.toolName;
 				queueLineEl.textContent = 'Queue position: #' + li.dataset.queuePlace + ' of ' + li.dataset.queueSize;
@@ -5300,8 +5307,11 @@ function mtl_render_membership_page() {
 						// ever creating the loan, since queue order can change
 						// between page load and submit.
 				?>
-				startSection.style.display = firstInQueue ? 'block' : 'none';
-				notFirstNote.style.display = firstInQueue ? 'none' : 'block';
+				// Maintenance blocks the loan whatever the queue says, so its
+				// note replaces both of the others.
+				startSection.style.display    = firstInQueue && !inMaintenance ? 'block' : 'none';
+				notFirstNote.style.display    = !firstInQueue && !inMaintenance ? 'block' : 'none';
+				maintenanceNote.style.display = inMaintenance ? 'block' : 'none';
 
 				dueInput.value = defaultDueDate;
 				clearActiveDueButton();

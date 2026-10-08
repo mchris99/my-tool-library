@@ -870,7 +870,6 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 		<th scope="row"><label for="<?php echo $field_id( 'barcode' ); ?>">Barcode *</label></th>
 		<td>
 			<input type="text" name="barcode" id="<?php echo $field_id( 'barcode' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['barcode'] ); ?>" required>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Numbers or letters. No two tools can share a barcode.</p>
 		</td>
 	</tr>
 	<tr>
@@ -882,9 +881,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'location' ); ?>">Location</label></th>
 		<td>
-			<input type="text" name="location" id="<?php echo $field_id( 'location' ); ?>" class="regular-text" maxlength="100" value="<?php echo esc_attr( $values['location'] ); ?>" placeholder="e.g. Aisle 3, Shelf 4">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Where it sits in storage. Staff always see it; members only if <strong>Shelf Location</strong> is on under Setup.</p>
-		</td>
+			<input type="text" name="location" id="<?php echo $field_id( 'location' ); ?>" class="regular-text" maxlength="100" value="<?php echo esc_attr( $values['location'] ); ?>" placeholder="e.g. Aisle 3, Shelf 4">		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'category_id' ); ?>">Categories</label></th>
@@ -915,9 +912,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 				<?php foreach ( $trainings as $training ) : ?>
 					<option value="<?php echo esc_attr( $training->training_id ); ?>" <?php echo in_array( (int) $training->training_id, $values['training_ids'], true ) ? 'selected' : ''; ?>><?php echo esc_html( $training->training_name ); ?></option>
 				<?php endforeach; ?>
-			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Checkout warns staff about a missing or lapsed training, but never blocks the loan.</p>
-		</td>
+			</select>		</td>
 	</tr>
 	<tr>
 		<th scope="row">Sub-category</th>
@@ -953,7 +948,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 								<?php endforeach; ?>
 							</select>
 						<?php else : ?>
-							<span style="color: #999; font-size: 0.85em;">No sub-categories yet. Add them under Setup &rarr; Categories &amp; Tags.</span>
+							<span style="color: #999; font-size: 0.85em;">No sub-categories yet.</span>
 						<?php endif; ?>
 					</div>
 				<?php endforeach; ?>
@@ -982,7 +977,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 			<br>
 			<label for="<?php echo $field_id( 'annual_depreciation_percent' ); ?>" style="display:inline-block; min-width: 100px; margin-top: 6px;">Percent (%)</label>
 			<input type="number" step="0.01" min="0" max="100" name="annual_depreciation_percent" id="<?php echo $field_id( 'annual_depreciation_percent' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['annual_depreciation_percent'] ); ?>" placeholder="0.00" style="max-width: 150px;">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Fill in one or the other, not both. A percentage is stored as the dollar amount it works out to.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Fill in one or the other, not both. A percentage is stored as a dollar amount based on tool value.</p>
 		</td>
 	</tr>
 	<tr>
@@ -997,9 +992,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 			<div class="mtl-donor-autocomplete">
 				<input type="text" name="donated_by" id="<?php echo $field_id( 'donated_by' ); ?>" class="regular-text mtl-donor-search" autocomplete="off" value="<?php echo esc_attr( $values['donated_by'] ); ?>" placeholder="Name, or type to search members...">
 				<div class="mtl-ql-dropdown" style="display: none;"></div>
-			</div>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Pick a member to credit them as a donor, or type any name for someone who isn&rsquo;t one.</p>
-		</td>
+			</div>		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'components' ); ?>">Components</label></th>
@@ -1837,6 +1830,7 @@ function mtl_render_inventory_page() {
 
 			$ql_tool_name = $ql_tool_id > 0 ? $wpdb->get_var( $wpdb->prepare( "SELECT tool_name FROM {$tbl_inventory} WHERE tool_id = %d", $ql_tool_id ) ) : null;
 			$ql_retired   = $ql_tool_id > 0 ? $wpdb->get_var( $wpdb->prepare( "SELECT retired_at FROM {$tbl_inventory} WHERE tool_id = %d", $ql_tool_id ) ) : null;
+			$ql_maint     = $ql_tool_id > 0 ? $wpdb->get_var( $wpdb->prepare( "SELECT maintenance_at FROM {$tbl_inventory} WHERE tool_id = %d", $ql_tool_id ) ) : null;
 			$ql_member_ok = $ql_member_id > 0 ? $wpdb->get_var( $wpdb->prepare( "SELECT member_id FROM {$tbl_members} WHERE member_id = %d", $ql_member_id ) ) : null;
 
 			if ( $ql_due_error ) {
@@ -1845,6 +1839,8 @@ function mtl_render_inventory_page() {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That tool could not be found.</p></div>';
 			} elseif ( ! empty( $ql_retired ) ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot loan this tool.</strong> It is retired. Reactivate it first.</p></div>';
+			} elseif ( ! empty( $ql_maint ) ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot loan this tool.</strong> It is under maintenance. Mark it back in service first.</p></div>';
 			} elseif ( ! $ql_member_ok ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please pick a member from the list before creating the loan.</p></div>';
 			} else {
@@ -2041,6 +2037,58 @@ function mtl_render_inventory_page() {
 		}
 	}
 
+	// 3F. HANDLE "START MAINTENANCE" SUBMISSION: takes a tool off the shelf for
+	// repair or servicing without hiding it. Unlike Retire it leaves the queue
+	// alone, since members may keep reserving it; it only blocks lending, and
+	// the readiness sync below stops anyone's pickup clock while it's away.
+	// Allowed on a tool that is still out on loan, so staff can flag a tool a
+	// member has reported broken before it comes back. That loan is untouched.
+	if ( isset( $_POST['mtl_start_maintenance'] ) && mtl_can_manage_library() ) {
+		if ( isset( $_POST['mtl_maintenance_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_maintenance_nonce'] ) ), 'mtl_maintenance_action' ) ) {
+			$sm_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
+			$sm_done    = $wpdb->query(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+					"UPDATE {$tbl_inventory} SET maintenance_at = %s WHERE tool_id = %d AND maintenance_at IS NULL AND retired_at IS NULL",
+					current_time( 'mysql' ),
+					$sm_tool_id
+				)
+			);
+			if ( $sm_done ) {
+				mtl_sync_reservation_readiness( $sm_tool_id );
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Under maintenance.</strong> This tool can&rsquo;t be loaned until it&rsquo;s back in service. Members can still reserve it, and nobody&rsquo;s pickup countdown runs in the meantime.</p></div>';
+			} else {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That tool could not be found, or is already under maintenance or retired.</p></div>';
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// 3G. HANDLE "END MAINTENANCE" SUBMISSION: puts the tool back in service.
+	// The readiness sync makes the front of its queue collectable from now,
+	// with a fresh hold period.
+	if ( isset( $_POST['mtl_end_maintenance'] ) && mtl_can_manage_library() ) {
+		if ( isset( $_POST['mtl_maintenance_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_maintenance_nonce'] ) ), 'mtl_maintenance_action' ) ) {
+			$em_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
+			$em_done    = $wpdb->query(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+					"UPDATE {$tbl_inventory} SET maintenance_at = NULL WHERE tool_id = %d AND maintenance_at IS NOT NULL",
+					$em_tool_id
+				)
+			);
+			if ( $em_done ) {
+				mtl_sync_reservation_readiness( $em_tool_id );
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Back in service.</strong> This tool can be loaned again. If it&rsquo;s on the shelf and someone has reserved it, the first person in line can now pick it up.</p></div>';
+			} else {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That tool could not be found, or was not under maintenance.</p></div>';
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
 	// 4. HANDLE "EDIT" LINK (GET): load the requested tool into the Edit panel.
 	// Skipped if a submitted edit above already failed validation, since that
 	// block already populated $editing/$edit_values with the admin's input.
@@ -2165,10 +2213,6 @@ function mtl_render_inventory_page() {
 			white-space: nowrap;
 		}
 
-		#mtl-inventory-table .mtl-actions {
-			white-space: nowrap;
-		}
-
 		.mtl-btn-danger.button {
 			color: #b32d2e;
 			border-color: #b32d2e;
@@ -2185,6 +2229,18 @@ function mtl_render_inventory_page() {
 			background: #edf7ed;
 			color: #1e7e34;
 			border: 1px solid #bfe3c0;
+			border-radius: 12px;
+			padding: 2px 9px;
+			font-size: 0.8em;
+			white-space: nowrap;
+		}
+
+		/* Amber rather than the Retired red: a temporary state, not an ending. */
+		.mtl-maintenance-badge {
+			display: inline-block;
+			background: #fcf9e8;
+			color: #8a6100;
+			border: 1px solid #f0d58c;
 			border-radius: 12px;
 			padding: 2px 9px;
 			font-size: 0.8em;
@@ -2907,6 +2963,7 @@ function mtl_render_inventory_page() {
             t.donated_by,
             t.date_acquired,
             t.retired_at,
+            t.maintenance_at,
             t.private_notes,
             t.location'
 		. mtl_tool_link_columns_sql() . "
@@ -3197,6 +3254,14 @@ function mtl_render_inventory_page() {
 							<option value="only">Retired only</option>
 						</select>
 					</div>
+					<div>
+						<label for="adv-maintenance">Under Maintenance?</label>
+						<select id="adv-maintenance">
+							<option value="">Any</option>
+							<option value="1">Yes</option>
+							<option value="0">No</option>
+						</select>
+					</div>
 				</div>
 			</fieldset>
 
@@ -3229,9 +3294,9 @@ function mtl_render_inventory_page() {
 					<th style="width: 19%;">Tags</th>
 					<?php
 					// Description, components, value, depreciation, acquired date
-					// and donor all live in the expandable detail panel below.
+					// and donor all live in the expandable detail panel below, as
+					// do the tool's actions (Edit, Retire, Delete and the rest).
 					?>
-					<th style="width: 140px;">Actions</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -3308,7 +3373,8 @@ function mtl_render_inventory_page() {
 							data-donated="<?php echo trim( (string) $item->donated_by ) !== '' ? '1' : '0'; ?>"
 							data-hasphoto="<?php echo trim( (string) $item->photo_url ) !== '' ? '1' : '0'; ?>"
 							data-hasnotes="<?php echo trim( (string) $item->private_notes ) !== '' ? '1' : '0'; ?>"
-							data-retired="<?php echo ! empty( $item->retired_at ) ? '1' : '0'; ?>">
+							data-retired="<?php echo ! empty( $item->retired_at ) ? '1' : '0'; ?>"
+							data-maintenance="<?php echo ! empty( $item->maintenance_at ) ? '1' : '0'; ?>">
 							<td><?php echo esc_html( $item->tool_id ); ?></td>
 							<td>
 								<?php if ( ! empty( $item->photo_url ) ) : ?>
@@ -3321,61 +3387,58 @@ function mtl_render_inventory_page() {
 								<strong class="mtl-truncate" style="display: inline-block; max-width: calc(100% - 60px); vertical-align: bottom;" title="<?php echo esc_attr( stripslashes( $item->tool_name ) ); ?>"><?php echo esc_html( stripslashes( $item->tool_name ) ); ?></strong>
 								<?php if ( ! empty( $item->retired_at ) ) : ?>
 									<span class="mtl-unverified-badge" style="margin-left: 6px;" title="Hidden from the public catalog and blocked from new loans/reservations">Retired</span>
+								<?php elseif ( ! empty( $item->maintenance_at ) ) : ?>
+									<span class="mtl-maintenance-badge" style="margin-left: 6px;" title="Can be reserved but not loaned until it&rsquo;s back in service">Under Maintenance</span>
 								<?php endif; ?>
 							</td>
 							<td class="mtl-truncate" title="<?php echo esc_attr( stripslashes( $item->brand ) ); ?>"><?php echo esc_html( stripslashes( $item->brand ) ); ?></td>
 							<td><?php echo mtl_render_pill_list( $item->categories ); ?></td>
 							<td><?php echo mtl_render_pill_list( $item->tags ); ?></td>
-							<td class="mtl-actions">
-								<a href="<?php echo esc_url( $edit_url ); ?>" class="button button-small">Edit</a>
-								<?php if ( ! empty( $item->retired_at ) ) : ?>
-									<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;">
-										<?php wp_nonce_field( 'mtl_reactivate_tool_action', 'mtl_reactivate_tool_nonce' ); ?>
-										<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
-										<button type="submit" name="mtl_reactivate_tool" class="button button-small">Reactivate</button>
-									</form>
-								<?php else : ?>
-									<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('Retire &quot;<?php echo esc_js( stripslashes( $item->tool_name ) ); ?>&quot;? It will be hidden from the public catalog and blocked from new loans/reservations, but its history is kept and this can be undone with Reactivate.');">
-										<?php wp_nonce_field( 'mtl_retire_tool_action', 'mtl_retire_tool_nonce' ); ?>
-										<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
-										<button type="submit" name="mtl_retire_tool" class="button button-small">Retire</button>
-									</form>
-								<?php endif; ?>
-								<?php
-									// Deleting a tool is administrators-only, so Editors get no
-									// Delete button. The handler checks the same thing, so hiding
-									// it here is presentation, not the enforcement. Retire stays
-									// available to Editors above, being the reversible way to
-									// take a tool out of circulation.
-								if ( mtl_can_delete_tools() ) :
-									?>
-									<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('<?php echo esc_js( $delete_confirm ); ?>');">
-									<?php wp_nonce_field( 'mtl_delete_tool_action', 'mtl_delete_tool_nonce' ); ?>
-										<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
-										<button type="submit" name="mtl_delete_tool" class="button button-small mtl-btn-danger">Delete</button>
-									</form>
-								<?php endif; ?>
-							</td>
 						</tr>
+						<?php
+						// Deleting a tool is administrators-only, so Editors get no
+						// Delete button. The handler checks the same thing, so hiding
+						// it here is presentation, not the enforcement. Built once
+						// because both branches of the action row below show it.
+						$delete_form = '';
+						if ( mtl_can_delete_tools() ) {
+							ob_start();
+							?>
+							<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('<?php echo esc_js( $delete_confirm ); ?>');">
+								<?php wp_nonce_field( 'mtl_delete_tool_action', 'mtl_delete_tool_nonce' ); ?>
+								<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
+								<button type="submit" name="mtl_delete_tool" class="button mtl-btn-danger">Delete</button>
+							</form>
+							<?php
+							$delete_form = ob_get_clean();
+						}
+						?>
 						<!--
 							Hidden detail row: holds the FULL, untruncated text for
 							this tool. Toggled open/closed by clicking anywhere on
 							the row above (see the expand/collapse script below).
 						-->
 						<tr class="mtl-detail-row" id="mtl-detail-<?php echo esc_attr( $item->tool_id ); ?>" style="display: none;">
-							<td colspan="8">
+							<td colspan="7">
 								<div class="mtl-detail-panel">
 
 									<div class="mtl-detail-actions">
 										<?php if ( ! empty( $item->retired_at ) ) : ?>
-											<span class="mtl-detail-actions-hint">This tool is retired, so it can&rsquo;t be loaned or reserved. Reactivate it first if that&rsquo;s needed.</span>
+											<a href="<?php echo esc_url( $edit_url ); ?>" class="button">Edit</a>
+											<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;">
+												<?php wp_nonce_field( 'mtl_reactivate_tool_action', 'mtl_reactivate_tool_nonce' ); ?>
+												<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
+												<button type="submit" name="mtl_reactivate_tool" class="button">Reactivate</button>
+											</form>
+											<?php echo $delete_form; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped where it was built above. ?>
 										<?php else : ?>
-											<?php if ( $t_active < 1 ) : ?>
+											<?php if ( $t_active < 1 && ! empty( $item->maintenance_at ) ) : ?>
+												<?php // No Quick Loan while under maintenance; the badge and End Maintenance say why. ?>
+											<?php elseif ( $t_active < 1 ) : ?>
 												<button type="button" class="button button-primary mtl-ql-open"
 													data-mode="loan"
 													data-tool-id="<?php echo esc_attr( $item->tool_id ); ?>"
 													data-tool-name="<?php echo esc_attr( stripslashes( $item->tool_name ) ); ?>">Quick Loan</button>
-												<span class="mtl-detail-actions-hint">Loan this tool to a member who doesn&rsquo;t have a reservation.</span>
 												<?php
 											else :
 												$active_loan = isset( $tool_active_loan[ $tid ] ) ? $tool_active_loan[ $tid ] : null;
@@ -3385,7 +3448,7 @@ function mtl_render_inventory_page() {
 													<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('Mark this tool as returned?');">
 														<?php wp_nonce_field( 'mtl_mark_returned_action', 'mtl_mark_returned_nonce' ); ?>
 														<input type="hidden" name="loan_id" value="<?php echo esc_attr( $active_loan->loan_id ); ?>">
-														<?php echo mtl_return_date_field_html( $active_loan->loan_date ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-escaped markup from the helper. ?>
+														<?php echo mtl_return_date_field_html( $active_loan->loan_date, '', false ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-escaped markup from the helper. ?>
 														<button type="submit" name="mtl_mark_returned" class="button button-primary">Mark Returned</button>
 													</form>
 													<span class="mtl-detail-actions-hint mtl-detail-actions-out">
@@ -3400,10 +3463,26 @@ function mtl_render_inventory_page() {
 												data-mode="reserve"
 												data-tool-id="<?php echo esc_attr( $item->tool_id ); ?>"
 												data-tool-name="<?php echo esc_attr( stripslashes( $item->tool_name ) ); ?>">Quick Reserve</button>
-											<?php if ( $t_active < 1 ) : ?>
-												<span class="mtl-detail-actions-hint">Or reserve it for a member to pick up later.</span>
-											<?php else : ?>
-												<span class="mtl-detail-actions-hint">Reserve it for a member for when it&rsquo;s returned.</span>
+
+											<?php // Any staff member can toggle this; see the 3F/3G handlers above. ?>
+											<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;">
+												<?php wp_nonce_field( 'mtl_maintenance_action', 'mtl_maintenance_nonce' ); ?>
+												<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
+												<?php if ( ! empty( $item->maintenance_at ) ) : ?>
+													<button type="submit" name="mtl_end_maintenance" class="button">End Maintenance</button>
+												<?php else : ?>
+													<button type="submit" name="mtl_start_maintenance" class="button">Start Maintenance</button>
+												<?php endif; ?>
+											</form>
+											<a href="<?php echo esc_url( $edit_url ); ?>" class="button">Edit</a>
+											<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('Retire &quot;<?php echo esc_js( stripslashes( $item->tool_name ) ); ?>&quot;? It will be hidden from the public catalog and blocked from new loans/reservations, but its history is kept and this can be undone with Reactivate.');">
+												<?php wp_nonce_field( 'mtl_retire_tool_action', 'mtl_retire_tool_nonce' ); ?>
+												<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
+												<button type="submit" name="mtl_retire_tool" class="button">Retire</button>
+											</form>
+											<?php echo $delete_form; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped where it was built above. ?>
+											<?php if ( ! empty( $item->maintenance_at ) ) : ?>
+												<span class="mtl-detail-actions-hint">Under maintenance since <?php echo mtl_format_date( $item->maintenance_at ); ?>.</span>
 											<?php endif; ?>
 										<?php endif; ?>
 									</div>
@@ -3584,7 +3663,7 @@ function mtl_render_inventory_page() {
 					<?php endforeach; ?>
 				<?php else : ?>
 					<tr>
-						<td colspan="8" style="text-align: center; padding: 20px;">
+						<td colspan="7" style="text-align: center; padding: 20px;">
 							No tools found in the database. Open the panel above to add one!
 						</td>
 					</tr>
@@ -3737,6 +3816,7 @@ function mtl_render_inventory_page() {
 				hasPhoto: document.getElementById('adv-hasphoto'),
 				hasNotes: document.getElementById('adv-hasnotes'),
 				retired: document.getElementById('adv-retired'),
+				maintenance: document.getElementById('adv-maintenance'),
 			};
 
 			advToggle.addEventListener('click', function() {
@@ -3809,6 +3889,7 @@ function mtl_render_inventory_page() {
 					hasPhoto: advFields.hasPhoto.value,
 					hasNotes: advFields.hasNotes.value,
 					retired: advFields.retired.value,
+					maintenance: advFields.maintenance.value,
 				};
 
 				// Only real tool rows are filtered; detail rows follow their
@@ -3873,6 +3954,7 @@ function mtl_render_inventory_page() {
 					if (visible && f.donated && d.donated !== f.donated) visible = false;
 					if (visible && f.hasPhoto && d.hasphoto !== f.hasPhoto) visible = false;
 					if (visible && f.hasNotes && d.hasnotes !== f.hasNotes) visible = false;
+					if (visible && f.maintenance && d.maintenance !== f.maintenance) visible = false;
 
 					// Retired tools are hidden unless explicitly included,
 					// the one filter that isn't a plain "Any" 3-state, since
