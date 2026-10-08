@@ -943,9 +943,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'phone_national' ); ?>">Phone Number *</label></th>
 		<td>
-			<?php mtl_render_phone_input( $values['phone_country'], $values['phone_national'], $id_prefix ); ?>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Pick the country, then type the number. Formatting is automatic.</p>
-		</td>
+			<?php mtl_render_phone_input( $values['phone_country'], $values['phone_national'], $id_prefix ); ?>		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'address_line1' ); ?>">Address Line 1 *</label></th>
@@ -974,9 +972,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 				<?php foreach ( mtl_get_state_options() as $mtl_state_code => $mtl_state_label ) : ?>
 					<option value="<?php echo esc_attr( $mtl_state_code ); ?>" <?php selected( $values['state'], $mtl_state_code ); ?>><?php echo esc_html( $mtl_state_label ); ?> (<?php echo esc_html( $mtl_state_code ); ?>)</option>
 				<?php endforeach; ?>
-			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">U.S. and Canada only. Choose &ldquo;N/A&rdquo; for anywhere else.</p>
-		</td>
+			</select>		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'zip_code' ); ?>">ZIP Code *</label></th>
@@ -1003,9 +999,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'recurring_donation_amount' ); ?>">Recurring Donation ($)</label></th>
 		<td>
-			<input type="number" step="0.01" min="0" name="recurring_donation_amount" id="<?php echo $field_id( 'recurring_donation_amount' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['recurring_donation_amount'] ); ?>" placeholder="0.00">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Monthly amount, if they have one set up.</p>
-		</td>
+			<input type="number" step="0.01" min="0" name="recurring_donation_amount" id="<?php echo $field_id( 'recurring_donation_amount' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['recurring_donation_amount'] ); ?>" placeholder="0.00">		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'has_donated_tools' ); ?>">Has Donated Tools?</label></th>
@@ -1019,24 +1013,20 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 	<tr>
 		<th scope="row">Trainings Completed</th>
 		<td>
-			<?php mtl_render_trainings_picker( $trainings, $values['training_starts'], $id_prefix ); ?>
-			<?php if ( $trainings ) : ?>
-				<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">The completion date is what the certification length runs from.</p>
-			<?php endif; ?>
-		</td>
+			<?php mtl_render_trainings_picker( $trainings, $values['training_starts'], $id_prefix ); ?>		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'photo_id_scan_url' ); ?>">Photo ID Scan URL</label></th>
 		<td>
 			<input type="url" name="photo_id_scan_url" id="<?php echo $field_id( 'photo_id_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['photo_id_scan_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Keep scans somewhere private, never a public folder. A member counts as verified only once both scans are on file.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Keep scans in private folder. A member counts as verified once both scans are on file.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'address_proof_scan_url' ); ?>">Proof of Address Scan URL</label></th>
 		<td>
 			<input type="url" name="address_proof_scan_url" id="<?php echo $field_id( 'address_proof_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['address_proof_scan_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> A utility bill, lease, or similar. Either scan can be added on its own and the rest filled in later.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Keep scans in private folder. A member counts as verified once both scans are on file.</p>
 		</td>
 	</tr>
 	<tr>
@@ -3497,7 +3487,6 @@ function mtl_render_membership_page() {
 
 					<p>
 						<input type="submit" name="mtl_create_member_logins" class="button" value="Create logins"<?php echo 0 === $logins_missing ? ' disabled' : ''; ?>>
-						<span style="color: #666; font-size: 0.9em; margin-left: 8px;">Creates the missing sign-ins. Sends no email. Works through the list a batch at a time, so press it again if any remain.</span>
 					</p>
 
 					<p style="margin-bottom: 4px;">
@@ -3510,8 +3499,6 @@ function mtl_render_membership_page() {
 							Include members emailed in the last 24 hours
 						</label>
 					</p>
-
-					<p style="color: #666; font-size: 0.85em; margin-bottom: 0;">Each member is emailed at most once a day unless you tick the box above. Sending a fresh link always cancels the previous one, so a member part-way through setting a password will need to use the newest email.</p>
 				</form>
 			</div>
 		</details>
@@ -4298,9 +4285,9 @@ function mtl_render_membership_page() {
 											<?php if ( ! $is_verified ) : ?>
 												<p style="color: #b32d2e; font-size: 0.85em;">Only one document is on file, so this member is not verified yet. Use Edit to add the other.</p>
 											<?php endif; ?>
-											<p class="mtl-sensitive-note">These documents contain sensitive personal information. Only open them when necessary, and never share the links.</p>
+											<p class="mtl-sensitive-note">These documents contain sensitive personal information.</p>
 										<?php else : ?>
-											<p style="color: #999;">No verification documents on file. Use Edit to add the member&rsquo;s photo ID and/or proof-of-address scan.</p>
+											<p style="color: #999;">No verification documents on file.</p>
 										<?php endif; ?>
 
 										<?php
@@ -4485,7 +4472,7 @@ function mtl_render_membership_page() {
 												</tbody>
 											</table>
 										<?php else : ?>
-											<p style="color: #999;">None on record. Use Edit to record a training this member has completed.</p>
+											<p style="color: #999;">None on record.</p>
 										<?php endif; ?>
 
 										<?php if ( ! empty( $member->private_notes ) ) : ?>
