@@ -1,0 +1,7 @@
+# Check text files out with LF line endings on every machine, whatever the
+# local core.autocrlf says. Git for Windows defaults to autocrlf=true, which
+# checks files out as CRLF, and the WordPress coding standard that
+# phpcs.xml.dist applies requires LF.
+* text=auto eol=lf
+
+*.png binary
