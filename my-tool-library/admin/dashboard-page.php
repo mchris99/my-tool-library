@@ -1251,10 +1251,6 @@ function mtl_render_dashboard_page() {
 		</div>
 	</div>
 
-	<p style="font-size: 0.85em; color: #787c82; margin: 0 0 12px 0;">
-		Drag a panel by its header to rearrange &bull; the resize icon (&#x2922;) cycles its size &bull; the eye icon hides a panel &bull; changes stick after <strong>Save Layout</strong>.
-	</p>
-
 	<?php
 	// ==========================================
 	// 6. RENDER PANELS (in the saved order)
@@ -1292,9 +1288,6 @@ function mtl_render_dashboard_page() {
 					<span><strong><?php echo esc_html( number_format( max( 0, $member_count - $verified_count ) ) ); ?></strong> unverified</span>
 					<span><strong><?php echo esc_html( number_format( $new_members_90 ) ); ?></strong> new in 90 days</span>
 				</div>
-				<?php if ( $member_count > 0 && $verified_count < $member_count ) : ?>
-					<p class="mtl-insight"><?php echo esc_html( number_format( $member_count - $verified_count ) ); ?> member(s) do not have verification documents on file.</p>
-				<?php endif; ?>
 				<?php
 				break;
 
