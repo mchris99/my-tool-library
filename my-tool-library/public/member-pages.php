@@ -1797,8 +1797,9 @@ function mtl_render_signup_page() {
  */
 function mtl_render_reservation_detail_panel( $r, $self_url ) {
 	$on_loan   = ( (int) $r->active_loans > 0 );
+	$in_maint  = ! empty( $r->maintenance_at );
 	$is_first  = ( 1 === (int) $r->queue_place );
-	$available = ! $on_loan;
+	$available = ! $on_loan && ! $in_maint;
 
 	ob_start();
 	?>
@@ -1812,7 +1813,7 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 			<p class="mtl-res-detail-brand"><?php echo esc_html( stripslashes( $r->brand ) ); ?></p>
 		<?php endif; ?>
 
-		<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, (int) $r->queue_size ); ?></div>
+		<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, (int) $r->queue_size, false, $in_maint ); ?></div>
 
 		<div class="mtl-res-info">
 			<p style="margin:0 0 6px 0; font-weight:600;">Your reservation</p>
@@ -1820,10 +1821,17 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 				Place in line: <strong><?php echo (int) $r->queue_place; ?></strong> of <?php echo (int) $r->queue_size; ?>
 				<?php if ( $is_first && $available ) : ?>
 					<span class="mtl-pill mtl-pill-green" style="margin-left:6px;">Ready for pickup</span>
-				<?php elseif ( $is_first ) : ?>
+				<?php elseif ( $is_first && $on_loan ) : ?>
 					<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Out on loan</span>
+				<?php elseif ( $is_first ) : ?>
+					<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Under maintenance</span>
 				<?php endif; ?>
 			</p>
+			<?php if ( $in_maint && ! $on_loan ) : ?>
+				<p style="margin:6px 0 0 0; color:#50575e; font-size:0.92em;">
+					This tool is being repaired or serviced.
+				</p>
+			<?php endif; ?>
 			<p style="margin:6px 0 0 0; color:#50575e; font-size:0.92em;">
 				Reserved on <?php echo mtl_format_date( $r->reservation_date ); ?>
 			</p>
@@ -2043,7 +2051,7 @@ function mtl_render_member_reservations_page() {
 	$rows = $wpdb->get_results(
 		$wpdb->prepare(
 			'SELECT r.reservation_id, r.tool_id, r.reservation_date, r.ready_since,
-                t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location'
+                t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.maintenance_at'
 			. mtl_tool_link_columns_sql() . ",
                 (SELECT COUNT(*) FROM {$tbl_res} r2
                     WHERE r2.tool_id = r.tool_id AND r2.expiry_date IS NULL
@@ -2224,7 +2232,8 @@ function mtl_render_member_reservations_page() {
 								<?php
 								foreach ( $rows as $r ) :
 									$is_first  = ( 1 === (int) $r->queue_place );
-									$available = ( 0 === (int) $r->active_loans );
+									$on_loan   = ( (int) $r->active_loans > 0 );
+									$available = ! $on_loan && empty( $r->maintenance_at );
 									?>
 									<tr>
 										<td><a class="mtl-res-name-link" href="#<?php echo esc_attr( 'res-tool-' . (int) $r->reservation_id ); ?>"><?php echo esc_html( stripslashes( $r->tool_name ) ); ?></a></td>
@@ -2250,8 +2259,10 @@ function mtl_render_member_reservations_page() {
 														<?php endif; ?>
 													</span>
 												<?php endif; ?>
-											<?php elseif ( $is_first ) : ?>
+											<?php elseif ( $is_first && $on_loan ) : ?>
 												<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Out on loan</span>
+											<?php elseif ( $is_first ) : ?>
+												<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Under maintenance</span>
 											<?php endif; ?>
 										</td>
 										<td>

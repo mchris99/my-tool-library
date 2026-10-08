@@ -85,6 +85,8 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 		$html .= mtl_lr_field( 'Queue place', esc_html( '#' . $rec['queue_place'] . ' of ' . $rec['queue_size'] ) );
 		if ( '' !== $rec['current_loan_due'] ) {
 			$html .= mtl_lr_field( 'Tool status', 'On loan to another member, due ' . mtl_lr_fmt( $rec['current_loan_due'] ) );
+		} elseif ( ! empty( $rec['tool_maintenance'] ) ) {
+			$html .= mtl_lr_field( 'Tool status', 'Under maintenance, not yet back in service' );
 		} else {
 			$html .= mtl_lr_field( 'Tool status', 'Available, not currently on loan' );
 		}
@@ -148,7 +150,9 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 	if ( 'reservation' === $rec['type'] ) {
 		$html .= '<p class="mtl-detail-section">Actions</p>';
 
-		if ( '' === $rec['current_loan_due'] ) {
+		if ( '' === $rec['current_loan_due'] && ! empty( $rec['tool_maintenance'] ) ) {
+			$html .= '<p class="mtl-lr-action-note">This tool is under maintenance. Mark it back in service on the Inventory page before checking it out.</p>';
+		} elseif ( '' === $rec['current_loan_due'] ) {
 			// Available tools can be checked out to this member even if they
 			// are not first in line; the admin decides in person.
 			$html .= '<form method="post" action="" class="mtl-lr-action-form">';
@@ -497,6 +501,19 @@ function mtl_lr_handle_actions() {
 			return '<div class="notice notice-error is-dismissible"><p>That tool is retired and can&rsquo;t be checked out.</p></div>';
 		}
 
+		// Unlike retirement this one is reachable: maintenance leaves the queue
+		// in place, so the reservation is still listed with this form on it.
+		$in_maintenance = $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+				"SELECT maintenance_at FROM {$tbl_inventory} WHERE tool_id = %d",
+				(int) $res->tool_id
+			)
+		);
+		if ( $in_maintenance ) {
+			return '<div class="notice notice-error is-dismissible"><p>That tool is under maintenance and can&rsquo;t be checked out. Mark it back in service on the Inventory page first.</p></div>';
+		}
+
 		// A tool is a single physical item: it can't be checked out while it is
 		// already out on another loan.
 		$on_loan = $wpdb->get_var(
@@ -665,7 +682,7 @@ function mtl_render_loans_page() {
 	$res_rows = $wpdb->get_results(
 		"
         SELECT r.reservation_id, r.tool_id, r.member_id, r.reservation_date, r.ready_since,
-               t.tool_name, t.barcode, t.brand, t.location,
+               t.tool_name, t.barcode, t.brand, t.location, t.maintenance_at,
                m.first_name, m.last_name, m.email, m.phone_number,
                (SELECT COUNT(*) FROM {$tbl_verifications} v WHERE v.member_id = r.member_id AND v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS is_verified,
                (SELECT COUNT(*) FROM {$tbl_reservations} r2
@@ -818,12 +835,21 @@ function mtl_render_loans_page() {
 	}
 
 	foreach ( $res_rows as $r ) {
-		$tool_out  = ( null !== $r->current_loan_due );
+		$tool_out   = ( null !== $r->current_loan_due );
+		$tool_maint = ! empty( $r->maintenance_at );
+		if ( $tool_out ) {
+			$res_label = 'Waiting';
+		} elseif ( $tool_maint ) {
+			$res_label = 'Maintenance';
+		} else {
+			$res_label = 'Ready';
+		}
 		$records[] = array(
 			'idx'              => $idx++,
 			'type'             => 'reservation',
-			'status_label'     => $tool_out ? 'Waiting' : 'Ready',
-			'status_class'     => $tool_out ? 'mtl-pill-wait' : 'mtl-pill-ready',
+			'status_label'     => $res_label,
+			'status_class'     => 'Ready' === $res_label ? 'mtl-pill-ready' : 'mtl-pill-wait',
+			'tool_maintenance' => $tool_maint,
 			'overdue'          => false,
 			'tool_id'          => (int) $r->tool_id,
 			'tool_name'        => stripslashes( $r->tool_name ),
@@ -936,12 +962,13 @@ function mtl_render_loans_page() {
 	// then out, then waiting, then ready, then finished) instead of sorting
 	// the labels alphabetically.
 	$status_rank_map = array(
-		'Overdue'  => 0,
-		'On Loan'  => 1,
-		'Waiting'  => 2,
-		'Ready'    => 3,
-		'Returned' => 4,
-		'Closed'   => 5,
+		'Overdue'     => 0,
+		'On Loan'     => 1,
+		'Waiting'     => 2,
+		'Maintenance' => 2,
+		'Ready'       => 3,
+		'Returned'    => 4,
+		'Closed'      => 5,
 	);
 	foreach ( $records as &$rec_ref ) {
 		$tid                                 = $rec_ref['tool_id'];
@@ -2239,7 +2266,7 @@ function mtl_render_loans_page() {
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	foreach (
 		$wpdb->get_results(
-			"SELECT t.tool_id, t.barcode, t.tool_name, t.retired_at,
+			"SELECT t.tool_id, t.barcode, t.tool_name, t.retired_at, t.maintenance_at,
                     (SELECT l.member_id FROM {$tbl_loans} l WHERE l.tool_id = t.tool_id AND l.return_date IS NULL LIMIT 1) AS on_loan_by,
                     (SELECT COUNT(*) FROM {$tbl_reservations} r WHERE r.tool_id = t.tool_id AND r.expiry_date IS NULL) AS queue_size,
                     (SELECT GROUP_CONCAT(r2.member_id) FROM {$tbl_reservations} r2 WHERE r2.tool_id = t.tool_id AND r2.expiry_date IS NULL) AS queue_members
@@ -2251,6 +2278,7 @@ function mtl_render_loans_page() {
 			'id'      => (int) $bc_tool->tool_id,
 			'name'    => stripslashes( (string) $bc_tool->tool_name ),
 			'retired' => ! empty( $bc_tool->retired_at ),
+			'maint'   => ! empty( $bc_tool->maintenance_at ),
 			'loanBy'  => (int) $bc_tool->on_loan_by,
 			'queue'   => array_map( 'intval', array_filter( explode( ',', (string) $bc_tool->queue_members ) ) ),
 		);
@@ -2387,6 +2415,7 @@ function mtl_render_loans_page() {
 				}
 				if (onLoanSelf) return { cls: 'bad', text: 'They already have it', act: 'block' };
 				if (onLoanOther) return { cls: 'bad', text: 'On loan', act: 'block' };
+				if (tool.maint) return { cls: 'bad', text: 'Under maintenance', act: 'block' };
 				if (othersQueued) return { cls: 'warn', text: 'Reserved by another member', act: 'loan', warn: tool.name };
 				if (mine) return { cls: 'ok', text: 'Reserved by member', act: 'loan' };
 				return { cls: 'ok', text: 'Available', act: 'loan' };

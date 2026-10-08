@@ -324,7 +324,7 @@ function mtl_render_dashboard_page() {
 	$inventory_rows = $wpdb->get_results(
 		"
         SELECT t.tool_id, t.tool_name, t.barcode, t.brand, t.initial_cash_value,
-               t.annual_depreciation_amount, t.date_acquired,
+               t.annual_depreciation_amount, t.date_acquired, t.maintenance_at,
                l.loan_id AS active_loan_id
         FROM {$tbl_inventory} t
         LEFT JOIN {$tbl_loans} l ON l.tool_id = t.tool_id AND l.return_date IS NULL
@@ -334,6 +334,7 @@ function mtl_render_dashboard_page() {
 
 	$tool_count      = 0;
 	$tools_out       = 0;
+	$tools_maint     = 0;
 	$on_hand_initial = 0.0;
 	$on_loan_initial = 0.0;
 	$on_hand_current = 0.0;
@@ -352,6 +353,9 @@ function mtl_render_dashboard_page() {
 		$seen_tool_ids[ $row->tool_id ] = true;
 
 		++$tool_count;
+		if ( ! empty( $row->maintenance_at ) ) {
+			++$tools_maint;
+		}
 		$age_years        = max( 0, ( time() - strtotime( $row->date_acquired ) ) / 31557600 );
 		$total_age_years += $age_years;
 
@@ -423,7 +427,7 @@ function mtl_render_dashboard_page() {
 	$reservation_rows = $wpdb->get_results(
 		"
         SELECT r.reservation_id, r.reservation_date,
-               t.tool_name, t.barcode,
+               t.tool_name, t.barcode, t.maintenance_at,
                m.first_name, m.last_name, m.email,
                l.loan_id AS tool_out_loan_id,
                (SELECT COUNT(*) FROM {$tbl_reservations} r2
@@ -591,7 +595,7 @@ function mtl_render_dashboard_page() {
 	if ( $th_tool_id > 0 ) {
 		$th_tool = $wpdb->get_row(
 			$wpdb->prepare(
-				"SELECT tool_id, tool_name, barcode, brand, retired_at FROM {$tbl_inventory} WHERE tool_id = %d",
+				"SELECT tool_id, tool_name, barcode, brand, retired_at, maintenance_at FROM {$tbl_inventory} WHERE tool_id = %d",
 				$th_tool_id
 			)
 		);
@@ -1297,7 +1301,7 @@ function mtl_render_dashboard_page() {
 			case 'stat_borrowed':
 				?>
 				<div class="mtl-stat-number"><?php echo esc_html( number_format( $tools_out ) ); ?></div>
-				<div class="mtl-stat-sub">of <?php echo esc_html( number_format( $tool_count ) ); ?> tools currently on loan</div>
+				<div class="mtl-stat-sub">of <?php echo esc_html( number_format( $tool_count ) ); ?> tools currently on loan<?php echo $tools_maint > 0 ? esc_html( ' · ' . number_format( $tools_maint ) . ' under maintenance' ) : ''; ?></div>
 				<div class="mtl-meter">
 					<div class="mtl-meter-fill" style="width: <?php echo esc_attr( $utilization_pct ); ?>%;"></div>
 				</div>
@@ -1375,7 +1379,17 @@ function mtl_render_dashboard_page() {
 									<td><?php echo esc_html( stripslashes( $row->first_name . ' ' . $row->last_name ) ); ?><br><span style="color:#999;"><?php echo esc_html( $row->email ); ?></span></td>
 									<td><?php echo mtl_format_date( $row->reservation_date ); ?><br><span style="color:#999;"><?php echo esc_html( gmdate( 'H:i', strtotime( $row->reservation_date ) ) ); ?></span></td>
 									<td><?php echo esc_html( '#' . $row->queue_place . ' of ' . $row->queue_size ); ?></td>
-									<td><?php echo $row->tool_out_loan_id ? '<span class="mtl-wait-pill">Waiting, tool out</span>' : '<span class="mtl-ok-pill">Ready for pickup</span>'; ?></td>
+									<td>
+									<?php
+									if ( $row->tool_out_loan_id ) {
+										echo '<span class="mtl-wait-pill">Waiting, tool out</span>';
+									} elseif ( ! empty( $row->maintenance_at ) ) {
+										echo '<span class="mtl-wait-pill">Waiting, under maintenance</span>';
+									} else {
+										echo '<span class="mtl-ok-pill">Ready for pickup</span>';
+									}
+									?>
+								</td>
 								</tr>
 							<?php endforeach; ?>
 						</tbody>
@@ -1608,7 +1622,7 @@ function mtl_render_dashboard_page() {
 					}
 					?>
 					<div class="mtl-dash-lookup-header">
-						<h5><?php echo esc_html( stripslashes( $th_tool->tool_name ) ); ?> <span style="color:#999; font-weight:400;">(<?php echo esc_html( $th_tool->barcode ); ?>)</span><?php echo ! empty( $th_tool->retired_at ) ? ' <span style="color:#999; font-weight:400;">(retired)</span>' : ''; ?></h5>
+						<h5><?php echo esc_html( stripslashes( $th_tool->tool_name ) ); ?> <span style="color:#999; font-weight:400;">(<?php echo esc_html( $th_tool->barcode ); ?>)</span><?php echo ! empty( $th_tool->retired_at ) ? ' <span style="color:#999; font-weight:400;">(retired)</span>' : ''; ?><?php echo empty( $th_tool->retired_at ) && ! empty( $th_tool->maintenance_at ) ? ' <span style="color:#999; font-weight:400;">(under maintenance)</span>' : ''; ?></h5>
 						<span><strong><?php echo esc_html( $th_total ); ?></strong> total loan<?php echo 1 === $th_total ? '' : 's'; ?></span>
 					</div>
 

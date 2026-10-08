@@ -110,6 +110,10 @@ CREATE TABLE {{prefix}}member_verifications (
 -- once set, the tool is hidden from the public catalog and blocked from new
 -- loans or reservations, but the row and its full history stay intact and
 -- retired_at can simply be cleared again.
+-- maintenance_at is the temporary counterpart to retired_at: NULL means in
+-- service; once set (to when the tool went in), the tool stays in the public
+-- catalog and can still be reserved, but can't be lent and no reservation for
+-- it becomes ready for pickup until it is cleared again.
 -- private_notes is staff-only, like members.private_notes above and unlike
 -- description/components; see public/shop-page.php, which lists its columns
 -- explicitly rather than using SELECT *.
@@ -151,6 +155,7 @@ CREATE TABLE {{prefix}}tool_inventory (
     donated_by VARCHAR(255),
     date_acquired DATE DEFAULT (CURRENT_DATE),
     retired_at TIMESTAMP NULL DEFAULT NULL,
+    maintenance_at TIMESTAMP NULL DEFAULT NULL,
     private_notes TEXT DEFAULT NULL,
     location VARCHAR(100) DEFAULT NULL,
     resources TEXT DEFAULT NULL,

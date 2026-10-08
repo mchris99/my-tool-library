@@ -34,6 +34,7 @@ Two staff roles, both standard WordPress roles. **Editor** is for anyone working
 | Download a member's agreement record                                     |   ❌   |      ✅       |
 | View verification documents, mark members verified                       |   ✅   |      ✅       |
 | Add, edit and retire tools                                               |   ✅   |      ✅       |
+| Put tools under maintenance and back in service                          |   ✅   |      ✅       |
 | Check tools out, renew, and mark returned                                |   ✅   |      ✅       |
 | Create, cancel and fulfil reservations                                   |   ✅   |      ✅       |
 | Read the Workflows guide                                                 |   ✅   |      ✅       |
@@ -322,6 +323,7 @@ What stops a batch:
 
 - The barcode matches no tool.
 - The tool is **retired**. Retired tools can be neither lent nor reserved.
+- The tool is **under maintenance**, and you are trying to lend it. Tick Reserve? to queue for it instead, or put it back in service first.
 - The tool is **on loan**, and you are trying to lend it. End that loan first, or tick Reserve? to queue for it instead.
 - The same tool appears on two rows.
 - A due date in the past.
@@ -585,9 +587,25 @@ To change the period, go to **Setup > Reservations & Loans** and set **Reservati
 
 The **Dashboard**'s "Overdue Tools" panel lists every loan past its due date at a glance. Follow up with the member directly, as there is not yet a built-in email/SMS notification system. Once the tool is back, mark it returned as described above.
 
+#### Putting a tool under maintenance
+
+When a tool needs repair or servicing (a broken part, a blade to sharpen, a safety check), take it out of circulation without hiding it. On the **Inventory** page, click the tool's row to open its details and click **Start Maintenance**. Any staff member can do this.
+
+While a tool is **Under Maintenance**:
+
+- It **can't be lent**, from any page: Quick Loan, Bulk checkout, checking out a reservation, or Start Loan on the Membership page.
+- It **stays in the public catalog** with an **Under Maintenance** badge, and members **can still reserve it**. Existing reservations are kept.
+- **Nobody's pickup countdown runs.** The person at the front of the queue isn't shown as ready for pickup, so their reservation can't expire while the tool is away.
+
+When the work is done, open the tool's details again and click **End Maintenance**. The tool can be lent again. If it has reservations, the first person in line becomes ready for pickup and their hold period starts from that moment.
+
+A tool that's out on loan can be put under maintenance too, for example when a member reports it broken before bringing it back. The loan isn't affected; mark it returned as usual and it stays under maintenance until you end it.
+
+To find tools under maintenance, use the **Under Maintenance?** filter in the Inventory page's Advanced Search. The Dashboard's **Tools On Loan** card also shows how many are under maintenance.
+
 #### Retiring or deleting a tool
 
-Retire a tool at the end of its useful life, or if it is stolen or missing. Deleting is usually for tools added in error.
+Retire a tool at the end of its useful life, or if it is stolen or missing. Deleting is usually for tools added in error. Both buttons, along with **Edit**, are in the tool's details: click its row on the **Inventory** page to open them.
 
 - **No loan or reservation history**: an administrator may click **Delete** on the **Inventory** page to remove it outright. Editors don't see this button and should either use **Retire** or ask an administrator.
 - **Has loan or reservation history**: click **Retire** instead. This hides the tool from the public catalog and blocks any new loan or reservation for it, cancelling any reservations already queued (with an on-screen note telling you how many), while keeping the tool's row and full history intact. A currently open loan is left alone and can still be ended normally. Document the reason under the tool's **private notes**.

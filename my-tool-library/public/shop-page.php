@@ -33,18 +33,24 @@ if ( ! defined( 'ABSPATH' ) ) {
  * about where the tool is right now, and its reservation count still shows,
  * since those members are still queued behind it.
  *
- * @param bool $on_loan   Whether the tool is currently on loan.
- * @param int  $res_count Number of active reservations for the tool.
- * @param bool $retired   Whether the tool is retired from the collection.
+ * A tool under maintenance is not "Available" either, though it can still be
+ * reserved. On Loan wins over it for the same where-is-it-now reason.
+ *
+ * @param bool $on_loan     Whether the tool is currently on loan.
+ * @param int  $res_count   Number of active reservations for the tool.
+ * @param bool $retired     Whether the tool is retired from the collection.
+ * @param bool $maintenance Whether the tool is under maintenance.
  * @return string HTML markup.
  */
-function mtl_shop_status_badges( $on_loan, $res_count, $retired = false ) {
+function mtl_shop_status_badges( $on_loan, $res_count, $retired = false, $maintenance = false ) {
 	$out = '';
 	if ( $retired ) {
 		$out .= '<span class="mtl-shop-badge mtl-shop-badge-retired">Retired</span>';
 	}
 	if ( $on_loan ) {
 		$out .= '<span class="mtl-shop-badge mtl-shop-badge-out">On Loan</span>';
+	} elseif ( $maintenance && ! $retired ) {
+		$out .= '<span class="mtl-shop-badge mtl-shop-badge-maint">Under Maintenance</span>';
 	} elseif ( ! $retired ) {
 		$out .= '<span class="mtl-shop-badge mtl-shop-badge-avail">Available</span>';
 	}
@@ -151,6 +157,12 @@ function mtl_shop_badge_pill_css() {
 			border: 1px solid #d5d8dc;
 		}
 
+		.mtl-shop-badge-maint {
+			background: #fcf9e8;
+			color: #8a6100;
+			border: 1px solid #f0d58c;
+		}
+
 		.mtl-shop-pill,
 		.mtl-links-count {
 			display: inline-block;
@@ -214,7 +226,8 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 	$tool_id   = (int) $tool->tool_id;
 	// Only ever true when the visitor asked for retired tools by filter, since
 	// the catalog query hides them otherwise.
-	$retired = ! empty( $tool->retired_at );
+	$retired     = ! empty( $tool->retired_at );
+	$maintenance = ! empty( $tool->maintenance_at );
 
 	ob_start();
 	?>
@@ -228,14 +241,18 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 			<p class="mtl-shop-detail-brand"><?php echo esc_html( stripslashes( $tool->brand ) ); ?></p>
 		<?php endif; ?>
 
-		<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $res, $retired ); ?></div>
+		<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $res, $retired, $maintenance ); ?></div>
 
 		<p class="mtl-shop-avail-line">
 			<?php
 			if ( $retired ) {
 				echo 'Retired from the collection';
+			} elseif ( $on_loan ) {
+				echo 'Currently on loan';
+			} elseif ( $maintenance ) {
+				echo 'Under maintenance, so it can&rsquo;t be borrowed right now';
 			} else {
-				echo $on_loan ? 'Currently on loan' : 'Available to borrow';
+				echo 'Available to borrow';
 			}
 			?>
 		</p>
@@ -321,7 +338,11 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 					<input type="hidden" name="mtl_tool" value="<?php echo (int) $tool_id; ?>">
 					<button type="submit" class="mtl-shop-reserve">Reserve This Tool</button>
 				</form>
-				<p class="mtl-shop-reserve-note">You&rsquo;ll join the waiting queue and can track your place under My Reservations.</p>
+				<?php if ( $maintenance ) : ?>
+					<p class="mtl-shop-reserve-note">You&rsquo;ll join the waiting queue and can track your place under My Reservations. It can be picked up once it&rsquo;s back in service.</p>
+				<?php else : ?>
+					<p class="mtl-shop-reserve-note">You&rsquo;ll join the waiting queue and can track your place under My Reservations.</p>
+				<?php endif; ?>
 			<?php endif; ?>
 		<?php elseif ( ! empty( $ctx['is_admin'] ) ) : ?>
 			<p class="mtl-shop-reserve-note">Administrators manage reservations from the Loans &amp; Reservations page.</p>
@@ -516,9 +537,14 @@ function mtl_render_shop_page() {
 
 	// The availability filter compares computed loan/reservation counts, so
 	// it belongs in HAVING (after GROUP BY) rather than WHERE.
+	// Maintenance is a plain column, so it goes in WHERE: a tool under
+	// maintenance is not "Available" even when nobody has it on loan.
 	$having = '';
 	if ( 'available' === $a_status ) {
-		$having = 'HAVING active_loans = 0';
+		$having     = 'HAVING active_loans = 0';
+		$where_sql .= ( '' === $where_sql ? 'WHERE ' : ' AND ' ) . 't.maintenance_at IS NULL';
+	} elseif ( 'maintenance' === $a_status ) {
+		$where_sql .= ( '' === $where_sql ? 'WHERE ' : ' AND ' ) . 't.maintenance_at IS NOT NULL';
 	} elseif ( 'onloan' === $a_status ) {
 		$having = 'HAVING active_loans > 0';
 	} elseif ( 'noreserved' === $a_status ) {
@@ -553,7 +579,7 @@ function mtl_render_shop_page() {
 	// t.location is selected whatever the Setup switch says;
 	// mtl_shop_location_block() is the single place that decides whether a
 	// member is shown it, so the query does not have to be built two ways.
-	$page_sql  = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.retired_at'
+	$page_sql  = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.retired_at, t.maintenance_at'
 		. mtl_tool_link_columns_sql() . ','
 		. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 		. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
@@ -571,7 +597,7 @@ function mtl_render_shop_page() {
 		$sel_retired_sql = '' !== $retired_where ? ' AND ' . $retired_where : '';
 		$selected        = $wpdb->get_row(
 			$wpdb->prepare(
-				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.date_acquired, t.retired_at'
+				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.date_acquired, t.retired_at, t.maintenance_at'
 				. mtl_tool_link_columns_sql() . ','
 				. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 				. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
@@ -1417,6 +1443,7 @@ function mtl_render_shop_page() {
 								<option value="">Any</option>
 								<option value="available" <?php selected( $a_status, 'available' ); ?>>Available</option>
 								<option value="onloan" <?php selected( $a_status, 'onloan' ); ?>>On Loan</option>
+								<option value="maintenance" <?php selected( $a_status, 'maintenance' ); ?>>Under Maintenance</option>
 								<option value="noreserved" <?php selected( $a_status, 'noreserved' ); ?>>No Reservations</option>
 							</select>
 						</div>
@@ -1535,7 +1562,7 @@ function mtl_render_shop_page() {
 										?>
 									</div>
 								</div>
-								<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $tool->active_res, ! empty( $tool->retired_at ) ); ?></div>
+								<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $tool->active_res, ! empty( $tool->retired_at ), ! empty( $tool->maintenance_at ) ); ?></div>
 							</a>
 						<?php endforeach; ?>
 					</div>
@@ -1557,7 +1584,7 @@ function mtl_render_shop_page() {
 									<?php if ( ! empty( $tool->brand ) ) : ?>
 										<span class="mtl-shop-tile-brand"><?php echo esc_html( stripslashes( $tool->brand ) ); ?></span>
 									<?php endif; ?>
-									<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $tool->active_res, ! empty( $tool->retired_at ) ); ?></div>
+									<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, $tool->active_res, ! empty( $tool->retired_at ), ! empty( $tool->maintenance_at ) ); ?></div>
 									<?php if ( ! empty( $tool->categories ) ) : ?>
 										<div><?php echo mtl_shop_pills( $tool->categories ); ?></div>
 									<?php endif; ?>
