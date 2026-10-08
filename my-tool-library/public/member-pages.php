@@ -786,6 +786,17 @@ function mtl_member_page_styles() {
 			margin: 2px 0 0 0;
 		}
 
+		.mtl-res-detail-id {
+			color: #787c82;
+			font-size: 0.85em;
+			margin: 2px 0 0 0;
+		}
+
+		/* Tool ID column in the member tables: short, so it never wraps. */
+		.mtl-member-table .mtl-member-tool-id {
+			white-space: nowrap;
+		}
+
 		<?php // The link sections' summaries are headings here, so they read as ones. ?>
 		.mtl-res-detail-body h4,
 		.mtl-res-detail-body .mtl-links > summary {
@@ -1796,6 +1807,7 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 	<?php endif; ?>
 	<div class="mtl-res-detail-body">
 		<p class="mtl-res-detail-name"><?php echo esc_html( stripslashes( $r->tool_name ) ); ?></p>
+		<p class="mtl-res-detail-id">Tool ID #<?php echo (int) $r->tool_id; ?></p>
 		<?php if ( ! empty( $r->brand ) ) : ?>
 			<p class="mtl-res-detail-brand"><?php echo esc_html( stripslashes( $r->brand ) ); ?></p>
 		<?php endif; ?>
@@ -2111,6 +2123,7 @@ function mtl_render_member_reservations_page() {
 					<thead>
 						<tr>
 							<th>Tool</th>
+							<th>Tool ID</th>
 							<th>Due</th>
 						</tr>
 					</thead>
@@ -2118,6 +2131,7 @@ function mtl_render_member_reservations_page() {
 						<?php foreach ( $active_loans as $loan ) : ?>
 							<tr>
 								<td><?php echo esc_html( stripslashes( $loan->tool_name ) ); ?></td>
+								<td class="mtl-member-tool-id">#<?php echo (int) $loan->tool_id; ?></td>
 								<td>
 									<?php echo mtl_format_date( $loan->due_date ); ?>
 									<?php if ( 'overdue' === $loan->loan_status ) : ?>
@@ -2201,6 +2215,7 @@ function mtl_render_member_reservations_page() {
 							<thead>
 								<tr>
 									<th>Tool</th>
+									<th>Tool ID</th>
 									<th>Place in line</th>
 									<th></th>
 								</tr>
@@ -2213,6 +2228,7 @@ function mtl_render_member_reservations_page() {
 									?>
 									<tr>
 										<td><a class="mtl-res-name-link" href="#<?php echo esc_attr( 'res-tool-' . (int) $r->reservation_id ); ?>"><?php echo esc_html( stripslashes( $r->tool_name ) ); ?></a></td>
+										<td class="mtl-member-tool-id">#<?php echo (int) $r->tool_id; ?></td>
 										<td>
 											<span class="mtl-member-queue-place"><?php echo (int) $r->queue_place; ?></span>
 											<span style="color:#8c8f94;"> of <?php echo (int) $r->queue_size; ?></span>
@@ -2570,7 +2586,7 @@ function mtl_render_account_page() {
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$loans = $wpdb->get_results(
 		$wpdb->prepare(
-			"SELECT l.loan_id, l.loan_date, l.due_date, l.return_date, t.tool_name
+			"SELECT l.loan_id, l.tool_id, l.loan_date, l.due_date, l.return_date, t.tool_name
          FROM {$tbl_loans} l
          JOIN {$tbl_inv} t ON t.tool_id = l.tool_id
          WHERE l.member_id = %d
@@ -2983,6 +2999,7 @@ function mtl_render_account_page() {
 						<thead>
 							<tr>
 								<th>Tool</th>
+								<th>Tool ID</th>
 								<th>Borrowed</th>
 								<th>Due</th>
 								<th>Returned</th>
@@ -3012,6 +3029,7 @@ function mtl_render_account_page() {
 								?>
 								<tr>
 									<td><?php echo esc_html( stripslashes( $l->tool_name ) ); ?></td>
+									<td class="mtl-member-tool-id">#<?php echo (int) $l->tool_id; ?></td>
 									<td><?php echo mtl_format_date( $l->loan_date ); ?></td>
 									<td><?php echo mtl_format_date( $l->due_date ); ?></td>
 									<td><?php echo $is_returned ? mtl_format_date( $l->return_date ) : '<span style="color:#8c8f94;">&mdash;</span>'; ?></td>

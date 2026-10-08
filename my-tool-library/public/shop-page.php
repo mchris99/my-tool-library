@@ -223,6 +223,7 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 	<?php endif; ?>
 	<div class="mtl-shop-detail-body">
 		<p class="mtl-shop-detail-name"><?php echo esc_html( stripslashes( $tool->tool_name ) ); ?></p>
+		<p class="mtl-shop-detail-id">Tool ID #<?php echo (int) $tool_id; ?></p>
 		<?php if ( ! empty( $tool->brand ) ) : ?>
 			<p class="mtl-shop-detail-brand"><?php echo esc_html( stripslashes( $tool->brand ) ); ?></p>
 		<?php endif; ?>
@@ -1229,6 +1230,12 @@ function mtl_render_shop_page() {
 		.mtl-shop-detail-brand {
 			color: #787c82;
 			margin: 2px 0 12px 0;
+		}
+
+		.mtl-shop-detail-id {
+			color: #787c82;
+			font-size: 0.85em;
+			margin: 2px 0 0 0;
 		}
 
 		<?php // The link sections' summaries are headings here, so they read as ones. ?>
