@@ -4934,6 +4934,366 @@ function mtl_apply_custom_admin_styles() {
 }
 
 // ==========================================================================
+// SHARED DIALOG (staff screens)
+//
+// Every confirm, alert and type-to-confirm prompt on this plugin's admin
+// screens opens in one styled window that looks like the Membership page's
+// Lock Account modal, not in the browser's own pop-up. A form, or one of its
+// submit buttons, opts in with mtl_confirm_attr(); a script that decides for
+// itself whether to ask calls window.mtlDialog. The member-facing pages keep
+// the browser's confirm().
+//
+// Printed in admin_head rather than the footer so the submit listener is in
+// place before any form on the page can be submitted.
+// ==========================================================================
+
+add_action( 'admin_head', 'mtl_admin_dialog_assets' );
+
+/**
+ * Builds the attribute that makes a form, or one of its submit buttons, ask
+ * in the shared dialog before it submits.
+ *
+ * Keys, all optional but message:
+ * - title:   heading, e.g. 'Delete Tool'.
+ * - message: the question. A '%s' in it is replaced by subject, in bold.
+ * - subject: what is being acted on, e.g. the member's name.
+ * - details: what will happen, one bullet each.
+ * - confirm: label of the button that goes ahead. Defaults to 'OK'.
+ * - cancel:  label of the button that backs out. Defaults to 'Cancel'.
+ * - danger:  true for a red confirm button, for anything destructive.
+ *
+ * @param array $args See above.
+ * @return string ' data-mtl-confirm="..."', escaped for an HTML attribute.
+ */
+function mtl_confirm_attr( $args ) {
+	return ' data-mtl-confirm="' . esc_attr( wp_json_encode( $args, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) ) . '"';
+}
+
+/**
+ * Prints the shared dialog's styles and script on this plugin's admin
+ * screens. See the section comment above.
+ */
+function mtl_admin_dialog_assets() {
+	$screen = get_current_screen();
+	if ( ! $screen || false === strpos( $screen->id, 'mtl-' ) ) {
+		return;
+	}
+	?>
+	<style>
+		/* The values are the Lock Account modal's (.mtl-lm-* on the
+			Membership page), so every dialog reads as one component. One
+			z-index step above those modals, since a confirm can open from
+			inside one. */
+		.mtl-dialog-overlay {
+			position: fixed;
+			inset: 0;
+			z-index: 100100;
+			background: rgba(0, 0, 0, .5);
+			display: flex;
+			align-items: flex-start;
+			justify-content: center;
+			padding: 8vh 16px 16px 16px;
+			overflow-y: auto;
+		}
+
+		.mtl-dialog {
+			position: relative;
+			background: #fff;
+			border-radius: 6px;
+			box-shadow: 0 8px 30px rgba(0, 0, 0, .3);
+			padding: 22px 24px 24px 24px;
+			width: 100%;
+			max-width: 420px;
+		}
+
+		.mtl-dialog-close {
+			position: absolute;
+			top: 8px;
+			right: 10px;
+			border: none;
+			background: none;
+			font-size: 1.6em;
+			line-height: 1;
+			color: #787c82;
+			cursor: pointer;
+		}
+
+		.mtl-dialog-close:hover {
+			color: #1d2327;
+		}
+
+		/* Room for the close button beside a title that wraps. */
+		.mtl-dialog h3 {
+			margin-top: 0;
+			padding-right: 20px;
+		}
+
+		.mtl-dialog-message {
+			margin: 0 0 16px 0;
+			color: #50575e;
+		}
+
+		.mtl-dialog-details {
+			list-style: disc;
+			margin: 0 0 16px 20px;
+			color: #50575e;
+		}
+
+		.mtl-dialog-details li {
+			margin-bottom: 6px;
+		}
+
+		.mtl-dialog-field {
+			margin: 0 0 16px 0;
+		}
+
+		.mtl-dialog-label {
+			display: block;
+			font-weight: 600;
+			font-size: 0.9em;
+			margin-bottom: 4px;
+		}
+
+		.mtl-dialog-input {
+			box-sizing: border-box;
+			width: 100%;
+			padding: 6px 8px;
+			border: 1px solid #8c8f94;
+			border-radius: 4px;
+		}
+
+		.mtl-dialog-actions {
+			margin-top: 10px;
+		}
+
+		.mtl-dialog .button.mtl-dialog-danger {
+			color: #b32d2e;
+			border-color: #b32d2e;
+			background: #fff;
+		}
+
+		.mtl-dialog .button.mtl-dialog-danger:hover,
+		.mtl-dialog .button.mtl-dialog-danger:focus {
+			background: #b32d2e;
+			color: #fff;
+		}
+	</style>
+	<script>
+		/*
+		 * window.mtlDialog.confirm(options) and .alert(options) open the window
+		 * and resolve true when the go-ahead button is pressed, false when it is
+		 * backed out of. options takes mtl_confirm_attr()'s keys, plus `match`:
+		 * a phrase that must be typed before the go-ahead button enables.
+		 * .submit(form, submitter) sends a form once it has been confirmed.
+		 */
+		(function () {
+			var els = null;
+			var settle = null;
+			var returnFocus = null;
+
+			// Built on first use and appended inside the page wrapper, so the
+			// title picks up the branded header style, as Lock Account's does.
+			function build() {
+				var overlay = document.createElement('div');
+				overlay.className = 'mtl-dialog-overlay';
+				overlay.style.display = 'none';
+				overlay.innerHTML =
+					'<div class="mtl-dialog" role="alertdialog" aria-modal="true" aria-labelledby="mtl-dialog-title" aria-describedby="mtl-dialog-body">' +
+						'<button type="button" class="mtl-dialog-close" aria-label="Close">&times;</button>' +
+						'<h3 id="mtl-dialog-title"></h3>' +
+						'<div id="mtl-dialog-body">' +
+							'<p class="mtl-dialog-message"></p>' +
+							'<ul class="mtl-dialog-details"></ul>' +
+						'</div>' +
+						'<div class="mtl-dialog-field">' +
+							'<label class="mtl-dialog-label" for="mtl-dialog-input"></label>' +
+							'<input type="text" id="mtl-dialog-input" class="mtl-dialog-input" autocomplete="off" spellcheck="false">' +
+						'</div>' +
+						'<div class="mtl-dialog-actions">' +
+							'<button type="button" class="button mtl-dialog-ok"></button> ' +
+							'<button type="button" class="button mtl-dialog-cancel"></button>' +
+						'</div>' +
+					'</div>';
+				(document.querySelector('.mtl-admin-wrapper') || document.body).appendChild(overlay);
+
+				els = {
+					overlay: overlay,
+					title: overlay.querySelector('h3'),
+					message: overlay.querySelector('.mtl-dialog-message'),
+					details: overlay.querySelector('.mtl-dialog-details'),
+					field: overlay.querySelector('.mtl-dialog-field'),
+					label: overlay.querySelector('.mtl-dialog-label'),
+					input: overlay.querySelector('.mtl-dialog-input'),
+					ok: overlay.querySelector('.mtl-dialog-ok'),
+					cancel: overlay.querySelector('.mtl-dialog-cancel')
+				};
+
+				els.ok.addEventListener('click', function () { close(true); });
+				els.cancel.addEventListener('click', function () { close(false); });
+				overlay.querySelector('.mtl-dialog-close').addEventListener('click', function () { close(false); });
+				// A press on the backdrop, not the window, backs out.
+				overlay.addEventListener('mousedown', function (e) {
+					if (e.target === overlay) close(false);
+				});
+				els.input.addEventListener('input', function () {
+					els.ok.disabled = els.input.value.trim() !== els.input.dataset.match;
+				});
+				els.input.addEventListener('keydown', function (e) {
+					if (e.key === 'Enter') {
+						e.preventDefault();
+						if (!els.ok.disabled) close(true);
+					}
+				});
+			}
+
+			// Sets el to text, with its first '%s' replaced by sub inside a
+			// <tag>. textContent throughout, so a stored name can't become markup.
+			function fill(el, text, sub, tag) {
+				var at = (sub === undefined || sub === null) ? -1 : text.indexOf('%s');
+				el.textContent = '';
+				if (at < 0) {
+					el.textContent = text;
+					return;
+				}
+				var strong = document.createElement(tag);
+				strong.textContent = sub;
+				el.appendChild(document.createTextNode(text.slice(0, at)));
+				el.appendChild(strong);
+				el.appendChild(document.createTextNode(text.slice(at + 2)));
+			}
+
+			function open(opts, isAlert) {
+				if (typeof opts === 'string') opts = { message: opts };
+				if (!els) build();
+				if (settle) close(false);
+				returnFocus = document.activeElement;
+
+				els.title.textContent = opts.title || '';
+				els.title.style.display = opts.title ? '' : 'none';
+				fill(els.message, opts.message || '', opts.subject, 'strong');
+
+				els.details.textContent = '';
+				(opts.details || []).forEach(function (text) {
+					var li = document.createElement('li');
+					li.textContent = text;
+					els.details.appendChild(li);
+				});
+				els.details.style.display = els.details.children.length ? '' : 'none';
+
+				var match = opts.match || '';
+				els.field.style.display = match ? '' : 'none';
+				els.input.value = '';
+				els.input.dataset.match = match;
+				if (match) fill(els.label, 'To confirm, type %s exactly:', match, 'code');
+
+				els.ok.textContent = opts.confirm || 'OK';
+				els.ok.disabled = !!match;
+				els.ok.classList.toggle('mtl-dialog-danger', !!opts.danger);
+				els.ok.classList.toggle('button-primary', !opts.danger);
+				els.cancel.textContent = opts.cancel || 'Cancel';
+				els.cancel.style.display = isAlert ? 'none' : '';
+
+				els.overlay.style.display = 'flex';
+				// Cancel takes focus, as on Lock Account: Enter on an unread
+				// dialog should back out rather than go ahead.
+				(match ? els.input : isAlert ? els.ok : els.cancel).focus();
+
+				return new Promise(function (resolve) { settle = resolve; });
+			}
+
+			function close(result) {
+				if (!settle) return;
+				var done = settle;
+				settle = null;
+				els.overlay.style.display = 'none';
+				if (returnFocus && returnFocus.focus && document.contains(returnFocus)) returnFocus.focus();
+				returnFocus = null;
+				done(result);
+			}
+
+			// Captured at the window and stopped there, so a modal underneath
+			// (Bulk Checkout, Manage Loan) doesn't also close on the same
+			// Escape. Tab cycles inside the window while it is open.
+			window.addEventListener('keydown', function (e) {
+				if (!settle) return;
+				if (e.key === 'Escape') {
+					e.preventDefault();
+					e.stopPropagation();
+					close(false);
+				} else if (e.key === 'Tab') {
+					var stops = Array.prototype.filter.call(
+						els.overlay.querySelectorAll('button, input'),
+						function (el) { return !el.disabled && el.offsetParent !== null; }
+					);
+					if (!stops.length) return;
+					var first = stops[0];
+					var last = stops[stops.length - 1];
+					var inside = els.overlay.contains(document.activeElement);
+					if (e.shiftKey && (!inside || document.activeElement === first)) {
+						e.preventDefault();
+						last.focus();
+					} else if (!e.shiftKey && (!inside || document.activeElement === last)) {
+						e.preventDefault();
+						first.focus();
+					}
+				}
+			}, true);
+
+			// Sends form as though submitter had been pressed, without firing
+			// submit again, so whatever asked doesn't ask twice. form.submit()
+			// leaves the button's name out, and handlers tell actions apart by
+			// it, so a hidden copy carries it.
+			function submit(form, submitter) {
+				var copy = null;
+				if (submitter && submitter.name) {
+					copy = document.createElement('input');
+					copy.type = 'hidden';
+					copy.name = submitter.name;
+					copy.value = submitter.value;
+					form.appendChild(copy);
+				}
+				HTMLFormElement.prototype.submit.call(form);
+				// The posted data is already gathered. Left in place, the copy
+				// would be posted again with the next button pressed on a page
+				// restored from the back/forward cache.
+				if (copy) copy.remove();
+			}
+
+			// Forms and buttons carrying mtl_confirm_attr(). Listens at the
+			// document, after the form's own handlers, so a script that stops
+			// the submit (no member picked yet) does so before anyone is asked
+			// to confirm it.
+			document.addEventListener('submit', function (e) {
+				if (e.defaultPrevented) return;
+				var form = e.target;
+				var submitter = e.submitter || null;
+				var source = submitter && submitter.hasAttribute('data-mtl-confirm') ? submitter
+					: form.hasAttribute('data-mtl-confirm') ? form : null;
+				if (!source) return;
+				var raw = source.getAttribute('data-mtl-confirm');
+				var opts;
+				try {
+					opts = JSON.parse(raw);
+				} catch (err) {
+					opts = { message: raw };
+				}
+				e.preventDefault();
+				open(opts, false).then(function (ok) {
+					if (ok) submit(form, submitter);
+				});
+			});
+
+			window.mtlDialog = {
+				confirm: function (opts) { return open(opts, false); },
+				alert: function (opts) { return open(opts, true); },
+				submit: submit
+			};
+		}());
+	</script>
+	<?php
+}
+
+// ==========================================================================
 // MEMBER AGREEMENTS: MODE AND CACHING
 //
 // Three modes, held in the mtl_agreements_mode option:

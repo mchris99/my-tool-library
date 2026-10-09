@@ -2395,14 +2395,38 @@ function mtl_render_setup_page() {
 									<button type="submit" name="mtl_move_agreement" class="button" <?php disabled( count( $mtl_active_list ) - 1, $mtl_index ); ?> aria-label="Move down">&darr;</button>
 								</form>
 								<a class="button" href="<?php echo esc_url( add_query_arg( 'mtl_edit_agreement', $mtl_agreement_id ) ); ?>#mtl-agreement-<?php echo esc_attr( $mtl_agreement_id ); ?>">Edit</a>
-								<?php if ( 0 === $mtl_accept_count ) : ?>
-									<form method="post" action="" style="display: inline;" onsubmit="return confirm('Delete this agreement? No one has agreed to it, so nothing will be lost. This cannot be undone.');">
+								<?php
+								if ( 0 === $mtl_accept_count ) :
+									$mtl_delete_agreement_confirm = array(
+										'title'   => 'Delete Agreement',
+										'message' => 'Delete this agreement?',
+										'details' => array(
+											'No one has agreed to it, so nothing will be lost.',
+											'This cannot be undone.',
+										),
+										'confirm' => 'Delete Agreement',
+										'danger'  => true,
+									);
+									?>
+									<form method="post" action="" style="display: inline;"<?php echo mtl_confirm_attr( $mtl_delete_agreement_confirm ); ?>>
 										<?php wp_nonce_field( 'mtl_delete_agreement_action', 'mtl_delete_agreement_nonce' ); ?>
 										<input type="hidden" name="agreement_id" value="<?php echo esc_attr( $mtl_agreement_id ); ?>">
 										<button type="submit" name="mtl_delete_agreement" class="button mtl-btn-danger">Delete</button>
 									</form>
-								<?php else : ?>
-									<form method="post" action="" style="display: inline;" onsubmit="return confirm('Retire this agreement? It stops being shown and stops being required. Everyone who already agreed to it keeps that record.');">
+									<?php
+								else :
+									$mtl_retire_agreement_confirm = array(
+										'title'   => 'Retire Agreement',
+										'message' => 'Retire this agreement?',
+										'details' => array(
+											'It stops being shown and stops being required.',
+											'Everyone who already agreed to it keeps that record.',
+										),
+										'confirm' => 'Retire Agreement',
+										'danger'  => true,
+									);
+									?>
+									<form method="post" action="" style="display: inline;"<?php echo mtl_confirm_attr( $mtl_retire_agreement_confirm ); ?>>
 										<?php wp_nonce_field( 'mtl_retire_agreement_action', 'mtl_retire_agreement_nonce' ); ?>
 										<input type="hidden" name="agreement_id" value="<?php echo esc_attr( $mtl_agreement_id ); ?>">
 										<button type="submit" name="mtl_retire_agreement" class="button">Retire</button>
@@ -2497,7 +2521,18 @@ function mtl_render_setup_page() {
 									v<?php echo esc_html( number_format_i18n( (int) $mtl_retired->version_num ) ); ?>
 									&middot; retired <?php echo wp_kses_post( mtl_format_utc_datetime( $mtl_retired->retired_at, 'j M Y' ) ); ?>
 								</p>
-								<form method="post" action="" onsubmit="return confirm('Put this agreement back into use? It goes to the end of the list at its existing version number. Members who never agreed to it will be outstanding.');">
+								<?php
+								$mtl_unretire_agreement_confirm = array(
+									'title'   => 'Restore Agreement',
+									'message' => 'Put this agreement back into use?',
+									'details' => array(
+										'It goes to the end of the list at its existing version number.',
+										'Members who never agreed to it will be outstanding.',
+									),
+									'confirm' => 'Put Back into Use',
+								);
+								?>
+								<form method="post" action=""<?php echo mtl_confirm_attr( $mtl_unretire_agreement_confirm ); ?>>
 									<?php wp_nonce_field( 'mtl_unretire_agreement_action', 'mtl_unretire_agreement_nonce' ); ?>
 									<input type="hidden" name="agreement_id" value="<?php echo esc_attr( $mtl_retired->agreement_id ); ?>">
 									<button type="submit" name="mtl_unretire_agreement" class="button">Put back into use</button>
@@ -2556,8 +2591,20 @@ function mtl_render_setup_page() {
 			<p style="font-size: 0.9em; color: #666;">Add new lookup values here so they're available to choose from when adding or editing tools in the Inventory tab.</p>
 
 			<h4 style="margin-bottom: 0;">Categories</h4>
-			<?php if ( $categories ) : ?>
-				<form method="post" action="" onsubmit="return confirm('Delete the selected categories? Any tools using them will simply lose that category. This cannot be undone.');">
+			<?php
+			if ( $categories ) :
+				$mtl_delete_categories_confirm = array(
+					'title'   => 'Delete Categories',
+					'message' => 'Delete the selected categories?',
+					'details' => array(
+						'Any tools using them will simply lose that category.',
+						'This cannot be undone.',
+					),
+					'confirm' => 'Delete Categories',
+					'danger'  => true,
+				);
+				?>
+				<form method="post" action=""<?php echo mtl_confirm_attr( $mtl_delete_categories_confirm ); ?>>
 					<?php wp_nonce_field( 'mtl_delete_categories_action', 'mtl_delete_categories_nonce' ); ?>
 					<div class="mtl-chip-row">
 						<?php foreach ( $categories as $cat ) : ?>
@@ -2584,8 +2631,20 @@ function mtl_render_setup_page() {
 
 			<h4 style="margin-bottom: 0;">Sub-categories</h4>
 			<p style="font-size: 0.85em; color: #666; margin: 4px 0 8px 0;">Each belongs to one category, and deleting a category deletes its sub-categories. Two categories can each have their own &ldquo;Drills&rdquo;.</p>
-			<?php if ( $subcategories ) : ?>
-				<form method="post" action="" onsubmit="return confirm('Delete the selected sub-categories? Any tools using them will lose that sub-category and keep their category. This cannot be undone.');">
+			<?php
+			if ( $subcategories ) :
+				$mtl_delete_subcategories_confirm = array(
+					'title'   => 'Delete Sub-categories',
+					'message' => 'Delete the selected sub-categories?',
+					'details' => array(
+						'Any tools using them will lose that sub-category and keep their category.',
+						'This cannot be undone.',
+					),
+					'confirm' => 'Delete Sub-categories',
+					'danger'  => true,
+				);
+				?>
+				<form method="post" action=""<?php echo mtl_confirm_attr( $mtl_delete_subcategories_confirm ); ?>>
 					<?php wp_nonce_field( 'mtl_delete_subcategories_action', 'mtl_delete_subcategories_nonce' ); ?>
 					<div class="mtl-chip-row">
 						<?php foreach ( $subcategories as $sub ) : ?>
@@ -2623,8 +2682,20 @@ function mtl_render_setup_page() {
 			<hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
 
 			<h4 style="margin-bottom: 0;">Tags</h4>
-			<?php if ( $tags ) : ?>
-				<form method="post" action="" onsubmit="return confirm('Delete the selected tags? Any tools using them will simply lose that tag. This cannot be undone.');">
+			<?php
+			if ( $tags ) :
+				$mtl_delete_tags_confirm = array(
+					'title'   => 'Delete Tags',
+					'message' => 'Delete the selected tags?',
+					'details' => array(
+						'Any tools using them will simply lose that tag.',
+						'This cannot be undone.',
+					),
+					'confirm' => 'Delete Tags',
+					'danger'  => true,
+				);
+				?>
+				<form method="post" action=""<?php echo mtl_confirm_attr( $mtl_delete_tags_confirm ); ?>>
 					<?php wp_nonce_field( 'mtl_delete_tags_action', 'mtl_delete_tags_nonce' ); ?>
 					<div class="mtl-chip-row">
 						<?php foreach ( $tags as $tag ) : ?>
@@ -2694,7 +2765,19 @@ function mtl_render_setup_page() {
 
 				<hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
 
-				<form method="post" action="" onsubmit="return confirm('Delete the selected trainings? Any members who completed them will lose that record, including the date. This cannot be undone.');">
+				<?php
+				$mtl_delete_trainings_confirm = array(
+					'title'   => 'Delete Trainings',
+					'message' => 'Delete the selected trainings?',
+					'details' => array(
+						'Any members who completed them will lose that record, including the date.',
+						'This cannot be undone.',
+					),
+					'confirm' => 'Delete Trainings',
+					'danger'  => true,
+				);
+				?>
+				<form method="post" action=""<?php echo mtl_confirm_attr( $mtl_delete_trainings_confirm ); ?>>
 					<?php wp_nonce_field( 'mtl_delete_trainings_action', 'mtl_delete_trainings_nonce' ); ?>
 					<div class="mtl-chip-row">
 						<?php foreach ( $trainings as $training ) : ?>
@@ -2779,7 +2862,7 @@ function mtl_render_setup_page() {
 			<form method="post" action="" id="mtl-db-reset-form">
 				<?php wp_nonce_field( 'mtl_run_db_action', 'mtl_db_nonce' ); ?>
 				<?php
-				// Filled in by the confirmation prompt below; the server rejects the submission unless it matches exactly.
+				// Filled in by the confirmation dialog below; the server rejects the submission unless it matches exactly.
 				?>
 				<input type="hidden" name="mtl_reset_confirmation" id="mtl-db-reset-confirmation" value="">
 				<label class="mtl-lock-toggle">
@@ -2795,10 +2878,11 @@ function mtl_render_setup_page() {
 			<script>
 				/*
 				 * Second gate on the database reset: the slide-to-unlock toggle stops
-				 * an accidental click, and this prompt stops a deliberate-but-unconsidered
-				 * one by making the admin type the phrase out. The same phrase is
-				 * re-checked server-side (see the mtl_run_db_setup handler), so this is
-				 * a usability layer rather than the security boundary.
+				 * an accidental click, and this dialog stops a deliberate-but-unconsidered
+				 * one by keeping its button disabled until the admin types the phrase
+				 * out. The same phrase is re-checked server-side (see the
+				 * mtl_run_db_setup handler), so this is a usability layer rather than
+				 * the security boundary.
 				 */
 				(function() {
 					var form = document.getElementById('mtl-db-reset-form');
@@ -2809,26 +2893,22 @@ function mtl_render_setup_page() {
 					var field = document.getElementById('mtl-db-reset-confirmation');
 
 					form.addEventListener('submit', function(event) {
-						var typed = window.prompt(
-							'This permanently deletes ALL My Tool Library data: members, tools, ' +
-							'loans, reservations and everything else. It cannot be undone.\n\n' +
-							'To confirm, type this phrase exactly:\n\n' + phrase
-						);
-
-						// Cancelled the prompt: leave the page untouched.
-						if (null === typed) {
-							event.preventDefault();
-							return;
-						}
-
-						if (typed.trim() !== phrase) {
-							event.preventDefault();
-							field.value = '';
-							window.alert('That phrase did not match, so nothing was deleted.\n\nExpected: ' + phrase);
-							return;
-						}
-
-						field.value = typed.trim();
+						event.preventDefault();
+						var submitter = event.submitter || form.querySelector('[name="mtl_run_db_setup"]');
+						window.mtlDialog.confirm({
+							title: 'Run Database Setup',
+							message: 'This permanently deletes ALL My Tool Library data: members, tools, loans, reservations and everything else.',
+							details: ['It cannot be undone.'],
+							match: phrase,
+							confirm: 'Run Database Setup',
+							danger: true
+						}).then(function(ok) {
+							if (!ok) {
+								return;
+							}
+							field.value = phrase;
+							window.mtlDialog.submit(form, submitter);
+						});
 					});
 				}());
 			</script>
@@ -2951,14 +3031,24 @@ function mtl_render_setup_page() {
 					return;
 				}
 				var count = parseInt(button.getAttribute('data-mtl-outstanding'), 10) || 0;
-				var message = 'Switching to full mode will immediately require ' + count +
-					(count === 1 ? ' member' : ' members') +
-					' to agree online, and block them from reserving tools until they do.\n\n' +
-					'They will not be emailed automatically. Send agreement requests from the Membership page.\n\n' +
-					'Switching back to "Track signed paper only" releases everyone again straight away.';
-				if (!window.confirm(message)) {
-					event.preventDefault();
-				}
+				var submitter = event.submitter || button;
+				event.preventDefault();
+				window.mtlDialog.confirm({
+					title: 'Switch to Full Mode',
+					message: 'Switching to full mode will immediately require ' + count +
+						(count === 1 ? ' member' : ' members') +
+						' to agree online, and block them from reserving tools until they do.',
+					details: [
+						'They will not be emailed automatically. Send agreement requests from the Membership page.',
+						'Switching back to "Track signed paper only" releases everyone again straight away.'
+					],
+					confirm: 'Switch to Full Mode',
+					danger: true
+				}).then(function(ok) {
+					if (ok) {
+						window.mtlDialog.submit(modeForm, submitter);
+					}
+				});
 			});
 		})();
 	</script>

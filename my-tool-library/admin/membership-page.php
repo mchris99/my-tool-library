@@ -786,10 +786,10 @@ function mtl_render_record_agreement_form( $member, $acceptances, $changed = fal
 		<?php endif; ?>
 
 		<p style="margin-bottom:0;">
-			<a class="button" href="<?php echo esc_url( remove_query_arg( 'mtl_record_agreement' ) ); ?>#mtl-detail-<?php echo esc_attr( $member_id ); ?>">Cancel</a>
 			<?php if ( $outstanding ) : ?>
 				<button type="submit" name="mtl_record_agreement" value="1" class="button button-primary">Record</button>
 			<?php endif; ?>
+			<a class="button" href="<?php echo esc_url( remove_query_arg( 'mtl_record_agreement' ) ); ?>#mtl-detail-<?php echo esc_attr( $member_id ); ?>">Cancel</a>
 		</p>
 	</form>
 	<?php
@@ -3448,12 +3448,26 @@ function mtl_render_membership_page() {
 			margin-top: 12px;
 		}
 
+		/* Framed like the Lock Account modal (.mtl-lm-modal), wider for the
+			agreement text, and placed and capped like that modal's overlay. */
 		dialog.mtl-record-dialog {
 			max-width: 640px;
 			width: 92%;
-			border: 1px solid #c3c4c7;
-			border-radius: 4px;
-			padding: 18px 22px;
+			border: none;
+			border-radius: 6px;
+			box-shadow: 0 8px 30px rgba(0, 0, 0, .3);
+			padding: 22px 24px 24px 24px;
+			margin-top: 8vh;
+			max-height: calc(92vh - 16px);
+			overflow-y: auto;
+			color: inherit;
+		}
+
+		/* The inline fallback's box, which the dialog's frame replaces. */
+		dialog.mtl-record-dialog .mtl-record-inline {
+			border: none;
+			padding: 0;
+			margin: 0;
 		}
 
 		dialog.mtl-record-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
@@ -3761,7 +3775,14 @@ function mtl_render_membership_page() {
 
 			<div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
 				<p style="margin-top: 0;"><strong>Member ID:</strong> #<?php echo esc_html( $edit_member_id ); ?> <span style="color:#666; font-size:0.85em;">(cannot be changed)</span></p>
-				<form method="post" action="<?php echo esc_url( $base_url ); ?>" onsubmit="return confirm('Save changes to this member?');">
+				<?php
+				$save_member_confirm = array(
+					'title'   => 'Save Changes',
+					'message' => 'Save changes to this member?',
+					'confirm' => 'Save Changes',
+				);
+				?>
+				<form method="post" action="<?php echo esc_url( $base_url ); ?>"<?php echo mtl_confirm_attr( $save_member_confirm ); ?>>
 					<?php wp_nonce_field( 'mtl_edit_member_action', 'mtl_edit_member_nonce' ); ?>
 					<input type="hidden" name="member_id" value="<?php echo esc_attr( $edit_member_id ); ?>">
 
@@ -4216,10 +4237,17 @@ function mtl_render_membership_page() {
 							),
 							$base_url
 						);
-						$delete_confirm = sprintf(
-							'Permanently delete member "%s" (%s)? This cannot be undone. If they have loan or reservation history, that history will be kept on record and their personal data will be anonymized instead of removed outright. Any active reservations of theirs will be cancelled, freeing up their spot in the queue.',
-							$full_name,
-							$member->email
+						$delete_confirm = array(
+							'title'   => 'Delete Member',
+							'message' => 'Permanently delete %s (' . $member->email . ')?',
+							'subject' => $full_name,
+							'details' => array(
+								'This cannot be undone.',
+								'If they have loan or reservation history, that history will be kept on record and their personal data will be anonymized instead of removed outright.',
+								'Any active reservations of theirs will be cancelled, freeing up their spot in the queue.',
+							),
+							'confirm' => 'Delete Member',
+							'danger'  => true,
 						);
 
 						// A Former Member has no account left to be locked out
@@ -4367,8 +4395,15 @@ function mtl_render_membership_page() {
 									// does what it says rather than reporting a
 									// state staff cannot act on from here.
 									if ( null === $member_login || $member_login['pending'] ) :
+										$setup_link_confirm = array(
+											'title'   => 'Send Setup Link',
+											'message' => 'Email %s a link to set their password?',
+											'subject' => $member->email,
+											'details' => array( 'Any link sent to them earlier will stop working.' ),
+											'confirm' => 'Send Setup Link',
+										);
 										?>
-										<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('Email <?php echo esc_js( $member->email ); ?> a link to set their password? Any link sent to them earlier will stop working.');">
+										<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;"<?php echo mtl_confirm_attr( $setup_link_confirm ); ?>>
 											<?php wp_nonce_field( 'mtl_send_one_setup_email_action', 'mtl_send_one_setup_email_nonce' ); ?>
 											<input type="hidden" name="member_id" value="<?php echo esc_attr( $member->member_id ); ?>">
 											<button type="submit" name="mtl_send_one_setup_email" class="button button-small">Send&nbsp;setup&nbsp;link</button>
@@ -4382,7 +4417,7 @@ function mtl_render_membership_page() {
 									// account themselves from the public Account page.
 									if ( mtl_can_delete_members() ) :
 										?>
-										<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('<?php echo esc_js( $delete_confirm ); ?>');">
+										<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;"<?php echo mtl_confirm_attr( $delete_confirm ); ?>>
 											<?php wp_nonce_field( 'mtl_delete_member_action', 'mtl_delete_member_nonce' ); ?>
 											<input type="hidden" name="member_id" value="<?php echo esc_attr( $member->member_id ); ?>">
 											<button type="submit" name="mtl_delete_member" class="button button-small mtl-btn-danger">Delete</button>
@@ -4702,12 +4737,15 @@ function mtl_render_membership_page() {
 											<?php if ( $is_locked ) : ?>
 												<p class="mtl-lock-status">Locked since <?php echo mtl_format_date( $member->locked_at ); ?>. They can sign in, but can&rsquo;t reserve or borrow tools.</p>
 												<?php
-												$unlock_confirm = sprintf(
-													'Unlock the account of "%s"? They will be able to reserve and borrow tools again.',
-													$full_name
+												$unlock_confirm = array(
+													'title'   => 'Unlock Account',
+													'message' => 'Unlock the account of %s?',
+													'subject' => $full_name,
+													'details' => array( 'They will be able to reserve and borrow tools again.' ),
+													'confirm' => 'Unlock Account',
 												);
 												?>
-												<form method="post" action="<?php echo esc_url( $base_url ); ?>" onsubmit="return confirm('<?php echo esc_js( $unlock_confirm ); ?>');">
+												<form method="post" action="<?php echo esc_url( $base_url ); ?>"<?php echo mtl_confirm_attr( $unlock_confirm ); ?>>
 													<?php wp_nonce_field( 'mtl_member_lock_action', 'mtl_member_lock_nonce' ); ?>
 													<input type="hidden" name="member_id" value="<?php echo esc_attr( $mid ); ?>">
 													<button type="submit" name="mtl_member_unlock" class="button">Unlock Account</button>
@@ -4772,7 +4810,15 @@ function mtl_render_membership_page() {
 			</div>
 
 			<div class="mtl-lm-section">
-				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-lm-return-form" onsubmit="return confirm('Mark this tool as returned? This ends the loan.');">
+				<?php
+				$lm_return_confirm = array(
+					'title'   => 'Mark as Returned',
+					'message' => 'Mark this tool as returned?',
+					'details' => array( 'This ends the loan.' ),
+					'confirm' => 'Mark as Returned',
+				);
+				?>
+				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-lm-return-form"<?php echo mtl_confirm_attr( $lm_return_confirm ); ?>>
 					<?php wp_nonce_field( 'mtl_member_loan_action', 'mtl_member_loan_nonce' ); ?>
 					<input type="hidden" name="loan_id" id="mtl-lm-return-loan-id" value="">
 					<input type="hidden" name="member_id" id="mtl-lm-return-member-id" value="">
@@ -4829,7 +4875,17 @@ function mtl_render_membership_page() {
 			<p class="mtl-lm-note" id="mtl-rm-maintenance-note" style="display: none;">This tool is under maintenance, so the loan can't be started yet. Mark it back in service on the <strong>Inventory</strong> page first.</p>
 
 			<div class="mtl-lm-section">
-				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-rm-cancel-form" onsubmit="return confirm('Cancel this reservation? This ends it and removes it from the member list.');">
+				<?php
+				$rm_cancel_confirm = array(
+					'title'   => 'Cancel Reservation',
+					'message' => 'Cancel this reservation?',
+					'details' => array( 'This ends it and removes it from the member list.' ),
+					'confirm' => 'Cancel Reservation',
+					'cancel'  => 'Keep Reservation',
+					'danger'  => true,
+				);
+				?>
+				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-rm-cancel-form"<?php echo mtl_confirm_attr( $rm_cancel_confirm ); ?>>
 					<?php wp_nonce_field( 'mtl_member_cancel_reservation_action', 'mtl_member_cancel_reservation_nonce' ); ?>
 					<input type="hidden" name="reservation_id" id="mtl-rm-cancel-reservation-id" value="">
 					<input type="hidden" name="member_id" id="mtl-rm-cancel-member-id" value="">
@@ -5648,7 +5704,28 @@ function mtl_render_membership_page() {
 						// just "dialog".
 						dialog.setAttribute('aria-labelledby', 'mtl-record-title-' + memberId);
 						dialog.appendChild(inline.firstElementChild ? inline : inline);
-						document.body.appendChild(dialog);
+
+						// The Lock Account modal's close button and backdrop
+						// click. Added after the form so the focus query below
+						// still lands on the first checkbox.
+						const closeBtn = document.createElement('button');
+						closeBtn.type = 'button';
+						closeBtn.className = 'mtl-lm-close';
+						closeBtn.setAttribute('aria-label', 'Close');
+						closeBtn.textContent = '×';
+						closeBtn.addEventListener('click', function() { dialog.close(); });
+						dialog.appendChild(closeBtn);
+						dialog.addEventListener('mousedown', function(ev) {
+							const box = dialog.getBoundingClientRect();
+							if (ev.clientX < box.left || ev.clientX > box.right || ev.clientY < box.top || ev.clientY > box.bottom) {
+								dialog.close();
+							}
+						});
+
+						// Inside the wrapper, not loose in <body>, so the title
+						// picks up the branded header style. showModal() puts it
+						// in the top layer wherever it sits.
+						(document.querySelector('.mtl-admin-wrapper') || document.body).appendChild(dialog);
 					}
 
 					// showModal() gives focus containment and Escape for free,

@@ -185,7 +185,16 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 			$html .= '<p class="mtl-lr-action-note">This tool is currently on loan. End that loan before checking it out to a new member.</p>';
 		}
 
-		$html .= '<form method="post" action="" class="mtl-lr-action-form" onsubmit="return confirm(\'Cancel this reservation? This ends it and removes it from the member list.\');">';
+		$html .= '<form method="post" action="" class="mtl-lr-action-form"' . mtl_confirm_attr(
+			array(
+				'title'   => 'Cancel Reservation',
+				'message' => 'Cancel this reservation?',
+				'details' => array( 'This ends it and removes it from the member list.' ),
+				'confirm' => 'Cancel Reservation',
+				'cancel'  => 'Keep Reservation',
+				'danger'  => true,
+			)
+		) . '>';
 		$html .= $nonce_field;
 		$html .= '<input type="hidden" name="mtl_lr_action" value="cancel_reservation">';
 		$html .= '<input type="hidden" name="reservation_id" value="' . (int) $rec['reservation_id'] . '">';
@@ -218,7 +227,14 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 
 		// The return date defaults to today; backdating it is for staff working
 		// through a backlog of drop-offs (see mtl_resolve_return_timestamp()).
-		$html .= '<form method="post" action="" class="mtl-lr-action-form" onsubmit="return confirm(\'Mark this tool as returned? This ends the loan.\');">';
+		$html .= '<form method="post" action="" class="mtl-lr-action-form"' . mtl_confirm_attr(
+			array(
+				'title'   => 'End Loan',
+				'message' => 'Mark this tool as returned?',
+				'details' => array( 'This ends the loan.' ),
+				'confirm' => 'End Loan',
+			)
+		) . '>';
 		$html .= $nonce_field;
 		$html .= '<input type="hidden" name="mtl_lr_action" value="end_loan">';
 		$html .= '<input type="hidden" name="loan_id" value="' . (int) $rec['loan_id'] . '">';
@@ -1463,44 +1479,45 @@ function mtl_render_loans_page() {
 			color: #fff;
 		}
 
-		/* Bulk Checkout. Same overlay/modal proportions as the Inventory page's
-			Quick Loan, so the two read as one component; the class names are
-			local because each admin page ships its own stylesheet. */
+		/* Bulk Checkout. Same overlay, frame and close button as the Lock
+			Account and Quick Loan modals, so they read as one component, but
+			wider for the barcode table; the class names are local because each
+			admin page ships its own stylesheet. */
 		.mtl-bc-overlay {
 			position: fixed;
 			inset: 0;
-			background: rgba(0, 0, 0, 0.5);
+			background: rgba(0, 0, 0, .5);
 			z-index: 100000;
 			display: flex;
 			align-items: flex-start;
 			justify-content: center;
-			padding: 40px 16px;
+			padding: 8vh 16px 16px 16px;
 			overflow-y: auto;
 		}
 
 		.mtl-bc-modal {
 			background: #fff;
-			border-radius: 4px;
-			padding: 22px 26px;
+			border-radius: 6px;
+			padding: 22px 24px 24px 24px;
 			width: 100%;
 			max-width: 760px;
 			position: relative;
-			box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+			box-shadow: 0 8px 30px rgba(0, 0, 0, .3);
 		}
 
 		.mtl-bc-close {
 			position: absolute;
-			top: 10px;
-			right: 12px;
-			border: 0;
+			top: 8px;
+			right: 10px;
+			border: none;
 			background: none;
-			font-size: 22px;
+			font-size: 1.6em;
 			line-height: 1;
 			cursor: pointer;
-			color: #646970;
+			color: #787c82;
 		}
 
-		.mtl-bc-close:hover { color: #d63638; }
+		.mtl-bc-close:hover { color: #1d2327; }
 
 		.mtl-bc-label {
 			display: block;
@@ -2686,8 +2703,10 @@ function mtl_render_loans_page() {
 			form.addEventListener('submit', function(e) {
 				if (!memberId()) {
 					e.preventDefault();
-					window.alert('Pick a member from the list first.');
-					search.focus();
+					window.mtlDialog.alert({
+						title: 'Choose a Member',
+						message: 'Pick a member from the list first.'
+					}).then(function() { search.focus(); });
 					return;
 				}
 				// Loaning a tool somebody else is queued for is allowed, but it
@@ -2697,11 +2716,18 @@ function mtl_render_loans_page() {
 					const st = rowStatus(tr.querySelector('.mtl-bc-barcode').value, tr.querySelector('.mtl-bc-reserve').checked);
 					if (st && st.warn) jumped.push(st.warn);
 				});
-				if (jumped.length && !window.confirm(
-					'Reserved by another member:\n\n' + jumped.join('\n') +
-					'\n\nLending these takes the turn of whoever is waiting. Continue?'
-				)) {
+				if (jumped.length) {
 					e.preventDefault();
+					const submitter = e.submitter;
+					window.mtlDialog.confirm({
+						title: 'Lend Reserved Tools',
+						message: 'These are reserved by another member. Lending them takes the turn of whoever is waiting.',
+						details: jumped,
+						confirm: 'Lend Anyway',
+						cancel: 'Go Back'
+					}).then(function(ok) {
+						if (ok) window.mtlDialog.submit(form, submitter);
+					});
 				}
 			});
 
@@ -2753,7 +2779,7 @@ function mtl_render_loans_page() {
 			document.getElementById('mtl-bc-open').addEventListener('click', open);
 			document.getElementById('mtl-bc-close').addEventListener('click', close);
 			document.getElementById('mtl-bc-clear').addEventListener('click', clearAll);
-			overlay.addEventListener('click', function(e) { if (e.target === overlay) close(); });
+			overlay.addEventListener('mousedown', function(e) { if (e.target === overlay) close(); });
 			document.addEventListener('keydown', function(e) {
 				if (e.key === 'Escape' && overlay.style.display !== 'none') close();
 			});

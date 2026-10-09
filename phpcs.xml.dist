@@ -111,6 +111,7 @@
                 <element value="mtl_giving_section_html"/>
                 <element value="mtl_tool_request_section_html"/>
                 <element value="mtl_shop_location_block"/>
+                <element value="mtl_confirm_attr"/>
             </property>
         </properties>
     </rule>
