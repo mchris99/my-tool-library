@@ -227,7 +227,7 @@ The **Sign-in** column shows where each member stands:
 | **No password** | The sign-in exists but has no password. | **Send setup link** sends the email again.                    |
 | **None**        | No sign-in yet.                         | **Send setup link** creates it and emails them.               |
 
-Anyone with a membership can use **Lost your password?**, even before they've set one up. If they try to sign up again instead, the site points them there.
+Anyone with a membership can use **Lost your password?**, even before they've set one up. If they try to sign up again instead, the form doesn't say the address is taken. Once the rest of the form is filled in correctly, the site emails that address a link to set a password, or to sign in or reset it, at most once an hour.
 
 ### Creating logins after a CSV import
 
@@ -258,7 +258,7 @@ They then show as **Verified** on the staff pages, including the Loans & Reserva
 
 To remove a document, clear its field and save. Clearing one makes the member unverified and keeps the other; clearing both deletes their verification record.
 
-If a verified member changes their name, phone or address on their own Account page, they lose verified status. A pop-up warns them before they save. Staff edits on Membership don't reset it.
+If a member changes their name, phone or address on their own Account page, any scan on file is removed, since it shows the old details, and a verified member loses verified status. Verified members are warned before they save. The site administrator is emailed the scan links so the files can be deleted. Staff edits on Membership don't reset anything.
 
 > **Note:** If your library doesn't need verification, an administrator can put any URL in both fields to mark someone verified. You can also tell members it isn't needed under **Setup > Member Verification Directions**.
 

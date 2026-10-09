@@ -1576,7 +1576,7 @@ function mtl_render_setup_page() {
 	);
 	$verification_directions = get_option(
 		'mtl_verification_directions',
-		'A government issued ID and proof of address are required to become a verified member and to check out tools. Stop by our office to verify membership.'
+		'A government-issued ID and proof of address are required to become a verified member and to check out tools. Stop by our office to verify membership.'
 	);
 
 	// Default lives in mtl_default_giving_text() so this box and the

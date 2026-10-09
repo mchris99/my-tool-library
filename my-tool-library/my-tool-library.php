@@ -8031,8 +8031,8 @@ function mtl_validate_new_password( $expected_key, $posted_key, $pass1, $pass2 )
 		return 'That reset link is no longer valid. Please request a new one.';
 	}
 
-	// Only-spaces is rejected, but a password containing spaces is fine, so
-	// the value itself is never trimmed before being stored.
+	// Only-spaces is rejected. Spaces inside a password are fine; like core,
+	// the caller trims only the ends.
 	if ( '' === trim( $pass1 ) ) {
 		return 'Please enter a new password.';
 	}
@@ -8121,19 +8121,17 @@ function mtl_render_reset_password_page() {
 		} else {
 			$posted_key = isset( $_POST['rp_key'] ) ? sanitize_text_field( wp_unslash( $_POST['rp_key'] ) ) : '';
 
-			// Passwords are read RAW, on purpose. sanitize_text_field() strips
-			// tags and collapses whitespace, so it would silently mangle a
-			// perfectly good password, because the member would set one thing and be
-			// unable to sign in with it. wp_unslash() undoes WordPress's magic
-			// quotes and nothing else; the value is never echoed, and
-			// reset_password() hashes it rather than storing it. Core reads
-			// $_POST['pass1'] the same way in wp-login.php.
-			// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- see above; sanitizing a password would corrupt it.
-			$pass1 = isset( $_POST['pass1'] ) ? (string) wp_unslash( $_POST['pass1'] ) : '';
-			$pass2 = isset( $_POST['pass2'] ) ? (string) wp_unslash( $_POST['pass2'] ) : '';
-			// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			// Stored exactly as core's sign-in checks it: still slashed, and
+			// trimmed, the way wp-login.php's own reset stores it (see
+			// wp_signon() and wp_authenticate()). Sanitizing or unslashing it
+			// would leave a password containing a quote or a backslash unable
+			// to sign in. The checks below run on the typed (unslashed) value.
+			// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- see above.
+			$pass1 = isset( $_POST['pass1'] ) && is_string( $_POST['pass1'] ) ? trim( $_POST['pass1'] ) : '';
+			$pass2 = isset( $_POST['pass2'] ) && is_string( $_POST['pass2'] ) ? trim( $_POST['pass2'] ) : '';
+			// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 
-			$error = mtl_validate_new_password( (string) $rp_key, $posted_key, $pass1, $pass2 );
+			$error = mtl_validate_new_password( (string) $rp_key, $posted_key, wp_unslash( $pass1 ), wp_unslash( $pass2 ) );
 
 			if ( '' === $error ) {
 				reset_password( $user, $pass1 );
