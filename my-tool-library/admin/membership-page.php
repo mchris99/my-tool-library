@@ -2481,14 +2481,18 @@ function mtl_render_membership_page() {
 				// $wpdb->query()'s affected-rows return is 0 both when nothing
 				// matched AND when the posted date equals the existing one, so
 				// it can't distinguish "no such active loan" from "no-op save".
-				$ext_active = $wpdb->get_var(
+				// Its member comes from the loan itself, never from the POST.
+				$ext_member_id = (int) $wpdb->get_var(
 					$wpdb->prepare(
-						"SELECT loan_id FROM {$tbl_loans} WHERE loan_id = %d AND return_date IS NULL",
+						"SELECT member_id FROM {$tbl_loans} WHERE loan_id = %d AND return_date IS NULL",
 						$ext_loan_id
 					)
 				);
-				if ( ! $ext_active ) {
+				if ( ! $ext_member_id ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That loan could not be found, or has already been returned.</p></div>';
+				} elseif ( mtl_member_is_locked( $ext_member_id ) ) {
+					$reopen_member_id = $ext_member_id;
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot extend this loan.</strong> This member&rsquo;s account is locked. Unlock it first.</p></div>';
 				} else {
 					$wpdb->query(
 						$wpdb->prepare(
@@ -2564,6 +2568,11 @@ function mtl_render_membership_page() {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The due date can&rsquo;t be in the past. Please pick today or a later date.</p></div>';
 			} elseif ( ! $sl_res ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That reservation is no longer active, so it could not be checked out.</p></div>';
+			} elseif ( mtl_member_is_locked( (int) $sl_res->member_id ) ) {
+				// Locking cancels every active reservation, so this only fires
+				// for a page loaded before the lock; kept as defense-in-depth,
+				// like the retired check below.
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot start this loan.</strong> This member&rsquo;s account is locked.</p></div>';
 			} else {
 				// Anyone else with an earlier active reservation for the same
 				// tool means this member is no longer first in line.
@@ -2637,6 +2646,54 @@ function mtl_render_membership_page() {
 		}
 	}
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	// 3F. HANDLE "LOCK ACCOUNT" / "UNLOCK ACCOUNT" FROM THE MEMBER DETAIL
+	// PANEL. Editors as well as Administrators: it is desk work, and unlike
+	// deleting it can be undone. See mtl_lock_member() for what a lock does.
+	if ( ( isset( $_POST['mtl_member_lock'] ) || isset( $_POST['mtl_member_unlock'] ) ) && mtl_can_manage_library() ) {
+		if ( isset( $_POST['mtl_member_lock_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_lock_nonce'] ) ), 'mtl_member_lock_action' ) ) {
+			$lock_member_id   = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
+			$reopen_member_id = $lock_member_id;
+
+			if ( isset( $_POST['mtl_member_lock'] ) ) {
+				$lock_result = mtl_lock_member( $lock_member_id );
+				$lock_name   = esc_html( $lock_result['name'] );
+				$lock_email  = esc_html( $lock_result['email'] );
+
+				if ( 'locked' === $lock_result['outcome'] ) {
+					$lock_res_note = '';
+					if ( $lock_result['cancelled_reservations'] > 0 ) {
+						$lock_res_note = 1 === $lock_result['cancelled_reservations']
+							? ' Their active reservation was cancelled.'
+							: ' Their ' . (int) $lock_result['cancelled_reservations'] . ' active reservations were cancelled.';
+					}
+					// Staff need to know if the member was never told, since
+					// the email is the only thing that says to come and talk.
+					$lock_email_note = $lock_result['email_sent']
+						? ' An email asking them to speak with library staff was sent to ' . $lock_email . '.'
+						: ' <strong>The email to ' . $lock_email . ' could not be sent</strong>, so let them know another way.';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Account locked.</strong> ' . $lock_name . ' can still sign in, but can&rsquo;t reserve or borrow tools until the account is unlocked.' . esc_html( $lock_res_note ) . wp_kses_post( $lock_email_note ) . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $lock_name is esc_html()'d above.
+				} elseif ( 'already_locked' === $lock_result['outcome'] ) {
+					echo '<div class="notice notice-warning is-dismissible"><p>' . $lock_name . '&rsquo;s account was already locked, so nothing changed.</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $lock_name is esc_html()'d above.
+				} else {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member could not be found, or was deleted.</p></div>';
+				}
+			} else {
+				$unlock_result = mtl_unlock_member( $lock_member_id );
+				$unlock_name   = esc_html( $unlock_result['name'] );
+
+				if ( 'unlocked' === $unlock_result['outcome'] ) {
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Account unlocked.</strong> ' . $unlock_name . ' can reserve and borrow tools again. Reservations cancelled by the lock aren&rsquo;t restored.</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $unlock_name is esc_html()'d above.
+				} elseif ( 'not_locked' === $unlock_result['outcome'] ) {
+					echo '<div class="notice notice-warning is-dismissible"><p>' . $unlock_name . '&rsquo;s account wasn&rsquo;t locked, so nothing changed.</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $unlock_name is esc_html()'d above.
+				} else {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member could not be found, or was deleted.</p></div>';
+				}
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
 
 	// 4. HANDLE "EDIT" LINK (GET): load the requested member into the Edit
 	// panel. Skipped if a submitted edit above already failed validation, since
@@ -2793,6 +2850,36 @@ function mtl_render_membership_page() {
 			padding: 2px 9px;
 			font-size: 0.8em;
 			white-space: nowrap;
+		}
+
+		/* Solid, unlike the pale Not Verified badge beside it: a lock is
+			enforced, where verification is only a flag for staff to weigh. */
+		.mtl-locked-badge {
+			display: inline-block;
+			background: #b32d2e;
+			color: #fff;
+			border: 1px solid #b32d2e;
+			border-radius: 12px;
+			padding: 2px 9px;
+			font-size: 0.8em;
+			white-space: nowrap;
+			margin-top: 3px;
+		}
+
+		.mtl-detail-panel p.mtl-lock-status {
+			color: #b32d2e;
+			font-weight: 600;
+			margin-bottom: 8px;
+		}
+
+		.mtl-lock-effects {
+			list-style: disc;
+			margin: 0 0 16px 20px;
+			color: #50575e;
+		}
+
+		.mtl-lock-effects li {
+			margin-bottom: 6px;
 		}
 
 		/* Advanced filters: related fields are boxed into side-by-side groups
@@ -3684,6 +3771,7 @@ function mtl_render_membership_page() {
             m.has_donated_tools,
             m.anonymized_at,
             m.private_notes,
+            m.locked_at,
             v.photo_id_scan_url,
             v.address_proof_scan_url,
             v.verified_at
@@ -3901,6 +3989,14 @@ function mtl_render_membership_page() {
 							<option value="no">No</option>
 						</select>
 					</div>
+					<div>
+						<label for="adv-m-locked">Account Locked?</label>
+						<select id="adv-m-locked">
+							<option value="">Any</option>
+							<option value="1">Yes</option>
+							<option value="0">No</option>
+						</select>
+					</div>
 					<?php if ( mtl_agreements_tracking() ) : ?>
 						<div>
 							<?php // A badge finds one member; this is what lets staff work through a backlog after revising an agreement. ?>
@@ -4091,6 +4187,10 @@ function mtl_render_membership_page() {
 							$member->email
 						);
 
+						// A Former Member has no account left to be locked out
+						// of, whatever the column says.
+						$is_locked = ! $is_anonymized && ! empty( $member->locked_at );
+
 						// Borrowing activity for this member. Computed here (not
 						// in the detail row below) because the main row needs it
 						// too, for the boolean advanced-filter attributes.
@@ -4116,6 +4216,7 @@ function mtl_render_membership_page() {
 							data-donation="<?php echo esc_attr( $member->recurring_donation_amount ); ?>"
 							data-donated="<?php echo esc_attr( strtolower( $member->has_donated_tools ) ); ?>"
 							data-verified="<?php echo $is_verified ? 'yes' : 'no'; ?>"
+							data-locked="<?php echo $is_locked ? '1' : '0'; ?>"
 							<?php // Only whether notes exist; the notes themselves stay in the detail panel. ?>
 							data-hasnotes="<?php echo trim( (string) $member->private_notes ) !== '' ? '1' : '0'; ?>"
 							<?php
@@ -4176,6 +4277,9 @@ function mtl_render_membership_page() {
 									<span class="mtl-verified-badge">Verified</span>
 								<?php else : ?>
 									<span class="mtl-unverified-badge">Not Verified</span>
+								<?php endif; ?>
+								<?php if ( $is_locked ) : ?>
+									<span class="mtl-locked-badge" title="Locked <?php echo esc_attr( wp_strip_all_tags( mtl_format_date( $member->locked_at ) ) ); ?>: can&rsquo;t reserve or borrow tools">Locked</span>
 								<?php endif; ?>
 								<?php
 								// Two labels, because they mean different things
@@ -4510,6 +4614,8 @@ function mtl_render_membership_page() {
 														data-due-date="<?php echo esc_attr( $loan->due_date ); ?>"
 														<?php // ISO date portion of the checkout timestamp (never mtl_format_date(), which is display-only): the modal's Return date can't go back past this day. ?>
 														data-loan-date="<?php echo esc_attr( substr( (string) $loan->loan_date, 0, 10 ) ); ?>"
+														<?php // A locked member's loan can be returned but not extended, so the modal hides Extend. ?>
+														data-locked="<?php echo $is_locked ? '1' : '0'; ?>"
 														title="Click to manage this loan">
 														<span>
 															<?php echo esc_html( stripslashes( $loan->tool_name ) ); ?>
@@ -4546,6 +4652,32 @@ function mtl_render_membership_page() {
 										<?php else : ?>
 											<p style="color: #999;">No active reservations.</p>
 										<?php endif; ?>
+
+										<?php if ( ! $is_anonymized ) : ?>
+											<?php if ( $is_locked ) : ?>
+												<p class="mtl-lock-status">Locked since <?php echo mtl_format_date( $member->locked_at ); ?>. They can sign in, but can&rsquo;t reserve or borrow tools.</p>
+												<?php
+												$unlock_confirm = sprintf(
+													'Unlock the account of "%s"? They will be able to reserve and borrow tools again.',
+													$full_name
+												);
+												?>
+												<form method="post" action="<?php echo esc_url( $base_url ); ?>" onsubmit="return confirm('<?php echo esc_js( $unlock_confirm ); ?>');">
+													<?php wp_nonce_field( 'mtl_member_lock_action', 'mtl_member_lock_nonce' ); ?>
+													<input type="hidden" name="member_id" value="<?php echo esc_attr( $mid ); ?>">
+													<button type="submit" name="mtl_member_unlock" class="button">Unlock Account</button>
+												</form>
+											<?php else : ?>
+												<?php // Opens the shared Lock Account modal below, which asks staff to confirm. ?>
+												<p>
+													<button type="button" class="button mtl-btn-danger mtl-lock-launch"
+														data-member-id="<?php echo esc_attr( $mid ); ?>"
+														data-member-name="<?php echo esc_attr( $full_name ); ?>"
+														data-member-email="<?php echo esc_attr( $member->email ); ?>"
+														data-res-count="<?php echo esc_attr( $res_count ); ?>">Lock Account</button>
+												</p>
+											<?php endif; ?>
+										<?php endif; ?>
 									</div>
 								</div>
 							</td>
@@ -4572,7 +4704,9 @@ function mtl_render_membership_page() {
 			<h3 id="mtl-lm-title" style="margin-top: 0;">Manage Loan</h3>
 			<p class="mtl-lm-tool-line">Tool: <strong id="mtl-lm-tool-name"></strong></p>
 
-			<div class="mtl-lm-section">
+			<p class="mtl-lm-note" id="mtl-lm-locked-note" style="display: none;">This member&rsquo;s account is locked, so the loan can&rsquo;t be extended. It can still be returned.</p>
+
+			<div class="mtl-lm-section" id="mtl-lm-extend-section">
 				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-lm-extend-form">
 					<?php wp_nonce_field( 'mtl_member_loan_action', 'mtl_member_loan_nonce' ); ?>
 					<input type="hidden" name="loan_id" id="mtl-lm-extend-loan-id" value="">
@@ -4663,6 +4797,35 @@ function mtl_render_membership_page() {
 		</div>
 	</div>
 
+	<?php
+	// ---- Shared Lock Account modal (one per page; the member is set by JS
+			// when a detail panel's Lock Account button is clicked). This is
+			// the confirmation step: nothing is locked until its form is
+			// submitted. ----
+	?>
+	<div id="mtl-lock-overlay" class="mtl-lm-overlay" style="display: none;">
+		<div class="mtl-lm-modal" role="dialog" aria-modal="true" aria-labelledby="mtl-lock-title" aria-describedby="mtl-lock-effects">
+			<button type="button" class="mtl-lm-close" id="mtl-lock-close" aria-label="Close">&times;</button>
+			<h3 id="mtl-lock-title" style="margin-top: 0;">Lock Account</h3>
+			<p class="mtl-lm-tool-line">Lock the account of <strong id="mtl-lock-name"></strong>?</p>
+
+			<ul class="mtl-lock-effects" id="mtl-lock-effects">
+				<li>They can still sign in and see their account, but can&rsquo;t reserve tools, and loans can&rsquo;t be started or extended for them.</li>
+				<li id="mtl-lock-res-line"></li>
+				<li>An email to <strong id="mtl-lock-email"></strong> will tell them the account is locked and to speak with library staff.</li>
+			</ul>
+
+			<form method="post" action="<?php echo esc_url( $base_url ); ?>">
+				<?php wp_nonce_field( 'mtl_member_lock_action', 'mtl_member_lock_nonce' ); ?>
+				<input type="hidden" name="member_id" id="mtl-lock-member-id" value="">
+				<div class="mtl-lm-actions">
+					<button type="submit" name="mtl_member_lock" class="button mtl-btn-danger">Lock Account</button>
+					<button type="button" class="button" id="mtl-lock-cancel">Cancel</button>
+				</div>
+			</form>
+		</div>
+	</div>
+
 	<?php if ( $members ) : ?>
 		<div class="mtl-pagination-bar mtl-pagination-bottom">
 			<button type="button" class="button" id="mtl-prev-page">&larr; Previous</button>
@@ -4743,6 +4906,7 @@ function mtl_render_membership_page() {
 				donationMax: document.getElementById('adv-m-donation-max'),
 				donated: document.getElementById('adv-m-donated'),
 				verified: document.getElementById('adv-m-verified'),
+				locked: document.getElementById('adv-m-locked'),
 				agreements: document.getElementById('adv-m-agreements'),
 				agreement: document.getElementById('adv-m-agreement'),
 				agreementVersion: document.getElementById('adv-m-agreement-version'),
@@ -4893,6 +5057,7 @@ function mtl_render_membership_page() {
 					donationMax: advFields.donationMax.value !== '' ? parseFloat(advFields.donationMax.value) : null,
 					donated: advFields.donated.value,
 					verified: advFields.verified.value,
+					locked: advFields.locked.value,
 					agreements: advFields.agreements ? advFields.agreements.value : '',
 					agreement: advFields.agreement ? advFields.agreement.value : '',
 					agreementVersion: advFields.agreementVersion ? advFields.agreementVersion.value : '',
@@ -4922,6 +5087,7 @@ function mtl_render_membership_page() {
 					if (visible && f.signupTo && d.signup > f.signupTo) visible = false;
 					if (visible && f.donated && d.donated !== f.donated) visible = false;
 					if (visible && f.verified && d.verified !== f.verified) visible = false;
+					if (visible && f.locked && d.locked !== f.locked) visible = false;
 					if (visible && f.hasNotes && d.hasnotes !== f.hasNotes) visible = false;
 					if (visible && f.agreements && d.agreements !== f.agreements) visible = false;
 
@@ -5166,6 +5332,8 @@ function mtl_render_membership_page() {
 			const returnLoanId    = document.getElementById('mtl-lm-return-loan-id');
 			const returnMemberId  = document.getElementById('mtl-lm-return-member-id');
 			const returnDate      = document.getElementById('mtl-lm-return-date');
+			const extendSection   = document.getElementById('mtl-lm-extend-section');
+			const lockedNote      = document.getElementById('mtl-lm-locked-note');
 
 			function dateFromToday(days) {
 				const d = new Date();
@@ -5196,6 +5364,11 @@ function mtl_render_membership_page() {
 					returnDate.value = returnDate.max;
 					returnDate.min   = li.dataset.loanDate || '';
 				}
+				// The server refuses the extension either way; this just
+				// doesn't offer it.
+				const locked = li.dataset.locked === '1';
+				extendSection.style.display = locked ? 'none' : '';
+				lockedNote.style.display    = locked ? 'block' : 'none';
 				clearActiveDueButton();
 				overlay.style.display = 'flex';
 			}
@@ -5341,6 +5514,57 @@ function mtl_render_membership_page() {
 					clearActiveDueButton();
 					btn.classList.add('mtl-lm-due-active');
 				});
+			});
+		});
+	</script>
+
+	<script>
+		// ---- Lock Account modal ----
+		document.addEventListener('DOMContentLoaded', function() {
+			const overlay = document.getElementById('mtl-lock-overlay');
+			if (!overlay) return;
+			const nameEl        = document.getElementById('mtl-lock-name');
+			const emailEl       = document.getElementById('mtl-lock-email');
+			const resLine       = document.getElementById('mtl-lock-res-line');
+			const memberIdInput = document.getElementById('mtl-lock-member-id');
+			const cancelBtn     = document.getElementById('mtl-lock-cancel');
+			let launcher = null;
+
+			function openModal(btn) {
+				launcher = btn;
+				const resCount = parseInt(btn.dataset.resCount, 10) || 0;
+				// textContent, so a stored name or email can't become markup.
+				nameEl.textContent  = btn.dataset.memberName;
+				emailEl.textContent = btn.dataset.memberEmail;
+				memberIdInput.value = btn.dataset.memberId;
+				resLine.textContent = resCount === 1
+					? 'Their active reservation will be cancelled, and the next person in line moves up.'
+					: 'Their ' + resCount + ' active reservations will be cancelled, and the next person in each line moves up.';
+				resLine.style.display = resCount > 0 ? '' : 'none';
+				overlay.style.display = 'flex';
+				// Cancel, not Lock, takes focus: Enter on an unread dialog
+				// should back out rather than lock someone.
+				cancelBtn.focus();
+			}
+
+			function closeModal() {
+				overlay.style.display = 'none';
+				if (launcher) launcher.focus();
+			}
+
+			document.querySelectorAll('.mtl-lock-launch').forEach(function(btn) {
+				btn.addEventListener('click', function() {
+					openModal(btn);
+				});
+			});
+
+			document.getElementById('mtl-lock-close').addEventListener('click', closeModal);
+			cancelBtn.addEventListener('click', closeModal);
+			overlay.addEventListener('mousedown', function(e) {
+				if (e.target === overlay) closeModal();
+			});
+			document.addEventListener('keydown', function(e) {
+				if (e.key === 'Escape' && overlay.style.display !== 'none') closeModal();
 			});
 		});
 	</script>

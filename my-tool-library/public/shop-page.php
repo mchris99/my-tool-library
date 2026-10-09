@@ -201,10 +201,10 @@ function mtl_shop_tool_share_url( $tool_id, $base ) {
  *
  * @param object $tool Tool row from the catalog query.
  * @param string $base Base page URL.
- * @param array  $ctx  Viewer context: is_member, is_admin (bool); reserved,
- *                     loaned (tool_id => true lookups); reserve_nonce_field
- *                     (pre-rendered wp_nonce_field string); login_url,
- *                     signup_url, reservations_url.
+ * @param array  $ctx  Viewer context: is_member, is_locked, is_admin (bool);
+ *                     reserved, loaned (tool_id => true lookups);
+ *                     reserve_nonce_field (pre-rendered wp_nonce_field
+ *                     string); login_url, signup_url, reservations_url.
  * @return string
  */
 function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
@@ -309,6 +309,9 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 		<?php elseif ( ! empty( $ctx['is_member'] ) ) : ?>
 			<?php if ( isset( $ctx['loaned'][ $tool_id ] ) ) : ?>
 				<p class="mtl-shop-reserve-note">You currently have this tool checked out.</p>
+			<?php elseif ( ! empty( $ctx['is_locked'] ) ) : ?>
+				<?php // In place of the button, so the reason is right where they went to reserve. mtl_handle_reserve_action() refuses a locked member regardless. ?>
+				<p class="mtl-shop-locked-note">Your account is locked, so you can&rsquo;t reserve this tool. Please speak with library staff.</p>
 			<?php elseif ( isset( $ctx['reserved'][ $tool_id ] ) ) : ?>
 				<p class="mtl-shop-reserve-note">You&rsquo;re in the queue for this tool. <a href="<?php echo esc_url( $ctx['reservations_url'] ); ?>">View My Reservations</a>.</p>
 			<?php else : ?>
@@ -639,6 +642,7 @@ function mtl_render_shop_page() {
 	// mtl_shop_render_detail_panel). The lookups only run when signed in.
 	$member_ctx = array(
 		'is_member'           => false,
+		'is_locked'           => false,
 		'is_admin'            => ( is_user_logged_in() && mtl_can_manage_library() ),
 		'reserved'            => array(), // Tool_id => true (active reservations).
 		'loaned'              => array(), // Tool_id => true (currently on loan).
@@ -651,6 +655,7 @@ function mtl_render_shop_page() {
 	if ( $viewer ) {
 		$mid                               = (int) $viewer->member_id;
 		$member_ctx['is_member']           = true;
+		$member_ctx['is_locked']           = ! empty( $viewer->locked_at );
 		$member_ctx['reserve_nonce_field'] = wp_nonce_field( 'mtl_reserve_action', 'mtl_reserve_nonce', true, false );
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 		foreach ( $wpdb->get_col( $wpdb->prepare( "SELECT tool_id FROM {$tbl_res} WHERE member_id = %d AND expiry_date IS NULL", $mid ) ) as $tid ) {
@@ -1281,6 +1286,21 @@ function mtl_render_shop_page() {
 			margin-top: 6px;
 		}
 
+		/* Takes the Reserve button's place for a locked member, so it sits
+			where the button would and is as hard to miss. */
+		.mtl-shop-detail p.mtl-shop-locked-note {
+			margin: 16px 0 0 0;
+			padding: 11px 14px;
+			border: 1px solid #f0c0c4;
+			border-radius: 4px;
+			background: #fcf0f1;
+			color: #8a1f28;
+			font-size: 0.9em;
+			text-align: center;
+		}
+
+		<?php echo mtl_locked_banner_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
+
 		/* Pagination */
 		.mtl-shop-pagination {
 			display: flex;
@@ -1349,6 +1369,9 @@ function mtl_render_shop_page() {
 		// panel, so linking here clears :target and closes it.
 		?>
 		<div id="mtl-shop-closed" class="mtl-shop-close-anchor" aria-hidden="true"></div>
+
+		<?php // Above everything else on the catalog, for as long as the account stays locked. ?>
+		<?php echo mtl_account_locked_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 
 		<?php // One-off status banner after a reserve/cancel action. ?>
 		<?php echo mtl_front_notice_html(); ?>

@@ -2839,7 +2839,7 @@ function mtl_resolve_return_timestamp( $loan_id, $posted_date ) {
  * reservation that turned into a loan from one nobody came to collect. The
  * keys here are the only values that column ever holds, and this map is the
  * single place their wording lives, so a label is corrected in one edit
- * rather than at each of the eight sites that close a reservation.
+ * rather than at each of the nine sites that close a reservation.
  *
  * 'lapsed' is the only one nobody chose: mtl_expire_stale_reservations()
  * applies it on a timer. The rest all name an actor or an event, since "the
@@ -2860,6 +2860,7 @@ function mtl_reservation_close_reasons() {
 		'cancelled_member' => __( 'Cancelled by the member', 'my-tool-library' ),
 		'tool_retired'     => __( 'Cancelled: tool retired', 'my-tool-library' ),
 		'member_deleted'   => __( 'Cancelled: member deleted', 'my-tool-library' ),
+		'member_locked'    => __( 'Cancelled: account locked', 'my-tool-library' ),
 	);
 }
 
@@ -3394,7 +3395,11 @@ function mtl_tool_all_links_html( $tool ) {
  * One document alone leaves a member unverified, and the pickers show that so
  * staff can see at a glance whether a walk-in has produced their papers.
  *
- * @return array<int, array{id:int, verified:bool, name:string, email:string, label:string, search:string}>
+ * `locked` is shown for the same reason, but unlike verification it is
+ * enforced: the server refuses a loan or reservation for a locked member
+ * whatever the picker shows.
+ *
+ * @return array<int, array{id:int, verified:bool, locked:bool, name:string, email:string, label:string, search:string}>
  */
 function mtl_get_member_picker_list() {
 	global $wpdb;
@@ -3408,7 +3413,8 @@ function mtl_get_member_picker_list() {
 	foreach (
 		$wpdb->get_results(
 			"SELECT m.member_id, m.first_name, m.last_name, m.email,
-                    (v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS verified
+                    (v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS verified,
+                    (m.locked_at IS NOT NULL) AS locked
              FROM {$tbl_members} m
              LEFT JOIN {$tbl_verifications} v ON v.member_id = m.member_id
              ORDER BY m.last_name ASC, m.first_name ASC"
@@ -3419,6 +3425,7 @@ function mtl_get_member_picker_list() {
 		$out[] = array(
 			'id'       => (int) $row->member_id,
 			'verified' => (bool) $row->verified,
+			'locked'   => (bool) $row->locked,
 			'name'     => $name,
 			'email'    => (string) $row->email,
 			'label'    => $name . ' (' . $row->email . ')',
@@ -3528,12 +3535,15 @@ function mtl_get_member_info_map( $member_ids ) {
  * refuses (public/member-pages.php). Bulk Checkout treats them more gently but
  * never more permissively, so no path can create a duplicate reservation.
  *
+ * A locked member (see mtl_lock_member()) can neither borrow nor reserve
+ * anything, so their lock overrides every other answer except a retired tool's.
+ *
  * @param int $tool_id   Tool row ID.
  * @param int $member_id Member the row is for; 0 before one is picked, which
  *                       leaves the self/other distinctions unresolved.
  * @return array{found:bool, tool_id:int, tool_name:string, barcode:string,
- *               retired:bool, maintenance:bool, on_loan_by:int,
- *               reserved_by_self:bool,
+ *               retired:bool, maintenance:bool, member_locked:bool,
+ *               on_loan_by:int, reserved_by_self:bool,
  *               queue_size:int, display:string, can_loan:bool,
  *               loan_blocker:string, loan_warning:string, can_reserve:bool,
  *               reserve_blocker:string, reserve_skip:string}
@@ -3551,6 +3561,7 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 		'barcode'          => '',
 		'retired'          => false,
 		'maintenance'      => false,
+		'member_locked'    => false,
 		'on_loan_by'       => 0,
 		'reserved_by_self' => false,
 		'queue_size'       => 0,
@@ -3579,11 +3590,12 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 		return $status;
 	}
 
-	$status['found']       = true;
-	$status['tool_name']   = stripslashes( (string) $tool->tool_name );
-	$status['barcode']     = (string) $tool->barcode;
-	$status['retired']     = ! empty( $tool->retired_at );
-	$status['maintenance'] = ! empty( $tool->maintenance_at );
+	$status['found']         = true;
+	$status['tool_name']     = stripslashes( (string) $tool->tool_name );
+	$status['barcode']       = (string) $tool->barcode;
+	$status['retired']       = ! empty( $tool->retired_at );
+	$status['maintenance']   = ! empty( $tool->maintenance_at );
+	$status['member_locked'] = ( $member_id > 0 && mtl_member_is_locked( $member_id ) );
 
 	// Who holds it, not merely whether somebody does: reserving is legal behind
 	// another member's loan and illegal behind your own.
@@ -3666,6 +3678,20 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 		$status['reserve_blocker'] = '';
 	} elseif ( '' !== $status['reserve_skip'] ) {
 		$status['reserve_blocker'] = '';
+	}
+
+	// Last, so it overrides everything above, a skip included: a Reserve row
+	// for a locked member should say why it was refused rather than quietly
+	// do nothing. Returns before the training check, whose warning would
+	// only be noise on a loan that cannot happen.
+	if ( $status['member_locked'] ) {
+		$status['can_loan']        = false;
+		$status['loan_blocker']    = __( 'This member\'s account is locked. Unlock it on the Membership page first.', 'my-tool-library' );
+		$status['loan_warning']    = '';
+		$status['can_reserve']     = false;
+		$status['reserve_blocker'] = $status['loan_blocker'];
+		$status['reserve_skip']    = '';
+		return $status;
 	}
 
 	// Same advisory channel as the queue warning above, so every caller that
@@ -4474,6 +4500,269 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 		'wp_user_orphaned'       => $wp_user_orphaned,
 		'cleanup_email_sent'     => (bool) $cleanup_sent,
 		'member_email_sent'      => (bool) $member_notified,
+	);
+}
+
+// ==========================================================================
+// MEMBER ACCOUNT LOCKS
+//
+// Staff lock an account from the member's detail panel on the Membership
+// page. A locked member can still sign in and see everything on their Account
+// and My Loans & Reservations pages, but cannot reserve a tool, and staff
+// cannot start or renew a loan for them. Returning a tool is never blocked.
+//
+// The lock is one column, members.locked_at, and every path that creates a
+// loan or reservation, or moves a due date, checks it: the member's own
+// Reserve button, Quick Loan, Quick Reserve, Bulk Checkout (through
+// mtl_tool_row_status()), the Loans & Reservations checkout and renew
+// actions, and the Membership page's Start Loan and Extend actions.
+// ==========================================================================
+
+/**
+ * Whether a member's account is locked.
+ *
+ * Callers holding a full member row (mtl_current_member() selects *) read
+ * locked_at directly instead; this is for the staff paths that only have an
+ * id, usually one derived from a loan or reservation.
+ *
+ * @param int $member_id Member row ID.
+ * @return bool False for an unknown member, so it never blocks on a bad id;
+ *              the caller's own "member not found" check reports that.
+ */
+function mtl_member_is_locked( $member_id ) {
+	global $wpdb;
+	$tbl_members = $wpdb->prefix . 'members';
+
+	return (bool) $wpdb->get_var(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+			"SELECT member_id FROM {$tbl_members} WHERE member_id = %d AND locked_at IS NOT NULL",
+			(int) $member_id
+		)
+	);
+}
+
+/**
+ * Tells a member their account has been locked and to speak with staff.
+ *
+ * Deliberately gives no reason. The lock records none, and whatever prompted
+ * it is a conversation for the desk, not something to put in writing to an
+ * inbox that may be shared.
+ *
+ * @param string   $email           The member's email address.
+ * @param string   $first_name      Their first name, for the greeting.
+ * @param string[] $cancelled_tools Names of the tools whose reservations the
+ *                                  lock cancelled.
+ * @param int      $open_loans      Tools they still have out, which are still
+ *                                  due back.
+ * @return bool True if the mail was handed off successfully.
+ */
+function mtl_send_account_locked_email( $email, $first_name, $cancelled_tools, $open_loans ) {
+	$email = sanitize_email( (string) $email );
+	if ( ! is_email( $email ) ) {
+		return false;
+	}
+
+	$org_name      = mtl_email_org_name();
+	$greeting_name = trim( (string) $first_name );
+
+	$lines = array(
+		'' !== $greeting_name ? sprintf( 'Hi %s,', $greeting_name ) : 'Hello,',
+		'',
+		sprintf( 'Your %s account has been locked by library staff.', $org_name ),
+		'',
+		'You can still sign in and see your account, but you can\'t reserve or borrow tools while it is locked.',
+	);
+
+	if ( 1 === count( $cancelled_tools ) ) {
+		$lines[] = '';
+		$lines[] = sprintf( 'Your reservation for %s has been cancelled.', $cancelled_tools[0] );
+	} elseif ( $cancelled_tools ) {
+		$lines[] = '';
+		$lines[] = 'Your reservations for these tools have been cancelled:';
+		foreach ( $cancelled_tools as $tool_name ) {
+			$lines[] = sprintf( '  - %s', $tool_name );
+		}
+	}
+
+	// Locking blocks renewals, so the member should not expect to be able to
+	// extend whatever they have out.
+	if ( $open_loans > 0 ) {
+		$lines[] = '';
+		$lines[] = 1 === $open_loans
+			? 'You still have a tool on loan. Please return it by its due date.'
+			: sprintf( 'You still have %d tools on loan. Please return them by their due dates.', $open_loans );
+	}
+
+	$lines[] = '';
+	$lines[] = 'Please speak with library staff about your account.';
+
+	$contact_email = mtl_contact_email();
+	if ( '' !== $contact_email ) {
+		$lines[] = sprintf( 'You can reach us at %s.', $contact_email );
+	}
+
+	$lines[] = '';
+	$lines[] = 'Your account:';
+	$lines[] = mtl_front_page_url( 'account' );
+	$lines[] = '';
+	$lines[] = sprintf( '-- %s', $org_name );
+
+	return (bool) wp_mail( $email, sprintf( '[%s] Your account has been locked', $org_name ), implode( "\r\n", $lines ) );
+}
+
+/**
+ * Locks a member's account, cancels their active reservations, and emails
+ * them to say so.
+ *
+ * Reservations are cancelled rather than kept, because a locked member cannot
+ * be lent the tool, and leaving them in a queue would hold up everyone behind
+ * them until their hold period ran out. Open loans are left alone: the member
+ * still has the tools and can return them normally.
+ *
+ * The lock is written first, guarded on locked_at IS NULL, so a double-submit
+ * finds it already set and stops there: no second cancellation pass and no
+ * second email. Writing it before the cancellation also closes the window in
+ * which the member could reserve again between the two.
+ *
+ * @param int $member_id Member row ID.
+ * @return array{outcome:string, name:string, email:string, cancelled_reservations:int, email_sent:bool}
+ *         outcome is 'locked', 'already_locked' or 'not_found' (which covers a
+ *         Former Member, since there is no account left to lock).
+ */
+function mtl_lock_member( $member_id ) {
+	global $wpdb;
+	$member_id     = (int) $member_id;
+	$tbl_members   = $wpdb->prefix . 'members';
+	$tbl_res       = $wpdb->prefix . 'tool_reservations';
+	$tbl_loans     = $wpdb->prefix . 'loans';
+	$tbl_inventory = $wpdb->prefix . 'tool_inventory';
+
+	$result = array(
+		'outcome'                => 'not_found',
+		'name'                   => '',
+		'email'                  => '',
+		'cancelled_reservations' => 0,
+		'email_sent'             => false,
+	);
+
+	// Every interpolation through the end of this function is a table name
+	// built from $wpdb->prefix.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	$row = $wpdb->get_row(
+		$wpdb->prepare(
+			"SELECT member_id, first_name, last_name, email, anonymized_at, locked_at FROM {$tbl_members} WHERE member_id = %d",
+			$member_id
+		)
+	);
+	if ( ! $row || null !== $row->anonymized_at ) {
+		return $result;
+	}
+	$result['name']  = trim( stripslashes( (string) $row->first_name ) . ' ' . stripslashes( (string) $row->last_name ) );
+	$result['email'] = (string) $row->email;
+
+	$locked = $wpdb->query(
+		$wpdb->prepare(
+			"UPDATE {$tbl_members} SET locked_at = %s WHERE member_id = %d AND locked_at IS NULL",
+			current_time( 'mysql' ),
+			$member_id
+		)
+	);
+	if ( ! $locked ) {
+		$result['outcome'] = 'already_locked';
+		return $result;
+	}
+	$result['outcome'] = 'locked';
+
+	// Read before the cancel, while these rows still match: the tool names go
+	// in the email, and each tool's queue needs its next member promoting.
+	$active = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT r.tool_id, t.tool_name
+			   FROM {$tbl_res} r
+			   JOIN {$tbl_inventory} t ON t.tool_id = r.tool_id
+			  WHERE r.member_id = %d AND r.expiry_date IS NULL
+			  ORDER BY r.reservation_date ASC",
+			$member_id
+		)
+	);
+
+	$result['cancelled_reservations'] = (int) $wpdb->query(
+		$wpdb->prepare(
+			"UPDATE {$tbl_res} SET expiry_date = %s, closed_reason = %s WHERE member_id = %d AND expiry_date IS NULL",
+			current_time( 'mysql' ),
+			'member_locked',
+			$member_id
+		)
+	);
+
+	$open_loans = (int) $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT COUNT(*) FROM {$tbl_loans} WHERE member_id = %d AND return_date IS NULL",
+			$member_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	$cancelled_tools = array();
+	foreach ( $active as $reservation ) {
+		mtl_sync_reservation_readiness( (int) $reservation->tool_id );
+		$cancelled_tools[] = trim( stripslashes( (string) $reservation->tool_name ) );
+	}
+
+	// Last, once the lock and the cancellations have stuck, for the same
+	// reason as the emails in mtl_delete_or_anonymize_member().
+	$result['email_sent'] = mtl_send_account_locked_email(
+		(string) $row->email,
+		stripslashes( (string) $row->first_name ),
+		$cancelled_tools,
+		$open_loans
+	);
+
+	return $result;
+}
+
+/**
+ * Unlocks a member's account.
+ *
+ * Nothing the lock cancelled comes back: the member reserves again if they
+ * still want those tools. No email is sent, since staff usually unlock while
+ * talking to the member, which is what the lock email asked them to do.
+ *
+ * @param int $member_id Member row ID.
+ * @return array{outcome:string, name:string} outcome is 'unlocked',
+ *         'not_locked' or 'not_found'.
+ */
+function mtl_unlock_member( $member_id ) {
+	global $wpdb;
+	$member_id   = (int) $member_id;
+	$tbl_members = $wpdb->prefix . 'members';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	$row = $wpdb->get_row(
+		$wpdb->prepare(
+			"SELECT first_name, last_name, anonymized_at FROM {$tbl_members} WHERE member_id = %d",
+			$member_id
+		)
+	);
+	if ( ! $row || null !== $row->anonymized_at ) {
+		return array(
+			'outcome' => 'not_found',
+			'name'    => '',
+		);
+	}
+
+	$unlocked = $wpdb->query(
+		$wpdb->prepare(
+			"UPDATE {$tbl_members} SET locked_at = NULL WHERE member_id = %d AND locked_at IS NOT NULL",
+			$member_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	return array(
+		'outcome' => $unlocked ? 'unlocked' : 'not_locked',
+		'name'    => trim( stripslashes( (string) $row->first_name ) . ' ' . stripslashes( (string) $row->last_name ) ),
 	);
 }
 
@@ -6329,7 +6618,7 @@ function mtl_register_staff_capabilities() {
 }
 
 // Plain counter, not the plugin version: bump when a table or column is added.
-define( 'MTL_DB_VERSION', 7 );
+define( 'MTL_DB_VERSION', 8 );
 
 // init, not admin_init: the public catalog and member pages read these
 // columns too, so a visitor arriving after a plugin update, before any staff
@@ -6384,6 +6673,11 @@ function mtl_maybe_upgrade_schema() {
 		// one a wrong guess would misreport.
 		'tool_reservations' => array(
 			'closed_reason' => 'VARCHAR(20) DEFAULT NULL',
+		),
+		// NULL for every existing member, which reads as "not locked": no
+		// account was locked before the feature existed.
+		'members'           => array(
+			'locked_at' => 'TIMESTAMP NULL DEFAULT NULL',
 		),
 	);
 

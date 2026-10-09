@@ -68,6 +68,13 @@ DROP TABLE IF EXISTS {{prefix}}members;
 -- private_notes is staff-only: never selected by any public-facing or
 -- member-self-service query, and shown only in the admin Membership page's
 -- detail view.
+--
+-- locked_at follows the retired_at/maintenance_at pattern on tool_inventory:
+-- NULL means the account is in good standing; once set (to when staff locked
+-- it), the member can still sign in and see their account, but cannot reserve
+-- tools, and staff cannot start or renew a loan for them. Locking cancels
+-- their active reservations. It is cleared again on unlock. See
+-- mtl_lock_member() in my-tool-library.php.
 CREATE TABLE {{prefix}}members (
     member_id INT AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(50) NOT NULL,
@@ -84,7 +91,8 @@ CREATE TABLE {{prefix}}members (
     recurring_donation_amount DECIMAL(10, 2) DEFAULT 0.00,
     has_donated_tools CHAR(1) DEFAULT 'N',
     anonymized_at TIMESTAMP NULL DEFAULT NULL,
-    private_notes TEXT DEFAULT NULL
+    private_notes TEXT DEFAULT NULL,
+    locked_at TIMESTAMP NULL DEFAULT NULL
 );
 
 -- Sensitive Member Data (Separated for security compliance)
@@ -437,7 +445,7 @@ CREATE TABLE {{prefix}}loans (
 -- everywhere means "expiry_date IS NULL" and a non-NULL value is when it
 -- closed. closed_reason records WHY it ended, since expiry_date alone cannot
 -- tell a reservation that became a loan from one nobody came to collect: see
--- mtl_reservation_close_reasons() in my-tool-library.php for the six values
+-- mtl_reservation_close_reasons() in my-tool-library.php for the seven values
 -- and what each means. Every path that stamps expiry_date must stamp this too,
 -- and the two are only ever written together.
 --

@@ -7,7 +7,7 @@ How to do the everyday jobs at the desk, plus the setup work an administrator do
 - [Common tasks](#common-tasks)
 - [Getting started](#getting-started): [Roles and permissions](#staff-roles-and-permissions) · [Admin view switch](#working-the-desk-as-an-administrator) · [First-time setup](#first-time-setup) · [Bulk import](#bulk-importing-tools-and-members) · [Staff accounts](#creating-staff-accounts)
 - [Tools](#tools): [Adding a tool](#adding-a-tool) · [Shelf location](#shelf-location) · [Resources and partner links](#resources-and-partner-links) · [Private notes](#private-notes) · [Sub-categories](#sub-categories) · [Maintenance](#putting-a-tool-under-maintenance) · [Retiring or deleting](#retiring-or-deleting-a-tool)
-- [Members](#members): [Adding a member](#adding-a-member) · [Online sign-ins](#online-sign-ins) · [Logins after a CSV import](#creating-logins-after-a-csv-import) · [Verifying identity](#verifying-identity) · [Hosting photos and documents](#hosting-photos-and-documents) · [Trainings](#trainings-and-certifications) · [Forgotten passwords](#forgotten-passwords) · [Deleting a member](#deleting-a-member)
+- [Members](#members): [Adding a member](#adding-a-member) · [Online sign-ins](#online-sign-ins) · [Logins after a CSV import](#creating-logins-after-a-csv-import) · [Verifying identity](#verifying-identity) · [Hosting photos and documents](#hosting-photos-and-documents) · [Trainings](#trainings-and-certifications) · [Forgotten passwords](#forgotten-passwords) · [Locking an account](#locking-a-members-account) · [Deleting a member](#deleting-a-member)
 - [Loans and reservations](#loans-and-reservations): [Checking out a reservation](#checking-out-a-reservation) · [Quick Loan](#quick-loan) · [Quick Reserve](#quick-reserve) · [Bulk checkout](#bulk-checkout) · [From a member's record](#working-from-a-members-record) · [Renewing or returning](#renewing-or-returning-a-loan) · [Backdating a return](#backdating-a-return) · [Hold period](#reservation-hold-period) · [Overdue tools](#overdue-tools)
 - [Member agreements](#member-agreements): [Modes](#choosing-a-mode) · [Writing and revising](#writing-and-revising-agreements) · [How members agree](#how-members-agree) · [Recording paper signatures](#recording-paper-signatures) · [Agreement requests](#sending-agreement-requests) · [After a CSV import](#agreements-after-a-csv-import) · [Agreement record](#downloading-a-members-agreement-record)
 - [Dashboard](#dashboard)
@@ -24,6 +24,7 @@ How to do the everyday jobs at the desk, plus the setup work an administrator do
 | Check a tool back in                               | [Renewing or returning a loan](#renewing-or-returning-a-loan)        |
 | Extend a loan                                      | [Renewing or returning a loan](#renewing-or-returning-a-loan)        |
 | Follow up on a late tool                           | [Overdue tools](#overdue-tools)                                      |
+| Stop someone borrowing until they talk to staff    | [Locking a member's account](#locking-a-members-account)             |
 | Sign up a new member                               | [Adding a member](#adding-a-member)                                  |
 | Check someone's ID                                 | [Verifying identity](#verifying-identity)                            |
 | Take a broken tool out of circulation              | [Putting a tool under maintenance](#putting-a-tool-under-maintenance) |
@@ -44,6 +45,7 @@ There are two staff roles, both standard WordPress roles. **Editor** is for anyo
 | ------------------------------------------------------------------------ | :----: | :-----------: |
 | View the Dashboard                                                       |   ✅   |      ✅       |
 | Add or edit members                                                      |   ✅   |      ✅       |
+| Lock or unlock a member's account                                        |   ✅   |      ✅       |
 | Record member trainings                                                  |   ✅   |      ✅       |
 | Record a member's agreement (Add Member, or the Record agreement dialog) |   ✅   |      ✅       |
 | Ask one member to agree (Send agreement request)                         |   ✅   |      ✅       |
@@ -299,6 +301,27 @@ If a member gets a confirmation they didn't expect, someone else reset their pas
 
 If reset emails never arrive for anyone, the site's mail setup is the problem, not the plugin. Most hosts need an SMTP plugin (see [First-time setup](#first-time-setup)).
 
+### Locking a member's account
+
+Lock an account when a member shouldn't borrow anything until they've talked to staff, for example over a late or damaged tool. Any staff member can do it, and it can be undone.
+
+1. On **Membership**, open the member's detail panel.
+2. Click **Lock Account**, under their reservations.
+3. Read what will happen in the dialog, then click **Lock Account** to confirm.
+
+While an account is locked:
+
+- The member can still sign in and see their Account and My Loans & Reservations pages. A red banner there and at the top of the catalog says their account is locked and to speak with library staff.
+- They can't reserve tools. The catalog shows a message where the **Reserve This Tool** button would be.
+- Staff can't lend to them, reserve for them or renew their loans, from any page. Quick Loan, Quick Reserve and Bulk checkout show **Locked** when you pick them.
+- They can still return tools. Mark them returned as usual.
+
+Locking cancels their active reservations, so the next person in each queue moves up. The member is emailed that their account is locked, which reservations were cancelled, and that they should speak with library staff. The email gives no reason, so note it in their private notes for the rest of the staff. If the email can't be sent, the message on Membership tells you, and you'll need to reach them another way.
+
+Locked members have a red **Locked** badge on their row. To list them all, set **Account Locked?** under Advanced Search to "Yes".
+
+To lift it, open the detail panel and click **Unlock Account**. No email is sent, and cancelled reservations don't come back, so the member reserves again if they still want those tools.
+
 ### Deleting a member
 
 **Administrators only.** Editors can ask an administrator, or point the member to the self-service option below.
@@ -345,11 +368,11 @@ For someone borrowing on the spot without a reservation:
 2. Type the member's name or email and pick them. A **Verified** or **Not Verified** pill appears.
 3. Choose a due date and click **Create Loan**.
 
-Quick Loan isn't available while the tool is on loan or under maintenance.
+Quick Loan isn't available while the tool is on loan or under maintenance, or for a member whose account is [locked](#locking-a-members-account).
 
 ### Quick Reserve
 
-For someone at the desk who wants to reserve a tool for later, whether or not they have an online account: open the tool's row on **Inventory**, click **Quick Reserve**, pick the member and click **Create Reservation**. It won't work if they already have that tool on loan or reserved.
+For someone at the desk who wants to reserve a tool for later, whether or not they have an online account: open the tool's row on **Inventory**, click **Quick Reserve**, pick the member and click **Create Reservation**. It won't work if they already have that tool on loan or reserved, or if their account is [locked](#locking-a-members-account).
 
 ### Bulk checkout
 
@@ -364,6 +387,7 @@ The whole batch goes through or none of it does, and the problem rows are named.
 
 - A barcode that matches no tool, or the same tool on two rows.
 - A retired tool.
+- A member whose account is [locked](#locking-a-members-account).
 - Lending a tool that's on loan or under maintenance. Tick **Reserve?** for that row instead.
 - A due date in the past.
 
@@ -384,6 +408,8 @@ On **Loans & Reservations**, open the loan:
 - **End loan (mark returned)** checks the tool back in for the next person.
 
 For a quick drop-off, find the tool on **Inventory** (the search box accepts a barcode scanner), open its row and click **Mark Returned**. You can also return a loan from the member's record (see [Working from a member's record](#working-from-a-members-record)).
+
+A [locked](#locking-a-members-account) member's loans can be returned but not renewed.
 
 ### Backdating a return
 

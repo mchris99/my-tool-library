@@ -375,6 +375,9 @@ function mtl_front_notice( $key ) {
 		// The reserve gate sends members here, so say plainly that no
 		// reservation was made.
 		'agreements_required'    => array( 'error', 'Before you can reserve a tool, please read and agree to our member agreements below. Your reservation was not created.' ),
+		// From a Reserve button on a page opened before staff locked the
+		// account; the catalog stops offering one once it is locked.
+		'account_locked'         => array( 'error', 'Your account is locked, so that tool was not reserved. Please speak with library staff.' ),
 		// Sign-in failures, carried back from wp-login.php by
 		// mtl_handle_failed_front_login(). Deliberately does not say WHICH of
 		// the two was wrong: that would confirm to anyone guessing whether a
@@ -1030,6 +1033,7 @@ function mtl_member_page_styles() {
 			the shop's rules verbatim from public/shop-page.php. */
 		<?php echo mtl_shop_badge_pill_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
 		<?php echo mtl_tool_links_css( $accent ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS; the accent is esc_html()'d inside the helper. ?>
+		<?php echo mtl_locked_banner_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
 	</style>
 	<?php
 	return ob_get_clean();
@@ -1086,6 +1090,61 @@ function mtl_agreements_banner_html() {
 		. esc_html( $text ) . ' '
 		. '<a href="' . esc_url( mtl_front_page_url( 'account' ) . '#mtl-agreements' ) . '">' . esc_html__( 'Review your agreements', 'my-tool-library' ) . '</a>'
 		. '</div>';
+}
+
+/**
+ * The standing red banner telling a signed-in member their account is
+ * locked, or '' when it isn't. Shown at the top of the catalog, the Account
+ * page and My Loans & Reservations. See mtl_lock_member().
+ *
+ * Not a live region, for the same reason as mtl_agreements_banner_html().
+ *
+ * @return string HTML, or '' when there is nothing to say.
+ */
+function mtl_account_locked_banner_html() {
+	$member = mtl_current_member();
+	if ( ! $member || empty( $member->locked_at ) ) {
+		return '';
+	}
+
+	$contact = mtl_contact_email();
+	$reach   = '' !== $contact
+		? ' You can reach us at <a href="' . esc_url( 'mailto:' . $contact ) . '">' . esc_html( $contact ) . '</a>.'
+		: '';
+
+	return '<div class="mtl-locked-banner">'
+		. '<strong>' . esc_html__( 'Your account has been locked.', 'my-tool-library' ) . '</strong> '
+		. esc_html__( 'You can still sign in and see your account, but you can\'t reserve or borrow tools. Please speak with library staff.', 'my-tool-library' )
+		. $reach
+		. '</div>';
+}
+
+/**
+ * CSS for mtl_account_locked_banner_html(), shared by the catalog and the
+ * member pages, which each have their own <style> block.
+ *
+ * Solid red rather than the pale .mtl-front-notice-error, so it reads as a
+ * standing state of the account and not as the result of the last click.
+ *
+ * @return string CSS, ready to drop inside a <style> block.
+ */
+function mtl_locked_banner_css() {
+	return '
+		.mtl-locked-banner {
+			background: #b32d2e;
+			color: #fff;
+			border-radius: 6px;
+			padding: 14px 18px;
+			margin: 0 0 16px 0;
+			font-size: 0.95em;
+			line-height: 1.5;
+		}
+
+		.mtl-locked-banner a {
+			color: #fff;
+			text-decoration: underline;
+		}
+	';
 }
 
 /**
@@ -1395,6 +1454,12 @@ function mtl_handle_reserve_action() {
 	$member = mtl_current_member();
 	if ( ! $member ) {
 		$redirect( 'login_required' );
+	}
+
+	// Ahead of the agreements gate: sending a locked member off to agree to
+	// something would only lead to a second refusal.
+	if ( ! empty( $member->locked_at ) ) {
+		$redirect( 'account_locked' );
 	}
 
 	// The agreements gate, online mode only: in paper mode a member can't agree
@@ -2219,6 +2284,7 @@ function mtl_render_member_reservations_page() {
 	<div class="mtl-member-wrap<?php echo $listing ? ' mtl-member-wrap-wide' : ''; ?>">
 		<a class="mtl-member-back" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a>
 
+		<?php echo mtl_account_locked_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 		<?php echo mtl_front_notice_html(); ?>
 		<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 
@@ -2737,6 +2803,7 @@ function mtl_render_account_page() {
 	<div class="mtl-member-wrap">
 		<a class="mtl-member-back" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a>
 
+		<?php echo mtl_account_locked_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 		<?php echo mtl_front_notice_html(); ?>
 		<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 

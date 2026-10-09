@@ -1843,6 +1843,8 @@ function mtl_render_inventory_page() {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot loan this tool.</strong> It is under maintenance. Mark it back in service first.</p></div>';
 			} elseif ( ! $ql_member_ok ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please pick a member from the list before creating the loan.</p></div>';
+			} elseif ( mtl_member_is_locked( $ql_member_id ) ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot loan this tool.</strong> This member&rsquo;s account is locked. Unlock it on the Membership page first.</p></div>';
 			} else {
 				// A tool is one physical item, so it cannot go out twice at once.
 				$ql_on_loan = $wpdb->get_var( $wpdb->prepare( "SELECT loan_id FROM {$tbl_loans} WHERE tool_id = %d AND return_date IS NULL LIMIT 1", $ql_tool_id ) );
@@ -1886,6 +1888,8 @@ function mtl_render_inventory_page() {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot reserve this tool.</strong> It is retired. Reactivate it first.</p></div>';
 			} elseif ( ! $qr_member_ok ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please pick a member from the list before creating the reservation.</p></div>';
+			} elseif ( mtl_member_is_locked( $qr_member_id ) ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot reserve this tool.</strong> This member&rsquo;s account is locked. Unlock it on the Membership page first.</p></div>';
 			} else {
 				// Same two guards as the public self-service reserve flow: no
 				// reserving a tool the member already has on loan, and no
@@ -3717,6 +3721,7 @@ function mtl_render_inventory_page() {
 				<p class="mtl-ql-hint" id="mtl-ql-member-hint">Start typing to find a member by name or email, then click to select.</p>
 				<div class="mtl-ql-member-info" id="mtl-ql-member-info" style="display: none;">
 					<dl>
+						<dt id="mtl-ql-info-locked-label">Account</dt><dd id="mtl-ql-info-locked"></dd>
 						<dt>Verification</dt><dd id="mtl-ql-info-verified"></dd>
 						<dt>Trainings</dt><dd id="mtl-ql-info-trainings"></dd>
 						<dt>Overdue</dt><dd id="mtl-ql-info-overdue"></dd>
@@ -4290,6 +4295,15 @@ function mtl_render_inventory_page() {
 			function showVerifiedPill(m) {
 				const extra = memberInfo[m.id] || { trainings: [], overdue: 0, agreement: '' };
 				memberInfoBox.style.display = 'block';
+
+				// Only shown when locked. Unlike the rows below, this one
+				// is enforced: the server refuses the loan or reservation.
+				const lockLabel = document.getElementById('mtl-ql-info-locked-label');
+				const lockValue = document.getElementById('mtl-ql-info-locked');
+				lockLabel.style.display = m.locked ? '' : 'none';
+				lockValue.style.display = m.locked ? '' : 'none';
+				if (m.locked) infoPill(lockValue, 'bad', 'Locked: can’t borrow or reserve');
+
 				infoPill(document.getElementById('mtl-ql-info-verified'),
 					m.verified ? 'ok' : 'warn', m.verified ? 'Verified' : 'Not verified');
 				document.getElementById('mtl-ql-info-trainings').textContent =

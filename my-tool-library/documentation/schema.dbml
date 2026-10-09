@@ -39,6 +39,7 @@ Table members {
   has_donated_tools char(1) [default: 'N', note: 'Y or N']
   anonymized_at timestamp [note: 'NULL = normal row. Set instead of a true delete when loans/tool_reservations history exists; see mtl_delete_or_anonymize_member()']
   private_notes text [note: 'Staff-only. Never selected by any public-facing or member-self-service query; shown only in the admin Membership page detail view.']
+  locked_at timestamp [note: 'NULL = account in good standing. Set when staff lock the account: the member can still sign in, but cannot reserve, and no loan can be started or renewed for them. Locking cancels their active reservations. See mtl_lock_member()']
 
   Note: '''
     One row per library member. Never stores a password; WordPress core

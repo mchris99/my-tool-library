@@ -78,6 +78,10 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 			? '<span style="color:#1e7e34;font-weight:600;">Verified</span>'
 			: '<span style="color:#b45309;font-weight:600;">Not verified</span>'
 		);
+		// Only shown when locked; the actions below explain what it stops.
+		if ( ! empty( $rec['member_locked'] ) ) {
+			$html .= mtl_lr_field( 'Account', '<span style="color:#b32d2e;font-weight:600;">Locked</span>' );
+		}
 	}
 
 	if ( 'reservation' === $rec['type'] ) {
@@ -153,7 +157,9 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 	if ( 'reservation' === $rec['type'] ) {
 		$html .= '<p class="mtl-detail-section">Actions</p>';
 
-		if ( '' === $rec['current_loan_due'] && ! empty( $rec['tool_maintenance'] ) ) {
+		if ( ! empty( $rec['member_locked'] ) ) {
+			$html .= '<p class="mtl-lr-action-note">This member&rsquo;s account is locked, so the tool can&rsquo;t be checked out to them. Unlock it on the Membership page first.</p>';
+		} elseif ( '' === $rec['current_loan_due'] && ! empty( $rec['tool_maintenance'] ) ) {
 			$html .= '<p class="mtl-lr-action-note">This tool is under maintenance. Mark it back in service on the Inventory page before checking it out.</p>';
 		} elseif ( '' === $rec['current_loan_due'] ) {
 			// Available tools can be checked out to this member even if they
@@ -188,22 +194,27 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 	} elseif ( 'current' === $rec['type'] ) {
 		$html .= '<p class="mtl-detail-section">Actions</p>';
 
-		// Renew pre-fills the loan's CURRENT due date (not a fresh default), so
-		// submitting untouched is a no-op rather than silently changing the
-		// loan. No quick button starts "active" for the same reason.
-		$html .= '<form method="post" action="" class="mtl-lr-action-form">';
-		$html .= $nonce_field;
-		$html .= '<input type="hidden" name="mtl_lr_action" value="renew_loan">';
-		$html .= '<input type="hidden" name="loan_id" value="' . (int) $rec['loan_id'] . '">';
-		$html .= '<label class="mtl-lr-action-label">New due date</label>';
-		$html .= '<div class="mtl-lr-due-quick">';
-		foreach ( array( 7, 14, 21, 30 ) as $days_option ) {
-			$html .= '<button type="button" class="button button-small" onclick="mtl_lr_set_due(this, ' . (int) $days_option . ')">' . (int) $days_option . ' days</button>';
+		if ( ! empty( $rec['member_locked'] ) ) {
+			// A locked member can return the tool but not keep it longer.
+			$html .= '<p class="mtl-lr-action-note">This member&rsquo;s account is locked, so the loan can&rsquo;t be renewed. It can still be returned below.</p>';
+		} else {
+			// Renew pre-fills the loan's CURRENT due date (not a fresh default),
+			// so submitting untouched is a no-op rather than silently changing
+			// the loan. No quick button starts "active" for the same reason.
+			$html .= '<form method="post" action="" class="mtl-lr-action-form">';
+			$html .= $nonce_field;
+			$html .= '<input type="hidden" name="mtl_lr_action" value="renew_loan">';
+			$html .= '<input type="hidden" name="loan_id" value="' . (int) $rec['loan_id'] . '">';
+			$html .= '<label class="mtl-lr-action-label">New due date</label>';
+			$html .= '<div class="mtl-lr-due-quick">';
+			foreach ( array( 7, 14, 21, 30 ) as $days_option ) {
+				$html .= '<button type="button" class="button button-small" onclick="mtl_lr_set_due(this, ' . (int) $days_option . ')">' . (int) $days_option . ' days</button>';
+			}
+			$html .= '</div>';
+			$html .= '<input type="date" name="due_date" value="' . esc_attr( $rec['due_date'] ) . '" min="' . esc_attr( gmdate( 'Y-m-d' ) ) . '" required>';
+			$html .= '<button type="submit" class="button button-primary">Renew loan</button>';
+			$html .= '</form>';
 		}
-		$html .= '</div>';
-		$html .= '<input type="date" name="due_date" value="' . esc_attr( $rec['due_date'] ) . '" min="' . esc_attr( gmdate( 'Y-m-d' ) ) . '" required>';
-		$html .= '<button type="submit" class="button button-primary">Renew loan</button>';
-		$html .= '</form>';
 
 		// The return date defaults to today; backdating it is for staff working
 		// through a backlog of drop-offs (see mtl_resolve_return_timestamp()).
@@ -489,6 +500,12 @@ function mtl_lr_handle_actions() {
 			return '<div class="notice notice-error is-dismissible"><p>That reservation is no longer active, so it could not be checked out.</p></div>';
 		}
 
+		// Locking cancels the member's reservations, so like the retired check
+		// below this only catches a page loaded before the lock.
+		if ( mtl_member_is_locked( (int) $res->member_id ) ) {
+			return '<div class="notice notice-error is-dismissible"><p>This member&rsquo;s account is locked, so the tool can&rsquo;t be checked out to them. Unlock it on the Membership page first.</p></div>';
+		}
+
 		// Retiring a tool auto-cancels its active reservations (see Inventory's
 		// Retire action), so this should be unreachable in normal use, kept
 		// as a defense-in-depth check, same as the tool-existence checks
@@ -582,6 +599,18 @@ function mtl_lr_handle_actions() {
 			return '<div class="notice notice-error is-dismissible"><p>The due date can&rsquo;t be in the past. Please pick today or a later date.</p></div>';
 		}
 
+		// The member comes from the loan itself, never from the POST.
+		$renew_member_id = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+				"SELECT member_id FROM {$tbl_loans} WHERE loan_id = %d AND return_date IS NULL",
+				$loan_id
+			)
+		);
+		if ( $renew_member_id && mtl_member_is_locked( $renew_member_id ) ) {
+			return '<div class="notice notice-error is-dismissible"><p>This member&rsquo;s account is locked, so the loan can&rsquo;t be renewed. It can still be returned.</p></div>';
+		}
+
 		$done = $wpdb->query(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
@@ -669,7 +698,7 @@ function mtl_render_loans_page() {
 		"
         SELECT l.loan_id, l.tool_id, l.member_id, l.loan_date, l.due_date, l.return_date,
                t.tool_name, t.barcode, t.brand, t.location,
-               m.first_name, m.last_name, m.email, m.phone_number,
+               m.first_name, m.last_name, m.email, m.phone_number, m.locked_at,
                DATEDIFF(CURDATE(), l.due_date) AS days_past_due,
                (SELECT COUNT(*) FROM {$tbl_verifications} v WHERE v.member_id = l.member_id AND v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS is_verified
         FROM {$tbl_loans} l
@@ -686,7 +715,7 @@ function mtl_render_loans_page() {
 		"
         SELECT r.reservation_id, r.tool_id, r.member_id, r.reservation_date, r.ready_since,
                t.tool_name, t.barcode, t.brand, t.location, t.maintenance_at,
-               m.first_name, m.last_name, m.email, m.phone_number,
+               m.first_name, m.last_name, m.email, m.phone_number, m.locked_at,
                (SELECT COUNT(*) FROM {$tbl_verifications} v WHERE v.member_id = r.member_id AND v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS is_verified,
                (SELECT COUNT(*) FROM {$tbl_reservations} r2
                   WHERE r2.tool_id = r.tool_id
@@ -832,6 +861,7 @@ function mtl_render_loans_page() {
 			'loan_id'          => (int) $l->loan_id,
 			'reservation_id'   => 0,
 			'is_verified'      => ( (int) $l->is_verified > 0 ),
+			'member_locked'    => ! empty( $l->locked_at ),
 			'current_loan_due' => '',
 			'returned_late'    => false,
 		);
@@ -876,6 +906,7 @@ function mtl_render_loans_page() {
 			'loan_id'          => 0,
 			'reservation_id'   => (int) $r->reservation_id,
 			'is_verified'      => ( (int) $r->is_verified > 0 ),
+			'member_locked'    => ! empty( $r->locked_at ),
 			'current_loan_due' => ( null !== $r->current_loan_due ? $r->current_loan_due : '' ),
 			'returned_late'    => false,
 		);
@@ -915,6 +946,7 @@ function mtl_render_loans_page() {
 			'loan_id'          => (int) $l->loan_id,
 			'reservation_id'   => 0,
 			'is_verified'      => ( (int) $l->is_verified > 0 ),
+			'member_locked'    => false,
 			'current_loan_due' => '',
 			'returned_late'    => $returned_late,
 		);
@@ -955,6 +987,7 @@ function mtl_render_loans_page() {
 			'loan_id'          => 0,
 			'reservation_id'   => (int) $r->reservation_id,
 			'is_verified'      => false,
+			'member_locked'    => false,
 			'current_loan_due' => '',
 			'returned_late'    => false,
 		);
@@ -2306,6 +2339,7 @@ function mtl_render_loans_page() {
 				</div>
 				<div class="mtl-bc-member-info" id="mtl-bc-member-info">
 					<dl>
+						<dt id="mtl-bc-info-locked-label">Account</dt><dd id="mtl-bc-info-locked"></dd>
 						<dt>Verification</dt><dd id="mtl-bc-info-verified"></dd>
 						<dt>Trainings</dt><dd id="mtl-bc-info-trainings"></dd>
 						<dt>Overdue</dt><dd id="mtl-bc-info-overdue"></dd>
@@ -2390,6 +2424,11 @@ function mtl_render_loans_page() {
 
 			function memberId() { return parseInt(memberField.value, 10) || 0; }
 
+			function memberLocked() {
+				const me = memberId();
+				return me > 0 && members.some(function(m) { return m.id === me && m.locked; });
+			}
+
 			function dueFromDays(days) {
 				const d = new Date();
 				d.setDate(d.getDate() + days);
@@ -2410,6 +2449,8 @@ function mtl_render_loans_page() {
 				const othersQueued = tool.queue.length > (mine ? 1 : 0);
 
 				if (tool.retired) return { cls: 'bad', text: 'Retired', act: 'block' };
+				// After Retired, matching the server's order of precedence.
+				if (memberLocked()) return { cls: 'bad', text: 'Account locked', act: 'block' };
 
 				if (reserve) {
 					if (onLoanSelf) return { cls: 'skip', text: 'Already on loan to them', act: 'skip' };
@@ -2534,6 +2575,15 @@ function mtl_render_loans_page() {
 			function showMemberInfo(m) {
 				const extra = memberInfo[m.id] || { trainings: [], overdue: 0, agreement: '' };
 				info.style.display = 'block';
+
+				// Only shown when locked, and unlike the flags below it is
+				// enforced: every row for this member is blocked.
+				const lockLabel = document.getElementById('mtl-bc-info-locked-label');
+				const lockValue = document.getElementById('mtl-bc-info-locked');
+				lockLabel.style.display = m.locked ? '' : 'none';
+				lockValue.style.display = m.locked ? '' : 'none';
+				if (m.locked) setPill(lockValue, 'bad', 'Locked: can’t borrow or reserve');
+
 				setPill(document.getElementById('mtl-bc-info-verified'),
 					m.verified ? 'ok' : 'warn', m.verified ? 'Verified' : 'Not verified');
 				document.getElementById('mtl-bc-info-trainings').textContent =
