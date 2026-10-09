@@ -7,7 +7,7 @@ How to do the everyday jobs at the desk, plus the setup work an administrator do
 - [Common tasks](#common-tasks)
 - [Getting started](#getting-started): [Roles and permissions](#staff-roles-and-permissions) · [Admin view switch](#working-the-desk-as-an-administrator) · [First-time setup](#first-time-setup) · [Bulk import](#bulk-importing-tools-and-members) · [Staff accounts](#creating-staff-accounts)
 - [Tools](#tools): [Adding a tool](#adding-a-tool) · [Shelf location](#shelf-location) · [Resources and partner links](#resources-and-partner-links) · [Private notes](#private-notes) · [Sub-categories](#sub-categories) · [Maintenance](#putting-a-tool-under-maintenance) · [Retiring or deleting](#retiring-or-deleting-a-tool)
-- [Members](#members): [Adding a member](#adding-a-member) · [Online sign-ins](#online-sign-ins) · [Logins after a CSV import](#creating-logins-after-a-csv-import) · [Verifying identity](#verifying-identity) · [Hosting photos and documents](#hosting-photos-and-documents) · [Trainings](#trainings-and-certifications) · [Forgotten passwords](#forgotten-passwords) · [Locking an account](#locking-a-members-account) · [Deleting a member](#deleting-a-member)
+- [Members](#members): [Adding a member](#adding-a-member) · [Online sign-ins](#online-sign-ins) · [Logins after a CSV import](#creating-logins-after-a-csv-import) · [Verifying identity](#verifying-identity) · [Profile photos](#profile-photos) · [Hosting photos and documents](#hosting-photos-and-documents) · [Trainings](#trainings-and-certifications) · [Forgotten passwords](#forgotten-passwords) · [Locking an account](#locking-a-members-account) · [Deleting a member](#deleting-a-member)
 - [Loans and reservations](#loans-and-reservations): [Checking out a reservation](#checking-out-a-reservation) · [Quick Loan](#quick-loan) · [Quick Reserve](#quick-reserve) · [Bulk checkout](#bulk-checkout) · [From a member's record](#working-from-a-members-record) · [Renewing or returning](#renewing-or-returning-a-loan) · [Backdating a return](#backdating-a-return) · [Hold period](#reservation-hold-period) · [Overdue tools](#overdue-tools)
 - [Member agreements](#member-agreements): [Modes](#choosing-a-mode) · [Writing and revising](#writing-and-revising-agreements) · [How members agree](#how-members-agree) · [Recording paper signatures](#recording-paper-signatures) · [Agreement requests](#sending-agreement-requests) · [After a CSV import](#agreements-after-a-csv-import) · [Agreement record](#downloading-a-members-agreement-record)
 - [Dashboard](#dashboard)
@@ -27,6 +27,7 @@ How to do the everyday jobs at the desk, plus the setup work an administrator do
 | Stop someone borrowing until they talk to staff    | [Locking a member's account](#locking-a-members-account)             |
 | Sign up a new member                               | [Adding a member](#adding-a-member)                                  |
 | Check someone's ID                                 | [Verifying identity](#verifying-identity)                            |
+| Add a member's photo                               | [Profile photos](#profile-photos)                                    |
 | Take a broken tool out of circulation              | [Putting a tool under maintenance](#putting-a-tool-under-maintenance) |
 | Add a new tool                                     | [Adding a tool](#adding-a-tool)                                      |
 | Help a member who can't sign in                    | [Forgotten passwords](#forgotten-passwords)                          |
@@ -212,10 +213,11 @@ On **Membership**, click **Add a New Member**.
 
 1. Enter their name, phone, address and email. Pick the phone number's country first; the number formats itself. **State / Province** covers the U.S. and Canada, so choose "N/A" for anywhere else. The email becomes their sign-in username, so it must be unique.
 2. If they give monthly, enter the amount under **Recurring Donation**.
-3. Paste in their ID and proof-of-address links if you have them (see [Verifying identity](#verifying-identity)). They're **unverified** until both are on file, which doesn't stop them browsing or reserving online.
-4. Under **Trainings**, tick anything they've completed and enter the date.
-5. If agreements are on, tick the ones they've signed on paper. Leave them blank if they haven't signed yet.
-6. Leave **Email them a link to choose their password** ticked unless you have a reason not to, then save.
+3. If you've taken their photo, paste its link into **Profile Photo URL** (see [Profile photos](#profile-photos)).
+4. Paste in their ID and proof-of-address links if you have them (see [Verifying identity](#verifying-identity)). They're **unverified** until both are on file, which doesn't stop them browsing or reserving online.
+5. Under **Trainings**, tick anything they've completed and enter the date.
+6. If agreements are on, tick the ones they've signed on paper. Leave them blank if they haven't signed yet.
+7. Leave **Email them a link to choose their password** ticked unless you have a reason not to, then save.
 
 ### Online sign-ins
 
@@ -264,15 +266,27 @@ If a member changes their name, phone or address on their own Account page, any 
 
 > **Note:** If your library doesn't need verification, an administrator can put any URL in both fields to mark someone verified. You can also tell members it isn't needed under **Setup > Member Verification Directions**.
 
+### Profile photos
+
+A profile photo helps staff recognize a member at the desk. It's optional, and a member without one can borrow and reserve as usual.
+
+1. Take the photo at the desk and upload it to the folder where the library keeps member photos (see [Hosting photos and documents](#hosting-photos-and-documents)).
+2. On **Membership**, click **Edit** on the member, paste the link into **Profile Photo URL**, and save. You can also add it when [adding a member](#adding-a-member).
+
+The photo appears in a small frame at the top of the member's detail panel. Click it to open the full-size image in a new tab. It's for staff only, and members never see it.
+
+To remove a photo, clear the field and save, then delete the file from wherever it's hosted.
+
 ### Hosting photos and documents
 
 Photos and documents are links to files hosted elsewhere, such as Google Drive:
 
 - **Tool photos and training badges** are public, so share them with "Anyone with the link".
+- **Profile photos** are personal. Share them only with staff, like verification documents.
 - **Verification documents** are sensitive. Share them only with staff.
 - **Agreement files** are the exception. They're uploaded to this site's Media Library and are public. See [Writing and revising agreements](#writing-and-revising-agreements).
 
-Deleting a member doesn't delete their hosted files. The site administrator is emailed the links and asked to delete them by hand.
+Deleting a member doesn't delete their hosted photo or documents. The site administrator is emailed the links and asked to delete them by hand.
 
 ### Trainings and certifications
 
@@ -328,7 +342,7 @@ To lift it, open the detail panel and click **Unlock Account**. No email is sent
 
 Click **Delete** on the member's row on **Membership**. This removes the person but keeps the library's records of what they borrowed.
 
-- **Removed for good:** name, address, phone and email (replaced with placeholders), verification links, private staff notes, and their WordPress sign-in.
+- **Removed for good:** name, address, phone and email (replaced with placeholders), profile photo and verification links, private staff notes, and their WordPress sign-in.
 - **Kept:** every loan, past and current reservations, and completed trainings, so tool histories and totals stay correct.
 
 Their row becomes **Former Member** with a **Removed** badge, and Edit and Delete disappear. Current reservations are cancelled. Open loans are left alone, so end them yourself, or retire the tools if they're missing.
@@ -337,7 +351,7 @@ The sign-in is deleted only if its email still matches the record. If it doesn't
 
 Deleting can't be undone, so [export a backup](#backing-up-your-data) first if you're unsure.
 
-Two emails go out every time: one confirming to the member, and one to the site administrator with the deleted record, asking them to delete the stored verification files.
+Two emails go out every time: one confirming to the member, and one to the site administrator with the deleted record, asking them to delete the stored photo and verification files.
 
 Members can delete their own account from **Account > Danger Zone > Delete Account and Remove Personal Data**. The result and emails are the same, so staff always hear about it.
 

@@ -4075,12 +4075,13 @@ function mtl_email_table_row( $label, $value ) {
 }
 
 /**
- * Asks the site administrator to delete the verification files belonging to a
- * member whose record has just been removed, and hands over the member's full
- * details as the library's record of what was deleted.
+ * Asks the site administrator to delete the photo and verification files
+ * belonging to a member whose record has just been removed, and hands over the
+ * member's full details as the library's record of what was deleted.
  *
- * Deleting a member drops the member_verifications row, which destroys the
- * LINKS to their ID and proof-of-address scans, but the files themselves live
+ * Deleting a member clears their profile photo link and drops the
+ * member_verifications row, which destroys the LINKS to their photo and their
+ * ID and proof-of-address scans, but the files themselves live
  * wherever the library uploaded them (a Drive folder, a media library, a share)
  * and nothing in this plugin can reach out and delete them. So the links are
  * mailed to the administrator before they are lost, together with the request
@@ -4140,12 +4141,12 @@ function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open
 	// action to take. An admin who reads "please delete their files" and
 	// finds none listed learns to skim the next one.
 	$subject = $doc_urls
-		? sprintf( '[%s] Member record deleted: please delete their verification files', $org_name )
-		: sprintf( '[%s] Member record deleted: no verification files to delete', $org_name );
+		? sprintf( '[%s] Member record deleted: please delete their stored files', $org_name )
+		: sprintf( '[%s] Member record deleted: no stored files to delete', $org_name );
 
 	$purpose = $doc_urls
 		? 'This email is the library\'s record of what was deleted, and of the request to remove the files listed at the end.'
-		: 'This email is the library\'s record of what was deleted. There are no verification files to remove. See the end.';
+		: 'This email is the library\'s record of what was deleted. There are no stored files to remove. See the end.';
 
 	$lines = array(
 		sprintf( 'The library record below was deleted on %s.', $deleted_at ),
@@ -4196,7 +4197,7 @@ function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open
 	$lines[] = '';
 
 	if ( $doc_urls ) {
-		$lines[] = 'VERIFICATION FILES TO DELETE';
+		$lines[] = 'FILES TO DELETE';
 		$lines[] = '';
 		$lines[] = 'The links below have been removed from the database, but the FILES they point at are stored outside it and could not be deleted automatically. Please delete them from wherever the library keeps them:';
 		$lines[] = '';
@@ -4206,9 +4207,9 @@ function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open
 		$lines[] = '';
 		$lines[] = 'Once the files are gone, please delete this email too, because after them it is the last copy of those links.';
 	} else {
-		$lines[] = 'VERIFICATION FILES TO DELETE: none.';
+		$lines[] = 'FILES TO DELETE: none.';
 		$lines[] = '';
-		$lines[] = 'This member had no verification documents on file, so there are no files to delete. No action is needed beyond keeping this record.';
+		$lines[] = 'This member had no photo or verification documents on file, so there are no files to delete. No action is needed beyond keeping this record.';
 	}
 
 	$lines[] = '';
@@ -4245,7 +4246,7 @@ function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $canc
 		'',
 		sprintf( 'Your %s account has been deleted, as requested.', $org_name ),
 		'',
-		'Your name, contact details and any identification documents we held for you have been permanently removed. Your borrowing history is kept as part of the library\'s records, but it is no longer linked to your name.',
+		'Your name, contact details, photo and any identification documents we held for you have been permanently removed. Your borrowing history is kept as part of the library\'s records, but it is no longer linked to your name.',
 	);
 
 	if ( $cancelled_res > 0 ) {
@@ -4293,9 +4294,10 @@ function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $canc
  * row were dropped (see schema.sql).
  *
  * What IS destroyed is the personal, identifying material: the row's own
- * name/address/contact fields, the member_verifications row holding their ID
- * and proof-of-address scans, and, fully rather than anonymized, their WordPress
- * account, which wp_delete_user() removes from both wp_users and wp_usermeta.
+ * name/address/contact fields and profile photo link, the member_verifications
+ * row holding their ID and proof-of-address scans, and, fully rather than
+ * anonymized, their WordPress account, which wp_delete_user() removes from
+ * both wp_users and wp_usermeta.
  *
  * Any still-active reservation is cancelled first, otherwise a departed
  * member would keep occupying a spot in a tool's queue indefinitely; this
@@ -4311,11 +4313,11 @@ function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $canc
  *
  * Two emails go out once the record is gone, both built entirely from details
  * captured before the row was touched: the deleted member's full record to
- * the site administrator, asking them to delete the verification FILES this
- * plugin cannot reach (see mtl_send_verification_cleanup_email()), and a
- * confirmation to the member that their account has been deleted. Neither is
- * sent when the record was already anonymized, since that deletion, and its
- * emails, happened the first time.
+ * the site administrator, asking them to delete the photo and verification
+ * FILES this plugin cannot reach (see mtl_send_verification_cleanup_email()),
+ * and a confirmation to the member that their account has been deleted.
+ * Neither is sent when the record was already anonymized, since that
+ * deletion, and its emails, happened the first time.
  *
  * @param int    $member_id    Member row ID.
  * @param string $initiated_by 'member' when they deleted their own account,
@@ -4360,9 +4362,12 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 	$already_anonymized = ( null !== $row->anonymized_at );
 
 	// Everything the two emails need, read while the row still says who this
-	// is. The verification links especially: the row holding them is deleted
-	// further down, and once it is gone nothing can point at those files.
-	$doc_urls   = array();
+	// is. The file links especially: they are cleared further down, and once
+	// they are gone nothing can point at those files.
+	$doc_urls = array();
+	if ( '' !== trim( (string) $row->profile_photo_url ) ) {
+		$doc_urls['Profile photo'] = trim( (string) $row->profile_photo_url );
+	}
 	$verif_urls = $wpdb->get_row(
 		$wpdb->prepare(
 			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
@@ -4437,26 +4442,28 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 	$wpdb->update(
 		$tbl_members,
 		array(
-			'first_name'    => 'Former',
-			'last_name'     => 'Member',
-			'address_line1' => '(removed)',
-			'address_line2' => null,
-			'city'          => '(removed)',
-			'state'         => 'N/A',
-			'zip_code'      => '00000',
-			'country'       => 'United States',
-			'phone_number'  => '(removed)',
+			'first_name'        => 'Former',
+			'last_name'         => 'Member',
+			'address_line1'     => '(removed)',
+			'address_line2'     => null,
+			'city'              => '(removed)',
+			'state'             => 'N/A',
+			'zip_code'          => '00000',
+			'country'           => 'United States',
+			'phone_number'      => '(removed)',
 			// .invalid is the IANA-reserved, never-resolving TLD (RFC 2606),
 			// guaranteed unique against the UNIQUE constraint without risking a
 			// real mailbox, and it frees their real address for a future signup.
-			'email'         => 'deleted-member-' . $member_id . '@example.invalid',
+			'email'             => 'deleted-member-' . $member_id . '@example.invalid',
 			// Staff-only notes are about the person, so they go with the rest
 			// of their identifying details.
-			'private_notes' => null,
-			'anonymized_at' => current_time( 'mysql' ),
+			'private_notes'     => null,
+			// The file itself is on the administrator's list in $doc_urls.
+			'profile_photo_url' => null,
+			'anonymized_at'     => current_time( 'mysql' ),
 		),
 		array( 'member_id' => $member_id ),
-		array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ),
+		array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ),
 		array( '%d' )
 	);
 
@@ -6618,7 +6625,7 @@ function mtl_register_staff_capabilities() {
 }
 
 // Plain counter, not the plugin version: bump when a table or column is added.
-define( 'MTL_DB_VERSION', 8 );
+define( 'MTL_DB_VERSION', 9 );
 
 // init, not admin_init: the public catalog and member pages read these
 // columns too, so a visitor arriving after a plugin update, before any staff
@@ -6674,10 +6681,13 @@ function mtl_maybe_upgrade_schema() {
 		'tool_reservations' => array(
 			'closed_reason' => 'VARCHAR(20) DEFAULT NULL',
 		),
-		// NULL for every existing member, which reads as "not locked": no
-		// account was locked before the feature existed.
 		'members'           => array(
-			'locked_at' => 'TIMESTAMP NULL DEFAULT NULL',
+			// NULL for every existing member, which reads as "not locked": no
+			// account was locked before the feature existed.
+			'locked_at'         => 'TIMESTAMP NULL DEFAULT NULL',
+			// NULL for every existing member, which reads as "no photo", the
+			// same as a member staff have not photographed yet.
+			'profile_photo_url' => 'VARCHAR(255) DEFAULT NULL',
 		),
 	);
 

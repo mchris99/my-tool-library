@@ -1016,6 +1016,13 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 			<?php mtl_render_trainings_picker( $trainings, $values['training_starts'], $id_prefix ); ?>		</td>
 	</tr>
 	<tr>
+		<th scope="row"><label for="<?php echo $field_id( 'profile_photo_url' ); ?>">Profile Photo URL</label></th>
+		<td>
+			<input type="url" name="profile_photo_url" id="<?php echo $field_id( 'profile_photo_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['profile_photo_url'] ); ?>" placeholder="https://...">
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Staff-only.</strong> Never shown to members. Keep photos in a private folder.</p>
+		</td>
+	</tr>
+	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'photo_id_scan_url' ); ?>">Photo ID Scan URL</label></th>
 		<td>
 			<input type="url" name="photo_id_scan_url" id="<?php echo $field_id( 'photo_id_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['photo_id_scan_url'] ); ?>" placeholder="https://...">
@@ -1105,6 +1112,7 @@ function mtl_render_membership_page() {
 		'signup_date'               => gmdate( 'Y-m-d' ),
 		'recurring_donation_amount' => '',
 		'has_donated_tools'         => 'N',
+		'profile_photo_url'         => '',
 		'photo_id_scan_url'         => '',
 		'address_proof_scan_url'    => '',
 		'private_notes'             => '',
@@ -1288,6 +1296,7 @@ function mtl_render_membership_page() {
 			$zip_code        = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
 			$country         = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
 			$signup_date     = sanitize_text_field( wp_unslash( $_POST['signup_date'] ?? '' ) );
+			$profile_photo   = sanitize_url( wp_unslash( $_POST['profile_photo_url'] ?? '' ) );
 			$photo_id_url    = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
 			$addr_proof_url  = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
 			$private_notes   = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
@@ -1387,8 +1396,9 @@ function mtl_render_membership_page() {
 						'recurring_donation_amount' => $donation,
 						'has_donated_tools'         => $has_donated,
 						'private_notes'             => '' !== $private_notes ? $private_notes : null,
+						'profile_photo_url'         => '' !== $profile_photo ? $profile_photo : null,
 					),
-					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s' )
+					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%s' )
 				);
 
 				if ( $inserted ) {
@@ -1512,6 +1522,7 @@ function mtl_render_membership_page() {
 				$form_values['signup_date']               = $signup_date;
 				$form_values['recurring_donation_amount'] = $donation_display;
 				$form_values['has_donated_tools']         = $has_donated;
+				$form_values['profile_photo_url']         = $profile_photo;
 				$form_values['photo_id_scan_url']         = $photo_id_url;
 				$form_values['address_proof_scan_url']    = $addr_proof_url;
 				$form_values['private_notes']             = $private_notes;
@@ -2128,6 +2139,7 @@ function mtl_render_membership_page() {
 			$zip_code        = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
 			$country         = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
 			$signup_date     = sanitize_text_field( wp_unslash( $_POST['signup_date'] ?? '' ) );
+			$profile_photo   = sanitize_url( wp_unslash( $_POST['profile_photo_url'] ?? '' ) );
 			$photo_id_url    = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
 			$addr_proof_url  = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
 			$private_notes   = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
@@ -2225,9 +2237,10 @@ function mtl_render_membership_page() {
 						'recurring_donation_amount' => $donation,
 						'has_donated_tools'         => $has_donated,
 						'private_notes'             => '' !== $private_notes ? $private_notes : null,
+						'profile_photo_url'         => '' !== $profile_photo ? $profile_photo : null,
 					),
 					array( 'member_id' => $edit_member_id ),
-					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s' ),
+					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%s' ),
 					array( '%d' )
 				);
 
@@ -2360,6 +2373,7 @@ function mtl_render_membership_page() {
 					'signup_date'               => $signup_date,
 					'recurring_donation_amount' => $donation_display,
 					'has_donated_tools'         => $has_donated,
+					'profile_photo_url'         => $profile_photo,
 					'photo_id_scan_url'         => $photo_id_url,
 					'address_proof_scan_url'    => $addr_proof_url,
 					'private_notes'             => $private_notes,
@@ -2743,6 +2757,7 @@ function mtl_render_membership_page() {
 					'signup_date'               => $member_row->signup_date,
 					'recurring_donation_amount' => $member_row->recurring_donation_amount,
 					'has_donated_tools'         => $member_row->has_donated_tools,
+					'profile_photo_url'         => (string) $member_row->profile_photo_url,
 					'photo_id_scan_url'         => (string) $member_row->photo_id_scan_url,
 					'address_proof_scan_url'    => (string) $member_row->address_proof_scan_url,
 					'private_notes'             => stripslashes( (string) $member_row->private_notes ),
@@ -3059,6 +3074,25 @@ function mtl_render_membership_page() {
 
 		.mtl-detail-panel p {
 			margin: 4px 0 14px 0;
+		}
+
+		/* Profile photo, top of the detail panel. A fixed frame cropped to
+			fill, since photos taken at the desk come in any shape; clicking it
+			opens the whole image. */
+		.mtl-profile-photo-link {
+			display: block;
+			width: max-content;
+			margin: 4px 0 14px 0;
+		}
+
+		.mtl-profile-photo {
+			display: block;
+			width: 96px;
+			height: 120px;
+			object-fit: cover;
+			border: 1px solid #ccd0d4;
+			border-radius: 4px;
+			background: #fff;
 		}
 
 		/* Per-member borrowing activity */
@@ -3772,6 +3806,7 @@ function mtl_render_membership_page() {
             m.anonymized_at,
             m.private_notes,
             m.locked_at,
+            m.profile_photo_url,
             v.photo_id_scan_url,
             v.address_proof_scan_url,
             v.verified_at
@@ -4365,6 +4400,16 @@ function mtl_render_membership_page() {
 							<td colspan="9">
 								<div class="mtl-detail-panel">
 									<div class="mtl-detail-col">
+										<?php if ( ! empty( $member->profile_photo_url ) ) : ?>
+											<?php
+											// Lazy, so a page of members does not fetch every
+											// photo up front: this row is hidden until opened.
+											?>
+											<a href="<?php echo esc_url( $member->profile_photo_url ); ?>" target="_blank" rel="noopener noreferrer" class="mtl-profile-photo-link" title="Open full size in a new tab">
+												<img src="<?php echo esc_url( $member->profile_photo_url ); ?>" alt="<?php echo esc_attr( 'Photo of ' . $full_name . ', opens full size in a new tab' ); ?>" class="mtl-profile-photo" loading="lazy">
+											</a>
+										<?php endif; ?>
+
 										<strong>Full Address</strong>
 										<?php $mtl_addr_lines = mtl_member_address_lines( $member ); ?>
 										<p><?php echo esc_html( $mtl_addr_lines[0] ); ?><br><?php echo esc_html( $mtl_addr_lines[1] ); ?></p>

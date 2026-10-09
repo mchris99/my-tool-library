@@ -75,6 +75,15 @@ DROP TABLE IF EXISTS {{prefix}}members;
 -- tools, and staff cannot start or renew a loan for them. Locking cancels
 -- their active reservations. It is cleared again on unlock. See
 -- mtl_lock_member() in my-tool-library.php.
+--
+-- profile_photo_url is an optional link to a photo staff take of the member
+-- at the desk, hosted outside the plugin like the verification scans. It sits
+-- here rather than in member_verifications because it has nothing to do with
+-- verification, and having one or not never limits what a member can do.
+-- Staff-only, like private_notes: shown only in the admin Membership page's
+-- detail view, never on a public-facing or member-self-service page. Deleting
+-- a member clears it and emails the link to the site administrator so the
+-- file can be removed; see mtl_delete_or_anonymize_member().
 CREATE TABLE {{prefix}}members (
     member_id INT AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(50) NOT NULL,
@@ -92,7 +101,8 @@ CREATE TABLE {{prefix}}members (
     has_donated_tools CHAR(1) DEFAULT 'N',
     anonymized_at TIMESTAMP NULL DEFAULT NULL,
     private_notes TEXT DEFAULT NULL,
-    locked_at TIMESTAMP NULL DEFAULT NULL
+    locked_at TIMESTAMP NULL DEFAULT NULL,
+    profile_photo_url VARCHAR(255) DEFAULT NULL
 );
 
 -- Sensitive Member Data (Separated for security compliance)
