@@ -1,20 +1,15 @@
 <?php
 /**
- * Public tool catalog (server-side rendered, no JavaScript required).
+ * Public tool catalog, rendered server-side with no JavaScript.
  *
- * Search, advanced filters, sort, tile/row view and pagination are plain GET
- * links; selecting a tool for the detail box uses a same-page URL fragment
- * (e.g. "#tool-45") revealed via the CSS :target pseudo-class, so selection
- * is instant with no reload. Every selectable tool's detail content is
- * pre-rendered (hidden) so :target has something to reveal; see
- * mtl_shop_panel_id() and mtl_shop_render_detail_panel(). A tool can be
- * deep-linked reliably via mtl_shop_tool_share_url(), which pairs the
- * fragment with a matching ?mtl_tool= query string so the link works
- * regardless of the visitor's current filters/pagination.
+ * Search, filters, sort, view and pagination are plain GET requests. Picking
+ * a tool links to a same-page fragment ("#tool-45") that CSS :target reveals,
+ * so there is no reload; that's why every selectable tool's panel is
+ * pre-rendered, hidden. mtl_shop_tool_share_url() adds a matching ?mtl_tool=
+ * so a shared link opens the tool whatever the recipient's filters or page.
  *
- * The main render function returns the catalog HTML as a string; the caller
- * drops it into the shared front-end shell (see mtl_render_front_main_page()
- * in my-tool-library.php).
+ * mtl_render_shop_page() returns the HTML for the shared front-end shell
+ * (mtl_render_front_main_page() in my-tool-library.php).
  *
  * @package My_Tool_Library
  */
@@ -82,15 +77,13 @@ function mtl_shop_pills( $csv ) {
 /**
  * Renders a tool's shelf location for a member, or nothing at all.
  *
- * Two independent reasons to render nothing, and neither one gets a message:
- * the library keeps shelf locations to staff, or this tool simply has none on
- * file. A member who is never shown a location has nothing to be told about.
+ * It renders nothing, and shows no message, when the library keeps shelf
+ * locations to staff or the tool has none on file.
  *
- * Both conditions live here rather than at the call sites, so a page that
- * forgets one cannot leak a location the library meant to keep back: the only
- * way to render this is to ask this function, and it fails closed. That is
- * also why it takes the raw column value rather than a "should I show it"
- * flag. Called by the catalog's detail panel and by My Reservations.
+ * Both checks live here, not at the call sites, so a page can't forget one
+ * and leak a location; it fails closed. That's also why it takes the raw
+ * column value rather than a "show it" flag. Used by the catalog's detail
+ * panel and My Reservations.
  *
  * @param string $location Raw tool_inventory.location value; NULL/'' for a
  *                         tool with no location recorded.
@@ -107,10 +100,9 @@ function mtl_shop_location_block( $location ) {
 /**
  * The CSS for what mtl_shop_status_badges() and mtl_shop_pills() render.
  *
- * Both the catalog (mtl_render_shop_page()) and the member pages
- * (mtl_member_page_styles()) call those helpers, so both need these rules.
- * Keeping one copy here means restyling a badge restyles it everywhere it
- * appears, rather than in whichever of the two files got edited.
+ * The catalog (mtl_render_shop_page()) and the member pages
+ * (mtl_member_page_styles()) both use those helpers, so the rules live here
+ * once for both.
  *
  * @return string CSS, ready to drop inside a <style> block.
  */
@@ -178,9 +170,8 @@ function mtl_shop_badge_pill_css() {
 }
 
 /**
- * Canonical DOM id for a tool's hidden detail panel and CSS :target anchor.
- * Used everywhere a fragment or panel id is needed so every call site stays
- * in sync with the same "tool-<id>" format.
+ * DOM id ("tool-<id>") of a tool's detail panel, which is also its :target
+ * fragment. Every link and panel builds it here so they always match.
  *
  * @param int $tool_id Tool row ID.
  * @return string
@@ -192,8 +183,8 @@ function mtl_shop_panel_id( $tool_id ) {
 /**
  * Shareable URL for a tool: the query string makes the server render this
  * tool's panel regardless of the recipient's filters/pagination, and the
- * matching fragment makes the browser apply :target on load, and reliable
- * deep-linking with no JS.
+ * matching fragment makes the browser apply :target on load, so deep links
+ * work without JS.
  *
  * @param int    $tool_id Tool row ID.
  * @param string $base    Base page URL.
@@ -205,18 +196,15 @@ function mtl_shop_tool_share_url( $tool_id, $base ) {
 }
 
 /**
- * Renders one tool's full detail-panel body: photo, badges, availability, a
- * shareable link, categories/tags, description, components, its resource and
- * partner links, shelf location (only when the library shows it to members),
- * and a context-aware Reserve control. A retired tool reads as retired
- * throughout and is offered no Reserve control at all.
+ * Renders the body of one tool's detail panel, ending in a Reserve control
+ * that depends on who is viewing. A retired tool gets no Reserve control.
  *
  * @param object $tool Tool row from the catalog query.
  * @param string $base Base page URL.
  * @param array  $ctx  Viewer context: is_member, is_admin (bool); reserved,
- *                      loaned (tool_id => true lookups); reserve_nonce_field
- *                      (pre-rendered wp_nonce_field string); login_url,
- *                      signup_url, reservations_url.
+ *                     loaned (tool_id => true lookups); reserve_nonce_field
+ *                     (pre-rendered wp_nonce_field string); login_url,
+ *                     signup_url, reservations_url.
  * @return string
  */
 function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
@@ -261,19 +249,16 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 		</p>
 
 		<?php
-		// Collapsed by default (native <details>, no JS) so visitors see
-				// a small button instead of a raw URL; the field is readonly
-				// since click-to-select would require JavaScript.
+		// Collapsed by default (native <details>, no JS) so visitors see a
+		// small button instead of a raw URL. The field is readonly, since
+		// click-to-select would need JavaScript.
 		?>
 		<details class="mtl-shop-share">
 			<summary class="mtl-shop-btn mtl-shop-btn-ghost" style="list-style:none;">Link to this tool</summary>
 			<?php
-			// $share_url is already esc_url()-escaped; wrapping it in
-					// esc_attr() too would re-encode the "&" and corrupt the
-					// link on any site whose base URL has a query string
-					// (e.g. Plain-permalink installs).
+			// Already escaped by mtl_shop_tool_share_url().
 			?>
-			<input type="text" class="mtl-shop-share-input" readonly value="<?php echo $share_url; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- already esc_url()-escaped by mtl_shop_tool_share_url(); see comment above. ?>" aria-label="Shareable link to this tool">
+			<input type="text" class="mtl-shop-share-input" readonly value="<?php echo $share_url; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- already esc_url()-escaped by mtl_shop_tool_share_url(). ?>" aria-label="Shareable link to this tool">
 		</details>
 
 		<?php if ( ! empty( $tool->categories ) ) : ?>
@@ -308,21 +293,16 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 		<?php endif; ?>
 
 		<?php
-		// Resources and Partner Links: collapsed sections, and nothing at all
-		// for a tool with neither. Rendered through the same helper the admin
-		// Inventory detail calls, so the two views cannot drift apart.
+		// Resources and Partner Links (nothing for a tool with neither), from
+		// the same helper the admin Inventory detail uses so the two can't drift.
 		echo mtl_tool_all_links_html( $tool );
 		?>
 
 		<?php echo mtl_shop_location_block( $tool->location ); ?>
 
 		<?php
-		// The Reserve control adapts to the viewer: a member with this
-				// tool already on loan/reserved sees a note instead of a
-				// button; a member otherwise gets a POST "Reserve" button; an
-				// admin gets a pointer to the admin tools; a logged-out
-				// visitor gets a sign-in prompt. Reserving is POST + nonce,
-				// never GET, so it can't be triggered by prefetch or CSRF.
+		// The Reserve control depends on the viewer. Reserving is POST + nonce,
+		// never GET, so it can't be triggered by prefetch or CSRF.
 		?>
 		<?php if ( $retired ) : ?>
 			<p class="mtl-shop-reserve-note">This tool has been retired from the collection and can no longer be borrowed or reserved.</p>
@@ -407,6 +387,11 @@ function mtl_render_shop_page() {
 	$page_no  = isset( $_GET['mtl_pg'] ) ? max( 1, (int) $_GET['mtl_pg'] ) : 1;
 	$sel_id   = isset( $_GET['mtl_tool'] ) ? (int) $_GET['mtl_tool'] : 0;
 
+	// Unknown status values fold to no filter, like mtl_retired and mtl_sort.
+	if ( ! in_array( $a_status, array( 'available', 'onloan', 'maintenance', 'noreserved' ), true ) ) {
+		$a_status = '';
+	}
+
 	// Retired scope: '' active only (the default, and the only state a plain
 	// catalog URL produces), 'include' active + retired, 'only' retired.
 	// Whitelisted the way mtl_sort is below, so a stale or hand-edited value
@@ -416,13 +401,11 @@ function mtl_render_shop_page() {
 		$a_retired = '';
 	}
 
-	// Category and tag are multi-select, so both arrive as id lists. The
-	// (array) cast also accepts the single scalar the filters used to send,
-	// which keeps old bookmarks and shared links working.
-	//
-	// Selections are intersected with the ids that actually exist: a stale or
-	// hand-edited value is dropped here rather than being carried into every
-	// link on the page, and the IN () list below can only ever hold real ids.
+	// Categories, sub-categories and tags all arrive as id lists. The (array)
+	// cast also accepts a single scalar, so old bookmarks and shared links
+	// still work. Ids that don't exist are dropped here, so a stale or
+	// hand-edited value isn't carried into every link, and the IN () lists
+	// below only ever hold real ids.
 	$id_list_param = function ( $key, array $valid_ids ) {
 		if ( ! isset( $_GET[ $key ] ) ) {
 			return array();
@@ -436,11 +419,9 @@ function mtl_render_shop_page() {
 
 	$advanced_active = ( '' !== $a_name || '' !== $a_brand || $a_cats || $a_subcats || $a_tags || '' !== $a_status || '' !== $a_retired );
 
-	// The catalog's sort modes, whitelisted: each accepted mtl_sort value
-	// mapped to its safe ORDER BY fragment (never user SQL) and to the label
-	// the sort menu shows for it. The query, the menu and the menu's
-	// active-item highlight all read this one list, so adding a sort option
-	// means editing here and nowhere else.
+	// Whitelisted sort modes: each mtl_sort value maps to a fixed ORDER BY
+	// fragment (never user SQL) and its menu label. The query and the sort
+	// menu both read this list, so a new option only needs adding here.
 	$sort_modes = array(
 		''          => array(
 			'order' => 't.tool_id DESC',
@@ -463,13 +444,7 @@ function mtl_render_shop_page() {
 			'label' => 'Brand',
 		),
 	);
-	// "newest" is an accepted alias for the default; anything else is a stale
-	// or tampered URL. Both fold to '' here so the rest of this function has
-	// exactly one spelling of "default sort" to handle. Normalizing up front
-	// also keeps an unrecognized value from being carried forward: the value
-	// is only whitelisted where ORDER BY is chosen, so a stale one used to
-	// survive into every link and the search form's hidden field, and left the
-	// sort menu with no entry marked active.
+	// Unknown values, including "newest", fold to the default sort.
 	if ( ! isset( $sort_modes[ $sort ] ) ) {
 		$sort = '';
 	}
@@ -477,20 +452,16 @@ function mtl_render_shop_page() {
 
 	$per_page = ( 'rows' === $view ) ? 20 : 12;
 
-	// Build the dynamic WHERE from the active filters. Conditions carry
-	// %s / %d placeholders; $args holds the matching values, run through
-	// $wpdb->prepare() below. Every {$tbl_*} / {$sub_*} / {$from} fragment
-	// interpolated below is a table name or safe SQL fragment built only
-	// from $wpdb->prefix and this whitelist array, never request data;
-	// phpcs can't verify that across this many lines, hence the disable
-	// block through the end of the query-building section.
+	// Build the WHERE from the active filters: conditions use %s / %d
+	// placeholders, and $args holds their values for $wpdb->prepare(). Every
+	// {$tbl_*} / {$sub_*} / {$from} interpolated below is a table name or
+	// fixed SQL built from $wpdb->prefix and whitelists, never request data.
+	// phpcs can't see that across this many lines, hence the disable block.
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
-	// Retired tools are hidden unless the visitor asks for them through the
-	// advanced search's Retired filter; see admin/schema.sql's note on
-	// tool_inventory.retired_at. Held as its own fragment because the
-	// deep-linked tool below is fetched by a separate query and has to answer
-	// the same question, or selecting a retired tool out of a retired-only
-	// result list would open an empty detail box.
+	// Retired tools are hidden unless the Retired filter asks for them (see
+	// tool_inventory.retired_at in admin/schema.sql). Kept as its own fragment
+	// because the deep-linked tool's separate query needs it too, or a retired
+	// tool picked from a retired-only list would open an empty detail box.
 	$retired_where = 'only' === $a_retired ? 't.retired_at IS NOT NULL' : 't.retired_at IS NULL';
 	if ( 'include' === $a_retired ) {
 		$retired_where = '';
@@ -517,12 +488,10 @@ function mtl_render_shop_page() {
 		$where[] = 't.brand LIKE %s';
 		$args[]  = '%' . $wpdb->esc_like( $a_brand ) . '%';
 	}
-	// Several categories (or tags) match ANY of them, so picking Woodworking and
-	// Plumbing widens the results rather than narrowing them to tools filed
-	// under both. The two filters still combine with each other, and with
-	// everything else here, as AND.
-	// Categories and sub-categories are one control with OR between them; see
-	// the TAXONOMY TREE FILTER block in my-tool-library.php.
+	// Picking several categories (or tags) matches tools with ANY of them, so
+	// it widens the results. Categories and sub-categories are one control,
+	// OR'd together (see TAXONOMY TREE FILTER in my-tool-library.php). That
+	// control, tags and the other filters combine with each other as AND.
 	list( $tx_where, $tx_args ) = mtl_taxonomy_where( $a_cats, $a_subcats, 't.tool_id' );
 	if ( '' !== $tx_where ) {
 		$where[] = $tx_where;
@@ -565,9 +534,10 @@ function mtl_render_shop_page() {
 		. " LEFT JOIN {$tbl_tool_train} ttr ON t.tool_id = ttr.tool_id"
 		. " LEFT JOIN {$tbl_trainings} tr ON ttr.training_id = tr.training_id";
 
-	// Total matching count (for pagination).
-	$count_sql = "SELECT COUNT(*) FROM (SELECT t.tool_id, {$sub_loans} AS active_loans, {$sub_res} AS active_res {$from} {$where_sql} GROUP BY t.tool_id {$having}) sub";
-	$total     = (int) ( $args ? $wpdb->get_var( $wpdb->prepare( $count_sql, $args ) ) : $wpdb->get_var( $count_sql ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no-args branch: $count_sql carries no request-derived data when $args is empty.
+	// Total matching count (for pagination). Every filter is its own EXISTS
+	// subquery, so the count skips $from's joins, which only multiply rows.
+	$count_sql = "SELECT COUNT(*) FROM (SELECT t.tool_id, {$sub_loans} AS active_loans, {$sub_res} AS active_res FROM {$tbl_inv} t {$where_sql} GROUP BY t.tool_id {$having}) sub";
+	$total     = (int) ( $args ? $wpdb->get_var( $wpdb->prepare( $count_sql, $args ) ) : $wpdb->get_var( $count_sql ) );
 
 	$total_pages = max( 1, (int) ceil( $total / $per_page ) );
 	if ( $page_no > $total_pages ) {
@@ -597,10 +567,12 @@ function mtl_render_shop_page() {
 		$sel_retired_sql = '' !== $retired_where ? ' AND ' . $retired_where : '';
 		$selected        = $wpdb->get_row(
 			$wpdb->prepare(
-				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.date_acquired, t.retired_at, t.maintenance_at'
+				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.retired_at, t.maintenance_at'
 				. mtl_tool_link_columns_sql() . ','
 				. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 				. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
+				. " GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories,"
+				. " GROUP_CONCAT(DISTINCT tr.training_name ORDER BY tr.training_name SEPARATOR ', ') AS required_trainings,"
 				. " {$sub_loans} AS active_loans, {$sub_res} AS active_res"
 				. " {$from} WHERE t.tool_id = %d{$sel_retired_sql} GROUP BY t.tool_id",
 				$sel_id
@@ -609,10 +581,9 @@ function mtl_render_shop_page() {
 	}
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
 
-	// Every tool needing a pre-rendered detail panel: the current results
-	// page plus the deep-linked tool if not already among them. $tools rows
-	// already carry every column the detail view needs, so this adds no
-	// extra queries.
+	// Tools that get a pre-rendered detail panel: this page's results plus
+	// the deep-linked tool if it isn't among them. Both queries select every
+	// column the panel needs, so this adds no extra queries.
 	$panel_tools = $tools;
 	if ( $selected ) {
 		$page_tool_ids = array_map( 'intval', array_column( $tools, 'tool_id' ) );
@@ -633,6 +604,7 @@ function mtl_render_shop_page() {
 		// and PHP reads them straight back as an array. Empty stays '' so the
 		// $not_empty filter below drops the key entirely.
 		'mtl_cat'     => $a_cats ? $a_cats : '',
+		'mtl_subcat'  => $a_subcats ? $a_subcats : '',
 		'mtl_tag'     => $a_tags ? $a_tags : '',
 		'mtl_status'  => $a_status,
 		'mtl_retired' => $a_retired,
@@ -646,13 +618,14 @@ function mtl_render_shop_page() {
 	};
 	$clean_state = array_filter( $state, $not_empty );
 
-	// Pagination, sort and view-toggle links change the query string, so they
-	// always trigger a full reload. Whenever the resulting URL carries
-	// mtl_tool, the matching #tool-<id> fragment is appended automatically so
-	// visibility (100% fragment/:target-driven) never gets left out of sync.
+	// Pagination, sort and view links change the query string, so they reload
+	// the page. When the URL carries mtl_tool, the matching #tool-<id>
+	// fragment is appended too, since only :target shows the detail panel.
 	$make_url = function ( array $overrides ) use ( $base, $clean_state, $not_empty ) {
 		$args = array_filter( array_merge( $clean_state, $overrides ), $not_empty );
-		$url  = add_query_arg( $args, $base );
+		// add_query_arg() doesn't encode values, so a search for "AT&T" would
+		// otherwise split into two parameters in every link.
+		$url = add_query_arg( rawurlencode_deep( $args ), $base );
 		if ( ! empty( $args['mtl_tool'] ) ) {
 			$url .= '#' . mtl_shop_panel_id( $args['mtl_tool'] );
 		}
@@ -688,6 +661,9 @@ function mtl_render_shop_page() {
 			$member_ctx['loaned'][ (int) $tid ] = true;
 		}
 	}
+
+	// Accent color mirrors the admin header color set on the Setup page.
+	$accent = get_option( 'mtl_header_color', '#ff6600' );
 
 	// ======================================================================
 	// RENDER
@@ -866,7 +842,8 @@ function mtl_render_shop_page() {
 			padding: 0 0 14px 0;
 		}
 
-		.mtl-shop-adv-grid label {
+		.mtl-shop-adv-grid label,
+		.mtl-shop-adv-grid .mtl-shop-adv-label {
 			display: block;
 			font-size: 0.78em;
 			font-weight: 600;
@@ -881,8 +858,8 @@ function mtl_render_shop_page() {
 			padding: 3px 6px;
 		}
 
-		/* The category/tag multi-selects. Given two grid columns so a list of
-			names is readable, and resizable for libraries with a long list. */
+		/* The category tree and the tag multi-select, two grid columns wide so
+			the names are readable. The tag list can be resized for long lists. */
 		.mtl-shop-adv-multi {
 			grid-column: span 2;
 		}
@@ -998,14 +975,10 @@ function mtl_render_shop_page() {
 				width: 100%;
 			}
 
-			/* On narrow screens, a selected tool's detail box is lifted out of
-				normal flow and pinned over the viewport instead of sitting
-				below a possibly long list of tiles/rows. position:fixed is
-				anchored to the viewport, not the page, so there's nothing in
-				page flow for the browser's native fragment-scroll to jump to.
-				Relies on :has(); browsers without it simply keep the detail
-				box in normal flow below the grid (a functional, if less
-				convenient, fallback). */
+			/* On narrow screens a selected tool's detail box is pinned over the
+				viewport instead of sitting below a long list. Being fixed, it
+				leaves nothing in page flow for the fragment scroll to jump to.
+				Needs :has(); without it the box stays below the grid. */
 			.mtl-shop-detail-col:has(.mtl-shop-detail-panel:target) {
 				position: fixed;
 				inset: 0;
@@ -1143,15 +1116,9 @@ function mtl_render_shop_page() {
 			border: 1px solid #d5d8dc;
 			border-radius: 8px;
 			background: #fff;
-			/* Tall enough to reach the bottom of the viewport (paired with the
-				column's top: 16px, leaving the same gap underneath), then the
-				panel scrolls within its own box rather than running past the
-				bottom of a sticky column the page can never scroll down to.
-				overscroll-behavior stops that scroll from chaining into the
-				catalog when the panel hits either end, so the two columns keep
-				their own scroll positions. overflow-x stays hidden, which is
-				what the plain overflow:hidden here was for: clipping the
-				full-bleed photo to the rounded top corners. */
+			/* Capped at the viewport and scrolled inside, since the page can't
+				scroll to the bottom of a sticky column. overscroll-behavior keeps
+				that scroll out of the catalog; overflow-x rounds the photo's corners. */
 			max-height: calc(100vh - 32px);
 			overflow-y: auto;
 			overflow-x: hidden;
@@ -1264,7 +1231,7 @@ function mtl_render_shop_page() {
 			margin: 2px 0 0 0;
 		}
 
-		<?php // The link sections' summaries are headings here, so they read as ones. ?>
+		<?php // The link sections' summaries act as headings here, so they get the h4 style. ?>
 		.mtl-shop-detail h4,
 		.mtl-shop-detail .mtl-links > summary {
 			font-size: 0.78em;
@@ -1360,26 +1327,26 @@ function mtl_render_shop_page() {
 	</style>
 
 	<?php
-	// Accent color mirrors the admin theme's header color (set on the Setup
-	// page) so the shop matches it.
-	$accent = get_option( 'mtl_header_color', '#ff6600' );
-	// Defaults to the real WordPress home page so this works with zero
-	// configuration; overridable on the Setup page.
-	$home_url = get_option( 'mtl_home_url', home_url( '/' ) );
+	// The site's home page unless Setup names another. Setup saves a blank
+	// field as '', which get_option() returns instead of the default.
+	$home_url = get_option( 'mtl_home_url', '' );
+	if ( '' === $home_url ) {
+		$home_url = home_url( '/' );
+	}
 	?>
 	<div class="mtl-shop" style="--mtl-shop-accent: <?php echo esc_attr( $accent ); ?>;">
 
 		<a href="<?php echo esc_url( $home_url ); ?>" class="mtl-shop-btn mtl-shop-btn-ghost mtl-shop-home-btn">&larr; Home</a>
 
 		<?php
-		// Member sign-in / sign-up (logged out) or account menu (signed
-				// in), pinned top-right to mirror the Home button.
+		// Member sign-in / sign-up (logged out) or account menu (signed in),
+		// pinned top-right to mirror the Home button.
 		?>
 		<?php echo mtl_member_nav_html(); ?>
 
 		<?php
 		// Close target for the mobile detail overlay: its id matches no
-				// panel, so linking here clears :target and closes it.
+		// panel, so linking here clears :target and closes it.
 		?>
 		<div id="mtl-shop-closed" class="mtl-shop-close-anchor" aria-hidden="true"></div>
 
@@ -1419,12 +1386,12 @@ function mtl_render_shop_page() {
 							<input type="text" id="mtl-a-brand" name="mtl_brand" value="<?php echo esc_attr( $a_brand ); ?>">
 						</div>
 						<?php
-						// Categories and tags are multi-select: nothing selected
-						// means "any", and picking several widens the results to
-						// tools matching any one of them.
+						// For both categories and tags, nothing picked means
+						// "any", and picking several widens the results to tools
+						// matching any one of them.
 						?>
-						<div class="mtl-shop-adv-multi mtl-shop-adv-tree">
-							<label>Categories</label>
+						<div class="mtl-shop-adv-multi mtl-shop-adv-tree" role="group" aria-labelledby="mtl-shop-tx-label">
+							<span class="mtl-shop-adv-label" id="mtl-shop-tx-label">Categories</span>
 							<?php mtl_taxonomy_tree( $tx_rows, $a_cats, $a_subcats, 'mtl-shop-tx' ); ?>
 						</div>
 						<?php mtl_taxonomy_tree_assets(); ?>
@@ -1448,9 +1415,8 @@ function mtl_render_shop_page() {
 							</select>
 						</div>
 						<?php
-						// Same three states, and the same wording, as the staff
-						// Inventory page's Retired filter, so a volunteer who
-						// knows one reads the other without relearning it.
+						// Same states and wording as the staff Inventory page's
+						// Retired filter, so volunteers who know one know both.
 						?>
 						<div>
 							<label for="mtl-a-retired">Retired</label>

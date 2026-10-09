@@ -943,9 +943,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'phone_national' ); ?>">Phone Number *</label></th>
 		<td>
-			<?php mtl_render_phone_input( $values['phone_country'], $values['phone_national'], $id_prefix ); ?>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Pick the country, then type the number. Formatting is automatic.</p>
-		</td>
+			<?php mtl_render_phone_input( $values['phone_country'], $values['phone_national'], $id_prefix ); ?>		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'address_line1' ); ?>">Address Line 1 *</label></th>
@@ -974,9 +972,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 				<?php foreach ( mtl_get_state_options() as $mtl_state_code => $mtl_state_label ) : ?>
 					<option value="<?php echo esc_attr( $mtl_state_code ); ?>" <?php selected( $values['state'], $mtl_state_code ); ?>><?php echo esc_html( $mtl_state_label ); ?> (<?php echo esc_html( $mtl_state_code ); ?>)</option>
 				<?php endforeach; ?>
-			</select>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">U.S. and Canada only. Choose &ldquo;N/A&rdquo; for anywhere else.</p>
-		</td>
+			</select>		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'zip_code' ); ?>">ZIP Code *</label></th>
@@ -1003,9 +999,7 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'recurring_donation_amount' ); ?>">Recurring Donation ($)</label></th>
 		<td>
-			<input type="number" step="0.01" min="0" name="recurring_donation_amount" id="<?php echo $field_id( 'recurring_donation_amount' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['recurring_donation_amount'] ); ?>" placeholder="0.00">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Monthly amount, if they have one set up.</p>
-		</td>
+			<input type="number" step="0.01" min="0" name="recurring_donation_amount" id="<?php echo $field_id( 'recurring_donation_amount' ); ?>" class="regular-text" value="<?php echo esc_attr( $values['recurring_donation_amount'] ); ?>" placeholder="0.00">		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'has_donated_tools' ); ?>">Has Donated Tools?</label></th>
@@ -1019,24 +1013,20 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 	<tr>
 		<th scope="row">Trainings Completed</th>
 		<td>
-			<?php mtl_render_trainings_picker( $trainings, $values['training_starts'], $id_prefix ); ?>
-			<?php if ( $trainings ) : ?>
-				<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">The completion date is what the certification length runs from.</p>
-			<?php endif; ?>
-		</td>
+			<?php mtl_render_trainings_picker( $trainings, $values['training_starts'], $id_prefix ); ?>		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'photo_id_scan_url' ); ?>">Photo ID Scan URL</label></th>
 		<td>
 			<input type="url" name="photo_id_scan_url" id="<?php echo $field_id( 'photo_id_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['photo_id_scan_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Keep scans somewhere private, never a public folder. A member counts as verified only once both scans are on file.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Keep scans in private folder. A member counts as verified once both scans are on file.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'address_proof_scan_url' ); ?>">Proof of Address Scan URL</label></th>
 		<td>
 			<input type="url" name="address_proof_scan_url" id="<?php echo $field_id( 'address_proof_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['address_proof_scan_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> A utility bill, lease, or similar. Either scan can be added on its own and the rest filled in later.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Keep scans in private folder. A member counts as verified once both scans are on file.</p>
 		</td>
 	</tr>
 	<tr>
@@ -3497,7 +3487,6 @@ function mtl_render_membership_page() {
 
 					<p>
 						<input type="submit" name="mtl_create_member_logins" class="button" value="Create logins"<?php echo 0 === $logins_missing ? ' disabled' : ''; ?>>
-						<span style="color: #666; font-size: 0.9em; margin-left: 8px;">Creates the missing sign-ins. Sends no email. Works through the list a batch at a time, so press it again if any remain.</span>
 					</p>
 
 					<p style="margin-bottom: 4px;">
@@ -3510,8 +3499,6 @@ function mtl_render_membership_page() {
 							Include members emailed in the last 24 hours
 						</label>
 					</p>
-
-					<p style="color: #666; font-size: 0.85em; margin-bottom: 0;">Each member is emailed at most once a day unless you tick the box above. Sending a fresh link always cancels the previous one, so a member part-way through setting a password will need to use the newest email.</p>
 				</form>
 			</div>
 		</details>
@@ -4063,22 +4050,25 @@ function mtl_render_membership_page() {
 			<thead>
 				<tr>
 					<th class="sortable" style="cursor: pointer; width: 50px;" title="Click to sort">ID ↕</th>
-					<th class="sortable" style="cursor: pointer;" title="Click to sort">Name ↕</th>
+					<?php
+					// A set width stands in for a minimum: the table uses fixed
+					// layout, which ignores min-width, so this keeps names on one
+					// line while Email (truncated with an ellipsis) absorbs any
+					// squeeze on narrow screens.
+					?>
+					<th class="sortable" style="cursor: pointer; width: 180px;" title="Click to sort">Name ↕</th>
 					<th class="sortable" style="cursor: pointer;" title="Click to sort">Email ↕</th>
 					<th style="width: 120px;">Phone</th>
-					<th>Address</th>
 					<?php
-					// data-date-col marks this as a date column for the sort handler below,
-							// which must compare the row's ISO data-signup attribute rather than the
-							// visible MM/DD/YYYY cell text (MM/DD/YYYY strings don't sort lexicographically
-							// in date order the way YYYY-MM-DD strings do).
+					// Address and sign-up date live in the detail panel below, so the
+					// table fits without scrolling sideways.
 					?>
-					<th class="sortable" data-date-col="signup" style="cursor: pointer; width: 100px;" title="Click to sort">Signed Up ↕</th>
 					<th class="sortable" style="cursor: pointer; width: 90px;" title="Click to sort">Donation ↕</th>
 					<th style="width: 90px;">Donated Tools?</th>
 					<th style="width: 100px;">Verified</th>
 					<th style="width: 110px;">Sign-in</th>
-					<th style="width: 140px;">Actions</th>
+					<?php // Wide enough for Edit, Send setup link and Delete on one line. ?>
+					<th style="width: 250px;">Actions</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -4177,8 +4167,6 @@ function mtl_render_membership_page() {
 							<td><strong><?php echo esc_html( $full_name ); ?></strong></td>
 							<td class="mtl-truncate" title="<?php echo esc_attr( $member->email ); ?>"><?php echo esc_html( $member->email ); ?></td>
 							<td><?php echo esc_html( stripslashes( $member->phone_number ) ); ?></td>
-							<td class="mtl-truncate" title="<?php echo esc_attr( mtl_member_address_single_line( $member ) ); ?>"><?php echo esc_html( mtl_member_address_single_line( $member ) ); ?></td>
-							<td><?php echo mtl_format_date( $member->signup_date ); ?></td>
 							<td>$<?php echo esc_html( number_format( $member->recurring_donation_amount, 2 ) ); ?></td>
 							<td><?php echo 'Y' === $member->has_donated_tools ? 'Yes' : 'No'; ?></td>
 							<td>
@@ -4270,12 +4258,15 @@ function mtl_render_membership_page() {
 							open/closed by clicking anywhere on the row above.
 						-->
 						<tr class="mtl-detail-row" id="mtl-detail-<?php echo esc_attr( $member->member_id ); ?>" style="display: none;">
-							<td colspan="11">
+							<td colspan="9">
 								<div class="mtl-detail-panel">
 									<div class="mtl-detail-col">
 										<strong>Full Address</strong>
 										<?php $mtl_addr_lines = mtl_member_address_lines( $member ); ?>
 										<p><?php echo esc_html( $mtl_addr_lines[0] ); ?><br><?php echo esc_html( $mtl_addr_lines[1] ); ?></p>
+
+										<strong>Signed Up</strong>
+										<p><?php echo mtl_format_date( $member->signup_date ); ?></p>
 
 										<strong>Verification Documents</strong>
 										<?php if ( ! empty( $member->photo_id_scan_url ) || ! empty( $member->address_proof_scan_url ) ) : ?>
@@ -4298,9 +4289,9 @@ function mtl_render_membership_page() {
 											<?php if ( ! $is_verified ) : ?>
 												<p style="color: #b32d2e; font-size: 0.85em;">Only one document is on file, so this member is not verified yet. Use Edit to add the other.</p>
 											<?php endif; ?>
-											<p class="mtl-sensitive-note">These documents contain sensitive personal information. Only open them when necessary, and never share the links.</p>
+											<p class="mtl-sensitive-note">These documents contain sensitive personal information.</p>
 										<?php else : ?>
-											<p style="color: #999;">No verification documents on file. Use Edit to add the member&rsquo;s photo ID and/or proof-of-address scan.</p>
+											<p style="color: #999;">No verification documents on file.</p>
 										<?php endif; ?>
 
 										<?php
@@ -4485,7 +4476,7 @@ function mtl_render_membership_page() {
 												</tbody>
 											</table>
 										<?php else : ?>
-											<p style="color: #999;">None on record. Use Edit to record a training this member has completed.</p>
+											<p style="color: #999;">None on record.</p>
 										<?php endif; ?>
 
 										<?php if ( ! empty( $member->private_notes ) ) : ?>
@@ -4562,7 +4553,7 @@ function mtl_render_membership_page() {
 					<?php endforeach; ?>
 				<?php else : ?>
 					<tr>
-						<td colspan="11" style="text-align: center; padding: 20px;">
+						<td colspan="9" style="text-align: center; padding: 20px;">
 							No members found in the database. Open the panel above to add one!
 						</td>
 					</tr>
@@ -5083,11 +5074,11 @@ function mtl_render_membership_page() {
 					// works post-sort.
 					const rows = Array.from(tbody.querySelectorAll('tr.mtl-member-row'));
 
-					// Date columns (currently just "Signed Up") are marked with
-					// data-date-col on the <th> and compare the row's ISO
-					// data-* attribute instead of the visible cell text: the
-					// cell now reads MM/DD/YYYY, which does not sort into date
-					// order as a plain string the way YYYY-MM-DD does.
+					// Date columns (none at the moment; Signed Up moved to the
+					// detail panel) are marked with data-date-col on the <th>
+					// and compare the row's ISO data-* attribute instead of the
+					// visible cell text: a cell reading MM/DD/YYYY does not sort
+					// into date order as a plain string the way YYYY-MM-DD does.
 					const dateCol = header.dataset.dateCol;
 
 					rows.sort((a, b) => {

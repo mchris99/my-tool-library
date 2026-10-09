@@ -12,17 +12,11 @@
  *   mtl_page=account       : profile, verification status, past loans, edits
  *
  * Sign-in itself is core WordPress (wp_login_form on the shared login page in
- * my-tool-library.php); this plugin never handles a password directly.
+ * my-tool-library.php). Passwords go to WordPress core and are never stored
+ * in the plugin's tables.
  *
- * The link between a WordPress user and their row in the {prefix}members
- * table is the mtl_member_id stored in that user's meta at signup. That id is
- * a cache, not proof: member_id is AUTO_INCREMENT and restarts at 1 whenever
- * the Setup page rebuilds the tables, while WordPress accounts survive
- * untouched, so a stored id can end up pointing at a completely different
- * person. The account's own email address is what actually identifies the
- * member; mtl_current_member() checks the two agree before trusting the id,
- * and repairs the id when it can. No password or other credential is ever
- * stored in the plugin's own tables.
+ * A user's mtl_member_id meta links them to their {prefix}members row; see
+ * mtl_current_member() for why that link is checked before it is trusted.
  *
  * @package My_Tool_Library
  */
@@ -40,10 +34,9 @@ if ( ! defined( 'MTL_MIN_PASSWORD_LENGTH' ) ) {
 // --------------------------------------------------------------------------
 // Member role
 // --------------------------------------------------------------------------
-// Low-privilege role so members are recognizable/distinct from administrators
-// in the WP Users list. Registered on init (guarded so it's only added once)
-// rather than only on activation, so it also appears on installs that were
-// already active before this feature shipped.
+// Low-privilege role that sets members apart from administrators in the WP
+// Users list. Registered on init, not on activation, because activation hooks
+// don't run when the plugin is updated.
 add_action( 'init', 'mtl_register_member_role' );
 
 /**
@@ -62,11 +55,6 @@ function mtl_register_member_role() {
 /**
  * Whether this request is a form submission.
  *
- * The pages below render on GET and handle their own POST, and the reserve
- * handler runs on POST alone, so each opens by asking this. Wrapping the
- * isset/unslash/sanitize dance $_SERVER['REQUEST_METHOD'] needs keeps that to
- * one line per call site.
- *
  * @return bool
  */
 function mtl_is_post_request() {
@@ -77,14 +65,8 @@ function mtl_is_post_request() {
 /**
  * Find a live membership record by email address.
  *
- * The members.email column is UNIQUE, so this matches at most one row, and
- * anonymized_at IS NULL is part of the match rather than an afterthought: an
- * anonymized row is a deleted person whose personal fields are placeholders
- * and whose address has been replaced with a reserved .invalid one, so it is
- * never a record to serve and can never collide with a real address. Both
- * callers (resolving a sign-in to its member row, and telling a would-be
- * signup that the library already holds a membership for them) depend on
- * that same rule, so they share this one query rather than each restating it.
+ * The email column is UNIQUE, so this matches at most one row. Anonymized
+ * rows are deleted people and never match.
  *
  * @param string $email Email address to look up.
  * @return object|null Member row, or null when no live record has that address.
@@ -101,29 +83,21 @@ function mtl_find_member_by_email( $email ) {
  * Get the {prefix}members row for the logged-in user, but only when that row
  * can be shown to belong to them.
  *
- * The stored mtl_member_id is treated as a cache rather than proof. It is an
- * AUTO_INCREMENT value that restarts at 1 every time the Setup page rebuilds
- * the tables, while WordPress accounts survive that reset untouched, so a
- * surviving sign-in can be left pointing at a row that now belongs to someone
- * else entirely. Returning it would hand a stranger another member's name,
- * address, phone number and loan history, with edit and delete over the
- * record. So the row's email must match the signed-in account's before it is
- * trusted; if it doesn't, the account's own email is used to find the right
- * row and the stored id is repaired. If nothing matches, this returns null
- * and the caller shows the "we couldn't match your record" notice,
- * deliberately failing closed, since being locked out is recoverable and
- * disclosure isn't. See mtl_current_member_link_broken().
+ * The stored mtl_member_id is a cache, not proof. member_id restarts at 1 when
+ * the Setup page rebuilds the tables but WordPress accounts survive, so an old
+ * id can point at another person's row. The row is trusted only when its
+ * email matches the account's; otherwise the account's email finds the right
+ * row and the id is repaired. With no match this returns null (see
+ * mtl_current_member_link_broken()), failing closed because a lockout is
+ * recoverable and a disclosure isn't.
  *
- * Cached per-request since several places (shop nav, reserve handling) ask
- * for it on a single page load; safe because every write to the member row is
- * followed by a redirect, so the cache can never go stale mid-request, and
- * for the same reason, nothing may switch the current user after this has
- * run without also redirecting.
+ * Cached per request. That is safe because every write to the member row ends
+ * in a redirect, so nothing may switch the current user after this runs
+ * without also redirecting.
  *
- * Note for multisite: wp_usermeta is network-global but {prefix}members is
- * per-site, so a member of one site carries their id onto another site's
- * tables. The email check makes that fail closed instead of disclosing; a
- * per-site meta key would be the real fix, and is a migration.
+ * Multisite: usermeta is network-wide but {prefix}members is per site, so the
+ * email check is what fails closed there too. A per-site meta key would be the
+ * real fix, and needs a migration.
  *
  * @return object|null Member row, or null if the current user isn't a member
  *                     or their record could not be matched.
@@ -161,8 +135,7 @@ function mtl_current_member() {
 	global $wpdb;
 	$tbl = $wpdb->prefix . 'members';
 
-	// anonymized_at IS NULL on both lookups: an anonymized row is a deleted
-	// person whose personal fields are placeholders, never a record to serve.
+	// Anonymized rows are deleted people, never a record to serve.
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 	$candidate = $wpdb->get_row(
 		$wpdb->prepare( "SELECT * FROM {$tbl} WHERE member_id = %d AND anonymized_at IS NULL", $member_id )
@@ -212,12 +185,12 @@ function mtl_current_member_link_broken() {
 }
 
 /**
- * Whether a member is fully verified. Verification is created only by
- * administrators (see the Membership admin page); this file never writes to
- * member_verifications. A row can exist with only one of the two scan URLs
- * on file (a member who has provided one form of ID but not the other yet),
- * so both must be present, not just the row, to count as verified. See
- * also mtl_verification_urls_complete() in my-tool-library.php.
+ * Whether a member is fully verified.
+ *
+ * Only administrators record verification (Membership admin page); this file
+ * only ever removes it. A row can hold just one of the two scan URLs, so both
+ * must be present. See also mtl_verification_urls_complete() in
+ * my-tool-library.php.
  *
  * @param int $member_id Member ID.
  * @return bool
@@ -235,6 +208,149 @@ function mtl_member_is_verified( $member_id ) {
 }
 
 /**
+ * The verification scan links on file for a member, either or both.
+ *
+ * @param int $member_id Member row ID.
+ * @return array<string,string> Label => URL for each scan on file; empty if none.
+ */
+function mtl_member_verification_doc_urls( $member_id ) {
+	global $wpdb;
+	$tbl = $wpdb->prefix . 'member_verifications';
+	$row = $wpdb->get_row(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+			"SELECT photo_id_scan_url, address_proof_scan_url FROM {$tbl} WHERE member_id = %d",
+			(int) $member_id
+		)
+	);
+	$urls = array();
+	if ( $row && '' !== trim( (string) $row->photo_id_scan_url ) ) {
+		$urls['Photo ID scan'] = trim( (string) $row->photo_id_scan_url );
+	}
+	if ( $row && '' !== trim( (string) $row->address_proof_scan_url ) ) {
+		$urls['Proof of address scan'] = trim( (string) $row->address_proof_scan_url );
+	}
+	return $urls;
+}
+
+/**
+ * Emails the site administrator the scan links that a member's details change
+ * just removed, so the files themselves can be deleted.
+ *
+ * Goes to the site admin rather than the public contact address, for the same
+ * reason as mtl_send_verification_cleanup_email().
+ *
+ * @param int    $member_id Member row ID.
+ * @param string $name      The member's name as just saved.
+ * @param string $email     The member's email address.
+ * @param array  $doc_urls  Label => URL for each scan that was on file.
+ * @return bool True if the mail was handed off.
+ */
+function mtl_send_verification_reset_email( $member_id, $name, $email, $doc_urls ) {
+	$admin_email = sanitize_email( (string) get_option( 'admin_email', '' ) );
+	$sent        = false;
+	if ( is_email( $admin_email ) && $doc_urls ) {
+		$org_name = mtl_email_org_name();
+		$lines    = array(
+			sprintf( '%s (member #%d, %s) changed their name, phone number or address on their Account page on %s.', $name, (int) $member_id, $email, wp_date( 'F j, Y \a\t g:i a' ) ),
+			'',
+			'Their verification documents no longer match their details, so the links below were removed from the library\'s records. The member will need to provide new documents to be verified.',
+			'',
+			'The files themselves are stored outside the database and could not be deleted automatically. Please delete them from wherever the library keeps them:',
+			'',
+		);
+		foreach ( $doc_urls as $label => $url ) {
+			$lines[] = sprintf( '  %s: %s', $label, $url );
+		}
+		$lines[] = '';
+		$lines[] = 'Once the files are gone, please delete this email too, because it is the last copy of those links.';
+		$lines[] = '';
+		$lines[] = sprintf( '-- %s', $org_name );
+
+		$sent = (bool) wp_mail( $admin_email, sprintf( '[%s] Member changed their details: please delete their old verification files', $org_name ), implode( "\r\n", $lines ) );
+	}
+	if ( ! $sent ) {
+		error_log( sprintf( 'My Tool Library: member #%d changed their details and their verification links were removed, but the email to the site administrator could not be sent.', (int) $member_id ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- operational record of a failed admin email, not debug output.
+	}
+	return $sent;
+}
+
+/**
+ * Whether a POST came from a page on this site, judged by its Origin header,
+ * or its Referer when there's no Origin. A request carrying neither passes,
+ * since some browsers and privacy tools strip both.
+ *
+ * @return bool
+ */
+function mtl_request_from_this_site() {
+	$origin = isset( $_SERVER['HTTP_ORIGIN'] ) ? trim( sanitize_text_field( wp_unslash( $_SERVER['HTTP_ORIGIN'] ) ) ) : '';
+
+	// Browsers send "Origin: null" from sandboxed frames, but also from this
+	// site's own forms when it uses Referrer-Policy: no-referrer. The fetch
+	// metadata header tells the two apart where the browser sends it.
+	if ( 'null' === $origin ) {
+		$fetch_site = isset( $_SERVER['HTTP_SEC_FETCH_SITE'] ) ? sanitize_key( wp_unslash( $_SERVER['HTTP_SEC_FETCH_SITE'] ) ) : '';
+		if ( '' !== $fetch_site ) {
+			return 'same-origin' === $fetch_site;
+		}
+		$origin = '';
+	}
+
+	$source = '';
+	if ( '' !== $origin ) {
+		$source = esc_url_raw( $origin );
+	} elseif ( ! empty( $_SERVER['HTTP_REFERER'] ) ) {
+		$source = esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) );
+	}
+	if ( '' === $source ) {
+		return true;
+	}
+
+	$host = wp_parse_url( $source, PHP_URL_HOST );
+	return is_string( $host ) && 0 === strcasecmp( $host, (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+}
+
+/**
+ * Emails the next step to someone who tried to sign up with an address that's
+ * already registered, so the signup form never has to say that it is.
+ *
+ * A member staff added, with no website sign-in yet, gets the same set-password
+ * email the lost-password page sends. Anyone with a sign-in gets a note to sign
+ * in or reset their password. At most one email per address per hour, so the
+ * form can't be used to flood someone's inbox.
+ *
+ * @param string $email Address submitted on the signup form.
+ */
+function mtl_send_signup_existing_email( $email ) {
+	$throttle = 'mtl_signup_taken_' . md5( strtolower( $email ) );
+	if ( get_transient( $throttle ) ) {
+		return;
+	}
+	set_transient( $throttle, 1, HOUR_IN_SECONDS );
+
+	if ( ! email_exists( $email ) ) {
+		mtl_setup_login_for_unclaimed_member( $email );
+		return;
+	}
+
+	$org_name = mtl_email_org_name();
+	$lines    = array(
+		sprintf( 'Someone tried to create a new account at %s with this email address, but you already have one.', $org_name ),
+		'',
+		'Sign in here:',
+		mtl_front_page_url( 'login' ),
+		'',
+		'Forgot your password? Choose a new one here:',
+		mtl_front_page_url( 'lostpassword' ),
+		'',
+		'If this wasn\'t you, you can ignore this email. Nothing about your account has changed.',
+		'',
+		sprintf( '-- %s', $org_name ),
+	);
+	wp_mail( $email, sprintf( '[%s] You already have an account', $org_name ), implode( "\r\n", $lines ) );
+}
+
+/**
  * Text + severity for a one-off status banner, keyed by the mtl_msg the
  * post-action PRG redirects carry. Shared by the shop page and the member
  * pages so wording stays consistent.
@@ -244,27 +360,30 @@ function mtl_member_is_verified( $member_id ) {
  */
 function mtl_front_notice( $key ) {
 	$map = array(
-		'reserved'               => array( 'success', 'You&rsquo;ve joined the waiting queue for this tool. Track your place under My Loans &amp; Reservations.' ),
+		'reserved'               => array( 'success', 'Your reservation is in. Check My Loans &amp; Reservations for your place in line and pickup details.' ),
 		'already_reserved'       => array( 'error', 'You already have an active reservation for that tool.' ),
 		'on_loan_conflict'       => array( 'error', 'You currently have that tool checked out, so there&rsquo;s no need to reserve it.' ),
 		'login_required'         => array( 'error', 'Please sign in to reserve a tool.' ),
 		'reserve_failed'         => array( 'error', 'Sorry, that tool could not be reserved. Please try again.' ),
 		'reservation_cancelled'  => array( 'success', 'Your reservation has been cancelled.' ),
 		'reservations_cancelled' => array( 'success', 'All of your reservations have been cancelled.' ),
+		'session_expired'        => array( 'error', 'That page had been open too long, so nothing was changed. Please try again.' ),
 		'account_updated'        => array( 'success', 'Your account details have been updated.' ),
+		'account_docs_removed'   => array( 'success', 'Your details were updated. Because your personal information changed, the verification document on file was removed, and staff will need new documents to verify your account.' ),
 		'account_verif_removed'  => array( 'success', 'Your details were updated. Because your personal information changed, your verified status has been reset, and an administrator will need to re-verify your account.' ),
 		'account_deleted'        => array( 'success', 'Your account and personal data have been deleted. You&rsquo;re welcome to browse the catalog, but you&rsquo;ll need to sign up again if you&rsquo;d like to reserve a tool.' ),
-		// The reserve gate sends members here. The wording explains what
-		// happened and what to do, because the alternative, a reservation
-		// that silently did not happen, is the worst version of this.
+		// The reserve gate sends members here, so say plainly that no
+		// reservation was made.
 		'agreements_required'    => array( 'error', 'Before you can reserve a tool, please read and agree to our member agreements below. Your reservation was not created.' ),
-		'agreements_recorded'    => array( 'success', 'Thank you. Your agreement has been recorded.' ),
 		// Sign-in failures, carried back from wp-login.php by
 		// mtl_handle_failed_front_login(). Deliberately does not say WHICH of
 		// the two was wrong: that would confirm to anyone guessing whether a
 		// given email address has an account here.
 		'login_failed'           => array( 'error', 'That email address and password don&rsquo;t match an account. Please check them and try again.' ),
 		'login_empty'            => array( 'error', 'Please enter both your email address and your password.' ),
+		// After a signup with an address that's already registered. Worded so
+		// it doesn't confirm that, the same way reset_sent is.
+		'signup_check_email'     => array( 'success', 'Thanks. We&rsquo;ve emailed that address with the next step. It can take a few minutes to arrive, so do check your spam folder.' ),
 		// Password reset. reset_sent is deliberately non-committal about
 		// whether the address matched an account; see
 		// mtl_render_lost_password_page().
@@ -410,10 +529,8 @@ function mtl_member_page_styles() {
 			display: none;
 		}
 
-		/* Chevron telling members the row opens. Drawn from borders rather than
-			a glyph or an image so it renders identically everywhere, needs no
-			font support, and inherits the surrounding text color. Points down
-			when closed, up when open. */
+		/* Chevron drawn from borders, so it needs no font or image and takes
+			the text color. Points down when closed, up when open. */
 		.mtl-member-summary::after {
 			content: "";
 			flex: 0 0 auto;
@@ -444,8 +561,8 @@ function mtl_member_page_styles() {
 			border-radius: 4px;
 		}
 
-		/* Respect a reduced-motion preference: the chevron still flips, it just
-			does not animate. */
+		/* Respect a reduced-motion preference: the chevron still flips but
+			doesn't animate. */
 		@media (prefers-reduced-motion: reduce) {
 			.mtl-member-summary::after {
 				transition: none;
@@ -460,10 +577,8 @@ function mtl_member_page_styles() {
 			padding: 0 24px 22px 24px;
 		}
 
-		/* Consider Giving: the optional fundraising ask, shown on the Account
-			page and My Reservations. Styled as an ordinary card rather than a
-			banner, since it is a standing invitation rather than an alert, and members
-			see it on every visit. */
+		/* Consider Giving and Request a Tool cards. Plain cards, not banners:
+			members see them on every visit, so they shouldn't read as alerts. */
 		.mtl-member-giving-text,
 		.mtl-member-request-text {
 			margin: 6px 0 0 0;
@@ -486,10 +601,8 @@ function mtl_member_page_styles() {
 			display: inline-block;
 		}
 
-		/* Admin-uploaded badge images (training/verified), small and inline,
-			same spot the plain green pill would otherwise occupy. The training
-			name/label lives in both alt (accessibility, and shown if the image
-			fails to load) and title (mouse hover tooltip). */
+		/* Admin-uploaded badge images (training/verified), shown inline in
+			place of the green pill. */
 		.mtl-badge-img {
 			display: inline-block;
 			vertical-align: middle;
@@ -579,9 +692,9 @@ function mtl_member_page_styles() {
 		.mtl-member-btn {
 			display: inline-block;
 			padding: 10px 20px;
-			border: 1px solid <?php echo esc_html( $accent ); ?>;
+			border: 1px solid <?php echo mtl_css_value( $accent, '#ff6600' ); ?>;
 			border-radius: 4px;
-			background: <?php echo esc_html( $accent ); ?>;
+			background: <?php echo mtl_css_value( $accent, '#ff6600' ); ?>;
 			color: #fff;
 			font-size: 1em;
 			font-weight: 600;
@@ -939,9 +1052,8 @@ function mtl_member_page_footer() {
 /**
  * The standing banner telling a member they owe an agreement, or ''.
  *
- * Wording matches the actual state. "Our agreements have been updated" is
- * simply untrue for somebody who never agreed to anything, and a member told
- * that will reasonably reply that they never saw the first set either.
+ * Wording depends on the state: "agreements have changed" would be wrong for
+ * someone who never agreed to any.
  *
  * Not a live region: it is present on page load rather than injected, so
  * announcing it would be noise on every page view.
@@ -981,7 +1093,7 @@ function mtl_agreements_banner_html() {
  *
  * @param string $text  Agreement text.
  * @param int    $words How many words to keep.
- * @return string Plain text, ellipsis appended when truncated.
+ * @return string The excerpt, with &hellip; appended when truncated.
  */
 function mtl_agreement_excerpt( $text, $words = 8 ) {
 	$text  = trim( preg_replace( '/\s+/', ' ', (string) $text ) );
@@ -1086,7 +1198,7 @@ function mtl_render_agreements_fieldset( $agreements, $args = array() ) {
 				<?php if ( $file_url ) : ?>
 					<p class="mtl-agreement-file">
 						<a href="<?php echo esc_url( $file_url ); ?>" target="_blank" rel="noopener noreferrer"
-							aria-label="<?php echo esc_attr( 'View the attached document for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $agreement->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>"><?php esc_html_e( 'View the attached document', 'my-tool-library' ); ?> \&#8599;</a>
+							aria-label="<?php echo esc_attr( 'View the attached document for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $agreement->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>"><?php esc_html_e( 'View the attached document', 'my-tool-library' ); ?> &#8599;</a>
 					</p>
 				<?php endif; ?>
 
@@ -1094,9 +1206,10 @@ function mtl_render_agreements_fieldset( $agreements, $args = array() ) {
 					<p class="mtl-agreement-superseded"><?php echo esc_html( $args['superseded'][ $aid ] ); ?></p>
 				<?php endif; ?>
 
-				<!-- The version this member is being shown. Submitted back so an
-					acceptance can never be recorded against wording that was
-					revised while the form sat open. -->
+				<?php
+				// The version shown, sent back so an acceptance is never recorded
+				// against wording revised while the form was open.
+				?>
 				<input type="hidden" name="agreement_versions[<?php echo esc_attr( $aid ); ?>]" value="<?php echo esc_attr( (int) $agreement->version_num ); ?>">
 			</div>
 		<?php endforeach; ?>
@@ -1133,7 +1246,7 @@ function mtl_render_agreements_error_summary( $missing, $id_prefix ) {
 			<?php foreach ( $missing as $agreement ) : ?>
 				<li>
 					<a href="#<?php echo esc_attr( $id_prefix . '-' . (int) $agreement->agreement_id ); ?>">
-						<?php echo wp_kses( mtl_agreement_excerpt( $agreement->agreement_text, 12 ), array() ); ?>
+						<?php echo esc_html( mtl_agreement_excerpt( $agreement->agreement_text, 12 ) ); ?>
 					</a>
 				</li>
 			<?php endforeach; ?>
@@ -1216,16 +1329,16 @@ function mtl_check_agreements_submission( $live, $ticked, $versions ) {
 	foreach ( $live as $agreement ) {
 		$aid = (int) $agreement->agreement_id;
 
-		// Never shown to this member, having been added while they were filling the form
-		// in. Erroring about a checkbox they never saw would be accurate and
-		// useless, so the caller re-renders with it shown and unticked.
+		// Added after the form was drawn, so the member never saw it. The
+		// caller re-renders with it shown and unticked rather than erroring
+		// about a box they never saw.
 		if ( ! isset( $versions[ $aid ] ) ) {
 			$added[] = $aid;
 			continue;
 		}
 
-		// The dangerous one. Recording this would assert, permanently and with
-		// a checksum, that the member agreed to wording they never read.
+		// Recording this would assert, permanently and with a checksum, that
+		// the member agreed to wording they never read.
 		if ( (int) $versions[ $aid ] !== (int) $agreement->version_num ) {
 			$stale[] = $aid;
 			continue;
@@ -1275,7 +1388,6 @@ function mtl_handle_reserve_action() {
 		exit;
 	};
 
-	// Valid nonce required (blocks cross-site / accidental submissions).
 	if ( ! isset( $_POST['mtl_reserve_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_reserve_nonce'] ) ), 'mtl_reserve_action' ) ) {
 		$redirect( 'reserve_failed' );
 	}
@@ -1285,11 +1397,9 @@ function mtl_handle_reserve_action() {
 		$redirect( 'login_required' );
 	}
 
-	// The agreements gate. online() only: in paper mode a member cannot agree on
-	// the website, so blocking them would leave them with no way to unblock
-	// themselves. The Reserve button stays visible and the gate catches the
-	// click, so no reservation is created and there is nothing to resume; the
-	// member agrees, then reserves whenever they like.
+	// The agreements gate, online mode only: in paper mode a member can't agree
+	// on the website, so blocking them would leave no way to unblock themselves.
+	// No reservation is created, so after agreeing they simply reserve again.
 	if ( mtl_agreements_online() ) {
 		$agreement_status = mtl_member_agreements_status( (int) $member->member_id );
 		if ( 'outdated' === $agreement_status || 'none' === $agreement_status ) {
@@ -1324,6 +1434,14 @@ function mtl_handle_reserve_action() {
 		$redirect( 'on_loan_conflict' );
 	}
 
+	// A double-click sends two POSTs at once, and both would pass the duplicate
+	// check before either inserts. A named lock per member and tool makes the
+	// second wait, then find the first one's reservation.
+	$lock = 'mtl_reserve_' . md5( $wpdb->prefix . '|' . (int) $member->member_id . '|' . $tool_id );
+	if ( '1' !== (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 10)', $lock ) ) ) {
+		$redirect( 'reserve_failed' );
+	}
+
 	// Only one active reservation per member per tool.
 	$already = $wpdb->get_var(
 		$wpdb->prepare(
@@ -1334,6 +1452,7 @@ function mtl_handle_reserve_action() {
 		)
 	);
 	if ( $already ) {
+		$wpdb->query( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
 		$redirect( 'already_reserved' );
 	}
 
@@ -1354,6 +1473,7 @@ function mtl_handle_reserve_action() {
 		// reservation is collectable immediately and its hold period starts now.
 		mtl_sync_reservation_readiness( $tool_id );
 	}
+	$wpdb->query( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
 
 	$redirect( $inserted ? 'reserved' : 'reserve_failed' );
 }
@@ -1374,10 +1494,9 @@ function mtl_render_signup_page() {
 
 	global $wpdb;
 	$errors = array();
-	// Set when the submitted address already has a membership but no website
-	// sign-in. Rendered as its own notice below rather than as an $errors entry,
-	// because it needs a real link and that loop escapes its messages.
-	$needs_password_setup = false;
+	// Set when the address already has an account or a membership. The form
+	// doesn't say so; the next step is emailed to that address instead.
+	$email_taken = false;
 
 	// Typed twice because the address IS the username, and a WordPress username
 	// cannot be changed afterwards. Kept out of $vals: it is a form field only,
@@ -1388,8 +1507,8 @@ function mtl_render_signup_page() {
 
 	// Agreements state, carried from the handler to the render below.
 	// $agreement_ticked keeps the boxes ticked across a validation failure,
-	// making somebody re-tick six boxes because they fat-fingered their ZIP
-	// code is the kind of thing that loses a signup.
+	// because making someone re-tick every box over a ZIP code typo loses
+	// signups.
 	$agreement_ticked  = array();
 	$agreement_invalid = array();
 	$agreement_missing = array();
@@ -1415,6 +1534,11 @@ function mtl_render_signup_page() {
 	if ( mtl_is_post_request() && isset( $_POST['mtl_signup'] ) ) {
 		if ( ! isset( $_POST['mtl_signup_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_signup_nonce'] ) ), 'mtl_signup_action' ) ) {
 			$errors[] = 'Your session expired. Please try submitting the form again.';
+		} elseif ( ! mtl_request_from_this_site() ) {
+			// Logged-out nonces are the same for every visitor, so they can't
+			// stop another site submitting this form and signing the visitor
+			// into an account it chose. Checking where the request came from can.
+			$errors[] = 'Please sign up using the form on this page.';
 		} else {
 			$vals['first_name']    = sanitize_text_field( wp_unslash( $_POST['first_name'] ?? '' ) );
 			$vals['last_name']     = sanitize_text_field( wp_unslash( $_POST['last_name'] ?? '' ) );
@@ -1437,17 +1561,15 @@ function mtl_render_signup_page() {
 			$vals['phone_national'] = sanitize_text_field( wp_unslash( $_POST['phone_national'] ?? '' ) );
 			$vals['email']          = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
 			$email_confirm          = sanitize_email( wp_unslash( $_POST['email2'] ?? '' ) );
-			// Passwords are unslashed but NOT sanitized, since altering the
-			// characters would silently change the member's chosen password.
-			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-			$password = (string) wp_unslash( $_POST['password'] ?? '' );
-			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-			$password2 = (string) wp_unslash( $_POST['password2'] ?? '' );
+			// Stored exactly as WordPress core's sign-in checks it: still
+			// slashed, and trimmed (see wp_signon() and wp_authenticate()).
+			// Unslashing it would make a password containing a quote or a
+			// backslash fail at every sign-in after this one.
+			// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- kept the way core reads it; sanitizing or unslashing would change the password.
+			$password  = isset( $_POST['password'] ) && is_string( $_POST['password'] ) ? trim( $_POST['password'] ) : '';
+			$password2 = isset( $_POST['password2'] ) && is_string( $_POST['password2'] ) ? trim( $_POST['password2'] ) : '';
+			// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 
-			// The single source of truth for what gets stored; see
-			// mtl_format_phone_number()'s docblock. Computed once here so
-			// both the validation check below and the INSERT further down
-			// use the exact same result.
 			$phone_result = mtl_format_phone_number( $vals['phone_country'], $vals['phone_national'] );
 
 			if ( '' === $vals['first_name'] || '' === $vals['last_name'] ) {
@@ -1462,27 +1584,16 @@ function mtl_render_signup_page() {
 			if ( '' === $vals['email'] || ! is_email( $vals['email'] ) ) {
 				$errors[] = 'Please enter a valid email address.';
 			} elseif ( 0 !== strcasecmp( $vals['email'], $email_confirm ) ) {
-				// Case-insensitively: somebody who types Jo@x.com then jo@x.com
-				// has confirmed the address they meant, and WordPress signs them
-				// in either way. Rejecting that would be a typo check inventing
-				// a typo.
+				// Case-insensitive: Jo@x.com and jo@x.com are the same address,
+				// and WordPress signs them in with either.
 				$errors[] = 'The two email addresses you entered do not match.';
-			} elseif ( email_exists( $vals['email'] ) ) {
-				$errors[] = 'An account with that email already exists. Try signing in instead.';
-			} elseif ( mtl_find_member_by_email( $vals['email'] ) ) {
-				// The library already holds a membership for this address but
-				// there is no WordPress account behind it: staff added or
-				// imported them and no password has ever been set.
-				//
-				// This used to say "try signing in instead", which was a dead
-				// end: there was nothing to sign in to, and the lost-password
-				// page could not help either, having no account to make a key
-				// for. Both work now, so point them at the one that does the
-				// job rather than the one that looks obvious.
-				$needs_password_setup = true;
-				$errors[]             = 'There is already a membership on file for that email address.';
+			} elseif ( email_exists( $vals['email'] ) || username_exists( $vals['email'] ) || mtl_find_member_by_email( $vals['email'] ) ) {
+				// Saying "already registered" here would tell anyone typing an
+				// address whether that person is a member. It's handled below,
+				// once the rest of the form checks out.
+				$email_taken = true;
 			}
-			if ( strlen( $password ) < MTL_MIN_PASSWORD_LENGTH ) {
+			if ( strlen( wp_unslash( $password ) ) < MTL_MIN_PASSWORD_LENGTH ) {
 				$errors[] = 'Your password must be at least ' . (int) MTL_MIN_PASSWORD_LENGTH . ' characters long.';
 			} elseif ( $password !== $password2 ) {
 				$errors[] = 'The two passwords you entered do not match.';
@@ -1503,10 +1614,9 @@ function mtl_render_signup_page() {
 				$check           = mtl_check_agreements_submission( $live_agreements, $agreement_ticked, $agreement_seen );
 
 				if ( $check['stale'] || $check['added'] ) {
-					// Something changed under them. Re-render with the new
-					// wording; untick only what changed, and leave every other
-					// field and tick alone, since re-typing an address because a
-					// fee policy was edited is how a signup gets abandoned.
+					// An agreement changed while the form was open. Re-render
+					// with the new wording and untick only what changed, keeping
+					// every other field and tick.
 					$agreement_changed = true;
 					$agreement_ticked  = array_values( array_diff( $agreement_ticked, $check['stale'], $check['added'] ) );
 					$errors[]          = 'One or more of our agreements changed while you were reading them. The updated wording is shown below; please review and agree again.';
@@ -1524,6 +1634,12 @@ function mtl_render_signup_page() {
 					}
 					$errors[] = __( 'You must agree to:', 'my-tool-library' ) . ' ' . implode( '; ', $mtl_names );
 				}
+			}
+
+			if ( empty( $errors ) && $email_taken ) {
+				mtl_send_signup_existing_email( $vals['email'] );
+				wp_safe_redirect( add_query_arg( 'mtl_msg', 'signup_check_email', mtl_front_page_url( 'login' ) ) );
+				exit;
 			}
 
 			if ( empty( $errors ) ) {
@@ -1591,6 +1707,7 @@ function mtl_render_signup_page() {
 							// was created. The acceptance rows go with the
 							// member row through the foreign key's ON DELETE
 							// CASCADE, so there is nothing separate to clean up.
+							require_once ABSPATH . 'wp-admin/includes/user.php';
 							wp_delete_user( $user_id );
 							$wpdb->delete( $tbl_members, array( 'member_id' => $member_id ), array( '%d' ) );
 							$errors[] = 'Sorry, something went wrong recording your agreements. Nothing was saved. Please try again.';
@@ -1612,7 +1729,8 @@ function mtl_render_signup_page() {
 							// cookie can still be set.
 							wp_set_current_user( $user_id, $vals['email'] );
 							wp_set_auth_cookie( $user_id, true );
-							do_action( 'wp_login', $vals['email'], get_userdata( $user_id ) );
+							$new_user = get_userdata( $user_id );
+							do_action( 'wp_login', $new_user->user_login, $new_user );
 
 							wp_safe_redirect( mtl_front_page_url( 'main' ) );
 							exit;
@@ -1640,14 +1758,6 @@ function mtl_render_signup_page() {
 					<?php foreach ( $errors as $e ) : ?>
 						<div><?php echo esc_html( $e ); ?></div>
 					<?php endforeach; ?>
-					<?php if ( $needs_password_setup ) : ?>
-						<div style="margin-top: 8px;">
-							Library staff have already set you up, so there is no need to sign up again.
-							You just need a password.
-							<a href="<?php echo esc_url( mtl_front_page_url( 'lostpassword' ) ); ?>"><strong>Set your password here</strong></a>
-							and we will email you a link.
-						</div>
-					<?php endif; ?>
 				</div>
 			<?php endif; ?>
 
@@ -1723,7 +1833,6 @@ function mtl_render_signup_page() {
 					<div class="mtl-member-field">
 						<label for="mtl-su-email2">Confirm email address</label>
 						<input type="email" id="mtl-su-email2" name="email2" value="<?php echo esc_attr( $email_confirm ); ?>" required>
-						<p class="mtl-member-hint">Confirm email address.</p>
 					</div>
 				</div>
 
@@ -1838,9 +1947,9 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 			<?php
 			// Only a reservation that is actually collectable has a deadline;
 			// anyone still queued behind a loan has no countdown running.
-			// ready_since is checked separately from the deadline because a
-			// library can set the hold period to 0 (never expires), in which case the tool
-			// is still being held from that date, there is just no cut-off.
+			// ready_since is checked separately because a hold period of 0
+			// (never expires) still holds the tool from that date, just with
+			// no cut-off.
 			$mtl_ready_since = trim( (string) $r->ready_since );
 			$mtl_collect_by  = mtl_reservation_collect_by( $mtl_ready_since );
 			if ( '' !== $mtl_ready_since ) :
@@ -1922,7 +2031,7 @@ function mtl_render_member_reservations_page() {
 	$member = mtl_current_member();
 	if ( ! $member ) {
 		mtl_render_member_only_notice( 'My Loans & Reservations', mtl_current_member_link_broken() );
-		return; // (mtl_render_member_only_notice exits, but be explicit.)
+		return;
 	}
 
 	global $wpdb;
@@ -1937,9 +2046,7 @@ function mtl_render_member_reservations_page() {
 	$tbl_tag_map    = $wpdb->prefix . 'tool_tag_mappings';
 	$self           = mtl_front_page_url( 'reservations' );
 
-	// --- Active loans (currently checked out), soonest due date first. Each
-	// is flagged 'overdue', 'due_today', 'due_soon' (within 1-3 days), or
-	// 'normal' so the table can call out urgency. ---
+	// --- Active loans, soonest due first. ---
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$active_loans = $wpdb->get_results(
 		$wpdb->prepare(
@@ -1966,10 +2073,8 @@ function mtl_render_member_reservations_page() {
 		}
 	}
 
-	// Admin-editable via the Setup page; blank hides it entirely (see the
-	// update_option() comment in setup-page.php for why blank stays blank).
-	// The fallback text here matches setup-page.php's default exactly, so a
-	// fresh install shows sensible copy before any admin has saved Setup.
+	// Set on the Setup page. Blank hides it (see the update_option() comment in
+	// setup-page.php), and the fallback matches Setup's default for new sites.
 	$pickup_directions = trim(
 		(string) get_option(
 			'mtl_pickup_directions',
@@ -2039,14 +2144,19 @@ function mtl_render_member_reservations_page() {
 			wp_safe_redirect( add_query_arg( 'mtl_msg', 'reservations_cancelled', $self ) );
 			exit;
 		}
+
+		// A confirm page left open past the nonce's life: say nothing changed,
+		// rather than returning to the list as if the cancel had worked.
+		if ( ! $valid && in_array( $action, array( 'cancel_reservation', 'cancel_all' ), true ) ) {
+			wp_safe_redirect( add_query_arg( 'mtl_msg', 'session_expired', $self ) );
+			exit;
+		}
 	}
 
-	// --- Active reservations, enriched with everything the detail panel needs:
-	// tool fields, category/tag lists (correlated subqueries, so no
-	// GROUP BY is needed), place in line + queue size, and on-loan status.
-	// queue_place counts same-tool reservations ahead in line (earlier
-	// reservation_date, ties broken by reservation_id), the same
-	// derivation the admin Loans & Reservations page uses. ---
+	// --- Active reservations, with everything the detail panel needs.
+	// queue_place counts this reservation and those ahead of it (earlier
+	// reservation_date, ties broken by reservation_id), the same way the
+	// admin Loans & Reservations page does. ---
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- table names only, built from $wpdb->prefix, not user input; the one concatenated fragment is mtl_tool_link_columns_sql(), which is column names from the registry.
 	$rows = $wpdb->get_results(
 		$wpdb->prepare(
@@ -2105,23 +2215,13 @@ function mtl_render_member_reservations_page() {
 	ob_start();
 	echo mtl_member_page_styles();
 	?>
-	<?php
-	// In the normal listing view the page is a two-column layout (list +
-	// detail), so it gets a wider wrap; the confirm and empty states stay
-	// in the standard narrow, single-column wrap.
-	?>
-	<?php $listing = ( '' === $confirm && ! empty( $rows ) ); ?>
+	<?php $listing = ! empty( $rows ) && 'all' !== $confirm && ! ( 'one' === $confirm && $confirm_row ); ?>
 	<div class="mtl-member-wrap<?php echo $listing ? ' mtl-member-wrap-wide' : ''; ?>">
 		<a class="mtl-member-back" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a>
 
 		<?php echo mtl_front_notice_html(); ?>
 		<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 
-		<?php
-		// Always shown (with an empty-state message when there's nothing
-		// checked out), same as the Reservations section below, so the
-		// page structure is predictable regardless of state.
-		?>
 		<div class="mtl-member-card">
 			<h2>Active Loans</h2>
 			<?php if ( empty( $active_loans ) ) : ?>
@@ -2167,11 +2267,6 @@ function mtl_render_member_reservations_page() {
 		<?php if ( 'one' === $confirm && $confirm_row ) : ?>
 			<div class="mtl-member-card">
 				<h2>My Reservations</h2>
-				<?php
-				// "Are you sure?" for cancelling ONE reservation. Reached
-				// by the plain Cancel link; the delete only happens when
-				// the member submits this POST form.
-				?>
 				<p style="margin-top:0;">Cancel your reservation for <strong><?php echo esc_html( stripslashes( $confirm_row->tool_name ) ); ?></strong>? You&rsquo;ll lose your current place in line, and this can&rsquo;t be undone.</p>
 				<div class="mtl-member-confirm-actions">
 					<form method="post" action="<?php echo esc_url( $self ); ?>" style="margin:0;">
@@ -2187,17 +2282,19 @@ function mtl_render_member_reservations_page() {
 		<?php elseif ( 'all' === $confirm && ! empty( $rows ) ) : ?>
 			<div class="mtl-member-card">
 				<h2>My Reservations</h2>
-				<?php
-				// "Are you sure?" for cancelling ALL reservations.
-				?>
-				<p style="margin-top:0;">Cancel <strong>all <?php echo count( $rows ); ?></strong> of your reservations? You&rsquo;ll lose every place in line, and this can&rsquo;t be undone.</p>
+				<?php $mtl_one = ( 1 === count( $rows ) ); ?>
+				<?php if ( $mtl_one ) : ?>
+					<p style="margin-top:0;">Cancel <strong>your reservation</strong>? You&rsquo;ll lose your place in line, and this can&rsquo;t be undone.</p>
+				<?php else : ?>
+					<p style="margin-top:0;">Cancel <strong>all <?php echo count( $rows ); ?></strong> of your reservations? You&rsquo;ll lose every place in line, and this can&rsquo;t be undone.</p>
+				<?php endif; ?>
 				<div class="mtl-member-confirm-actions">
 					<form method="post" action="<?php echo esc_url( $self ); ?>" style="margin:0;">
 						<?php wp_nonce_field( 'mtl_res_action', 'mtl_res_nonce' ); ?>
 						<input type="hidden" name="mtl_action" value="cancel_all">
-						<button type="submit" class="mtl-member-btn mtl-member-btn-danger">Yes, cancel all reservations</button>
+						<button type="submit" class="mtl-member-btn mtl-member-btn-danger"><?php echo $mtl_one ? 'Yes, cancel it' : 'Yes, cancel all reservations'; ?></button>
 					</form>
-					<a class="mtl-member-btn mtl-member-btn-ghost" href="<?php echo esc_url( $self ); ?>">No, keep them</a>
+					<a class="mtl-member-btn mtl-member-btn-ghost" href="<?php echo esc_url( $self ); ?>"><?php echo $mtl_one ? 'No, keep it' : 'No, keep them'; ?></a>
 				</div>
 			</div>
 
@@ -2208,17 +2305,12 @@ function mtl_render_member_reservations_page() {
 			</div>
 
 		<?php else : ?>
-			<?php
-			// Two columns: the reservation list (left) and a detail box
-			// (right) revealed via the CSS :target pseudo-class: clicking
-			// a tool name opens its panel in place, no reload, no JS, the
-			// same technique the shop catalog uses.
-			?>
+			<?php // Detail panels open via CSS :target, as in the shop catalog. ?>
 			<div class="mtl-res-layout">
 				<div class="mtl-res-main">
 					<div class="mtl-member-card">
 						<h2>My Reservations</h2>
-						<p style="margin-top:0; color:#50575e;">Select a tool name to see its full details on the right. Once you reach the front of the queue, you&rsquo;ll see whether the tool is ready to pick up or still out on loan.</p>
+						<p style="margin-top:0; color:#50575e;">Select a tool name to see its full details. Once you reach the front of the queue, you&rsquo;ll see whether the tool is ready to pick up or still out on loan.</p>
 						<table class="mtl-member-table">
 							<thead>
 								<tr>
@@ -2267,7 +2359,7 @@ function mtl_render_member_reservations_page() {
 										</td>
 										<td>
 											<?php
-											// Plain link -> confirmation prompt (no delete yet).
+											// Only opens the confirm prompt; the cancel itself is a POST.
 											$mtl_cancel_url = add_query_arg(
 												array(
 													'mtl_confirm' => 'one',
@@ -2284,7 +2376,7 @@ function mtl_render_member_reservations_page() {
 						</table>
 
 						<p style="margin: 18px 0 0 0;">
-							<a class="mtl-member-btn mtl-member-btn-danger" href="<?php echo esc_url( add_query_arg( 'mtl_confirm', 'all', $self ) ); ?>">Cancel all reservations</a>
+							<a class="mtl-member-btn mtl-member-btn-danger" href="<?php echo esc_url( add_query_arg( 'mtl_confirm', 'all', $self ) ); ?>"><?php echo 1 === count( $rows ) ? 'Cancel reservation' : 'Cancel all reservations'; ?></a>
 						</p>
 					</div>
 				</div>
@@ -2305,12 +2397,7 @@ function mtl_render_member_reservations_page() {
 		<?php endif; ?>
 
 		<?php
-		// Fundraising ask, last on the page so it sits under My Reservations
-		// in every state: the list, the empty state, and both cancel
-		// confirmations. Deliberately below a confirmation prompt rather than
-		// above it, so it never pushes a destructive choice down the page.
-		// Escaped inside mtl_giving_section_html(); returns '' when the admin
-		// has left the message blank on the Setup page.
+		// Last on the page, so it never pushes a cancel confirmation down.
 		echo mtl_giving_section_html();
 		?>
 	</div>
@@ -2325,7 +2412,8 @@ function mtl_render_member_reservations_page() {
 // --------------------------------------------------------------------------
 
 /**
- * Renders the member's Account page and handles its profile-update POST.
+ * Renders the member's Account page and handles its agreement, profile-update
+ * and account-deletion POSTs.
  */
 function mtl_render_account_page() {
 	if ( ! is_user_logged_in() ) {
@@ -2358,11 +2446,8 @@ function mtl_render_account_page() {
 	$agreement_recorded = false;
 
 	// --- Handle the agreements submission (POST + its own nonce). ---
-	//
-	// Fires only on its own submit button and nonce, so a member fixing their
-	// phone number is never told they failed to tick an agreement. No PRG
-	// redirect, since the page re-rendered here is already the one showing the
-	// result.
+	// Kept apart from the profile form, so fixing a phone number never reports
+	// an unticked agreement. No PRG redirect: this render shows the result.
 	if ( mtl_is_post_request() && isset( $_POST['mtl_agree'] ) && mtl_agreements_online() ) {
 		if ( ! isset( $_POST['mtl_agreements_agree_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_agreements_agree_nonce'] ) ), 'mtl_agreements_agree_action' ) ) {
 			$agreement_errors[] = 'Your session expired. Please try agreeing again.';
@@ -2389,20 +2474,9 @@ function mtl_render_account_page() {
 				foreach ( $check['missing'] as $mtl_missed ) {
 					$agreement_invalid[] = (int) $mtl_missed->agreement_id;
 				}
-				$mtl_names = array();
-				foreach ( $check['missing'] as $mtl_missed ) {
-					$mtl_names[] = wp_strip_all_tags( mtl_agreement_excerpt( $mtl_missed->agreement_text ) );
-				}
-				$agreement_errors[] = __( 'You must agree to:', 'my-tool-library' ) . ' ' . implode( '; ', $mtl_names );
 			} else {
-				// One row per ticked agreement; earlier rows are untouched.
-				//
-				// No rollback here, unlike signup: whatever failed stays
-				// outstanding and the member is shown what remains.
-				//
-				// Ids are kept as written rather than re-derived afterwards;
-				// accepted_at has one-second resolution, so a member agreeing in
-				// the same second staff record something would be emailed both.
+				// No rollback, unlike signup: a failed row just stays outstanding.
+				// Ids are kept as written; accepted_at is too coarse to re-derive.
 				$written     = 0;
 				$written_ids = array();
 				foreach ( $outstanding as $mtl_agreement ) {
@@ -2426,9 +2500,8 @@ function mtl_render_account_page() {
 				}
 
 				if ( $written > 0 && count( $agreement_ticked ) === $written ) {
-					// Confirm on screen. The form vanishing and its items
-					// reappearing further down reads as a failed reload, and
-					// the emailed copy may arrive late or not at all.
+					// Confirm on screen: the form vanishing reads as a failed
+					// reload, and the email may arrive late or not at all.
 					$agreement_recorded = true;
 				} elseif ( $written > 0 ) {
 					$agreement_recorded = true;
@@ -2504,7 +2577,7 @@ function mtl_render_account_page() {
 				);
 				$was_verified    = mtl_member_is_verified( $member->member_id );
 
-				$wpdb->update(
+				$updated = $wpdb->update(
 					$tbl_members,
 					array(
 						'first_name'    => $first,
@@ -2522,48 +2595,57 @@ function mtl_render_account_page() {
 					array( '%d' )
 				);
 
-				// Keep the WordPress profile name in step with the member row.
-				wp_update_user(
-					array(
-						'ID'           => get_current_user_id(),
-						'first_name'   => $first,
-						'last_name'    => $last,
-						'display_name' => trim( $first . ' ' . $last ),
-					)
-				);
+				// Verification is only reset after the new details are saved.
+				if ( false === $updated ) {
+					$errors[] = 'Sorry, your details could not be saved. Please try again.';
+				} else {
+					// Keep the WordPress profile name in step with the member row.
+					wp_update_user(
+						array(
+							'ID'           => get_current_user_id(),
+							'first_name'   => $first,
+							'last_name'    => $last,
+							'display_name' => trim( $first . ' ' . $last ),
+						)
+					);
 
-				$removed_verif = false;
-				if ( $details_changed && $was_verified ) {
-					$wpdb->delete( $tbl_verif, array( 'member_id' => (int) $member->member_id ), array( '%d' ) );
-					$removed_verif = true;
+					// New details void any scan on file, even a lone one, since it
+					// shows the old details. The files live outside the database,
+					// so the admin is emailed the links to delete them.
+					$msg = 'account_updated';
+					if ( $details_changed ) {
+						$doc_urls = mtl_member_verification_doc_urls( (int) $member->member_id );
+						if ( $doc_urls ) {
+							$wpdb->delete( $tbl_verif, array( 'member_id' => (int) $member->member_id ), array( '%d' ) );
+							mtl_send_verification_reset_email( (int) $member->member_id, trim( $first . ' ' . $last ), (string) $member->email, $doc_urls );
+							$msg = $was_verified ? 'account_verif_removed' : 'account_docs_removed';
+						}
+					}
+
+					wp_safe_redirect( add_query_arg( 'mtl_msg', $msg, mtl_front_page_url( 'account' ) ) );
+					exit;
 				}
-
-				wp_safe_redirect(
-					add_query_arg(
-						'mtl_msg',
-						$removed_verif ? 'account_verif_removed' : 'account_updated',
-						mtl_front_page_url( 'account' )
-					)
-				);
-				exit;
 			}
 		}
 	}
 
 	// --- Handle "Delete Account and Remove Personal Data" (POST + nonce). ---
-	// The confirmation step is the GET link to ?mtl_confirm_delete=1 below
-	// (a server-side step, so it works without JavaScript), this
-	// handler only runs on the follow-up POST from that confirmation form.
+	// The GET link to ?mtl_confirm_delete=1 only shows the confirmation; this
+	// runs on the POST from that confirmation form.
 	if ( mtl_is_post_request() && isset( $_POST['mtl_delete_account'] ) ) {
 		if ( ! isset( $_POST['mtl_delete_account_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_delete_account_nonce'] ) ), 'mtl_delete_account_action' ) ) {
 			$errors[] = 'Your session expired. Please try again.';
 		} else {
-			// 'member': the emails this sends say the member did this
-			// themselves, not that staff did it for them.
-			mtl_delete_or_anonymize_member( (int) $member->member_id, 'member' );
-			// wp_delete_user() alone doesn't end the current request's own
-			// session, so log out explicitly before redirecting somewhere
-			// that doesn't require being signed in.
+			// 'member' tells the admin cleanup email the member deleted their
+			// own account.
+			$deleted = mtl_delete_or_anonymize_member( (int) $member->member_id, 'member' );
+			if ( 'anonymized' === $deleted['outcome'] && ! $deleted['cleanup_email_sent'] ) {
+				// The admin's copy of the record and the scan links never went
+				// out, so leave a trace the site owner can follow up on.
+				error_log( sprintf( 'My Tool Library: member #%d deleted their account, but the cleanup email to the site administrator could not be sent.', (int) $member->member_id ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- operational record of a failed admin email, not debug output.
+			}
+			// wp_delete_user() doesn't end this request's session, so log out
+			// before redirecting.
 			wp_logout();
 			wp_safe_redirect( add_query_arg( 'mtl_msg', 'account_deleted', mtl_front_page_url( 'main' ) ) );
 			exit;
@@ -2573,24 +2655,17 @@ function mtl_render_account_page() {
 	$is_verified    = mtl_member_is_verified( $member->member_id );
 	$user           = wp_get_current_user();
 	$confirm_delete = isset( $_GET['mtl_confirm_delete'] ) && '1' === $_GET['mtl_confirm_delete'];
-	// Splits the stored "+<code> <national number>" value back into the two
-	// pieces the phone widget needs to prefill. Matches this form's existing
-	// pattern of always rendering from the DB row rather than sticky POST
-	// values (see first_name/last_name/etc. below), so a failed save reverts
-	// the phone field too, same as every other field on this form.
+	// Prefilled from the stored row, not the POST, like every field on this
+	// form, so a failed save reverts it too.
 	$phone_parsed = mtl_parse_stored_phone_number( $member->phone_number );
-	// Admin-editable via the Setup page; blank hides it entirely (see the
-	// update_option() comment in setup-page.php for why blank stays blank).
-	// The fallback text here matches setup-page.php's default exactly, so a
-	// fresh install shows sensible copy before any admin has saved Setup.
+	// Same blank and fallback rules as $pickup_directions on My Reservations.
 	$verification_directions = trim(
 		(string) get_option(
 			'mtl_verification_directions',
-			'A government issued ID and proof of address are required to become a verified member and to check out tools. Stop by our office to verify membership.'
+			'A government-issued ID and proof of address are required to become a verified member and to check out tools. Stop by our office to verify membership.'
 		)
 	);
-	// Optional admin-uploaded image (Setup page) shown instead of the plain
-	// green "Verified" pill below, once this member is verified.
+	// Optional Setup-page image that replaces the green Verified pill.
 	$verified_badge_image_url = trim( (string) get_option( 'mtl_verified_badge_image_url', '' ) );
 
 	// Past + current loans for this member.
@@ -2605,9 +2680,7 @@ function mtl_render_account_page() {
 			(int) $member->member_id
 		)
 	);
-	// Trainings this member has completed. Read-only here, since only staff can
-	// record a training (see the admin Membership page); this is purely so the
-	// member can see which tools they're already qualified to use.
+	// Read-only: only staff record trainings (admin Membership page).
 	$my_training_rows = $wpdb->get_results(
 		$wpdb->prepare(
 			"SELECT t.training_name, t.badge_image_url, t.certification_length_months, mtm.start_date
@@ -2620,11 +2693,7 @@ function mtl_render_account_page() {
 	);
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-	// Split once, used twice: the badges near the top of the page show only
-	// what this member is CURRENTLY certified in, while the collapsible table
-	// further down lists everything they have ever completed, expired
-	// included. badge_image_url is admin-set on the Setup page; a current
-	// training with none set falls back to the plain green pill.
+	// Badges show current trainings only; the Trainings table lists them all.
 	$my_trainings         = array();
 	$my_current_trainings = array();
 	foreach ( $my_training_rows as $mtl_tr ) {
@@ -2642,12 +2711,8 @@ function mtl_render_account_page() {
 		}
 	}
 
-	// What deleting this account would cost the member, for the confirmation
-	// view: whether they have any history at all (which makes the delete an
-	// anonymize rather than a full removal), and whether an active reservation
-	// would be cancelled, called out separately there, being a more
-	// immediate, concrete consequence than the general history note. Only the
-	// confirmation view asks, so the count stays off the ordinary page load.
+	// For the delete confirmation only: whether to mention the kept borrowing
+	// record, and whether active reservations will be cancelled.
 	$has_history            = false;
 	$has_active_reservation = false;
 	if ( $confirm_delete ) {
@@ -2686,25 +2751,18 @@ function mtl_render_account_page() {
 		<?php if ( $confirm_delete ) : ?>
 			<div class="mtl-member-card">
 				<h2>Delete Account and Remove Personal Data</h2>
-				<?php
-				// "Are you sure?" for account deletion, reached by the
-				// plain Danger Zone link below; the delete only happens
-				// when the member submits this POST form. This replaces
-				// the rest of the page rather than sitting alongside it,
-				// same as the "cancel reservation(s)" confirm views.
-				?>
 				<p style="margin-top:0;">This permanently deletes your account and cannot be undone.</p>
 				<p>Your name, address, contact details and verification documents will all be removed, and your sign-in will be deleted entirely, so you will not be able to log in again.</p>
 				<?php if ( $has_history ) : ?>
 					<p>Your borrowing record is kept, but with nothing identifying you attached to it: past loans and reservations stay on file against a &ldquo;former member&rdquo; so the library&rsquo;s tool histories and totals remain accurate.</p>
 				<?php endif; ?>
 				<?php if ( $has_active_reservation ) : ?>
-					<p>You currently have an active reservation. It will be cancelled as part of deleting your account.</p>
+					<p><?php echo 1 === (int) $res_counts->active ? 'You currently have an active reservation. It will be cancelled' : 'You currently have active reservations. They will be cancelled'; ?> as part of deleting your account.</p>
 				<?php endif; ?>
 				<div class="mtl-member-confirm-actions">
 					<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>" style="margin:0;">
 						<?php wp_nonce_field( 'mtl_delete_account_action', 'mtl_delete_account_nonce' ); ?>
-						<button type="submit" name="mtl_delete_account" value="1" class="mtl-member-btn mtl-member-btn-danger">Yes, Permanently Delete My Account</button>
+						<button type="submit" name="mtl_delete_account" value="1" class="mtl-member-btn mtl-member-btn-danger">Yes, permanently delete my account</button>
 					</form>
 					<a class="mtl-member-btn mtl-member-btn-ghost" href="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">No, keep my account</a>
 				</div>
@@ -2713,19 +2771,15 @@ function mtl_render_account_page() {
 
 			<?php
 			// --- Member agreements ---
-			//
-			// Computed once for the outstanding block here and the receipt at
-			// the foot of the page, then partitioned between them. A superseded
-			// acceptance is still an acceptance row, so listing it unfiltered
-			// would show the same agreement twice: once to agree to, once as
-			// already agreed.
+			// Split between the outstanding form here and the receipt at the
+			// foot of the page.
 			$mtl_ag_outstanding     = mtl_agreements_online() ? mtl_member_outstanding_agreements( (int) $member->member_id ) : array();
 			$mtl_ag_acceptances     = mtl_agreements_tracking() ? mtl_get_member_acceptances( (int) $member->member_id ) : array();
 			$mtl_ag_outstanding_ids = array_map( 'intval', wp_list_pluck( $mtl_ag_outstanding, 'agreement_id' ) );
 
-			// An outstanding agreement never also appears as a plain tick. Its
-			// earlier acceptance becomes the "you agreed to an earlier version"
-			// line on that row, next to the thing being asked for.
+			// An outstanding agreement's earlier acceptance becomes its "you
+			// agreed to an earlier version" line, not a receipt tick, so the
+			// same agreement never shows twice.
 			$mtl_ag_superseded  = array();
 			$mtl_ag_receipt     = array();
 			$mtl_ag_retired_rec = array();
@@ -2755,9 +2809,10 @@ function mtl_render_account_page() {
 			?>
 
 			<?php if ( $mtl_ag_outstanding ) : ?>
-				<!-- Above the account detail rows: members arrive here from the
-					reserve gate or an email to do this one thing, and a notice
-					pointing at a form further down the page is easy to miss. -->
+				<?php
+				// Above My Account: members arrive from the reserve gate or an
+				// email to do just this.
+				?>
 				<div class="mtl-member-card" id="mtl-agreements">
 					<h2>Member agreements</h2>
 
@@ -2795,9 +2850,7 @@ function mtl_render_account_page() {
 					</form>
 				</div>
 			<?php elseif ( $agreement_recorded ) : ?>
-				<!-- role="status" so the change is announced: the form vanishing
-					and its items reappearing further down the page is otherwise
-					a purely visual cue, and reads as a failed reload. -->
+				<?php // role="status" so screen readers announce the change. ?>
 				<div class="mtl-front-notice mtl-front-notice-success" role="status">
 					Thank you. Your agreement has been recorded.
 				</div>
@@ -2842,14 +2895,8 @@ function mtl_render_account_page() {
 			</div>
 
 			<?php
-			// Fundraising ask, above Your details. Escaped inside
-			// mtl_giving_section_html(); returns '' when the admin has left
-			// both the message and the link blank on the Setup page.
 			echo mtl_giving_section_html();
 
-			// Request a Tool, right under Consider Giving. Escaped inside
-			// mtl_tool_request_section_html(); returns '' when the admin has
-			// left both the message and the link blank on the Setup page.
 			echo mtl_tool_request_section_html();
 			?>
 
@@ -2925,7 +2972,9 @@ function mtl_render_account_page() {
 							</select>
 						</div>
 					</div>
-					<p class="mtl-member-hint"><strong>Note:</strong> changing your personal information will reset your verified status, and staff will need to re-verify your account.</p>
+					<?php if ( $is_verified ) : ?>
+						<p class="mtl-member-hint"><strong>Note:</strong> changing your personal information will reset your verified status, and staff will need to re-verify your account.</p>
+					<?php endif; ?>
 
 					<p style="margin: 18px 0 0 0;">
 						<button type="submit" name="mtl_update_account" value="1" class="mtl-member-btn">Save Changes</button>
@@ -3098,9 +3147,6 @@ function mtl_render_account_page() {
 
 			<?php if ( $mtl_ag_receipt ) : ?>
 				<div class="mtl-member-card">
-					<!-- Not tied to account creation: a re-accepted agreement
-						carries a date later than the member's signup date, so a
-						heading naming signup would be wrong on those rows. -->
 					<h3 style="margin-top:0;">You have agreed to the following:</h3>
 					<ul class="mtl-agreement-receipt">
 						<?php foreach ( $mtl_ag_receipt as $mtl_acceptance ) : ?>
@@ -3127,7 +3173,7 @@ function mtl_render_account_page() {
 										<?php if ( $mtl_file_live ) : ?>
 											&middot;
 											<a href="<?php echo esc_url( $mtl_acceptance->file_url ); ?>" target="_blank" rel="noopener noreferrer"
-												aria-label="<?php echo esc_attr( 'View the document you agreed to for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $mtl_acceptance->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>"><?php esc_html_e( 'View the attached document', 'my-tool-library' ); ?> \&#8599;</a>
+												aria-label="<?php echo esc_attr( 'View the document you agreed to for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $mtl_acceptance->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>"><?php esc_html_e( 'View the attached document', 'my-tool-library' ); ?> &#8599;</a>
 										<?php endif; ?>
 										<?php if ( $mtl_is_retired ) : ?>
 											&middot; <span class="mtl-agreement-retired-note"><?php esc_html_e( 'no longer required', 'my-tool-library' ); ?></span>
@@ -3159,10 +3205,8 @@ function mtl_render_account_page() {
  * Shown when someone logged in but not a member (e.g. an admin) opens a
  * member-only page.
  *
- * A member whose record could not be matched to their sign-in gets different
- * wording: telling them their account "isn't a member account" would be
- * plainly wrong, and sends them to support describing it as a bug rather than
- * as something staff can fix in a minute (see mtl_current_member()).
+ * A member whose record could not be matched gets different wording (see
+ * mtl_current_member()).
  *
  * @param string $page_title  Page title to display.
  * @param bool   $link_broken True when the visitor is a member whose record

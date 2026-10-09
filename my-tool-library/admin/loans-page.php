@@ -83,7 +83,10 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 	if ( 'reservation' === $rec['type'] ) {
 		$html .= mtl_lr_field( 'Reserved', mtl_lr_fmt( $rec['reserved_at'], 'm/d/Y H:i' ) );
 		$html .= mtl_lr_field( 'Queue place', esc_html( '#' . $rec['queue_place'] . ' of ' . $rec['queue_size'] ) );
-		if ( '' !== $rec['current_loan_due'] ) {
+		if ( '' !== $rec['current_loan_due'] && $rec['current_loan_due'] < current_time( 'Y-m-d' ) ) {
+			// The loan this member is waiting behind is late, so say so in red.
+			$html .= mtl_lr_field( 'Tool status', '<span style="color:#b32d2e;font-weight:600;">On loan to another member, overdue since ' . mtl_lr_fmt( $rec['current_loan_due'] ) . '</span>' );
+		} elseif ( '' !== $rec['current_loan_due'] ) {
 			$html .= mtl_lr_field( 'Tool status', 'On loan to another member, due ' . mtl_lr_fmt( $rec['current_loan_due'] ) );
 		} elseif ( ! empty( $rec['tool_maintenance'] ) ) {
 			$html .= mtl_lr_field( 'Tool status', 'Under maintenance, not yet back in service' );
