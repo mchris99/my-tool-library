@@ -14,7 +14,7 @@ For anything beyond a small fix, please open an issue first to discuss the chang
 
 ## Guidelines
 
-- Public-facing pages must keep working with JavaScript fully disabled.
+- Public-facing pages must not use JavaScript. Use plain links, forms and CSS, and do any checking on the server.
 - Member passwords must always go through WordPress core (`wp_insert_user()`); never store credentials in the plugin's own tables.
 - Every PHP file should start with the `ABSPATH` guard used throughout the codebase.
 - Follow the existing code style in the file you're editing.

@@ -3,7 +3,7 @@ Contributors: chrismchenry5, ToolLibrarian
 Donate link: https://mkelibrary.org
 Tags: tool library, lending library, inventory, reservations, membership
 Requires at least: 5.8
-Tested up to: 6.9
+Tested up to: 7.1
 Requires PHP: 7.4
 Stable tag: 1.0.0
 License: GPLv2 or later
@@ -17,30 +17,36 @@ My Tool Library turns a WordPress site into the online home of a physical tool-l
 
 = For your community =
 
-* Browse the tool catalog and search/filter by name, brand, category, tag, and availability (no account required).
-* Create a free account, reserve a tool, and track your place in the waiting queue.
-* View active loans and due dates with an at-a-glance status: due soon, due today, or overdue.
-* Manage your own contact details from an Account page, and see your borrowing history.
-* The entire public-facing experience requires no JavaScript. Every interaction is a plain link or form: searching, filtering, sorting, pagination, selecting a tool, reserving, cancelling. The catalog ships no script at all. The sign-up and Account pages carry one small cosmetic script that formats a phone number as you type it; turn JavaScript off and the field is simply typed in unformatted, since the server derives the stored value from the digits either way.
+* Browse and search the catalog without an account. Filter by name, brand, category, sub-category, tag and availability.
+* Share a link to any tool.
+* Sign up free, reserve tools, and see your place in each queue.
+* See your loans flagged due soon, due today or overdue, plus your full loan history.
+* Update your details, see your trainings, and delete your account, all from the Account page.
+* Review and agree to member agreements online, if the library uses them.
+* Follow the library's links to request a tool or give (a donation link and a wishlist), if it sets them up.
+* No JavaScript on any public page. Everything is a plain link or form.
 
 = For your staff =
 
-* A Dashboard of configurable stat panels: current membership, overdue tools, asset value and depreciation, and many more.
-* Inventory management with CSV bulk import, categories/tags, and a detailed per-tool view showing loan history, current reservations, and financial tracking (value, depreciation, donor).
-* Membership management with CSV bulk import, identity-verification tracking (photo ID + proof of address), and optional member profile photos taken by staff.
-* Member trainings: track the safety or equipment trainings a member has completed, with an optional badge image and a "valid for" period. Membership is searchable based on certification status.
-* Tools can require trainings. Attach any number on the Inventory page. Checkout warns staff when the member is missing one or has let it lapse, and never blocks the loan.
-* Sub-categories: each category can hold its own, and a tool optionally takes one per category it belongs to. Managed on the Setup page, picked when adding or editing a tool, and filterable on the public catalog.
-* A unified Loans & Reservations page: check a reservation out as a loan, cancel a reservation, renew or end a loan. Filter by tool category, sub-category or tag as well as by tool, barcode and member. Search, sorting, and advanced filters throughout. Bulk checkout for a member collecting several tools at once: scan multiple barcodes, and lend or reserve the lot in one action.
-* Category tree search. Advanced Search on the Inventory, Loans & Reservations and public catalog pages lists categories with their sub-categories indented beneath. Ticks are an "any of these" match, so a category on its own finds everything in it, and a sub-category finds only that.
-* Shelf locations. Each tool can record where it physically lives, in whatever notation your library already uses ("Aisle 3, Shelf 4", "113", "K4-1"). Staff always see it on the Inventory page's detail view, and it is searchable there. Whether members see it is a single switch on the Setup page: off (the default) they are shown nothing about location at all, and on it appears on the tool's detail view in the catalog and on My Reservations.
-* Resources and partner links. Each tool can carry two lists of outward links: resources for using it (the manual, a safety video, a how-to) and partner links for supplying it (the local shops that stock its blades, belts or fuel). Add them on the Inventory page as name/link boxes, hit Edit JSON to paste a whole list at once, or bring them in with the CSV bulk import. Both show as collapsed sections wherever a tool's details appear — the Inventory page, the public catalog, and a member's own reservations — and open in a new tab.
-* Reservations that expire on their own: once a tool is back on the shelf and a member is at the front of its queue, the configurable hold period starts.
-* A Setup page for branding (logo, colors, fonts, button style), category/tag/training management, reservation and loan defaults, and full data export/backup.
+* Dashboard: drag, resize and hide stat panels for membership, loans, overdue tools, popular tools, donors, and asset value.
+* Inventory: add tools one at a time or by CSV import, with categories, sub-categories, tags and private notes.
+* Tool details: shelf location (members see it only if you switch it on), resource and partner links, value, depreciation and usable life left.
+* Maintenance and Retire: take a tool out of service for a while, or for good. Both are reversible.
+* Membership: add members one at a time or by CSV import, track ID and proof-of-address verification, add profile photos and private notes.
+* Member logins: email setup links so members added by staff can sign in.
+* Account locks: stop a member reserving or borrowing until staff unlock them.
+* Trainings: record them with expiry dates. Tools can require them, and checkout warns (never blocks) when one is missing.
+* Member agreements (optional): collected online, or recorded from signed paper copies one at a time or in bulk.
+* Loans & Reservations: check out, renew, return (backdated if needed) and cancel in one place, or check out several tools at once by barcode.
+* Reservations expire on their own after a hold period you set, and keep a record of why each one closed.
+* Advanced search on every staff list, including a category tree, shelf location and required training.
+* Workflows: a step-by-step staff guide inside the admin.
+* Setup: branding, fonts and colors; categories, tags and trainings; loan and hold defaults; full SQL or CSV export.
+* Admin view switch: administrators can hide admin-only actions while working the desk.
 
 = Design principles =
 
-* Every public-facing page is intentionally built to need no JavaScript, using plain forms, links, and CSS (including the `:target` pseudo-class for instant, same-page tool detail views). The only script served to a customer is the phone-number formatter on sign-up and Account, and it is cosmetic: the server re-derives the stored number from the digits, so nothing typed there has to be trusted.
+* Public-facing pages ship no JavaScript at all. They use plain forms, links, and CSS (including the `:target` pseudo-class for instant, same-page tool detail views), and the server does any checking or formatting, such as tidying a phone number.
 * Admin pages use JavaScript freely where it improves the staff experience (sorting, filtering, resizing, drag-and-drop).
 * Member passwords are always handled by WordPress core (`wp_insert_user()`). The plugin's own database tables never store a password in any form.
 * Every member gets a WordPress account, whether they signed up themselves or were added by staff. An account created for them is given a random password nobody ever sees; the member chooses their real one through an emailed link, using WordPress's own password-reset machinery.
@@ -54,16 +60,16 @@ Tool libraries, makerspaces, community lending programs, and similar organizatio
 This plugin is built around a specific, deliberately simple operating model. Before installing, confirm it matches how your organization actually runs:
 
 * Single location, single copy per tool. Each tool is one row with one barcode; the plugin does not model multiple copies of the same tool or multiple lending locations/branches. Duplicate locations could lead to collisions.
-* Reservation does not require verification. Any signed-in member can reserve a tool and join its queue. Identity verification (photo ID + proof of address) is a separate, staff-run process intended to happen in person. This would typically be at pickup, before a tool actually leaves the building. The plugin does not enforce verification as a precondition for reserving, and enforcing it at checkout time is a staff judgment call, not something the software blocks.
-* Staff are WordPress Editors and Administrators. On activation the plugin grants an `mtl_manage_library` capability to both roles. Editors run the library day to day (Dashboard, Membership, Inventory, Loans & Reservations, Workflows); the Setup page, bulk-importing members or tools from CSV, deleting a member, and deleting a tool are Administrator-only (`manage_options`). Both are full WordPress roles, so they also grant access elsewhere on your site: Editor can write and edit posts and pages, Administrator can do anything at all. Narrow them with a role-management plugin if that matters to you; this plugin only ever checks whether an account is an Editor or an Administrator.
+* Reservation does not require verification. Any signed-in member can reserve a tool and join its queue, unless staff have locked their account. Identity verification (photo ID + proof of address) is a separate, staff-run process intended to happen in person. This would typically be at pickup, before a tool actually leaves the building. The plugin does not enforce verification as a precondition for reserving, and enforcing it at checkout time is a staff judgment call, not something the software blocks.
+* Staff are WordPress Editors and Administrators. The plugin grants an `mtl_manage_library` capability to both roles, and grants it again on every page load, so removing it from either role won't stick. Editors run the library day to day (Dashboard, Membership, Inventory, Loans & Reservations, Workflows); the Setup page, bulk-importing members or tools from CSV, deleting a member, and deleting a tool are Administrator-only (`manage_options`). Both are full WordPress roles, so they also grant access elsewhere on your site: Editor can write and edit posts and pages, Administrator can do anything at all. Narrow them with a role-management plugin if that matters to you. The plugin never checks role names, only `mtl_manage_library` and `manage_options`, so a custom role given `mtl_manage_library` gets the same library access as an Editor.
 * No payments. `recurring_donation_amount` on a member record is informational only; the plugin does not collect, charge, or reconcile payments of any kind.
-* No status notifications. Nothing about library activity is pushed to anyone: members and staff see due soon, overdue, ready for pickup and queue position by visiting the relevant page. The plugin does send account email (a setup link so a new member can choose their first password, WordPress's own password-reset link, a confirmation once a password has been changed, and, if member agreements are enabled, a request to agree and a record of what was agreed), but each of those is triggered by someone's action, never by a schedule. There is no SMS.
+* No status notifications. Nothing about library activity is pushed to anyone: members and staff see due soon, overdue, ready for pickup and queue position by visiting the relevant page. The plugin does send account email (a setup link so a new member can choose their first password, WordPress's own password-reset link, a confirmation once a password has been changed, notice that an account has been locked or deleted, and, if member agreements are enabled, a request to agree and a record of what was agreed), but each of those is triggered by someone's action, never by a schedule. There is no SMS.
 * One database, one WordPress install. The plugin creates its own tables via `$wpdb` using your site's table prefix. It has not been tested against multisite network-activation; on multisite it should be activated per-site.
 * Site timezone must be set correctly. Reservations and loans are timestamped using WordPress's configured site timezone (Settings > General > Timezone). If that is left at its default, timestamps will not reflect your actual local time (see the FAQ).
 * Signup has no CAPTCHA or throttling. Anyone who can reach the sign-up page can create a member account (email confirmation is not required; the account is active immediately). This matches a walk-in-friendly, low-friction community tool library; if your site is at higher risk of automated abuse, put it behind whatever anti-spam layer (CAPTCHA, firewall rules, etc.) you'd normally use for a public registration form.
 * Members can be from any country. The signup and Membership pages collect a full address: Address Line 1 (required), Address Line 2 (optional; apartment/suite/unit), City, State/Province, ZIP/Postal Code, and Country. Country is a dropdown of every ISO 3166-1 country, defaulting to United States but changeable by the member or by staff (via Edit Member) to any other. State/Province is a dropdown covering U.S. states/territories and Canadian provinces (both use short, standardized 2-letter codes); members anywhere else select "N/A" there, since region/province systems vary too much per-country to model directly, and can still note their actual region in the address lines if it matters. Country is always the last line of a member's displayed address, per international postal addressing convention (UPU S42), regardless of which country is selected.
 * Photos and documents are links, not uploads. The plugin does not host or upload image files itself: `photo_url` (a tool's photo), `profile_photo_url` (a member's photo), `photo_id_scan_url`, and `address_proof_scan_url` (a member's verification documents) are plain link fields. Host the actual image elsewhere (a cloud storage provider such as Google Drive, with sharing permissions set deliberately) and paste the resulting link in. Tool photos are shown on the public catalog to anyone, so they should be publicly viewable; member profile photos and verification document scans are sensitive personal records shown only on the admin-only Membership page and should require the viewer to be signed in or explicitly granted access, not just have an unguessable URL. See the FAQ for more detail.
-* Deleting a member with loan/reservation history anonymizes it instead. A member can delete their own account (Account page), and staff can delete any member (Membership page); either way, a member with no borrowing history is removed outright, but one who has ever borrowed or reserved a tool has their personal data anonymized and their WordPress account deleted, while that loan/reservation history is kept so tool-level statistics stay accurate. See the FAQ for detail. Tools work the same way in spirit but are never anonymous: a tool with history can be Retired (hidden from the catalog, blocked from new loans, fully reversible) instead of deleted.
+* Deleting a member with loan/reservation history anonymizes it instead. A member can delete their own account (Account page), and staff can delete any member (Membership page); either way, a member with no borrowing history is removed outright, but one who has ever borrowed or reserved a tool has their personal data anonymized and their WordPress account deleted, while that loan/reservation history is kept so tool-level statistics stay accurate. See the FAQ for detail. Tools work the same way in spirit but are never anonymous: a tool with history can be Retired (left out of the catalog unless a visitor asks for retired tools, blocked from new loans, fully reversible) instead of deleted.
 * Tools can carry private staff notes. The Inventory page's Add/Edit forms (and the bulk CSV import, via a `private_notes` column) have an optional Private Notes field (e.g. "missing a screw, ask Jim before lending" or "this one's a loaner from another org, handle with care"). It's never included in the public catalog or any member-facing page or query, and is shown only in the admin-only Inventory page's detail view. A CSV file itself isn't private once it leaves the site, though, so avoid sharing an import file that has sensitive notes filled in.
 
 == Installation ==
@@ -84,11 +90,11 @@ The public catalog is reachable at `/tool-library/` automatically if your site u
 
 = Does this plugin require JavaScript? =
 
-Not for your customers. Every public-facing page (the catalog, sign-up, sign-in, reservations, account) works with JavaScript completely disabled. The admin/staff back office does use JavaScript for a better staff experience (sorting, filtering, drag-and-drop dashboard panels), but nothing customer-facing depends on it.
+Not for your customers. No public-facing page (the catalog, sign-up, sign-in, reservations, account) loads any JavaScript. The admin/staff back office does use JavaScript for a better staff experience (sorting, filtering, drag-and-drop dashboard panels), but nothing customer-facing depends on it.
 
 = Does reserving a tool require identity verification? =
 
-No. Any signed-in member can reserve a tool and join its waiting queue. Verification (checking a photo ID and proof of address) is a separate, staff-performed process tracked on the member's record. See "Assumptions and intended use" above.
+No. Any signed-in member can reserve a tool and join its waiting queue, unless staff have locked their account. Verification (checking a photo ID and proof of address) is a separate, staff-performed process tracked on the member's record. See "Assumptions and intended use" above.
 
 = How do I add tool photos, member photos or verification document scans? =
 
@@ -138,7 +144,10 @@ Every email it does send is triggered by a person, not a schedule:
 
 * The setup link a new member uses to choose their first password.
 * WordPress's own password-reset link, and the confirmation once a password has been changed.
+* When someone tries to sign up with an email address that already has an account: a note to that address explaining how to sign in or set a password, at most once an hour.
+* When staff lock an account: a note asking the member to speak with staff.
 * On a member delete: a confirmation to the member, plus a request to the site administrator to delete that member's stored photo and verification files.
+* When a member with verification documents on file changes their personal details, which voids those documents: a request to the site administrator to delete the old files.
 * With member agreements switched on: a request asking a member to review and agree, and a confirmation recording what they agreed to, with any attached documents included.
 
 = The plugin's emails aren't arriving. How do I set up outgoing mail? =
@@ -163,7 +172,7 @@ One narrow exception, if you enable member agreements: an agreement record keeps
 
 = What happens when I delete a tool? =
 
-Same idea as members, without the personal-data angle: a tool with no loan/reservation history can be deleted outright. One with history can't be (same underlying reason), so use Retire instead, on the Inventory page. Retiring hides the tool from the public catalog and blocks new loans or reservations for it (any reservations already queued for it are automatically cancelled), while keeping its row and full history intact. Unlike deleting a member, retiring is fully reversible, so click Reactivate to bring it back. Retired tools are hidden from the Inventory page's default list; use the "Retired?" advanced-search filter to find them.
+Same idea as members, without the personal-data angle: a tool with no loan/reservation history can be deleted outright. One with history can't be (same underlying reason), so use Retire instead, on the Inventory page. Retiring takes the tool out of the public catalog's default listing (visitors can still find it, marked Retired, with the catalog's Retired filter) and blocks new loans or reservations for it (any reservations already queued for it are automatically cancelled), while keeping its row and full history intact. Unlike deleting a member, retiring is fully reversible, so click Reactivate to bring it back. Retired tools are hidden from the Inventory page's default list; use the "Retired?" advanced-search filter to find them.
 
 = What happens to my data if I uninstall the plugin? =
 
@@ -186,7 +195,7 @@ No. There are no external network calls, no bundled third-party analytics, and n
 == Changelog ==
 
 = 1.0.0 =
-* Initial release: public catalog, member accounts, reservations, loans, and the full admin back office (Dashboard, Inventory, Membership, Loans & Reservations, Setup).
+* Initial release: public catalog, member accounts, reservations, loans, and the full admin back office (Dashboard, Inventory, Membership, Loans & Reservations, Workflows, Setup).
 
 == Upgrade Notice ==
 
