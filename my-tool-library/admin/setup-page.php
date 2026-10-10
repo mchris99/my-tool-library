@@ -106,6 +106,17 @@ function mtl_db_reset_confirmation_phrase() {
 }
 
 /**
+ * The exact phrase an admin must type to confirm a restore from backup.
+ * Different from the reset phrase, so neither can be typed from habit while
+ * meaning the other.
+ *
+ * @return string
+ */
+function mtl_db_restore_confirmation_phrase() {
+	return 'Replace ALL my data';
+}
+
+/**
  * The "attach a file" control shared by the add and edit agreement forms.
  *
  * Renders a hidden attachment_id, a readout of the current choice and the two
@@ -175,17 +186,11 @@ function mtl_maybe_export_data() {
 }
 
 /**
- * Stream a MySQL-style .sql dump (DROP + CREATE + INSERTs) for every table.
- * Table names keep the WordPress prefix (e.g. wp_members) so re-running the
- * dump restores the tables in place, matching schema.sql. (The CSV/zip
- * export uses bare names instead.)
+ * Download a MySQL-style .sql dump of every table; see mtl_write_sql_export().
  *
  * @param string[] $bare_tables Bare table names, see mtl_export_table_names().
  */
 function mtl_export_as_sql( $bare_tables ) {
-	global $wpdb;
-	$prefix = $wpdb->prefix;
-
 	// Discard any buffered output so nothing corrupts the file body.
 	while ( ob_get_level() ) {
 		ob_end_clean();
@@ -195,11 +200,62 @@ function mtl_export_as_sql( $bare_tables ) {
 	header( 'Content-Type: application/sql; charset=utf-8' );
 	header( 'Content-Disposition: attachment; filename="my-tool-library-export-' . gmdate( 'Y-m-d' ) . '.sql"' );
 
-	$out  = "-- My Tool Library data export\n";
-	$out .= '-- Generated ' . gmdate( 'Y-m-d H:i:s' ) . " UTC\n";
-	$out .= '-- Table names keep the WordPress "' . $prefix . "\" prefix, matching how the\n";
-	$out .= "-- plugin creates them in schema.sql.\n\n";
-	$out .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
+	// Written straight to the response as it is built. This is the file being
+	// downloaded (a raw .sql dump), not HTML; escaping would corrupt it.
+	$out = fopen( 'php://output', 'wb' );
+	mtl_write_sql_export(
+		$bare_tables,
+		function ( $text ) use ( $out ) {
+			fwrite( $out, $text );
+		}
+	);
+	fclose( $out );
+	exit;
+}
+
+/**
+ * Build a MySQL-style .sql dump (DROP + CREATE + INSERTs) of every table,
+ * handing it to $write a piece at a time: to the browser for Export Data, or
+ * to the encryptor for an automatic backup (mtl_backup_create()). Table names
+ * keep the WordPress prefix (e.g. wp_members) so re-running the dump restores
+ * the tables in place, matching schema.sql. (The CSV/zip export uses bare
+ * names instead.)
+ *
+ * This is also the file Restore from Backup reads (mtl_restore_from_sql()).
+ * The reader recognises an export by the first line and the prefix line of
+ * the header, and treats a file as complete only when its last statement is
+ * the closing SET FOREIGN_KEY_CHECKS=1. Change any of those here and the
+ * reader has to change with them.
+ *
+ * @param string[] $bare_tables Bare table names, see mtl_export_table_names().
+ * @param callable $write       Receives each piece of the dump as a string.
+ * @return string '' on success, or what went wrong. A failed dump stops
+ *                without its closing statement, so it can never be restored.
+ */
+function mtl_write_sql_export( $bare_tables, $write ) {
+	global $wpdb;
+	$prefix = $wpdb->prefix;
+
+	// Every table is read from one snapshot, so a loan written while the
+	// file is being built can't appear without the member it belongs to.
+	$wpdb->query( 'START TRANSACTION WITH CONSISTENT SNAPSHOT' );
+
+	// Handed over as it is built rather than collected into one string, and
+	// read a page at a time below, so a large library's history never has to
+	// fit in memory at once.
+	$write( "-- My Tool Library data export\n" );
+	$write( '-- Generated ' . gmdate( 'Y-m-d H:i:s' ) . " UTC\n" );
+	$write( '-- Site: ' . home_url() . "\n" );
+	$write( '-- Database version: ' . (int) MTL_DB_VERSION . "\n" );
+	$write( '-- Table names keep the WordPress "' . $prefix . "\" prefix, matching how the\n" );
+	$write( "-- plugin creates them in schema.sql.\n" );
+	$write( "-- Restore it from My Tool Library > Setup > Restore from Backup.\n\n" );
+	$write( "SET FOREIGN_KEY_CHECKS=0;\n\n" );
+
+	// Set when a read fails part-way. The file then ends without its
+	// closing statement, which is what tells Restore from Backup (and
+	// anyone reading it) that it is incomplete.
+	$failure = '';
 
 	// $full below is always a trusted prefix + hardcoded bare name from
 	// mtl_export_table_names() (no user input), so it's safe to interpolate
@@ -210,43 +266,73 @@ function mtl_export_as_sql( $bare_tables ) {
 
 		$exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $full ) );
 		if ( ! $exists ) {
-			$out .= "-- (table `$full` not found in the database; skipped)\n\n";
+			$write( "-- (table `$full` not found in the database; skipped)\n\n" );
 			continue;
 		}
 
-		$out .= "-- ------------------------------------------------------------\n";
-		$out .= "-- Table: $full\n";
-		$out .= "-- ------------------------------------------------------------\n";
-		$out .= "DROP TABLE IF EXISTS `$full`;\n";
+		$write( "-- ------------------------------------------------------------\n" );
+		$write( "-- Table: $full\n" );
+		$write( "-- ------------------------------------------------------------\n" );
+		$write( "DROP TABLE IF EXISTS `$full`;\n" );
 
 		// Used verbatim: SHOW CREATE TABLE already emits the prefixed name
 		// and any prefixed FK references, keeping the dump aligned with the real tables.
 		$create_row = $wpdb->get_row( "SHOW CREATE TABLE `$full`", ARRAY_N );
-		$create_sql = isset( $create_row[1] ) ? $create_row[1] : '';
-		$out       .= $create_sql . ";\n\n";
+		if ( empty( $create_row[1] ) ) {
+			$failure = "could not read the structure of `$full`: " . $wpdb->last_error;
+			break;
+		}
+		$write( $create_row[1] . ";\n\n" );
 
-		$cols = $wpdb->get_col( "SHOW COLUMNS FROM `$full`" );
-		$rows = $wpdb->get_results( "SELECT * FROM `$full`", ARRAY_A );
+		$cols     = $wpdb->get_col( "SHOW COLUMNS FROM `$full`" );
+		$col_list = '`' . implode( '`, `', $cols ) . '`';
 
-		if ( $rows ) {
-			$col_list = '`' . implode( '`, `', $cols ) . '`';
+		// Paged by primary key, which every table has. Without one, OFFSET
+		// paging has no stable order to follow, so the table is read whole.
+		$keys     = $wpdb->get_col( "SHOW KEYS FROM `$full` WHERE Key_name = 'PRIMARY'", 4 );
+		$order_by = $keys ? ' ORDER BY `' . implode( '`, `', $keys ) . '`' : '';
+		$per_page = $keys ? 1000 : 0;
+
+		for ( $offset = 0; ; $offset += $per_page ) {
+			$rows = $per_page
+				? $wpdb->get_results( "SELECT * FROM `$full`{$order_by} LIMIT {$per_page} OFFSET {$offset}", ARRAY_A )
+				: $wpdb->get_results( "SELECT * FROM `$full`", ARRAY_A );
+			if ( '' !== $wpdb->last_error ) {
+				$failure = "could not read the rows of `$full`: " . $wpdb->last_error;
+				break 2;
+			}
+
 			foreach ( $rows as $row ) {
 				$vals = array();
 				foreach ( $cols as $col ) {
-					$v      = array_key_exists( $col, $row ) ? $row[ $col ] : null;
-					$vals[] = ( null === $v ) ? 'NULL' : "'" . esc_sql( $v ) . "'";
+					$v = array_key_exists( $col, $row ) ? $row[ $col ] : null;
+					// esc_sql() turns every % into wpdb's placeholder token,
+					// which only $wpdb->query() turns back. This text never
+					// passes through a query, so the % has to be put back
+					// here or it reaches the file as "{64 hex digits}".
+					$vals[] = ( null === $v ) ? 'NULL' : "'" . $wpdb->remove_placeholder_escape( esc_sql( $v ) ) . "'";
 				}
-				$out .= "INSERT INTO `$full` ($col_list) VALUES (" . implode( ', ', $vals ) . ");\n";
+				$write( "INSERT INTO `$full` ($col_list) VALUES (" . implode( ', ', $vals ) . ");\n" );
 			}
-			$out .= "\n";
+
+			if ( ! $per_page || count( $rows ) < $per_page ) {
+				break;
+			}
 		}
+		$write( "\n" );
+	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	$wpdb->query( 'COMMIT' );
+
+	if ( '' !== $failure ) {
+		$write( "\n-- EXPORT FAILED: $failure\n" );
+		$write( "-- This file is incomplete and cannot be restored.\n" );
+		return $failure;
 	}
 
-	$out .= "SET FOREIGN_KEY_CHECKS=1;\n";
-
-	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- this *is* the file being downloaded (a raw .sql dump), not HTML; escaping would corrupt it.
-	echo $out;
-	exit;
+	$write( "SET FOREIGN_KEY_CHECKS=1;\n" );
+	return '';
 }
 
 /**
@@ -268,6 +354,8 @@ function mtl_export_as_zip( $bare_tables ) {
 			continue;
 		}
 
+		// Trusted prefix + hardcoded bare name, as in mtl_export_as_sql().
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$cols = $wpdb->get_col( "SHOW COLUMNS FROM `$full`" );
 		$rows = $wpdb->get_results( "SELECT * FROM `$full`", ARRAY_A );
 		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -379,6 +467,776 @@ function mtl_build_zip( $files ) {
 	$eocd .= pack( 'v', 0 );                 // Comment length.
 
 	return $local_data . $central_dir . $eocd;
+}
+
+/**
+ * Runs the bundled admin/schema.sql: drops every plugin table, recreates it
+ * empty and adds the starter categories, tags and trainings. Used by Run
+ * Database Setup, and by Restore from Backup on a site with no tables yet.
+ *
+ * @return array|WP_Error array( 'ok' => queries that succeeded, 'failed' =>
+ *                        list of array( query, database error ) ), or an
+ *                        error when schema.sql is missing.
+ */
+function mtl_run_schema_sql() {
+	global $wpdb;
+
+	$sql_file_path = MTL_PLUGIN_DIR . 'admin/schema.sql';
+	if ( ! file_exists( $sql_file_path ) ) {
+		return new WP_Error( 'mtl_schema_missing', 'Could not find schema.sql.' );
+	}
+	$sql_contents = file_get_contents( $sql_file_path );
+
+	// Swap the {{prefix}} placeholder for the site's real table
+	// prefix (e.g. "wp_", or "wp_2_" on multisite) so the tables
+	// follow WordPress naming conventions.
+	$sql_contents = str_replace( '{{prefix}}', $wpdb->prefix, $sql_contents );
+
+	// Strip full-line SQL comments before splitting on
+	// semicolons. A comment line sitting directly above a
+	// statement (no semicolon between them) would otherwise be
+	// bundled into the same chunk once the file is exploded on
+	// ";", and a naive "starts with --" filter would then skip
+	// the whole chunk, including the real SQL. Inline trailing
+	// comments (e.g. "-- 'Y' or 'N'") are left alone since MySQL parses those natively.
+	$lines        = explode( "\n", $sql_contents );
+	$lines        = array_filter(
+		$lines,
+		function ( $line ) {
+			return 0 !== strpos( trim( $line ), '--' );
+		}
+	);
+	$sql_contents = implode( "\n", $lines );
+
+	$queries = array_filter( array_map( 'trim', explode( ';', $sql_contents ) ) );
+
+	$ok     = 0;
+	$failed = array();
+	foreach ( $queries as $query ) {
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- runs the plugin's own bundled admin/schema.sql, not user input.
+		if ( false === $wpdb->query( $query ) ) {
+			$failed[] = array( $query, $wpdb->last_error );
+		} else {
+			++$ok;
+		}
+	}
+
+	return array(
+		'ok'     => $ok,
+		'failed' => $failed,
+	);
+}
+
+// ==========================================================================
+// RESTORE FROM BACKUP
+//
+// Reads a .sql dump made by mtl_export_as_sql() back into the plugin's tables.
+// Nothing in the uploaded file is ever run as SQL. The reader below splits it
+// into tokens the way MySQL would, accepts only the four statements an export
+// contains, and pulls the literal values out of each INSERT; the restore then
+// inserts those values itself. Whatever a file says, it can only put rows of
+// plain values into the plugin's own tables.
+// ==========================================================================
+
+/**
+ * A restore error naming the line of the uploaded file it is about.
+ *
+ * @param string $sql     Whole file.
+ * @param int    $at      Byte offset of the problem.
+ * @param string $message What is wrong, starting lower case.
+ * @return WP_Error
+ */
+function mtl_restore_error_at( $sql, $at, $message ) {
+	$line = substr_count( substr( $sql, 0, max( 0, (int) $at ) ), "\n" ) + 1;
+	return new WP_Error( 'mtl_restore_file', 'Line ' . $line . ' of the file: ' . $message );
+}
+
+/**
+ * Reads the next token of an uploaded .sql file, skipping whitespace and
+ * comments.
+ *
+ * Quoted strings come back decoded, using MySQL's backslash escapes (the ones
+ * esc_sql() writes) and doubled quotes. A character that starts no other
+ * token comes back alone as 'punct', and it is up to the caller to accept or
+ * refuse it.
+ *
+ * @param string $sql Whole file.
+ * @param int    $pos Byte offset, moved past the token.
+ * @return array|null|WP_Error array( 'type' => 'word'|'name'|'string'|'number'|'punct',
+ *                             'value' => string, 'at' => int ), or null at the end.
+ */
+function mtl_restore_next_token( $sql, &$pos ) {
+	$len        = strlen( $sql );
+	$whitespace = " \t\r\n\f\v";
+
+	while ( $pos < $len ) {
+		$pos += strspn( $sql, $whitespace, $pos );
+		if ( $pos >= $len ) {
+			return null;
+		}
+		$pair = substr( $sql, $pos, 2 );
+		// MySQL reads "--" as a comment only when whitespace follows it.
+		if ( '#' === $sql[ $pos ] || ( '--' === $pair && ( $pos + 2 >= $len || false !== strpos( $whitespace, $sql[ $pos + 2 ] ) ) ) ) {
+			$eol = strpos( $sql, "\n", $pos );
+			$pos = false === $eol ? $len : $eol + 1;
+		} elseif ( '/*' === $pair ) {
+			$end = strpos( $sql, '*/', $pos + 2 );
+			if ( false === $end ) {
+				return mtl_restore_error_at( $sql, $pos, 'a comment is never closed.' );
+			}
+			$pos = $end + 2;
+		} else {
+			break;
+		}
+	}
+	if ( $pos >= $len ) {
+		return null;
+	}
+
+	$at = $pos;
+	$ch = $sql[ $pos ];
+
+	if ( "'" === $ch || '"' === $ch ) {
+		// \% and \_ keep their backslash, as they do in MySQL outside LIKE.
+		$escapes = array(
+			'0' => "\0",
+			'b' => "\x08",
+			'n' => "\n",
+			'r' => "\r",
+			't' => "\t",
+			'Z' => "\x1A",
+			'%' => '\\%',
+			'_' => '\\_',
+		);
+		$value   = '';
+		++$pos;
+		while ( true ) {
+			$run    = strcspn( $sql, $ch . '\\', $pos );
+			$value .= substr( $sql, $pos, $run );
+			$pos   += $run;
+			if ( $pos >= $len || ( '\\' === $sql[ $pos ] && $pos + 1 >= $len ) ) {
+				return mtl_restore_error_at( $sql, $at, 'a quoted value is never closed, so the file may have been cut short.' );
+			}
+			if ( '\\' === $sql[ $pos ] ) {
+				$next   = $sql[ $pos + 1 ];
+				$value .= isset( $escapes[ $next ] ) ? $escapes[ $next ] : $next;
+				$pos   += 2;
+			} elseif ( $pos + 1 < $len && $ch === $sql[ $pos + 1 ] ) {
+				$value .= $ch;
+				$pos   += 2;
+			} else {
+				++$pos;
+				return array(
+					'type'  => 'string',
+					'value' => $value,
+					'at'    => $at,
+				);
+			}
+		}
+	}
+
+	if ( '`' === $ch ) {
+		$value = '';
+		++$pos;
+		while ( true ) {
+			$end = strpos( $sql, '`', $pos );
+			if ( false === $end ) {
+				return mtl_restore_error_at( $sql, $at, 'a `name` is never closed.' );
+			}
+			$value .= substr( $sql, $pos, $end - $pos );
+			$pos    = $end + 1;
+			// A doubled backtick is a literal one inside the name.
+			if ( $pos < $len && '`' === $sql[ $pos ] ) {
+				$value .= '`';
+				++$pos;
+				continue;
+			}
+			return array(
+				'type'  => 'name',
+				'value' => $value,
+				'at'    => $at,
+			);
+		}
+	}
+
+	$digits = '0123456789';
+	$signed = ( '-' === $ch || '+' === $ch ) && $pos + 1 < $len && false !== strpos( $digits, $sql[ $pos + 1 ] );
+	if ( $signed || false !== strpos( $digits, $ch ) ) {
+		preg_match( '/\G[-+]?[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?/', $sql, $match, 0, $pos );
+		$pos += strlen( $match[0] );
+		return array(
+			'type'  => 'number',
+			'value' => $match[0],
+			'at'    => $at,
+		);
+	}
+
+	$word = strspn( $sql, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_$', $pos );
+	if ( $word > 0 ) {
+		$pos += $word;
+		return array(
+			'type'  => 'word',
+			'value' => substr( $sql, $at, $word ),
+			'at'    => $at,
+		);
+	}
+
+	++$pos;
+	return array(
+		'type'  => 'punct',
+		'value' => $ch,
+		'at'    => $at,
+	);
+}
+
+/**
+ * Reads the next token and checks it is the one the statement needs there.
+ *
+ * @param string      $sql   Whole file.
+ * @param int         $pos   Byte offset, moved past the token.
+ * @param string      $type  Token type wanted.
+ * @param string|null $value Value wanted, ignoring case, or null for any.
+ * @return array|WP_Error The token.
+ */
+function mtl_restore_expect( $sql, &$pos, $type, $value = null ) {
+	$at  = $pos;
+	$tok = mtl_restore_next_token( $sql, $pos );
+	if ( is_wp_error( $tok ) ) {
+		return $tok;
+	}
+	if ( null === $tok ) {
+		return mtl_restore_error_at( $sql, $at, 'the file ends part-way through a statement, so it may have been cut short.' );
+	}
+	if ( $type !== $tok['type'] || ( null !== $value && 0 !== strcasecmp( $tok['value'], $value ) ) ) {
+		return mtl_restore_error_at( $sql, $tok['at'], 'this is not something Export Data writes, so the file can\'t be restored.' );
+	}
+	return $tok;
+}
+
+/**
+ * Steps past the next token if it is $word, for the optional parts of a
+ * statement such as IF EXISTS.
+ *
+ * @param string $sql  Whole file.
+ * @param int    $pos  Byte offset, moved past the word only when it matches.
+ * @param string $word Word to look for, ignoring case.
+ * @return bool Whether it was there.
+ */
+function mtl_restore_accept_word( $sql, &$pos, $word ) {
+	$try = $pos;
+	$tok = mtl_restore_next_token( $sql, $try );
+	if ( is_array( $tok ) && 'word' === $tok['type'] && 0 === strcasecmp( $tok['value'], $word ) ) {
+		$pos = $try;
+		return true;
+	}
+	return false;
+}
+
+/**
+ * Reads the separator after an item in a list: true for a comma (another
+ * item follows), false for $close (the list is over).
+ *
+ * @param string $sql   Whole file.
+ * @param int    $pos   Byte offset, moved past the separator.
+ * @param string $close The character that ends the list.
+ * @return bool|WP_Error
+ */
+function mtl_restore_list_continues( $sql, &$pos, $close ) {
+	$at  = $pos;
+	$tok = mtl_restore_next_token( $sql, $pos );
+	if ( is_wp_error( $tok ) ) {
+		return $tok;
+	}
+	if ( is_array( $tok ) && 'punct' === $tok['type'] && ( ',' === $tok['value'] || $close === $tok['value'] ) ) {
+		return ',' === $tok['value'];
+	}
+	return mtl_restore_error_at( $sql, is_array( $tok ) ? $tok['at'] : $at, 'this is not something Export Data writes, so the file can\'t be restored.' );
+}
+
+/**
+ * Reads a table name and maps it to one of the plugin's bare table names.
+ *
+ * @param string $sql        Whole file.
+ * @param int    $pos        Byte offset, moved past the name.
+ * @param string $src_prefix Table prefix the export was made with.
+ * @return string|WP_Error Bare table name, see mtl_export_table_names().
+ */
+function mtl_restore_table_name( $sql, &$pos, $src_prefix ) {
+	$at  = $pos;
+	$tok = mtl_restore_next_token( $sql, $pos );
+	if ( is_wp_error( $tok ) ) {
+		return $tok;
+	}
+	if ( ! is_array( $tok ) || ! in_array( $tok['type'], array( 'name', 'word' ), true ) ) {
+		return mtl_restore_error_at( $sql, is_array( $tok ) ? $tok['at'] : $at, 'a table name should be here.' );
+	}
+
+	// Compared without case, because MySQL on Windows and macOS stores table
+	// names in lower case, and a backup may have come from one.
+	$name   = strtolower( $tok['value'] );
+	$prefix = strtolower( $src_prefix );
+	$bare   = substr( $name, 0, strlen( $prefix ) ) === $prefix ? (string) substr( $name, strlen( $prefix ) ) : '';
+	if ( ! in_array( $bare, mtl_export_table_names(), true ) ) {
+		return mtl_restore_error_at( $sql, $tok['at'], '"' . $tok['value'] . '" is not one of My Tool Library\'s tables. Only a .sql dump from Export Data can be restored here.' );
+	}
+	return $bare;
+}
+
+/**
+ * Steps over a DROP TABLE or CREATE TABLE statement after its first word.
+ *
+ * The restore keeps this site's own table structure (see
+ * mtl_restore_from_sql()), so these are read only to confirm each names one
+ * of the plugin's tables and to find the ; that ends it.
+ *
+ * @param string $sql        Whole file.
+ * @param int    $pos        Byte offset, moved past the statement.
+ * @param string $src_prefix Table prefix the export was made with.
+ * @return true|WP_Error
+ */
+function mtl_restore_skip_table_statement( $sql, &$pos, $src_prefix ) {
+	$tok = mtl_restore_expect( $sql, $pos, 'word', 'TABLE' );
+	if ( is_wp_error( $tok ) ) {
+		return $tok;
+	}
+	if ( mtl_restore_accept_word( $sql, $pos, 'IF' ) ) {
+		mtl_restore_accept_word( $sql, $pos, 'NOT' );
+		$tok = mtl_restore_expect( $sql, $pos, 'word', 'EXISTS' );
+		if ( is_wp_error( $tok ) ) {
+			return $tok;
+		}
+	}
+	$bare = mtl_restore_table_name( $sql, $pos, $src_prefix );
+	if ( is_wp_error( $bare ) ) {
+		return $bare;
+	}
+
+	// A CREATE TABLE body is a parenthesised list, so the ; that ends the
+	// statement is the first one outside every bracket. Quoted text inside it,
+	// such as a column's DEFAULT, is already one token.
+	$depth = 0;
+	while ( true ) {
+		$at  = $pos;
+		$tok = mtl_restore_next_token( $sql, $pos );
+		if ( is_wp_error( $tok ) ) {
+			return $tok;
+		}
+		if ( null === $tok ) {
+			return mtl_restore_error_at( $sql, $at, 'the file ends part-way through a statement, so it may have been cut short.' );
+		}
+		if ( 'punct' !== $tok['type'] ) {
+			continue;
+		}
+		if ( '(' === $tok['value'] ) {
+			++$depth;
+		} elseif ( ')' === $tok['value'] ) {
+			--$depth;
+		} elseif ( ';' === $tok['value'] && $depth <= 0 ) {
+			return true;
+		}
+	}
+}
+
+/**
+ * Reads an INSERT INTO ... (columns) VALUES (...), (...); statement after its
+ * first word. Every value must be quoted text, a number or NULL: never an
+ * expression, a function call or a subquery.
+ *
+ * @param string $sql        Whole file.
+ * @param int    $pos        Byte offset, moved past the statement.
+ * @param string $src_prefix Table prefix the export was made with.
+ * @return array|WP_Error array( 'table' => bare name, 'columns' => string[],
+ *                        'rows' => list of value lists, each value a string or null ).
+ */
+function mtl_restore_read_insert( $sql, &$pos, $src_prefix ) {
+	$tok = mtl_restore_expect( $sql, $pos, 'word', 'INTO' );
+	if ( is_wp_error( $tok ) ) {
+		return $tok;
+	}
+	$bare = mtl_restore_table_name( $sql, $pos, $src_prefix );
+	if ( is_wp_error( $bare ) ) {
+		return $bare;
+	}
+
+	// The column list is required. It is what lets a backup taken before a
+	// column was added load into a table that now has it.
+	$tok = mtl_restore_expect( $sql, $pos, 'punct', '(' );
+	if ( is_wp_error( $tok ) ) {
+		return $tok;
+	}
+	$columns = array();
+	while ( true ) {
+		$at  = $pos;
+		$tok = mtl_restore_next_token( $sql, $pos );
+		if ( is_wp_error( $tok ) ) {
+			return $tok;
+		}
+		if ( ! is_array( $tok ) || ! in_array( $tok['type'], array( 'name', 'word' ), true ) ) {
+			return mtl_restore_error_at( $sql, is_array( $tok ) ? $tok['at'] : $at, 'a column name should be here.' );
+		}
+		$columns[] = $tok['value'];
+		$more      = mtl_restore_list_continues( $sql, $pos, ')' );
+		if ( is_wp_error( $more ) ) {
+			return $more;
+		}
+		if ( ! $more ) {
+			break;
+		}
+	}
+
+	$tok = mtl_restore_expect( $sql, $pos, 'word', 'VALUES' );
+	if ( is_wp_error( $tok ) ) {
+		return $tok;
+	}
+	$rows = array();
+	while ( true ) {
+		$opened = mtl_restore_expect( $sql, $pos, 'punct', '(' );
+		if ( is_wp_error( $opened ) ) {
+			return $opened;
+		}
+		$row = array();
+		while ( true ) {
+			$at  = $pos;
+			$tok = mtl_restore_next_token( $sql, $pos );
+			if ( is_wp_error( $tok ) ) {
+				return $tok;
+			}
+			if ( is_array( $tok ) && ( 'string' === $tok['type'] || 'number' === $tok['type'] ) ) {
+				$row[] = $tok['value'];
+			} elseif ( is_array( $tok ) && 'word' === $tok['type'] && 0 === strcasecmp( $tok['value'], 'NULL' ) ) {
+				$row[] = null;
+			} else {
+				return mtl_restore_error_at( $sql, is_array( $tok ) ? $tok['at'] : $at, 'every value must be quoted text, a number or NULL.' );
+			}
+			$more = mtl_restore_list_continues( $sql, $pos, ')' );
+			if ( is_wp_error( $more ) ) {
+				return $more;
+			}
+			if ( ! $more ) {
+				break;
+			}
+		}
+		if ( count( $row ) !== count( $columns ) ) {
+			return mtl_restore_error_at( $sql, $opened['at'], 'a row has ' . count( $row ) . ' values for ' . count( $columns ) . ' columns.' );
+		}
+		$rows[] = $row;
+
+		$more = mtl_restore_list_continues( $sql, $pos, ';' );
+		if ( is_wp_error( $more ) ) {
+			return $more;
+		}
+		if ( ! $more ) {
+			break;
+		}
+	}
+
+	return array(
+		'table'   => $bare,
+		'columns' => $columns,
+		'rows'    => $rows,
+	);
+}
+
+/**
+ * Walks an uploaded export statement by statement, handing each INSERT to
+ * $on_insert.
+ *
+ * Accepts only what mtl_export_as_sql() writes: SET FOREIGN_KEY_CHECKS, DROP
+ * TABLE, CREATE TABLE and INSERT, each naming one of the plugin's tables.
+ * Anything else, such as an UPDATE or another plugin's table, stops the walk.
+ * So does a file whose last statement is not the closing
+ * SET FOREIGN_KEY_CHECKS=1, since an export always ends with one and a
+ * download that was cut short does not.
+ *
+ * @param string   $sql        Whole file.
+ * @param string   $src_prefix Table prefix the export was made with.
+ * @param callable $on_insert  Called as ( $bare_table, $columns, $rows, $at )
+ *                             for each INSERT. Returning a WP_Error stops the walk.
+ * @return true|WP_Error
+ */
+function mtl_restore_walk( $sql, $src_prefix, $on_insert ) {
+	$pos  = 0;
+	$last = '';
+
+	while ( true ) {
+		$tok = mtl_restore_next_token( $sql, $pos );
+		if ( is_wp_error( $tok ) ) {
+			return $tok;
+		}
+		if ( null === $tok ) {
+			break;
+		}
+		if ( 'punct' === $tok['type'] && ';' === $tok['value'] ) {
+			continue;
+		}
+
+		$verb = 'word' === $tok['type'] ? strtoupper( $tok['value'] ) : '';
+		if ( 'SET' === $verb ) {
+			$step = mtl_restore_expect( $sql, $pos, 'word', 'FOREIGN_KEY_CHECKS' );
+			if ( ! is_wp_error( $step ) ) {
+				$step = mtl_restore_expect( $sql, $pos, 'punct', '=' );
+			}
+			if ( ! is_wp_error( $step ) ) {
+				$value = mtl_restore_expect( $sql, $pos, 'number' );
+				$step  = is_wp_error( $value ) ? $value : mtl_restore_expect( $sql, $pos, 'punct', ';' );
+			}
+			if ( is_wp_error( $step ) ) {
+				return $step;
+			}
+			$last = 'SET FOREIGN_KEY_CHECKS=' . (int) $value['value'];
+		} elseif ( 'DROP' === $verb || 'CREATE' === $verb ) {
+			$step = mtl_restore_skip_table_statement( $sql, $pos, $src_prefix );
+			if ( is_wp_error( $step ) ) {
+				return $step;
+			}
+			$last = $verb;
+		} elseif ( 'INSERT' === $verb ) {
+			$insert = mtl_restore_read_insert( $sql, $pos, $src_prefix );
+			if ( is_wp_error( $insert ) ) {
+				return $insert;
+			}
+			$step = call_user_func( $on_insert, $insert['table'], $insert['columns'], $insert['rows'], $tok['at'] );
+			if ( is_wp_error( $step ) ) {
+				return $step;
+			}
+			$last = $verb;
+		} else {
+			return mtl_restore_error_at( $sql, $tok['at'], 'this is not something Export Data writes, so the file can\'t be restored.' );
+		}
+	}
+
+	if ( 'SET FOREIGN_KEY_CHECKS=1' !== $last ) {
+		return new WP_Error( 'mtl_restore_incomplete', 'The file stops before the end of the export, so some of the data may be missing from it. Use a complete .sql dump.' );
+	}
+	return true;
+}
+
+/**
+ * Sends the rows collected for one table as a single multi-row INSERT.
+ *
+ * @param array $batch array( 'head' => 'INSERT INTO ... VALUES ', 'table' =>
+ *                     bare name, 'rows' => escaped "(...)" tuples, 'bytes' =>
+ *                     their total length ). The rows are cleared once sent.
+ * @return true|WP_Error
+ */
+function mtl_restore_flush( &$batch ) {
+	global $wpdb;
+
+	if ( ! $batch['rows'] ) {
+		return true;
+	}
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- each value was escaped with esc_sql() as the batch was built, and the table and column names were checked against this site's own tables.
+	if ( false === $wpdb->query( $batch['head'] . implode( ",\n", $batch['rows'] ) ) ) {
+		return new WP_Error( 'mtl_restore_db', 'The database refused a row for the ' . $batch['table'] . ' table (' . $wpdb->last_error . '), so every change was undone.' );
+	}
+	$batch['rows']  = array();
+	$batch['bytes'] = 0;
+	return true;
+}
+
+/**
+ * Replaces the rows of every My Tool Library table with those in a .sql
+ * dump from Export Data.
+ *
+ * The rows go into this site's tables as they stand, and the CREATE TABLE
+ * statements in the file are skipped. A backup taken before a plugin update
+ * would otherwise bring back an older table shape, and
+ * mtl_maybe_upgrade_schema() would never revisit it, because mtl_db_version
+ * already says the tables are current. Columns added since the backup take
+ * their defaults, just as they did when the upgrade added them.
+ *
+ * It runs in two passes. The first reads the whole file and changes
+ * nothing, so a wrong, damaged or incomplete file is turned away with the
+ * library untouched. The second empties the tables and loads the rows in one
+ * transaction, so a row the database refuses rolls the whole restore back.
+ * (The tables are InnoDB, which their foreign keys already depend on.)
+ *
+ * Emptying is DELETE, not TRUNCATE or DROP. Those would reset the
+ * AUTO_INCREMENT counters, and the next new member could then be given the ID
+ * of someone who joined after the backup and whose WordPress sign-in still
+ * points at that number.
+ *
+ * @param string $sql Contents of the uploaded file.
+ * @return array|WP_Error array( 'rows' => rows loaded per bare table name,
+ *                        'created' => whether the tables had to be created first ).
+ */
+function mtl_restore_from_sql( $sql ) {
+	global $wpdb;
+	$prefix = $wpdb->prefix;
+	$tables = mtl_export_table_names();
+
+	// A byte-order mark, left by a text editor that re-saved the file.
+	if ( "\xEF\xBB\xBF" === substr( $sql, 0, 3 ) ) {
+		$sql = substr( $sql, 3 );
+	}
+
+	if ( 0 !== strpos( $sql, '-- My Tool Library data export' ) ) {
+		return new WP_Error( 'mtl_restore_not_export', 'That file is not a .sql dump from Export Data. Only those can be restored here.' );
+	}
+	$header = substr( $sql, 0, 2048 );
+	if ( ! preg_match( '/^-- Table names keep the WordPress "([A-Za-z0-9_]*)" prefix/m', $header, $match ) ) {
+		return new WP_Error( 'mtl_restore_not_export', 'That file is missing part of the header Export Data writes, so it can\'t be restored.' );
+	}
+	$src_prefix = $match[1];
+
+	// Exports made before version 9 have no version line, and are older
+	// than this site by definition.
+	if ( preg_match( '/^-- Database version: ([0-9]+)/m', $header, $match ) && (int) $match[1] > MTL_DB_VERSION ) {
+		return new WP_Error( 'mtl_restore_newer', 'That backup was made by a newer version of My Tool Library. Update the plugin on this site, then restore.' );
+	}
+
+	// Exports made before this was fixed wrote every % in the data as wpdb's
+	// placeholder escape: "{", 64 hex digits, "}", the same token throughout
+	// one file (see mtl_export_as_sql()). Turn it back into %. Nothing a
+	// library stores contains that token by chance.
+	if ( preg_match( '/\{[0-9a-f]{64}\}/', $sql, $match ) ) {
+		$sql = str_replace( $match[0], '%', $sql );
+	}
+
+	// A new site with no tables yet gets them built, since there is nothing
+	// there to lose. Only some missing means something has gone wrong that a
+	// person should look at, and Database Setup is the deliberate way to
+	// rebuild them.
+	$missing = array();
+	foreach ( $tables as $bare ) {
+		if ( ! $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $prefix . $bare ) ) ) ) {
+			$missing[] = $bare;
+		}
+	}
+	$created = false;
+	if ( count( $missing ) === count( $tables ) ) {
+		$schema = mtl_run_schema_sql();
+		if ( is_wp_error( $schema ) || $schema['failed'] ) {
+			return new WP_Error( 'mtl_restore_tables', 'This site has no My Tool Library tables yet, and creating them failed. Run Database Setup below to see why.' );
+		}
+		$created = true;
+	} elseif ( $missing ) {
+		return new WP_Error( 'mtl_restore_tables', 'Some of the plugin\'s tables are missing (' . implode( ', ', $missing ) . '). Run Database Setup below to rebuild them, then restore.' );
+	}
+
+	// $prefix . $bare is a trusted prefix plus a hardcoded name from
+	// mtl_export_table_names(), as in the export.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	$columns = array();
+	foreach ( $tables as $bare ) {
+		$columns[ $bare ] = array_flip( $wpdb->get_col( "SHOW COLUMNS FROM `{$prefix}{$bare}`" ) );
+	}
+
+	// Pass 1: read everything, change nothing.
+	$counts  = array_fill_keys( $tables, 0 );
+	$checked = mtl_restore_walk(
+		$sql,
+		$src_prefix,
+		function ( $bare, $names, $rows, $at ) use ( $sql, $columns, &$counts ) {
+			foreach ( $names as $name ) {
+				if ( ! isset( $columns[ $bare ][ $name ] ) ) {
+					return mtl_restore_error_at( $sql, $at, 'the ' . $bare . ' table in the backup has a "' . $name . '" column that this site\'s doesn\'t. Update the plugin on this site, then restore.' );
+				}
+			}
+			if ( count( array_unique( $names ) ) !== count( $names ) ) {
+				return mtl_restore_error_at( $sql, $at, 'a column is listed twice.' );
+			}
+			$counts[ $bare ] += count( $rows );
+			return true;
+		}
+	);
+	if ( is_wp_error( $checked ) ) {
+		return $checked;
+	}
+
+	// Pass 2: empty the tables and load the rows, all or nothing. A large
+	// library can take longer than the default time limit, and a request cut
+	// off part-way would leave the transaction to roll back.
+	if ( function_exists( 'set_time_limit' ) ) {
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.runtime_configuration_set_time_limit -- see above.
+		set_time_limit( 0 );
+	}
+	// A refused row comes back in the restore's own notice. Left to wpdb, with
+	// WP_DEBUG on it would also print the failed query, up to half a megabyte
+	// of members' details, into the page and the error log.
+	$suppressed = $wpdb->suppress_errors( true );
+	$wpdb->query( 'SET FOREIGN_KEY_CHECKS = 0' );
+	$wpdb->query( 'START TRANSACTION' );
+
+	$result = true;
+	foreach ( array_reverse( $tables ) as $bare ) {
+		if ( false === $wpdb->query( "DELETE FROM `{$prefix}{$bare}`" ) ) {
+			$result = new WP_Error( 'mtl_restore_db', 'Emptying the ' . $bare . ' table failed (' . $wpdb->last_error . '), so every change was undone.' );
+			break;
+		}
+	}
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	if ( true === $result ) {
+		$batch  = array(
+			'head'  => '',
+			'table' => '',
+			'rows'  => array(),
+			'bytes' => 0,
+		);
+		$result = mtl_restore_walk(
+			$sql,
+			$src_prefix,
+			function ( $bare, $names, $rows ) use ( $prefix, $columns, &$batch ) {
+				// Checked again rather than trusted from pass 1, because these
+				// names go into the query.
+				foreach ( $names as $name ) {
+					if ( ! isset( $columns[ $bare ][ $name ] ) ) {
+						return new WP_Error( 'mtl_restore_column', 'The ' . $bare . ' table in the backup has a column this site\'s doesn\'t.' );
+					}
+				}
+				$head = "INSERT INTO `{$prefix}{$bare}` (`" . implode( '`, `', $names ) . '`) VALUES ';
+				if ( $head !== $batch['head'] ) {
+					$sent = mtl_restore_flush( $batch );
+					if ( is_wp_error( $sent ) ) {
+						return $sent;
+					}
+					$batch['head']  = $head;
+					$batch['table'] = $bare;
+				}
+				foreach ( $rows as $row ) {
+					$values = array();
+					foreach ( $row as $value ) {
+						$values[] = null === $value ? 'NULL' : "'" . esc_sql( $value ) . "'";
+					}
+					$tuple           = '(' . implode( ', ', $values ) . ')';
+					$batch['rows'][] = $tuple;
+					$batch['bytes'] += strlen( $tuple );
+					// Comfortably under the 1 MB max_allowed_packet of the
+					// oldest MySQL and MariaDB servers still in use.
+					if ( $batch['bytes'] >= 512 * 1024 ) {
+						$sent = mtl_restore_flush( $batch );
+						if ( is_wp_error( $sent ) ) {
+							return $sent;
+						}
+					}
+				}
+				return true;
+			}
+		);
+		if ( true === $result ) {
+			$result = mtl_restore_flush( $batch );
+		}
+	}
+
+	if ( true === $result && false === $wpdb->query( 'COMMIT' ) ) {
+		$result = new WP_Error( 'mtl_restore_db', 'The database could not save the restore (' . $wpdb->last_error . '), so every change was undone.' );
+	}
+	if ( true !== $result ) {
+		$wpdb->query( 'ROLLBACK' );
+	}
+	$wpdb->query( 'SET FOREIGN_KEY_CHECKS = 1' );
+	$wpdb->suppress_errors( $suppressed );
+
+	if ( true !== $result ) {
+		return $result;
+	}
+
+	mtl_agreements_flush_cache();
+	return array(
+		'rows'    => $counts,
+		'created' => $created,
+	);
 }
 
 /**
@@ -1463,63 +2321,168 @@ function mtl_render_setup_page() {
 				? trim( sanitize_text_field( wp_unslash( $_POST['mtl_reset_confirmation'] ) ) )
 				: '';
 
-			$sql_file_path = MTL_PLUGIN_DIR . 'admin/schema.sql';
 			if ( mtl_db_reset_confirmation_phrase() !== $mtl_typed_phrase ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Nothing was deleted.</strong> A database reset only runs when the phrase &ldquo;<code>' . esc_html( mtl_db_reset_confirmation_phrase() ) . '</code>&rdquo; is typed exactly as shown. Your data is unchanged.</p></div>';
-			} elseif ( file_exists( $sql_file_path ) ) {
-				$sql_contents = file_get_contents( $sql_file_path );
-
-				// Swap the {{prefix}} placeholder for the site's real table
-				// prefix (e.g. "wp_", or "wp_2_" on multisite) so the tables
-				// follow WordPress naming conventions.
-				$sql_contents = str_replace( '{{prefix}}', $wpdb->prefix, $sql_contents );
-
-				// Strip full-line SQL comments before splitting on
-				// semicolons. A comment line sitting directly above a
-				// statement (no semicolon between them) would otherwise be
-				// bundled into the same chunk once the file is exploded on
-				// ";", and a naive "starts with --" filter would then skip
-				// the whole chunk, including the real SQL. Inline trailing
-				// comments (e.g. "-- 'Y' or 'N'") are left alone since MySQL parses those natively.
-				$lines        = explode( "\n", $sql_contents );
-				$lines        = array_filter(
-					$lines,
-					function ( $line ) {
-						return 0 !== strpos( trim( $line ), '--' );
-					}
-				);
-				$sql_contents = implode( "\n", $lines );
-
-				$queries = array_filter( array_map( 'trim', explode( ';', $sql_contents ) ) );
-
-				$success_count = 0;
-				$error_count   = 0;
-
-				foreach ( $queries as $query ) {
-					if ( empty( $query ) ) {
-						continue;
-					}
-					// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- runs the plugin's own bundled admin/schema.sql, not user input.
-					$result = $wpdb->query( $query );
-					if ( false === $result ) {
-						++$error_count;
-						echo '<div style="background: #ffebe8; border: 1px solid #cc0000; padding: 10px; margin: 5px 0;">';
-						echo '<strong>Failed Query:</strong> ' . esc_html( $query ) . '<br>';
-						echo '<strong>DB Error:</strong> ' . esc_html( $wpdb->last_error );
-						echo '</div>';
-					} else {
-						++$success_count;
-					}
-				}
-
-				if ( 0 === $error_count ) {
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Database Setup Complete:</strong> Successfully reset tables and executed ' . intval( $success_count ) . ' queries.</p></div>';
-				} else {
-					echo '<div class="notice notice-warning is-dismissible"><p><strong>Database Setup Finished with Errors:</strong> ' . intval( $success_count ) . ' queries succeeded, but ' . intval( $error_count ) . ' encountered errors.</p></div>';
-				}
 			} else {
-				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Could not find <code>schema.sql</code>.</p></div>';
+				$schema = mtl_run_schema_sql();
+				if ( is_wp_error( $schema ) ) {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Could not find <code>schema.sql</code>.</p></div>';
+				} else {
+					foreach ( $schema['failed'] as $failure ) {
+						echo '<div style="background: #ffebe8; border: 1px solid #cc0000; padding: 10px; margin: 5px 0;">';
+						echo '<strong>Failed Query:</strong> ' . esc_html( $failure[0] ) . '<br>';
+						echo '<strong>DB Error:</strong> ' . esc_html( $failure[1] );
+						echo '</div>';
+					}
+
+					if ( ! $schema['failed'] ) {
+						echo '<div class="notice notice-success is-dismissible"><p><strong>Database Setup Complete:</strong> Successfully reset tables and executed ' . intval( $schema['ok'] ) . ' queries.</p></div>';
+					} else {
+						echo '<div class="notice notice-warning is-dismissible"><p><strong>Database Setup Finished with Errors:</strong> ' . intval( $schema['ok'] ) . ' queries succeeded, but ' . count( $schema['failed'] ) . ' encountered errors.</p></div>';
+					}
+				}
 			}
+		}
+	}
+
+	// ==========================================
+	// 4B. HANDLE RESTORE FROM BACKUP
+	// ==========================================
+	// A file bigger than post_max_size never arrives: PHP discards the whole
+	// request body, so $_POST is empty and no handler on this page sees a
+	// submission. The restore upload is the only form here that can send that
+	// much, so without this check its button would seem to do nothing.
+	// phpcs:ignore WordPress.Security.NonceVerification.Missing -- only checks whether anything arrived, to explain a discarded upload; nothing is acted on.
+	if ( isset( $_SERVER['REQUEST_METHOD'], $_SERVER['CONTENT_LENGTH'] ) && 'POST' === $_SERVER['REQUEST_METHOD'] && empty( $_POST ) && empty( $_FILES ) && (int) $_SERVER['CONTENT_LENGTH'] > 0 ) {
+		echo '<div class="notice notice-error is-dismissible"><p><strong>Nothing was restored.</strong> The file is larger than this server accepts (' . esc_html( size_format( wp_max_upload_size() ) ) . '). Your data is unchanged.</p></div>';
+	}
+
+	if ( isset( $_POST['mtl_restore_sql'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_restore_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_restore_nonce'] ) ), 'mtl_restore_action' ) ) {
+			// Typed-phrase confirmation, checked here as well as in the
+			// dialog for the same reason as the database reset's above.
+			$mtl_typed_phrase = isset( $_POST['mtl_restore_confirmation'] )
+				? trim( sanitize_text_field( wp_unslash( $_POST['mtl_restore_confirmation'] ) ) )
+				: '';
+
+			// $_FILES as in the CSV importers: 'error' is an integer PHP sets
+			// itself, 'name' is sanitized, and 'tmp_name' is taken RAW, since
+			// wp_unslash() strips the separators from a Windows temp path.
+			// is_uploaded_file() below is what proves it.
+			$restore_error = isset( $_FILES['mtl_restore_file']['error'] ) ? (int) $_FILES['mtl_restore_file']['error'] : UPLOAD_ERR_NO_FILE;
+			$restore_name  = isset( $_FILES['mtl_restore_file']['name'] ) ? sanitize_file_name( wp_unslash( $_FILES['mtl_restore_file']['name'] ) ) : '';
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- a filesystem path, validated by is_uploaded_file() below; sanitizing corrupts it on Windows.
+			$restore_tmp = isset( $_FILES['mtl_restore_file']['tmp_name'] ) ? $_FILES['mtl_restore_file']['tmp_name'] : '';
+
+			// An automatic backup picked from the list instead of an upload.
+			$restore_backup = isset( $_POST['mtl_restore_backup'] ) ? absint( $_POST['mtl_restore_backup'] ) : 0;
+			// Only needed for an encrypted backup this site can't open with its
+			// own key. mtl_backup_decode() picks the hex digits out of it.
+			$restore_key = isset( $_POST['mtl_restore_key'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_restore_key'] ) ) : '';
+
+			$restore_refused = '';
+			$restore_data    = '';
+			if ( mtl_db_restore_confirmation_phrase() !== $mtl_typed_phrase ) {
+				$restore_refused = 'A restore only runs when the phrase "' . mtl_db_restore_confirmation_phrase() . '" is typed exactly as shown.';
+			} elseif ( $restore_backup > 0 ) {
+				// Already on the server, so no upload and no upload limit.
+				$backup_path = mtl_is_backup( $restore_backup ) ? (string) get_attached_file( $restore_backup ) : '';
+				if ( '' === $backup_path || ! is_readable( $backup_path ) ) {
+					$restore_refused = 'That backup is no longer in the Media Library.';
+				} else {
+					$restore_name = basename( $backup_path );
+					$restore_data = (string) file_get_contents( $backup_path );
+				}
+			} elseif ( UPLOAD_ERR_NO_FILE === $restore_error ) {
+				$restore_refused = 'Choose a file to upload, or one of the automatic backups.';
+			} elseif ( UPLOAD_ERR_INI_SIZE === $restore_error || UPLOAD_ERR_FORM_SIZE === $restore_error ) {
+				$restore_refused = 'The file is larger than this server accepts (' . size_format( wp_max_upload_size() ) . ').';
+			} elseif ( UPLOAD_ERR_OK !== $restore_error || ! is_uploaded_file( $restore_tmp ) ) {
+				$restore_refused = 'The file failed to upload. Please try again.';
+			} elseif ( ! in_array( strtolower( pathinfo( $restore_name, PATHINFO_EXTENSION ) ), array( 'sql', 'enc' ), true ) ) {
+				$restore_refused = 'Choose a .sql dump from Export Data, or an automatic backup (.sql.enc). The .zip of CSVs can\'t be restored.';
+			} else {
+				$restore_data = (string) file_get_contents( $restore_tmp );
+			}
+
+			if ( '' === $restore_refused ) {
+				// Decrypts an automatic backup; a plain .sql dump passes through.
+				$restore_sql = mtl_backup_decode( $restore_data, $restore_key );
+				unset( $restore_data );
+				$restored = is_wp_error( $restore_sql ) ? $restore_sql : mtl_restore_from_sql( $restore_sql );
+				if ( is_wp_error( $restored ) ) {
+					$restore_refused = $restored->get_error_message();
+				}
+			}
+
+			if ( '' !== $restore_refused ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Nothing was restored.</strong> ' . esc_html( $restore_refused ) . ' Your data is unchanged.</p></div>';
+			} else {
+				$rows   = $restored['rows'];
+				$plural = function ( $count, $one, $many ) {
+					return number_format_i18n( $count ) . ' ' . ( 1 === $count ? $one : $many );
+				};
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Restore complete.</strong> Loaded '
+					. esc_html( $plural( array_sum( $rows ), 'record', 'records' ) ) . ' from <code>' . esc_html( $restore_name ) . '</code>, including '
+					. esc_html( $plural( $rows['members'], 'member', 'members' ) ) . ', '
+					. esc_html( $plural( $rows['tool_inventory'], 'tool', 'tools' ) ) . ', '
+					. esc_html( $plural( $rows['loans'], 'loan', 'loans' ) ) . ' and '
+					. esc_html( $plural( $rows['tool_reservations'], 'reservation', 'reservations' ) ) . '.'
+					. ( $restored['created'] ? ' This site had no My Tool Library tables yet, so they were created first.' : '' )
+					. ' Anything added after the backup was made is no longer on file.</p></div>';
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	// ==========================================
+	// 4C. HANDLE AUTOMATIC BACKUP SETTINGS
+	// ==========================================
+	// Own form and nonce, like the Home Page Link, so saving these can never
+	// touch the General Details settings or the other way round.
+	if ( isset( $_POST['mtl_save_backup_settings'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_backup_settings_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_backup_settings_nonce'] ) ), 'mtl_backup_settings_action' ) ) {
+			// Out-of-range numbers fall back to the defaults rather than being
+			// clamped to a value nobody chose, as the hold period does.
+			$posted_days = isset( $_POST['mtl_backup_interval_days'] ) ? (int) $_POST['mtl_backup_interval_days'] : 7;
+			$posted_keep = isset( $_POST['mtl_backup_keep'] ) ? (int) $_POST['mtl_backup_keep'] : 10;
+			update_option( 'mtl_backup_enabled', isset( $_POST['mtl_backup_enabled'] ) ? '1' : '' );
+			update_option( 'mtl_backup_interval_days', ( $posted_days >= 1 && $posted_days <= 90 ) ? $posted_days : 7 );
+			update_option( 'mtl_backup_keep', ( $posted_keep >= 1 && $posted_keep <= 100 ) ? $posted_keep : 10 );
+
+			$backup_settings = mtl_backup_settings();
+			if ( $backup_settings['enabled'] ) {
+				// Made now rather than at the first backup, so the key is on
+				// screen to be saved before anything depends on it.
+				mtl_backup_key();
+			}
+			mtl_backup_reschedule();
+
+			$next_backup = wp_next_scheduled( 'mtl_auto_backup' );
+			if ( $backup_settings['enabled'] && $next_backup ) {
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Automatic backups are on.</strong> Every ' . intval( $backup_settings['days'] ) . ' day' . ( 1 === $backup_settings['days'] ? '' : 's' ) . ', keeping the latest ' . intval( $backup_settings['keep'] ) . '. The next one is due around ' . esc_html( wp_date( 'M j, Y g:i a', $next_backup ) ) . '. Save the backup key below if you haven&rsquo;t already.</p></div>';
+			} elseif ( $backup_settings['enabled'] ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The settings were saved, but WordPress would not schedule the backup. Try saving again.</p></div>';
+			} else {
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Automatic backups are off.</strong> Backups already in the Media Library stay there.</p></div>';
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
+	if ( isset( $_POST['mtl_backup_now'] ) && mtl_can_manage_settings() ) {
+		if ( isset( $_POST['mtl_backup_now_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_backup_now_nonce'] ) ), 'mtl_backup_now_action' ) ) {
+			$made = mtl_backup_run( 'manual' );
+			if ( is_wp_error( $made ) ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>No backup was made.</strong> ' . esc_html( $made->get_error_message() ) . '</p></div>';
+			} else {
+				$made_path = (string) get_attached_file( $made );
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Backup saved</strong> to the Media Library as <code>' . esc_html( basename( $made_path ) ) . '</code> (' . esc_html( size_format( (int) filesize( $made_path ) ) ) . ').</p></div>';
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
 		}
 	}
 
@@ -2806,25 +3769,26 @@ function mtl_render_setup_page() {
 
 	</div>
 
-	<!-- Band 3: Export Data, full width. Directly above Database
-		Configuration on purpose, because taking a backup is the step that makes
-		a reset recoverable, so an admin heading for the reset button has
-		to pass it first. -->
+	<!-- Bands 3 and 4: Export Data and Automatic Backups, full width.
+		Directly above Restore from Backup and Database Configuration on
+		purpose, because taking a backup is the step that makes either
+		recoverable, so an admin heading for those buttons has to pass it
+		first. -->
 	<div class="mtl-setup-row">
 
 		<!-- Export Data -->
 		<div class="mtl-setup-tile mtl-setup-tile-full">
 			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Export Data</h3>
 
-			<p>Download a complete copy of all My Tool Library data: members, verifications, inventory, categories, tags, loans and reservations.</p>
+			<p>Download a complete copy of all My Tool Library data: members, verifications, trainings, agreement records, inventory, categories, tags, loans and reservations.</p>
 
 			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
-				<li><strong>.sql dump</strong>: a single SQL file (DROP + CREATE + INSERT) you can import into any MySQL/MariaDB database. Table names <strong>keep</strong> the <code><?php echo esc_html( $wpdb->prefix ); ?></code> prefix (e.g. <code><?php echo esc_html( $wpdb->prefix ); ?>members</code>), matching how the plugin creates them. <strong>This is the one to keep as a backup:</strong> it preserves every record&rsquo;s ID, so restoring it puts members, loans, reservations and members&rsquo; online sign-ins back exactly as they were.</li>
+				<li><strong>.sql dump</strong>: a single SQL file (DROP + CREATE + INSERT) you can import into any MySQL/MariaDB database. Table names <strong>keep</strong> the <code><?php echo esc_html( $wpdb->prefix ); ?></code> prefix (e.g. <code><?php echo esc_html( $wpdb->prefix ); ?>members</code>), matching how the plugin creates them. <strong>This is the one to keep as a backup:</strong> it preserves every record&rsquo;s ID, so restoring it under <strong>Restore from Backup</strong> below puts members, loans, reservations and members&rsquo; online sign-ins back exactly as they were.</li>
 				<li><strong>.zip of CSVs</strong>: one <code>.csv</code> file per table, named after the table without the prefix (e.g. <code>members.csv</code>), handy for spreadsheets and for reading in Excel.</li>
 			</ul>
 
 			<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
-				<strong>A CSV export is not a backup.</strong> The Membership and Inventory bulk importers always assign new IDs, so re-importing <code>members.csv</code> after a reset creates fresh member records that no longer match members&rsquo; existing sign-ins, and there is no importer at all for loans or reservations. To restore a library, use the <strong>.sql dump</strong> with phpMyAdmin, the <code>mysql</code> command line, or <code>wp db import</code>.
+				<strong>A CSV export is not a backup.</strong> The Membership and Inventory bulk importers always assign new IDs, so re-importing <code>members.csv</code> after a reset creates fresh member records that no longer match members&rsquo; existing sign-ins, and there is no importer at all for loans or reservations. To restore a library, upload the <strong>.sql dump</strong> under <strong>Restore from Backup</strong> below.
 			</div>
 
 			<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
@@ -2841,9 +3805,174 @@ function mtl_render_setup_page() {
 		</div>
 	</div>
 
-	<!-- Band 4: Database Configuration, full width and last on the page.
-		It is the one destructive control here, so it sits furthest from the
-		settings an admin edits day to day. -->
+	<?php
+	$backup_settings = mtl_backup_settings();
+	$backup_last     = get_option( 'mtl_backup_last', array() );
+	$backup_success  = (int) get_option( 'mtl_backup_last_success', 0 );
+	$backup_next     = wp_next_scheduled( 'mtl_auto_backup' );
+	$backup_key      = mtl_backup_key( false );
+	$stored_backups  = mtl_backup_list();
+	$backup_failure  = is_array( $backup_last ) && ! empty( $backup_last['error'] ) ? $backup_last : array();
+	// A day's grace past the schedule before calling it late, because WP-Cron
+	// only runs when somebody visits the site.
+	$backup_overdue = $backup_settings['enabled'] && $backup_success > 0 && $backup_success < time() - ( $backup_settings['days'] + 1 ) * DAY_IN_SECONDS;
+	// Only worth a loopback request once there is something to protect.
+	$backup_folder_public = ( $backup_settings['enabled'] || $stored_backups ) && mtl_backup_folder_is_public();
+	$backup_folder_path   = (string) wp_parse_url( wp_upload_dir( null, false )['baseurl'], PHP_URL_PATH ) . '/mtl-backups/';
+	?>
+	<div class="mtl-setup-row">
+
+		<!-- Automatic Backups -->
+		<div class="mtl-setup-tile mtl-setup-tile-full">
+			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Automatic Backups</h3>
+
+			<p>Saves an encrypted copy of the .sql dump to the Media Library on a schedule, so there is always a recent backup even if nobody remembers to download one. Only administrators can see or download them, and <strong>Restore from Backup</strong> below can restore them directly.</p>
+
+			<form method="post" action="">
+				<?php wp_nonce_field( 'mtl_backup_settings_action', 'mtl_backup_settings_nonce' ); ?>
+				<table class="form-table" style="margin-top: 0;">
+					<tr>
+						<th scope="row">Automatic Backups</th>
+						<td>
+							<label>
+								<input type="checkbox" name="mtl_backup_enabled" id="mtl_backup_enabled" value="1" <?php checked( $backup_settings['enabled'] ); ?>>
+								Back up automatically
+							</label>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mtl_backup_interval_days">Back Up Every</label></th>
+						<td>
+							<input type="number" name="mtl_backup_interval_days" id="mtl_backup_interval_days" min="1" max="90" step="1" value="<?php echo esc_attr( $backup_settings['days'] ); ?>" style="width: 90px;">
+							<span style="margin-left: 4px;">days</span>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Runs around 3 a.m. site time, as soon as someone visits the site after that.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mtl_backup_keep">Backups to Keep</label></th>
+						<td>
+							<input type="number" name="mtl_backup_keep" id="mtl_backup_keep" min="1" max="100" step="1" value="<?php echo esc_attr( $backup_settings['keep'] ); ?>" style="width: 90px;">
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">The oldest is deleted each time a new one is made.</p>
+						</td>
+					</tr>
+				</table>
+				<p class="submit" style="margin: 0 0 20px 0; padding: 0;">
+					<button type="submit" name="mtl_save_backup_settings" class="button button-primary">Save Backup Settings</button>
+				</p>
+			</form>
+
+			<div style="background: #f6f7f7; border-left: 4px solid #8c8f94; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
+				<p style="margin: 0 0 4px 0;"><strong>Last backup:</strong> <?php echo $backup_success ? esc_html( wp_date( 'M j, Y g:i a', $backup_success ) ) : 'none yet'; ?></p>
+				<?php if ( $backup_settings['enabled'] && $backup_next ) : ?>
+					<p style="margin: 0 0 4px 0;"><strong>Next backup:</strong> around <?php echo esc_html( wp_date( 'M j, Y g:i a', $backup_next ) ); ?></p>
+				<?php endif; ?>
+				<p style="margin: 0;"><strong>Stored in the Media Library:</strong> <?php echo intval( count( $stored_backups ) ); ?></p>
+			</div>
+
+			<?php if ( $backup_failure ) : ?>
+				<div style="background: #fdf2f2; border-left: 4px solid #d63638; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
+					<strong>The last backup attempt failed</strong> (<?php echo esc_html( wp_date( 'M j, Y g:i a', (int) $backup_last['time'] ) ); ?>): <?php echo esc_html( $backup_last['error'] ); ?>
+				</div>
+			<?php endif; ?>
+
+			<?php if ( $backup_overdue ) : ?>
+				<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
+					<strong>The last automatic backup is overdue.</strong> WordPress only runs scheduled tasks when someone visits the site, so a quiet site can fall behind. Use <strong>Back up now</strong>, and ask your host to run <code>wp-cron.php</code> on a schedule if this keeps happening.
+				</div>
+			<?php endif; ?>
+
+			<?php if ( $backup_folder_public ) : ?>
+				<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
+					<p style="margin: 0 0 8px 0;"><strong>This server will hand out a backup to anyone who has its exact address.</strong> The backups are encrypted and their names can&rsquo;t be guessed, so they stay unreadable, but for the strongest protection ask your host to block the folder. On nginx, the rule is:</p>
+					<p style="margin: 0;"><code>location ^~ <?php echo esc_html( $backup_folder_path ); ?> { deny all; }</code></p>
+				</div>
+			<?php endif; ?>
+
+			<?php if ( $backup_settings['enabled'] && defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) : ?>
+				<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
+					<strong>WordPress&rsquo;s scheduler is turned off on this site</strong> (<code>DISABLE_WP_CRON</code>), so automatic backups only run if your host calls <code>wp-cron.php</code> on a schedule. Check with them.
+				</div>
+			<?php endif; ?>
+
+			<?php if ( '' !== $backup_key ) : ?>
+				<div style="background: #fff8e5; border-left: 4px solid #dba617; padding: 12px; margin-bottom: 20px; font-size: 0.9em;">
+					<p style="margin: 0 0 8px 0;"><strong>Save your backup key somewhere safe, such as a password manager.</strong> Automatic backups are encrypted with it. This site opens them on its own, but if its database is ever lost, the backups can&rsquo;t be opened without this key, and nobody can recover it for you.</p>
+					<details>
+						<summary style="cursor: pointer;">Show backup key</summary>
+						<p style="margin: 8px 0 0 0; display: flex; gap: 8px; flex-wrap: wrap;">
+							<input type="text" readonly id="mtl-backup-key" class="code" style="width: 100%; max-width: 640px;" value="<?php echo esc_attr( mtl_backup_key_display( $backup_key ) ); ?>" onfocus="this.select();">
+							<button type="button" class="button" id="mtl-backup-key-copy">Copy</button>
+						</p>
+					</details>
+				</div>
+			<?php endif; ?>
+
+			<form method="post" action="">
+				<?php wp_nonce_field( 'mtl_backup_now_action', 'mtl_backup_now_nonce' ); ?>
+				<p class="submit" style="margin: 0; padding: 0;">
+					<button type="submit" name="mtl_backup_now" class="button button-secondary">Back up now</button>
+				</p>
+			</form>
+		</div>
+	</div>
+
+	<!-- Band 5: Restore from Backup, full width. It replaces everything, so
+		it sits down here with Database Configuration, away from the settings
+		an admin edits day to day. -->
+	<div class="mtl-setup-row">
+
+		<div class="mtl-setup-tile mtl-setup-tile-full">
+			<h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; color: #d63638;">Restore from Backup</h3>
+
+			<p>Replaces all My Tool Library data with a <strong>.sql dump</strong> from Export Data or one of the automatic backups. Use it to recover from a mistake, a bad import or a lost database.</p>
+
+			<div style="background: #fdf2f2; border-left: 4px solid #d63638; padding: 12px; margin-bottom: 20px;">
+				<p style="margin: 0 0 8px 0;"><strong>Warning: everything stored now is replaced by what is in the file.</strong> Members, tools, loans and reservations added after that dump was made will be gone. Download a fresh .sql dump first if you might want today&rsquo;s data back.</p>
+				<p style="margin: 0;">The whole file is checked before anything changes, and if any of it fails to load, nothing changes at all. The settings on this page aren&rsquo;t part of the backup and stay as they are.</p>
+			</div>
+
+			<form method="post" action="" enctype="multipart/form-data" id="mtl-db-restore-form">
+				<?php wp_nonce_field( 'mtl_restore_action', 'mtl_restore_nonce' ); ?>
+				<?php
+				// Filled in by the confirmation dialog below; the server rejects the submission unless it matches exactly.
+				?>
+				<input type="hidden" name="mtl_restore_confirmation" id="mtl-db-restore-confirmation" value="">
+				<?php if ( $stored_backups ) : ?>
+					<p style="margin-bottom: 4px;"><label for="mtl-db-restore-backup"><strong>Restore from</strong></label></p>
+					<p style="margin-top: 0;">
+						<select name="mtl_restore_backup" id="mtl-db-restore-backup">
+							<option value="0">A file I upload</option>
+							<?php foreach ( $stored_backups as $stored_backup ) : ?>
+								<option value="<?php echo esc_attr( $stored_backup->ID ); ?>">Backup from<?php echo esc_html( wp_date( 'M j, Y g:i a', (int) get_post_time( 'U', true, $stored_backup ) ) ); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</p>
+				<?php endif; ?>
+				<div id="mtl-db-restore-upload">
+					<p style="margin-bottom: 4px;">
+						<input type="file" name="mtl_restore_file" id="mtl-db-restore-file" accept=".sql,.enc" required>
+					</p>
+					<p style="margin: 0 0 15px 0; font-size: 0.85em; color: #666;">A .sql dump from Export Data, or an automatic backup (.sql.enc) downloaded from the Media Library. Largest file this server accepts: <?php echo esc_html( size_format( wp_max_upload_size() ) ); ?>.</p>
+					<p style="margin: 0 0 4px 0;"><label for="mtl-db-restore-key"><strong>Backup key</strong></label> <span style="font-size: 0.85em; color: #666;">(only for an automatic backup this site can&rsquo;t open itself, such as one from another site or from before its database was lost)</span></p>
+					<p style="margin-top: 0;">
+						<input type="text" name="mtl_restore_key" id="mtl-db-restore-key" class="code" style="width: 100%; max-width: 640px;" autocomplete="off" spellcheck="false">
+					</p>
+				</div>
+				<label class="mtl-lock-toggle">
+					<input type="checkbox" required>
+					<span class="mtl-lock-slider"></span>
+					<span class="mtl-lock-label">Slide to unlock. I understand this will replace existing data</span>
+				</label>
+				<p class="submit">
+					<input type="submit" name="mtl_restore_sql" class="button button-secondary mtl-danger-btn" value="Restore from Backup">
+				</p>
+			</form>
+		</div>
+	</div>
+
+	<!-- Band 5: Database Configuration, full width and last on the page.
+		It wipes everything and puts nothing back, so it sits furthest from
+		the settings an admin edits day to day. -->
 	<div class="mtl-setup-row">
 
 		<!-- Database Setup Tool -->
@@ -2856,7 +3985,7 @@ function mtl_render_setup_page() {
 				<p style="margin: 0 0 8px 0;"><strong>Warning: this permanently deletes all My Tool Library data.</strong></p>
 				<p style="margin: 0 0 8px 0;"><code>schema.sql</code> begins by dropping every one of the plugin's tables, so running it <em>always</em> erases what is currently stored &#40;every member, verification document, training record, tool, category, tag, loan and reservation&#41; and then recreates the tables empty. This is not a conditional risk and there is no undo.</p>
 				<p style="margin: 0 0 8px 0;">Members&rsquo; <strong>WordPress sign-ins are not touched</strong> but the records those sign-ins point to are gone, so members will be told their account can&rsquo;t be matched until the data is restored. Re-importing members from CSV does <em>not</em> fix this: it assigns brand-new member IDs.</p>
-				<p style="margin: 0;">Use <strong>Export Data</strong> first if there is any chance you will need the current contents back, and restore from the <strong>.sql dump</strong>.</p>
+				<p style="margin: 0;">Use <strong>Export Data</strong> first if there is any chance you will need the current contents back, then put them back with <strong>Restore from Backup</strong>.</p>
 			</div>
 
 			<form method="post" action="" id="mtl-db-reset-form">
@@ -2877,38 +4006,109 @@ function mtl_render_setup_page() {
 
 			<script>
 				/*
-				 * Second gate on the database reset: the slide-to-unlock toggle stops
-				 * an accidental click, and this dialog stops a deliberate-but-unconsidered
-				 * one by keeping its button disabled until the admin types the phrase
-				 * out. The same phrase is re-checked server-side (see the
-				 * mtl_run_db_setup handler), so this is a usability layer rather than
-				 * the security boundary.
+				 * Second gate on the database reset and the restore: the
+				 * slide-to-unlock toggle stops an accidental click, and this dialog
+				 * stops a deliberate-but-unconsidered one by keeping its button
+				 * disabled until the admin types the phrase out. Each phrase is
+				 * re-checked server-side (see the mtl_run_db_setup and
+				 * mtl_restore_sql handlers), so this is a usability layer rather
+				 * than the security boundary.
 				 */
 				(function() {
-					var form = document.getElementById('mtl-db-reset-form');
-					if (!form) {
-						return;
-					}
-					var phrase = <?php echo wp_json_encode( mtl_db_reset_confirmation_phrase() ); ?>;
-					var field = document.getElementById('mtl-db-reset-confirmation');
-
-					form.addEventListener('submit', function(event) {
-						event.preventDefault();
-						var submitter = event.submitter || form.querySelector('[name="mtl_run_db_setup"]');
-						window.mtlDialog.confirm({
+					[
+						{
+							form: 'mtl-db-reset-form',
+							field: 'mtl-db-reset-confirmation',
+							button: 'mtl_run_db_setup',
+							phrase: <?php echo wp_json_encode( mtl_db_reset_confirmation_phrase() ); ?>,
 							title: 'Run Database Setup',
 							message: 'This permanently deletes ALL My Tool Library data: members, tools, loans, reservations and everything else.',
-							details: ['It cannot be undone.'],
-							match: phrase,
-							confirm: 'Run Database Setup',
-							danger: true
-						}).then(function(ok) {
-							if (!ok) {
-								return;
-							}
-							field.value = phrase;
-							window.mtlDialog.submit(form, submitter);
+							details: ['It cannot be undone.']
+						},
+						{
+							form: 'mtl-db-restore-form',
+							field: 'mtl-db-restore-confirmation',
+							button: 'mtl_restore_sql',
+							// The backup picked from the list, or else the file chosen.
+							subject: function() {
+								var pick = document.getElementById('mtl-db-restore-backup');
+								if (pick && pick.value !== '0') {
+									return pick.options[pick.selectedIndex].text;
+								}
+								var file = document.getElementById('mtl-db-restore-file');
+								return file && file.files.length ? file.files[0].name : 'the chosen file';
+							},
+							phrase: <?php echo wp_json_encode( mtl_db_restore_confirmation_phrase() ); ?>,
+							title: 'Restore from Backup',
+							message: 'This replaces ALL My Tool Library data with the contents of %s.',
+							details: ['Anything added after that backup was made will be gone.', 'It cannot be undone, except by restoring another backup.']
+						}
+					].forEach(function(cfg) {
+						var form = document.getElementById(cfg.form);
+						if (!form) {
+							return;
+						}
+						var field = document.getElementById(cfg.field);
+
+						form.addEventListener('submit', function(event) {
+							event.preventDefault();
+							var submitter = event.submitter || form.querySelector('[name="' + cfg.button + '"]');
+							window.mtlDialog.confirm({
+								title: cfg.title,
+								message: cfg.message,
+								subject: cfg.subject ? cfg.subject() : undefined,
+								details: cfg.details,
+								match: cfg.phrase,
+								confirm: cfg.title,
+								danger: true
+							}).then(function(ok) {
+								if (!ok) {
+									return;
+								}
+								field.value = cfg.phrase;
+								window.mtlDialog.submit(form, submitter);
+							});
 						});
+					});
+				}());
+
+				// Restore from: picking an automatic backup hides the upload
+				// fields, and stops the file being required.
+				(function() {
+					var pick = document.getElementById('mtl-db-restore-backup');
+					var upload = document.getElementById('mtl-db-restore-upload');
+					var file = document.getElementById('mtl-db-restore-file');
+					if (!pick || !upload || !file) {
+						return;
+					}
+					var sync = function() {
+						var stored = pick.value !== '0';
+						upload.style.display = stored ? 'none' : '';
+						file.required = !stored;
+					};
+					pick.addEventListener('change', sync);
+					sync();
+				}());
+
+				// Copy button beside the backup key.
+				(function() {
+					var button = document.getElementById('mtl-backup-key-copy');
+					var input = document.getElementById('mtl-backup-key');
+					if (!button || !input) {
+						return;
+					}
+					button.addEventListener('click', function() {
+						var done = function() {
+							button.textContent = 'Copied';
+						};
+						if (navigator.clipboard && window.isSecureContext) {
+							navigator.clipboard.writeText(input.value).then(done);
+						} else {
+							input.select();
+							if (document.execCommand('copy')) {
+								done();
+							}
+						}
 					});
 				}());
 			</script>

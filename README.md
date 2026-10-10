@@ -34,7 +34,8 @@ Built by the [Milwaukee Tool Library](https://mkelibrary.org) (Evan Maruszewski 
 - **Loans & Reservations:** check out, renew, return and cancel in one place, including bulk checkout by barcode
 - **Reservations** expire on their own after a hold period you set
 - **Workflows:** a staff guide inside the admin
-- **Setup:** branding, categories/tags/trainings, defaults, and full data export
+- **Setup:** branding, categories/tags/trainings, and defaults
+- **Backup and restore:** download the whole library as one `.sql` file, schedule encrypted automatic backups to the Media Library (administrators only), and restore either from Setup after a mistake or a lost database
 
 ## Requirements
 

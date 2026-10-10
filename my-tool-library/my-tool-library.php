@@ -4790,6 +4790,9 @@ require_once MTL_PLUGIN_DIR . 'admin/membership-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/loans-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/workflows-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/setup-page.php';
+// Not a page: the scheduled backup and its Media Library protections, which
+// have to be in place on every request, front end and cron included.
+require_once MTL_PLUGIN_DIR . 'admin/auto-backups.php';
 
 // Public-facing customer pages.
 require_once MTL_PLUGIN_DIR . 'public/shop-page.php';
@@ -7693,9 +7696,12 @@ function mtl_plugin_deactivate() {
 	// Drops the custom rule from the cached rewrite rules on deactivation,
 	// so a deactivated plugin doesn't leave a dangling route behind.
 	flush_rewrite_rules();
-	// Likewise unschedule the reservation sweep, so WordPress isn't left
-	// trying to fire an event whose callback no longer exists.
+	// Likewise unschedule the reservation sweep and the automatic backup, so
+	// WordPress isn't left trying to fire events whose callbacks no longer
+	// exist. The backup comes back by itself on reactivation (see
+	// mtl_backup_keep_scheduled()).
 	wp_clear_scheduled_hook( 'mtl_daily_reservation_sweep' );
+	wp_clear_scheduled_hook( 'mtl_auto_backup' );
 }
 
 add_action( 'init', 'mtl_register_rewrite_rules' );

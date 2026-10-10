@@ -62,11 +62,25 @@ $mtl_options = array(
 	'mtl_tool_request_url',
 	'mtl_verification_directions',
 	'mtl_verified_badge_image_url',
+	// Automatic backup settings and bookkeeping. NOT mtl_backup_key: the
+	// backups themselves stay in the Media Library, and without the key
+	// nobody could ever open them again.
+	'mtl_backup_enabled',
+	'mtl_backup_interval_days',
+	'mtl_backup_keep',
+	'mtl_backup_last',
+	'mtl_backup_last_success',
+	'mtl_backup_lock',
 );
 
 foreach ( $mtl_options as $mtl_option ) {
 	delete_option( $mtl_option );
 }
+delete_transient( 'mtl_backup_folder_public' );
+
+// Deactivation normally clears this already. Cleared again here in case it
+// was re-added since, because an event left behind would fire into nothing forever.
+wp_clear_scheduled_hook( 'mtl_auto_backup' );
 
 // Per-admin dashboard panel layout preference, a display setting rather than
 // business data, so (unlike mtl_member_id) it's cleaned up like the options

@@ -41,7 +41,7 @@ My Tool Library turns a WordPress site into the online home of a physical tool-l
 * Reservations expire on their own after a hold period you set, and keep a record of why each one closed.
 * Advanced search on every staff list, including a category tree, shelf location and required training.
 * Workflows: a step-by-step staff guide inside the admin.
-* Setup: branding, fonts and colors; categories, tags and trainings; loan and hold defaults; full SQL or CSV export.
+* Setup: branding, fonts and colors; categories, tags and trainings; loan and hold defaults; full SQL or CSV export, encrypted automatic backups to the Media Library, and restore from either.
 * Admin view switch: administrators can hide admin-only actions while working the desk.
 
 = Design principles =
@@ -162,7 +162,19 @@ Out of the box WordPress sends from `wordpress@your-domain.com`, a mailbox that 
 
 = Can I export my data? =
 
-Yes. The Setup page can export the plugin's full dataset as either a SQL dump (importable back into MySQL) or a ZIP of CSV files, one per table.
+Yes. The Setup page can export the plugin's full dataset as either a SQL dump or a ZIP of CSV files, one per table.
+
+= Can I restore from a backup? =
+
+Yes. Under Setup > Restore from Backup, pick one of the automatic backups stored on the site or upload a SQL dump from Export Data, and it replaces all of the plugin's data with the contents of the file, keeping every record's ID so members' sign-ins still match. The whole file is checked before anything changes, and the replacement happens all at once, so a file that is damaged, incomplete or not from Export Data leaves your data exactly as it was. It works on a new WordPress site too, creating the plugin's tables if they are missing. Settings on the Setup page and members' WordPress accounts are not part of the backup. Download a fresh dump regularly: a restore can only bring back what was in the file.
+
+= Can backups run automatically? =
+
+Yes. Under Setup > Automatic Backups, choose how often (every 1 to 90 days) and how many to keep. Each backup is the same SQL dump as Export Data, encrypted as it is written and saved to the Media Library under a name with the date, time and a random token, for example my-tool-library-backup-2026-10-17-030512-....sql.enc. Only Administrators can see or download them: they are private, hidden from Editors and the REST API, kept in their own folder that Apache servers refuse to serve, and downloaded through an administrator-only link. If the server hands out files from that folder anyway (nginx ignores .htaccess files), the Setup page says so and shows the rule to block it, which it finds out by requesting a test file from its own site once a day.
+
+The encryption key is stored in the database and shown on the Setup page. Save a copy somewhere else, such as a password manager: if the database is ever lost, the backups cannot be opened without it, and nobody can recover it. Uninstalling the plugin leaves the key in place for the same reason.
+
+Backups run through WordPress's scheduler, which only fires when someone visits the site, so on a quiet site a backup can run some hours late. Because these backups live on the same server, keep downloading a dump from Export Data now and then and store it somewhere else.
 
 = What happens when I delete a member, or a member deletes their own account? =
 
@@ -180,7 +192,7 @@ Deleting the plugin through the Plugins screen removes its own settings (brandin
 
 = Does this plugin phone home, load anything from a third-party CDN, or track my visitors? =
 
-No. There are no external network calls, no bundled third-party analytics, and no assets loaded from any CDN.
+No. There are no external network calls, no bundled third-party analytics, and no assets loaded from any CDN. The only request the plugin makes is to its own site: once a day, when automatic backups are in use, the Setup page checks whether the backup folder can be downloaded from.
 
 == Screenshots ==
 

@@ -17,6 +17,9 @@ For anything beyond a small fix, please open an issue first to discuss the chang
 - Public-facing pages must not use JavaScript. Use plain links, forms and CSS, and do any checking on the server.
 - Member passwords must always go through WordPress core (`wp_insert_user()`); never store credentials in the plugin's own tables.
 - Every PHP file should start with the `ABSPATH` guard used throughout the codebase.
+- Adding a table? Add it to `mtl_export_table_names()` in `admin/setup-page.php` (parents before children) as well as to `admin/schema.sql` and `mtl_maybe_upgrade_schema()`. Export Data and Restore from Backup only cover the tables in that list, so a table left out is silently missing from every backup. New columns need nothing extra: the export reads every column, and the restore loads older backups into the current table shape.
+- The `.sql` export and Restore from Backup share a file format. If you change what `mtl_write_sql_export()` writes, update the reader (`mtl_restore_from_sql()` and the `mtl_restore_*` helpers) to match, and check that a backup made before your change still restores.
+- Automatic backups (`admin/auto-backups.php`) wrap that same dump in encryption. Never change the encrypted layout in place: bump the version in `MTL_BACKUP_MAGIC` and keep `mtl_backup_decode()` able to read every earlier version, or libraries lose access to the backups they already have. Test on a host without the sodium extension too, where WordPress's polyfill runs instead.
 - Follow the existing code style in the file you're editing.
 - Update `readme.txt`'s Changelog section for user-facing changes.
 
