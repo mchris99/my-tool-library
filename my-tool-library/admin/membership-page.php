@@ -2105,7 +2105,7 @@ function mtl_render_membership_page() {
 	if ( 'off' !== mtl_agreements_mode() && ! mtl_agreements_tracking() ) {
 		echo '<div class="notice notice-warning is-dismissible"><p><strong>Member agreements are switched on, but no agreement is active.</strong> Nothing is tracked and nothing is shown on this page until at least one is in use';
 		if ( mtl_can_manage_settings() ) {
-			echo '. Add or un-retire one under <a href="' . esc_url( admin_url( 'admin.php?page=mtl-setup' ) ) . '">Setup &rarr; Member Agreements</a>.';
+			echo '. Add or un-retire one under <a href="' . esc_url( admin_url( 'admin.php?page=mtl-setup&mtl_open=agreements#mtl-section-agreements' ) ) . '">Setup &rarr; Member Agreements</a>.';
 		} else {
 			echo '. An administrator can add one under Setup.';
 		}

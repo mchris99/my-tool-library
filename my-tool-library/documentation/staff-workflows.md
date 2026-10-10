@@ -89,15 +89,20 @@ Do this once, when the plugin is first installed.
 
 1. Activate the plugin from the WordPress **Plugins** screen.
 2. Under **Settings > General**, set the **Timezone** to a city, not a UTC offset, so Daylight Saving is handled for you. Every loan and reservation timestamp uses it, and past timestamps can't be corrected later.
-3. Go to **My Tool Library > Setup**. Under **Database Configuration**, slide the toggle, click **Run Database Setup**, and type `Delete ALL my data` to confirm. This creates the plugin's tables, and no other page works until it's done.
+3. Go to **My Tool Library > Setup**. Under **Database Configuration**, at the bottom of the page, slide the toggle, click **Run Database Setup**, and type `Delete ALL my data` to confirm. This creates the plugin's tables, and no other page works until it's done. The section stays open, marked **Not set up yet**, until the tables exist.
 4. **Only run Database Setup once.** On a library that's already running, it wipes every member, tool, loan and reservation, with no undo. Use **Export Data** first if you're troubleshooting a live library, so you can [restore](#restoring-from-a-backup) afterwards.
-5. Fill in the rest of **Setup**:
-    - **General Details**: name, logo, colors, fonts, button style, and an optional **Verified Badge Image URL** that replaces the green "Verified" pill on a verified member's account page. The giving and tool-request fields are here too (see [Asking members to give](#asking-members-to-give) and [Letting people request tools](#letting-people-request-tools)).
-    - **Reservations & Loans**: the default loan length, the [Reservation Hold Period](#reservation-hold-period) (14 days by default), and whether members see a tool's [shelf location](#shelf-location).
-    - **Categories & Tags**: what staff pick from when adding tools, such as Woodworking or Cordless.
-    - **Member Trainings**: the trainings you offer. See [Trainings and certifications](#trainings-and-certifications).
-    - **Member Agreements**: waivers and other statements members must agree to. **Set this up before anyone joins**, since adding it later means extra work for staff and members. See [Member agreements](#member-agreements).
-    - **Automatic Backups**: turn them on and save the backup key somewhere safe. See [Automatic backups](#automatic-backups).
+5. Fill in the rest of **Setup**. Its sections are in three groups. **Lists** and **Export Data** start open. The rest start closed because they're set once or replace data, so click a section's title to open it. Each section has its own Save button and saves only its own fields.
+    - **Lists**
+        - **Categories & Tags**: what staff pick from when adding tools, such as Woodworking or Cordless.
+        - **Member Trainings**: the trainings you offer. See [Trainings and certifications](#trainings-and-certifications).
+    - **Library Settings**
+        - **Organization**: your library's name, public contact email, currency symbol, and the **Home Page Link** the public pages' **Home** button goes to.
+        - **Appearance**: logo, colors, fonts, button style, and an optional **Verified Badge Image URL** that replaces the green "Verified" pill on a verified member's account page.
+        - **Member Page Messages**: pickup and verification directions, plus the [giving](#asking-members-to-give) and [tool-request](#letting-people-request-tools) fields.
+        - **Reservations & Loans**: the default loan length, the [Reservation Hold Period](#reservation-hold-period) (14 days by default), and whether members see a tool's [shelf location](#shelf-location).
+        - **Member Agreements**: waivers and other statements members must agree to. **Set this up before anyone joins**, since adding it later means extra work for staff and members. See [Member agreements](#member-agreements).
+    - **Data & Backups**
+        - **Automatic Backups**: turn them on and save the backup key somewhere safe. See [Automatic backups](#automatic-backups).
 6. Set up outgoing email with an SMTP plugin such as WP Mail SMTP, Post SMTP or FluentSMTP. Members don't get any email without it. Use a from address on your own domain, and add SPF and DKIM records for the mail service you chose.
 7. Copy the **Public Page Link** from Setup into your site's menu or onto a button. It's the one link your community needs to browse, reserve and sign up.
 8. Load your tools and members, one at a time or by [bulk import](#bulk-importing-tools-and-members).
@@ -269,7 +274,7 @@ To remove a document, clear its field and save. Clearing one makes the member un
 
 If a member changes their name, phone or address on their own Account page, any scan on file is removed, since it shows the old details, and a verified member loses verified status. Verified members are warned before they save. The site administrator is emailed the scan links so the files can be deleted. Staff edits on Membership don't reset anything.
 
-> **Note:** If your library doesn't need verification, an administrator can put any URL in both fields to mark someone verified. You can also tell members it isn't needed under **Setup > Member Verification Directions**.
+> **Note:** If your library doesn't need verification, an administrator can put any URL in both fields to mark someone verified. You can also tell members it isn't needed under **Setup > Member Page Messages > Member Verification Directions**.
 
 ### Profile photos
 
@@ -528,7 +533,7 @@ The **Member Rental Leaderboard** and **Donor Leaderboard** each have a dropdown
 
 ### Asking members to give
 
-Three optional fields on **Setup > General Details** add a **Consider Giving** box for signed-in members. It shows on their **Account** page and on **My Loans & Reservations**.
+Three optional fields under **Setup > Member Page Messages > Consider Giving** add a **Consider Giving** box for signed-in members. It shows on their **Account** page and on **My Loans & Reservations**.
 
 - **Consider Giving Message:** your request for support. Clear it to remove the whole box.
 - **Consider Giving Link:** where **Give Now** goes, such as your donation page.
@@ -538,7 +543,7 @@ Leave a link blank to hide its button. Links must start with `http://` or `https
 
 ### Letting people request tools
 
-When a catalog search finds nothing, it shows **0 tools found** and suggests changing the search. Two optional fields on **Setup > General Details** add an invitation to request the tool underneath. The same message and button appear in a **Can't Find a Tool?** box on members' **Account** page.
+When a catalog search finds nothing, it shows **0 tools found** and suggests changing the search. Two optional fields under **Setup > Member Page Messages > Request a Tool** add an invitation to request the tool underneath. The same message and button appear in a **Can't Find a Tool?** box on members' **Account** page.
 
 - **Tool Request Message:** comes with a sample you can edit. Clear it to hide the message.
 - **Tool Request Link:** where **Request a Tool** goes, usually a form. Leave it blank to hide the button.
@@ -547,7 +552,7 @@ Clearing both removes the Account page box. The link must start with `http://` o
 
 ### Branding
 
-**Setup > General Details** sets the logo, colors, fonts, button style and corner radius for both the staff pages and the public pages. By default they match your site's theme.
+**Setup > Appearance** sets the logo, colors, fonts, button style and corner radius for both the staff pages and the public pages. By default they match your site's theme.
 
 [Back to contents](#contents)
 
