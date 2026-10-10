@@ -42,6 +42,7 @@ My Tool Library turns a WordPress site into the online home of a physical tool-l
 * Advanced search on every staff list, including a category tree, shelf location and required training.
 * Workflows: a step-by-step staff guide inside the admin.
 * Setup: branding, fonts and colors; categories, tags and trainings; loan and hold defaults; full SQL or CSV export, encrypted automatic backups to the Media Library, and restore from either.
+* Go Live: set the library up behind a Coming soon page, optionally with the catalog open to browse, then open sign-up, sign-in and reservations at once. A launch checklist flags anything worth fixing first.
 * Admin view switch: administrators can hide admin-only actions while working the desk.
 
 = Design principles =
@@ -79,8 +80,9 @@ This plugin is built around a specific, deliberately simple operating model. Bef
 3. Go to My Tool Library > Setup and click Run Database Setup to create the plugin's database tables. This step is required before any other page will work correctly.
 4. Confirm your site's timezone is correct under Settings > General > Timezone. The plugin timestamps reservations and loans using this setting; left at the default (UTC), timestamps will not match your local time.
 5. Still on the Setup page, fill in your organization's name, logo, and colors, and set the Home Page Link and any pickup/verification directions you want members to see.
-6. Copy the Public Page Link shown on the Setup page and add it to your site's navigation menu (or link to it from any page or post); this is the one link your customers need to reach the tool catalog.
+6. Copy the Public Page Link shown on the Setup page and add it to your site's navigation menu (or link to it from any page or post); this is the one link your customers need to reach the tool catalog. Until you go live (step 8), it shows a Coming soon page.
 7. Add your tool categories and tags (Setup page), then add tools (My Tool Library > Inventory) and members (My Tool Library > Membership). Inventory and members can be added one at a time, or via CSV bulk import on either page.
+8. When you're ready to open, turn on Go Live at the top of the Setup page, then send setup emails from Membership > Member Logins. Until then, customers see a Coming soon page and member accounts can't sign in, while staff use everything as normal. See "Why does my library say Coming soon?" in the FAQ.
 
 = Permalinks =
 
@@ -124,6 +126,20 @@ After a CSV import, use the Member Logins panel instead of going row by row: Cre
 
 A member can also sort this out themselves without staff help. "Lost your password?" creates the account if it is missing and emails them a link.
 
+= Why does my library say Coming soon? =
+
+Because it isn't live yet. A new install starts closed to the public, so you can set up, load tools and members, and test without anybody signing up or reserving early. Until an administrator turns on Go Live at the top of the Setup page:
+
+* Customers see a Coming soon page in place of the catalog, sign-in, sign-up and account pages. Setup can add your own message, such as an opening date.
+* Optionally, under the same switch, customers can browse the catalog. Sign-up, sign-in and reserving stay closed, and every account link is taken out.
+* Member accounts can't sign in anywhere, including WordPress's own login page.
+* Setup emails and agreement requests wait, because their links lead to pages customers can't open yet. Send them once you're live.
+* Staff see the real pages, with a bar along the bottom of the window saying what customers see instead, and use the staff pages as normal. Staff who forget their password reset it through WordPress's own login page.
+
+On launch day, turn on Go Live, then send setup emails (and agreement requests, if you use them) from Membership. A library that was already running when this switch was added stays live. Go Live can be turned back off, but members then lose access to their accounts, loans and due dates until it's on again, so it isn't meant for short closures.
+
+If customers still see the Coming soon page after you go live, a page cache on your host may be holding on to it. These pages ask not to be cached, but clear the cache if your host offers one.
+
 = Why don't my reservation/loan timestamps match the time I actually took the action? =
 
 Your site's timezone (Settings > General > Timezone) is probably still set to its default. The plugin timestamps events using `current_time()`, which follows that setting. Set it to your actual local timezone (a named city, not just a UTC offset, so Daylight Saving is handled automatically) and new timestamps will be correct going forward. Timestamps already recorded before the fix will not be retroactively corrected.
@@ -134,7 +150,7 @@ Yes. The Setup page lets you set your organization's logo, colors, fonts, button
 
 = Is there a way to quickly test the plugin and database? =
 
-Yes. Testing can be done on your site or in a local instance through LocalWP (recommended). Simply borrow or create a dummy data SQL file (there is a dummy-data.sql file included in the documentation for this plugin). If borrowing the included dummy-data.sql file, it is recommended to change the stale dates of loans, reservations, and membership signup to reflect current dates (your favorite AI tool can do this quickly). Use the database schema, dbml file, and visual schematics when creating your own dummy date file. Run the SQL file as a command through the WordPress backend database manager (phpMyAdmin, Adminer, AdminNeo, etc.) to insert your dummy data. You may then test the plugin as both an administrator and customer.
+Yes. Testing can be done on your site or in a local instance through LocalWP (recommended). Simply borrow or create a dummy data SQL file (there is a dummy-data.sql file included in the documentation for this plugin). If borrowing the included dummy-data.sql file, it is recommended to change the stale dates of loans, reservations, and membership signup to reflect current dates (your favorite AI tool can do this quickly). Use the database schema, dbml file, and visual schematics when creating your own dummy date file. Run the SQL file as a command through the WordPress backend database manager (phpMyAdmin, Adminer, AdminNeo, etc.) to insert your dummy data. You may then test the plugin as both an administrator and customer. Turn on Go Live in Setup first, or customers will only see the Coming soon page.
 
 = Does the plugin send emails? =
 
@@ -149,6 +165,8 @@ Every email it does send is triggered by a person, not a schedule:
 * On a member delete: a confirmation to the member, plus a request to the site administrator to delete that member's stored photo and verification files.
 * When a member with verification documents on file changes their personal details, which voids those documents: a request to the site administrator to delete the old files.
 * With member agreements switched on: a request asking a member to review and agree, and a confirmation recording what they agreed to, with any attached documents included.
+
+Setup emails and agreement requests are held until the library goes live, since their links lead to pages customers can't open before then.
 
 = The plugin's emails aren't arriving. How do I set up outgoing mail? =
 
@@ -166,7 +184,7 @@ Yes. The Setup page can export the plugin's full dataset as either a SQL dump or
 
 = Can I restore from a backup? =
 
-Yes. Under Setup > Restore from Backup, pick one of the automatic backups stored on the site or upload a SQL dump from Export Data, and it replaces all of the plugin's data with the contents of the file, keeping every record's ID so members' sign-ins still match. The whole file is checked before anything changes, and the replacement happens all at once, so a file that is damaged, incomplete or not from Export Data leaves your data exactly as it was. It works on a new WordPress site too, creating the plugin's tables if they are missing. Settings on the Setup page and members' WordPress accounts are not part of the backup. Download a fresh dump regularly: a restore can only bring back what was in the file.
+Yes. Under Setup > Restore from Backup, pick one of the automatic backups stored on the site or upload a SQL dump from Export Data, and it replaces all of the plugin's data with the contents of the file, keeping every record's ID so members' sign-ins still match. The whole file is checked before anything changes, and the replacement happens all at once, so a file that is damaged, incomplete or not from Export Data leaves your data exactly as it was. It works on a new WordPress site too, creating the plugin's tables if they are missing. Settings on the Setup page and members' WordPress accounts are not part of the backup. That includes Go Live, so a library restored onto a new site shows the Coming soon page until you turn Go Live on there. Download a fresh dump regularly: a restore can only bring back what was in the file.
 
 = Can backups run automatically? =
 
@@ -208,6 +226,7 @@ No. There are no external network calls, no bundled third-party analytics, and n
 
 = 1.0.0 =
 * Initial release: public catalog, member accounts, reservations, loans, and the full admin back office (Dashboard, Inventory, Membership, Loans & Reservations, Workflows, Setup).
+* Go Live switch: a new install stays behind a Coming soon page, optionally with the catalog open to browse, until an administrator opens it from Setup.
 
 == Upgrade Notice ==
 

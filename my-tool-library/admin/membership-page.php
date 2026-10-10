@@ -932,11 +932,16 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 	<tr>
 		<th scope="row">Online Account</th>
 		<td>
+			<?php // Held before launch, when the link would open a page customers can't reach yet. ?>
 			<label for="<?php echo $field_id( 'mtl_send_setup_email' ); ?>">
-				<input type="checkbox" name="mtl_send_setup_email" id="<?php echo $field_id( 'mtl_send_setup_email' ); ?>" value="1" checked>
+				<input type="checkbox" name="mtl_send_setup_email" id="<?php echo $field_id( 'mtl_send_setup_email' ); ?>" value="1" <?php echo mtl_library_is_live() ? 'checked' : 'disabled'; ?>>
 				Email them a link to choose their password
 			</label>
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">A sign-in is created either way. Members reset their own password with <em>&ldquo;Lost your password?&rdquo;</em>.</p>
+			<?php if ( mtl_library_is_live() ) : ?>
+				<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">A sign-in is created either way. Members reset their own password with <em>&ldquo;Lost your password?&rdquo;</em>.</p>
+			<?php else : ?>
+				<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">A sign-in is created either way. Setup emails are available after you go live: send them all at once then, from <em>Member Logins</em>.</p>
+			<?php endif; ?>
 		</td>
 	</tr>
 	<?php endif; ?>
@@ -1242,7 +1247,9 @@ function mtl_render_membership_page() {
 	// of what gives paper mode its defining property: the plugin never asks a
 	// member for anything in it.
 	if ( isset( $_POST['mtl_send_agreement_request'] ) && mtl_agreements_online() && mtl_can_manage_library() ) {
-		if ( ! isset( $_POST['mtl_send_agreement_request_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_send_agreement_request_nonce'] ) ), 'mtl_send_agreement_request_action' ) ) {
+		if ( ! mtl_library_is_live() ) {
+			echo wp_kses_post( mtl_held_until_live_notice( 'agreement requests' ) );
+		} elseif ( ! isset( $_POST['mtl_send_agreement_request_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_send_agreement_request_nonce'] ) ), 'mtl_send_agreement_request_action' ) ) {
 			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
 		} else {
 			$target_id = isset( $_POST['agreement_member_id'] ) ? absint( $_POST['agreement_member_id'] ) : 0;
@@ -1312,7 +1319,8 @@ function mtl_render_membership_page() {
 
 			// Ticked by default in the form. An unchecked box posts nothing at
 			// all, so absence is a deliberate "don't email them", not a default.
-			$send_setup_email = isset( $_POST['mtl_send_setup_email'] );
+			// Never before launch; see mtl_send_member_setup_email().
+			$send_setup_email = isset( $_POST['mtl_send_setup_email'] ) && mtl_library_is_live();
 
 			// signup_date is NOT NULL in the schema; fall back to today.
 			if ( '' === $signup_date || ! strtotime( $signup_date ) ) {
@@ -1490,6 +1498,8 @@ function mtl_render_membership_page() {
 						} else {
 							$success_message .= ' Their online sign-in was created, but the setup email could not be sent. Use <em>Send setup emails</em> under Member Logins below to retry.';
 						}
+					} elseif ( ! mtl_library_is_live() ) {
+						$success_message .= ' Their online sign-in was created. Setup emails are available after you go live: send them from <em>Member Logins</em> below then.';
 					} else {
 						$success_message .= ' Their online sign-in was created. No setup email was sent, so they will need one before they can sign in.';
 					}
@@ -1984,7 +1994,11 @@ function mtl_render_membership_page() {
 	}
 
 	if ( isset( $_POST['mtl_send_setup_emails'] ) && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_member_logins_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_logins_nonce'] ) ), 'mtl_member_logins_action' ) ) {
+		if ( ! mtl_library_is_live() ) {
+			// A form opened while the library was live. The button is disabled
+			// before launch; see mtl_send_member_setup_email().
+			$login_batch_notice = mtl_held_until_live_notice( 'setup emails' );
+		} elseif ( isset( $_POST['mtl_member_logins_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_logins_nonce'] ) ), 'mtl_member_logins_action' ) ) {
 			$resend_all = isset( $_POST['mtl_resend_all'] );
 			$batch      = mtl_run_setup_email_batch( $resend_all );
 
@@ -2016,7 +2030,9 @@ function mtl_render_membership_page() {
 	}
 
 	if ( isset( $_POST['mtl_send_agreement_requests'] ) && mtl_agreements_online() && mtl_can_manage_settings() ) {
-		if ( isset( $_POST['mtl_agreement_requests_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_agreement_requests_nonce'] ) ), 'mtl_agreement_requests_action' ) ) {
+		if ( ! mtl_library_is_live() ) {
+			$agreement_batch_notice = mtl_held_until_live_notice( 'agreement requests' );
+		} elseif ( isset( $_POST['mtl_agreement_requests_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_agreement_requests_nonce'] ) ), 'mtl_agreement_requests_action' ) ) {
 			// The one place the audience string is trusted, and it is
 			// whitelisted before it reaches anything that builds a query. An
 			// unrecognised value falls back to the NARROWER set, never "all".
@@ -2045,6 +2061,8 @@ function mtl_render_membership_page() {
 
 	// Per-member "send them a link" from the members table. Editors may do this
 	// one at a time: it is the same act as ticking the box on Add Member.
+	// Before launch the button reads Create login: it still creates or
+	// reconnects the sign-in, and only the email waits.
 	if ( isset( $_POST['mtl_send_one_setup_email'] ) && mtl_can_manage_library() ) {
 		if ( isset( $_POST['mtl_send_one_setup_email_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_send_one_setup_email_nonce'] ) ), 'mtl_send_one_setup_email_action' ) ) {
 			$one_member_id = isset( $_POST['member_id'] ) ? (int) $_POST['member_id'] : 0;
@@ -2081,6 +2099,9 @@ function mtl_render_membership_page() {
 					// a working password, so emailing them a setup link would
 					// invite them to replace one they are happily using.
 					$login_batch_notice = '<div class="notice notice-success is-dismissible"><p><strong>Reconnected.</strong> ' . esc_html( $one_row->email ) . ' already had a website sign-in, now linked to this record. Their existing password still works, so no email was sent. If they have forgotten it, they can use &ldquo;Lost your password?&rdquo; on the sign-in page.</p></div>';
+				} elseif ( $one_user_id > 0 && ! mtl_library_is_live() ) {
+					// Held until launch; see mtl_send_member_setup_email().
+					$login_batch_notice = '<div class="notice notice-success is-dismissible"><p><strong>Sign-in ready.</strong> ' . esc_html( $one_row->email ) . ' has a website sign-in. Setup emails are held until the library goes live: send them from <em>Member Logins</em> then.</p></div>';
 				} elseif ( $one_user_id > 0 ) {
 					if ( mtl_send_member_setup_email( $one_user_id ) ) {
 						$login_batch_notice = '<div class="notice notice-success is-dismissible"><p><strong>Sent.</strong> ' . esc_html( $one_row->email ) . ' has been emailed a link to choose a password. Any link sent to them earlier no longer works.</p></div>';
@@ -3625,8 +3646,12 @@ function mtl_render_membership_page() {
 					</p>
 
 					<p style="margin-bottom: 4px;">
-						<input type="submit" name="mtl_send_setup_emails" class="button button-primary" value="Send setup emails"<?php echo 0 === $logins_pending ? ' disabled' : ''; ?>>
-						<span style="color: #666; font-size: 0.9em; margin-left: 8px;">Emails everyone who has not chosen a password a link to set one.</span>
+						<input type="submit" name="mtl_send_setup_emails" class="button button-primary" value="Send setup emails"<?php echo 0 === $logins_pending || ! mtl_library_is_live() ? ' disabled' : ''; ?>>
+						<?php if ( mtl_library_is_live() ) : ?>
+							<span style="color: #666; font-size: 0.9em; margin-left: 8px;">Emails everyone who has not chosen a password a link to set one.</span>
+						<?php else : ?>
+							<span style="color: #8a6d00; font-size: 0.9em; margin-left: 8px;">Available after you go live. Create logins now, and send these on launch day.</span>
+						<?php endif; ?>
 					</p>
 					<p style="margin-top: 0;">
 						<label style="color: #666; font-size: 0.9em;">
@@ -3700,7 +3725,10 @@ function mtl_render_membership_page() {
 					</fieldset>
 
 					<p style="margin-bottom: 4px;">
-						<input type="submit" name="mtl_send_agreement_requests" class="button button-primary" value="Send agreement requests"<?php echo 0 === $ag_outstanding ? ' disabled' : ''; ?>>
+						<input type="submit" name="mtl_send_agreement_requests" class="button button-primary" value="Send agreement requests"<?php echo 0 === $ag_outstanding || ! mtl_library_is_live() ? ' disabled' : ''; ?>>
+						<?php if ( ! mtl_library_is_live() ) : ?>
+							<span style="color: #8a6d00; font-size: 0.9em; margin-left: 8px;">Available after you go live, once members can sign in to agree.</span>
+						<?php endif; ?>
 					</p>
 					<p style="margin-top: 0;">
 						<label style="color: #666; font-size: 0.9em;">
@@ -4394,7 +4422,23 @@ function mtl_render_membership_page() {
 									// handler creates one first, so the button
 									// does what it says rather than reporting a
 									// state staff cannot act on from here.
-									if ( null === $member_login || $member_login['pending'] ) :
+									if ( null !== $member_login && $member_login['pending'] && ! mtl_library_is_live() ) :
+										// They have a sign-in, and the email is held until
+										// launch; see mtl_send_member_setup_email().
+										?>
+										<button type="button" class="button button-small" disabled title="Available after you go live">Send&nbsp;setup&nbsp;link</button>
+										<?php
+									elseif ( null === $member_login && ! mtl_library_is_live() ) :
+										// No sign-in yet. The handler can still create or
+										// reconnect one before launch; only the email waits.
+										?>
+										<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;">
+											<?php wp_nonce_field( 'mtl_send_one_setup_email_action', 'mtl_send_one_setup_email_nonce' ); ?>
+											<input type="hidden" name="member_id" value="<?php echo esc_attr( $member->member_id ); ?>">
+											<button type="submit" name="mtl_send_one_setup_email" class="button button-small" title="Creates or reconnects their sign-in. The setup email waits until you go live.">Create&nbsp;login</button>
+										</form>
+										<?php
+									elseif ( null === $member_login || $member_login['pending'] ) :
 										$setup_link_confirm = array(
 											'title'   => 'Send Setup Link',
 											'message' => 'Email %s a link to set their password?',
@@ -4583,7 +4627,11 @@ function mtl_render_membership_page() {
 															<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display:inline;">
 																<?php wp_nonce_field( 'mtl_send_agreement_request_action', 'mtl_send_agreement_request_nonce' ); ?>
 																<input type="hidden" name="agreement_member_id" value="<?php echo esc_attr( $mid ); ?>">
-																<button type="submit" name="mtl_send_agreement_request" value="1" class="button">Send agreement request</button>
+																<?php if ( mtl_library_is_live() ) : ?>
+																	<button type="submit" name="mtl_send_agreement_request" value="1" class="button">Send agreement request</button>
+																<?php else : ?>
+																	<button type="button" class="button" disabled title="Available after you go live">Send agreement request</button>
+																<?php endif; ?>
 															</form>
 														<?php endif; ?>
 

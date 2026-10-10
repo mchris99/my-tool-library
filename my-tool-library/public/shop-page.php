@@ -306,6 +306,9 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 		?>
 		<?php if ( $retired ) : ?>
 			<p class="mtl-shop-reserve-note">This tool has been retired from the collection and can no longer be borrowed or reserved.</p>
+		<?php elseif ( ! empty( $ctx['reserve_closed'] ) ) : ?>
+			<?php // In place of the button before launch, for staff previewing as well as customers. mtl_handle_reserve_action() refuses regardless. ?>
+			<p class="mtl-shop-prelaunch-note">Reservations open when we launch.</p>
 		<?php elseif ( ! empty( $ctx['is_member'] ) ) : ?>
 			<?php if ( isset( $ctx['loaned'][ $tool_id ] ) ) : ?>
 				<p class="mtl-shop-reserve-note">You currently have this tool checked out.</p>
@@ -641,6 +644,12 @@ function mtl_render_shop_page() {
 	// so the Reserve control can adapt to who's looking (see
 	// mtl_shop_render_detail_panel). The lookups only run when signed in.
 	$member_ctx = array(
+		// The catalog preview before launch: every visitor counts as signed
+		// out, even one who is signed in, and no tool offers a way to reserve.
+		'not_live'            => mtl_is_prelaunch_visitor(),
+		// Nobody reserves before launch, staff who are also members included,
+		// matching mtl_handle_reserve_action().
+		'reserve_closed'      => ! mtl_library_is_live(),
 		'is_member'           => false,
 		'is_locked'           => false,
 		'is_admin'            => ( is_user_logged_in() && mtl_can_manage_library() ),
@@ -651,7 +660,7 @@ function mtl_render_shop_page() {
 		'signup_url'          => mtl_front_page_url( 'signup' ),
 		'reservations_url'    => mtl_front_page_url( 'reservations' ),
 	);
-	$viewer     = mtl_current_member();
+	$viewer     = $member_ctx['not_live'] ? null : mtl_current_member();
 	if ( $viewer ) {
 		$mid                               = (int) $viewer->member_id;
 		$member_ctx['is_member']           = true;
@@ -1299,6 +1308,31 @@ function mtl_render_shop_page() {
 			text-align: center;
 		}
 
+		/* Takes the Reserve button's place during the catalog preview before
+			launch. Neutral rather than the locked note's red: nothing is wrong. */
+		.mtl-shop-detail p.mtl-shop-prelaunch-note {
+			margin: 16px 0 0 0;
+			padding: 11px 14px;
+			border: 1px solid #dcdcde;
+			border-radius: 4px;
+			background: #f6f7f7;
+			color: #3c434a;
+			font-size: 0.9em;
+			text-align: center;
+		}
+
+		/* Above the catalog during the preview before launch. */
+		.mtl-shop-prelaunch-banner {
+			margin: 0 0 16px 0;
+			padding: 14px 18px;
+			border: 1px solid #f0d78c;
+			border-radius: 6px;
+			background: #fcf9e8;
+			color: #3c434a;
+			font-size: 0.95em;
+			line-height: 1.5;
+		}
+
 		<?php echo mtl_locked_banner_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
 
 		/* Pagination */
@@ -1347,12 +1381,7 @@ function mtl_render_shop_page() {
 	</style>
 
 	<?php
-	// The site's home page unless Setup names another. Setup saves a blank
-	// field as '', which get_option() returns instead of the default.
-	$home_url = get_option( 'mtl_home_url', '' );
-	if ( '' === $home_url ) {
-		$home_url = home_url( '/' );
-	}
+	$home_url = mtl_home_page_url();
 	?>
 	<div class="mtl-shop" style="--mtl-shop-accent: <?php echo esc_attr( $accent ); ?>;">
 
@@ -1370,12 +1399,22 @@ function mtl_render_shop_page() {
 		?>
 		<div id="mtl-shop-closed" class="mtl-shop-close-anchor" aria-hidden="true"></div>
 
-		<?php // Above everything else on the catalog, for as long as the account stays locked. ?>
-		<?php echo mtl_account_locked_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
+		<?php if ( $member_ctx['not_live'] ) : ?>
+			<?php // The catalog preview before launch, which shows no account banners at all. ?>
+			<div class="mtl-shop-prelaunch-banner">
+				<strong>Coming soon.</strong>
+				<?php echo nl2br( esc_html( mtl_coming_soon_message() ) ); ?>
+			</div>
+		<?php else : ?>
+			<?php // Above everything else on the catalog, for as long as the account stays locked. ?>
+			<?php echo mtl_account_locked_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
+		<?php endif; ?>
 
 		<?php // One-off status banner after a reserve/cancel action. ?>
 		<?php echo mtl_front_notice_html(); ?>
-		<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
+		<?php if ( ! $member_ctx['not_live'] ) : ?>
+			<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
+		<?php endif; ?>
 
 		<!-- Search + advanced filter (one GET form; native <details> for advanced) -->
 		<div class="mtl-shop-toolbar">

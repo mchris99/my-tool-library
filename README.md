@@ -35,6 +35,7 @@ Built by the [Milwaukee Tool Library](https://mkelibrary.org) (Evan Maruszewski 
 - **Reservations** expire on their own after a hold period you set
 - **Workflows:** a staff guide inside the admin
 - **Setup:** branding, categories/tags/trainings, and defaults
+- **Go Live:** a Coming soon page while you set up, optionally with the catalog open to browse, until you open the library to the public
 - **Backup and restore:** download the whole library as one `.sql` file, schedule encrypted automatic backups to the Media Library (administrators only), and restore either from Setup after a mistake or a lost database
 
 ## Requirements
@@ -51,6 +52,7 @@ Built by the [Milwaukee Tool Library](https://mkelibrary.org) (Evan Maruszewski 
 5. Fill in branding and pickup/verification directions on the Setup page.
 6. Add the **Public Page Link** to your site's navigation.
 7. Add categories/tags, tools, and members (one at a time or via CSV import).
+8. When you're ready to open, turn on **Go Live** at the top of the Setup page. Until then, customers see a Coming soon page.
 
 Full installation steps, FAQ, and changelog: [`my-tool-library/readme.txt`](my-tool-library/readme.txt).
 

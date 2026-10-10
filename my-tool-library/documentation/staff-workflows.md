@@ -5,7 +5,7 @@ How to do the everyday jobs at the desk, plus the setup work an administrator do
 ## Contents
 
 - [Common tasks](#common-tasks)
-- [Getting started](#getting-started): [Roles and permissions](#staff-roles-and-permissions) · [Admin view switch](#working-the-desk-as-an-administrator) · [First-time setup](#first-time-setup) · [Bulk import](#bulk-importing-tools-and-members) · [Staff accounts](#creating-staff-accounts)
+- [Getting started](#getting-started): [Roles and permissions](#staff-roles-and-permissions) · [Admin view switch](#working-the-desk-as-an-administrator) · [First-time setup](#first-time-setup) · [Going live](#going-live) · [Bulk import](#bulk-importing-tools-and-members) · [Staff accounts](#creating-staff-accounts)
 - [Tools](#tools): [Adding a tool](#adding-a-tool) · [Shelf location](#shelf-location) · [Resources and partner links](#resources-and-partner-links) · [Private notes](#private-notes) · [Sub-categories](#sub-categories) · [Maintenance](#putting-a-tool-under-maintenance) · [Retiring or deleting](#retiring-or-deleting-a-tool)
 - [Members](#members): [Adding a member](#adding-a-member) · [Online sign-ins](#online-sign-ins) · [Logins after a CSV import](#creating-logins-after-a-csv-import) · [Verifying identity](#verifying-identity) · [Profile photos](#profile-photos) · [Hosting photos and documents](#hosting-photos-and-documents) · [Trainings](#trainings-and-certifications) · [Forgotten passwords](#forgotten-passwords) · [Locking an account](#locking-a-members-account) · [Deleting a member](#deleting-a-member)
 - [Loans and reservations](#loans-and-reservations): [Checking out a reservation](#checking-out-a-reservation) · [Quick Loan](#quick-loan) · [Quick Reserve](#quick-reserve) · [Bulk checkout](#bulk-checkout) · [From a member's record](#working-from-a-members-record) · [Renewing or returning](#renewing-or-returning-a-loan) · [Backdating a return](#backdating-a-return) · [Hold period](#reservation-hold-period) · [Overdue tools](#overdue-tools)
@@ -35,6 +35,7 @@ How to do the everyday jobs at the desk, plus the setup work an administrator do
 | Back up the library                                | [Backing up your data](#backing-up-your-data)                        |
 | Back up on a schedule without remembering to       | [Automatic backups](#automatic-backups)                              |
 | Put the library back after a mistake or data loss  | [Restoring from a backup](#restoring-from-a-backup)                  |
+| Open the library to the public                     | [Going live](#going-live)                                            |
 
 ---
 
@@ -91,7 +92,9 @@ Do this once, when the plugin is first installed.
 2. Under **Settings > General**, set the **Timezone** to a city, not a UTC offset, so Daylight Saving is handled for you. Every loan and reservation timestamp uses it, and past timestamps can't be corrected later.
 3. Go to **My Tool Library > Setup**. Under **Database Configuration**, at the bottom of the page, slide the toggle, click **Run Database Setup**, and type `Delete ALL my data` to confirm. This creates the plugin's tables, and no other page works until it's done. The section stays open, marked **Not set up yet**, until the tables exist.
 4. **Only run Database Setup once.** On a library that's already running, it wipes every member, tool, loan and reservation, with no undo. Use **Export Data** first if you're troubleshooting a live library, so you can [restore](#restoring-from-a-backup) afterwards.
-5. Fill in the rest of **Setup**. Its sections are in three groups. **Lists** and **Export Data** start open. The rest start closed because they're set once or replace data, so click a section's title to open it. Each section has its own Save button and saves only its own fields.
+5. Fill in the rest of **Setup**. Its sections are in groups. **Go Live**, at the top, stays open until you go live, and **Lists** and **Export Data** start open. The rest start closed because they're set once or replace data, so click a section's title to open it. Each section has its own Save button and saves only its own fields.
+    - **Library Status**
+        - **Go Live**: leave it off for now. Customers see a Coming soon page until you turn it on. See [Going live](#going-live).
     - **Lists**
         - **Categories & Tags**: what staff pick from when adding tools, such as Woodworking or Cordless.
         - **Member Trainings**: the trainings you offer. See [Trainings and certifications](#trainings-and-certifications).
@@ -104,9 +107,38 @@ Do this once, when the plugin is first installed.
     - **Data & Backups**
         - **Automatic Backups**: turn them on and save the backup key somewhere safe. See [Automatic backups](#automatic-backups).
 6. Set up outgoing email with an SMTP plugin such as WP Mail SMTP, Post SMTP or FluentSMTP. Members don't get any email without it. Use a from address on your own domain, and add SPF and DKIM records for the mail service you chose.
-7. Copy the **Public Page Link** from Setup into your site's menu or onto a button. It's the one link your community needs to browse, reserve and sign up.
+7. Copy the **Public Page Link** from Setup into your site's menu or onto a button. It's the one link your community needs to browse, reserve and sign up. Until you go live, it shows the Coming soon page.
 8. Load your tools and members, one at a time or by [bulk import](#bulk-importing-tools-and-members).
 9. Give everyone who works the desk their own Editor account. See [Creating staff accounts](#creating-staff-accounts).
+10. When you're ready to open, [go live](#going-live).
+
+### Going live
+
+**Administrators only.** A new install starts closed to the public, so you can set up, load your tools and members, and practice at the desk without anyone signing up or reserving early. The **Go Live** section at the top of **Setup** opens it.
+
+Until it's on:
+
+- Customers see a **Coming soon** page in place of the catalog and every sign-in, sign-up and account page.
+- Member accounts can't sign in anywhere, including WordPress's own login page.
+- **Send setup emails**, **Send setup link** and the agreement request buttons on **Membership** are greyed out, because their links lead to pages customers can't open yet. You can still add members and press **Create logins**, and a member with no sign-in has a **Create login** button on their row instead of **Send setup link**.
+- Staff use everything as normal. On the public pages you see the real thing, with a dark bar along the bottom of the window saying what customers see instead. To check the customer view, open the Public Page Link in a private window.
+- A staff member who forgets their password resets it from **Lost your password?** on the `/wp-admin/` sign-in page.
+
+While you set up, the same section has three more things:
+
+- **Show the catalog before launch** lets customers browse and search your tools. Sign-up, sign-in and reserving stay closed, every account link is taken out, and each tool says "Reservations open when we launch."
+- **Coming soon message** replaces the default wording on the Coming soon page and above the catalog, for example with your opening date. Leave it blank to use the default.
+- **Launch checklist** starts closed. Open it to see anything worth fixing first, such as the timezone, a missing contact email or backups being off, each with a link to where it's set. It's advice only and never stops you going live.
+
+On launch day:
+
+1. Under **Setup > Go Live**, turn on the switch and confirm. Sign-up, sign-in and reservations open at once.
+2. Under **Membership > Member Logins**, press **Create logins** if any members still need one, then **Send setup emails**. Members added by staff can't sign in until they choose a password. The links last 24 hours, so send them when members can act on them.
+3. If you use member agreements online, press **Send agreement requests** under **Membership > Member Agreements**.
+
+You can turn **Go Live** back off, but members then lose access to their accounts, loans and due dates until it's on again. It's for launch, not for closing over a holiday.
+
+> **Note:** Staff accounts can't act as members, so you can't try out signing up or reserving on your own site before launch. Test those on a copy of the site, such as one in Local, or straight after going live.
 
 ### Bulk importing tools and members
 
@@ -231,7 +263,7 @@ On **Membership**, click **Add a New Member**.
 
 ### Online sign-ins
 
-Adding a member creates their website sign-in automatically, with no password. They choose one through an emailed link that works like a password reset. It goes out when you save, if the box was ticked, or later from **Send setup link** on their row.
+Adding a member creates their website sign-in automatically, with no password. They choose one through an emailed link that works like a password reset. It goes out when you save, if the box was ticked, or later from **Send setup link** on their row. Before the library [goes live](#going-live), the box and the button are greyed out, and the links go out on launch day instead. A member with no sign-in at all gets a **Create login** button then, which sets one up without emailing them.
 
 The **Sign-in** column shows where each member stands:
 
@@ -491,7 +523,7 @@ Administrators can record many at once under **Membership > Member Agreements > 
 
 ### Sending agreement requests
 
-**Administrators only.** Under **Membership > Member Agreements**, click **Send agreement requests**. You can email members who are behind on agreements (the default) or all active members. Members without a working sign-in are left out, since they couldn't agree online anyway.
+**Administrators only.** Under **Membership > Member Agreements**, click **Send agreement requests**. You can email members who are behind on agreements (the default) or all active members. Members without a working sign-in are left out, since they couldn't agree online anyway. The button is greyed out until the library [goes live](#going-live).
 
 ### Agreements after a CSV import
 

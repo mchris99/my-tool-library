@@ -3110,8 +3110,7 @@ function mtl_render_setup_page() {
 
 	// No members table means Database Setup has never been run, and nothing
 	// else on this page or any other works until it has.
-	$mtl_members_table = $wpdb->prefix . 'members';
-	$mtl_tables_ready  = $mtl_members_table === $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $mtl_members_table ) ) );
+	$mtl_tables_ready = mtl_members_table_exists();
 	?>
 	<!-- Always in view, since copying it is something an admin comes back
 		for. The editable Home Page Link lives under Organization. -->
@@ -3129,6 +3128,12 @@ function mtl_render_setup_page() {
 			<?php endif; ?>
 		</div>
 	</div>
+
+	<?php
+	// First, because until it is on, customers can't use anything the rest of
+	// this page sets up. See admin/go-live.php.
+	mtl_render_go_live_section( $mtl_requested_section, $mtl_tables_ready );
+	?>
 
 	<div class="mtl-setup-group">
 		<h2 class="mtl-setup-group-title">Lists</h2>
