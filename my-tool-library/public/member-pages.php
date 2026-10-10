@@ -378,6 +378,9 @@ function mtl_front_notice( $key ) {
 		// From a Reserve button on a page opened before staff locked the
 		// account; the catalog stops offering one once it is locked.
 		'account_locked'         => array( 'error', 'Your account is locked, so that tool was not reserved. Please speak with library staff.' ),
+		// From a Reserve button on a page opened before the library was closed
+		// to the public again; the catalog offers none before launch.
+		'not_live'               => array( 'error', 'Reservations aren&rsquo;t open yet, so that tool was not reserved. Please check back once we&rsquo;ve launched.' ),
 		// Sign-in failures, carried back from wp-login.php by
 		// mtl_handle_failed_front_login(). Deliberately does not say WHICH of
 		// the two was wrong: that would confirm to anyone guessing whether a
@@ -424,6 +427,16 @@ function mtl_front_notice_html() {
  */
 function mtl_member_nav_html() {
 	$out = '<div class="mtl-shop-account-nav">';
+
+	// The catalog preview before launch has no account features at all. Only
+	// Log Out stays, for anybody left signed in when the library was closed to
+	// the public again.
+	if ( mtl_is_prelaunch_visitor() ) {
+		if ( is_user_logged_in() ) {
+			$out .= '<a class="mtl-shop-btn mtl-shop-btn-ghost" href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
+		}
+		return $out . '</div>';
+	}
 
 	if ( ! is_user_logged_in() ) {
 		$out .= '<a class="mtl-shop-btn mtl-shop-btn-ghost" href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">Sign In</a>';
@@ -1432,6 +1445,12 @@ function mtl_handle_reserve_action() {
 
 	if ( ! isset( $_POST['mtl_reserve_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_reserve_nonce'] ) ), 'mtl_reserve_action' ) ) {
 		$redirect( 'reserve_failed' );
+	}
+
+	// Nobody reserves before launch. The catalog preview shows no Reserve
+	// button, so this is a page opened while the library was still live.
+	if ( ! mtl_library_is_live() ) {
+		$redirect( 'not_live' );
 	}
 
 	$member = mtl_current_member();

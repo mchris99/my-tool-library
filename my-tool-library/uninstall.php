@@ -71,6 +71,12 @@ $mtl_options = array(
 	'mtl_backup_last',
 	'mtl_backup_last_success',
 	'mtl_backup_lock',
+	// Go Live (admin/go-live.php). The tables stay, so a reinstall over the
+	// library's data counts as an existing library and comes back live.
+	'mtl_catalog_preview',
+	'mtl_coming_soon_message',
+	'mtl_library_live',
+	'mtl_library_live_since',
 );
 
 foreach ( $mtl_options as $mtl_option ) {

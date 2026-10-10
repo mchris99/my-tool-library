@@ -4619,9 +4619,12 @@ function mtl_send_account_locked_email( $email, $first_name, $cancelled_tools, $
 		$lines[] = sprintf( 'You can reach us at %s.', $contact_email );
 	}
 
-	$lines[] = '';
-	$lines[] = 'Your account:';
-	$lines[] = mtl_front_page_url( 'account' );
+	// No link before launch, when the Account page shows Coming soon.
+	if ( mtl_library_is_live() ) {
+		$lines[] = '';
+		$lines[] = 'Your account:';
+		$lines[] = mtl_front_page_url( 'account' );
+	}
 	$lines[] = '';
 	$lines[] = sprintf( '-- %s', $org_name );
 
@@ -4793,6 +4796,10 @@ require_once MTL_PLUGIN_DIR . 'admin/setup-page.php';
 // Not a page: the scheduled backup and its Media Library protections, which
 // have to be in place on every request, front end and cron included.
 require_once MTL_PLUGIN_DIR . 'admin/auto-backups.php';
+// The Go Live section of Setup, its save handler, the launch checklist and
+// the "not live yet" notice. The gate it controls is in
+// mtl_handle_front_pages().
+require_once MTL_PLUGIN_DIR . 'admin/go-live.php';
 
 // Public-facing customer pages.
 require_once MTL_PLUGIN_DIR . 'public/shop-page.php';
@@ -4854,6 +4861,13 @@ function mtl_apply_custom_admin_styles() {
                 --mtl-link-color: ' . mtl_css_value( $l_color, '#00b3ff' ) . ';
                 --mtl-btn-scale: ' . mtl_css_value( $btn_scale, '1' ) . ';
             }
+            /*
+             * line-height is unitless so it scales with the Header Font
+             * Size. WordPress gives the admin body line-height: 1.4em, which
+             * is fixed at about 18px and inherited as that length, so a
+             * larger heading would spill out of its line box and cover the
+             * text beneath it.
+             */
             .mtl-admin-wrapper h2,
             .mtl-admin-wrapper h3,
             .mtl-admin-wrapper h4,
@@ -4862,6 +4876,7 @@ function mtl_apply_custom_admin_styles() {
                 font-family: ' . mtl_css_value( $h_font ) . ';
                 font-size: ' . mtl_css_value( $h_size ) . ';
                 font-weight: ' . mtl_css_value( $h_weight, '700' ) . ';
+                line-height: 1.25;
                 text-transform: ' . mtl_css_value( $h_transform, 'none' ) . ';
             }
             .mtl-admin-wrapper a {
@@ -5835,7 +5850,9 @@ function mtl_agreement_request_email_body() {
  */
 function mtl_send_agreement_request_email( $member_id ) {
 	$member_id = (int) $member_id;
-	if ( $member_id <= 0 || ! mtl_agreements_online() ) {
+	// Held until launch, like the setup email: it sends the member to the
+	// Account page, which customers can't reach yet.
+	if ( $member_id <= 0 || ! mtl_agreements_online() || ! mtl_library_is_live() ) {
 		return false;
 	}
 
@@ -7209,6 +7226,86 @@ function mtl_is_administrator() {
 }
 
 /**
+ * Whether the library is open to the public. Until an administrator turns on
+ * Go Live under Setup, customers get a Coming soon page in place of every
+ * public page (see mtl_handle_front_pages()) and member accounts can't sign
+ * in (see mtl_refuse_member_login_before_launch()).
+ *
+ * A missing option means live, so a library already running when this switch
+ * shipped stays open. Only a brand-new install is saved as not live, by
+ * mtl_plugin_activate().
+ *
+ * @return bool
+ */
+function mtl_library_is_live() {
+	return '0' !== (string) get_option( 'mtl_library_live', '1' );
+}
+
+/**
+ * Whether customers may browse the catalog before the library goes live.
+ * Always false once it is live, when the catalog is open anyway.
+ *
+ * @return bool
+ */
+function mtl_catalog_preview_enabled() {
+	return ! mtl_library_is_live() && '1' === (string) get_option( 'mtl_catalog_preview', '' );
+}
+
+/**
+ * Whether this visitor gets the public pages as customers do before launch:
+ * the library isn't live and they aren't staff. Staff always see the real
+ * pages, with a preview bar saying what customers see instead.
+ *
+ * @return bool
+ */
+function mtl_is_prelaunch_visitor() {
+	return ! mtl_library_is_live() && ! mtl_can_manage_library();
+}
+
+/**
+ * The message shown to customers on the Coming soon page and above the
+ * catalog before launch: the library's own from Setup, or the default.
+ *
+ * @return string Plain text, unescaped.
+ */
+function mtl_coming_soon_message() {
+	$message = trim( (string) get_option( 'mtl_coming_soon_message', '' ) );
+	return '' !== $message ? $message : mtl_coming_soon_default_message();
+}
+
+/**
+ * Whether Database Setup has been run, judged by the members table.
+ *
+ * @return bool
+ */
+function mtl_members_table_exists() {
+	global $wpdb;
+	$table = $wpdb->prefix . 'members';
+	return $table === $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) );
+}
+
+/**
+ * Where the public pages' Home button goes: Setup's Home Page Link, or the
+ * site's home page. Setup saves a blank field as '', which get_option()
+ * returns instead of the default, hence the explicit fallback.
+ *
+ * @return string Unescaped URL.
+ */
+function mtl_home_page_url() {
+	$home_url = (string) get_option( 'mtl_home_url', '' );
+	return '' !== $home_url ? $home_url : home_url( '/' );
+}
+
+/**
+ * The Coming soon wording used when Setup's message box is left blank.
+ *
+ * @return string Plain text, unescaped.
+ */
+function mtl_coming_soon_default_message() {
+	return 'We\'re getting ready to open. Member accounts and reservations are coming soon.';
+}
+
+/**
  * Whether the current user may delete a member's record. Administrators only:
  * it destroys personal data irreversibly, and where the member has loan
  * history it rewrites that history's owner (see
@@ -7679,6 +7776,16 @@ register_activation_hook( __FILE__, 'mtl_plugin_activate' );
  * Registers and flushes the rewrite rule, and creates any missing tables.
  */
 function mtl_plugin_activate() {
+	// A brand-new install starts behind the Coming soon page until an
+	// administrator turns on Go Live. No members table means Database Setup has
+	// never been run, so there is no library yet to keep open. Not
+	// mtl_db_version: a running library whose schema upgrade keeps failing
+	// never gets that written, and must not close on a reactivation.
+	// add_option() never overwrites, so a switch already saved is left alone.
+	if ( ! mtl_members_table_exists() ) {
+		add_option( 'mtl_library_live', '0' );
+	}
+
 	mtl_maybe_upgrade_schema();
 	mtl_register_rewrite_rules();
 	// Rewrite rules are cached in the database. A fresh activation must
@@ -7804,6 +7911,22 @@ function mtl_handle_front_pages() {
 	// These pages depend on login state, so never let them be cached.
 	nocache_headers();
 
+	// Before launch, customers get the Coming soon page in place of every page
+	// here. The exceptions are listed rather than the closed pages, so a page
+	// added to this router later is closed too. Every public form is handled
+	// inside the page it belongs to, so this refuses those as well. Staff skip
+	// it; see mtl_is_prelaunch_visitor().
+	if ( mtl_is_prelaunch_visitor() && ! ( 'main' === $page && mtl_catalog_preview_enabled() ) ) {
+		// The admin gate is staff's way in. Signed out, they are sent to
+		// WordPress's sign-in, since the plugin's own is closed; it brings
+		// them back to the dashboard.
+		if ( 'admin' === $page && ! is_user_logged_in() ) {
+			wp_safe_redirect( wp_login_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) );
+			exit;
+		}
+		mtl_render_coming_soon_page();
+	}
+
 	if ( 'main' === $page ) {
 		mtl_render_front_main_page();
 	} elseif ( 'login' === $page ) {
@@ -7883,6 +8006,17 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 
 	// Resolved once here so the footer markup below stays a plain echo.
 	$contact_html = mtl_contact_line_html();
+
+	// Staff skip the Coming soon page before launch (see
+	// mtl_handle_front_pages()), so tell them what customers get instead.
+	$preview_note = '';
+	if ( ! mtl_library_is_live() && is_user_logged_in() && mtl_can_manage_library() ) {
+		$preview_note = mtl_catalog_preview_enabled()
+			? '<strong>Preview.</strong> This library isn&rsquo;t live yet. Customers can browse the catalog, but can&rsquo;t sign up, sign in or reserve.'
+			: '<strong>Preview.</strong> This library isn&rsquo;t live yet. Customers see a Coming soon page instead.';
+
+		$preview_note .= ' ' . mtl_go_live_next_step_html();
+	}
 
 	$h_color = get_option( 'mtl_header_color', '#ff6600' );
 	$b_color = get_option( 'mtl_body_color', '#096491' );
@@ -8056,6 +8190,38 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 			.login-remember label {
 				font-weight: 400;
 			}
+
+			/* A link that reads as the card's main action, matching the
+				submit button above. */
+			.mtl-front-card .mtl-front-button {
+				display: inline-block;
+				background: <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
+				border: 1px solid <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
+				color: #fff;
+				padding: calc(9px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>) calc(22px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
+				border-radius: <?php echo mtl_css_value( $radius, '4px' ); ?>;
+				font-size: calc(1em * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
+				text-decoration: none;
+			}
+
+			/* Staff only, before launch: a thin strip saying what customers
+				see in place of this page. Held to the bottom of the window, since
+				the catalog pins its Home and account buttons to the top. Sticky
+				rather than fixed, so it covers nothing at the end of the page. */
+			.mtl-front-preview-bar {
+				position: sticky;
+				bottom: 0;
+				background: #1d2327;
+				color: #f0f0f1;
+				font-size: 0.85em;
+				line-height: 1.5;
+				padding: 8px 16px;
+				text-align: center;
+			}
+
+			.mtl-front-preview-bar a {
+				color: #72aee6;
+			}
 		</style>
 	</head>
 
@@ -8082,6 +8248,14 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 				?>
 			</footer>
 		<?php endif; ?>
+		<?php if ( $preview_note ) : ?>
+			<div class="mtl-front-preview-bar">
+				<?php
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built above from esc_html()/esc_url()-wrapped pieces.
+				echo $preview_note;
+				?>
+			</div>
+		<?php endif; ?>
 	</body>
 
 	</html>
@@ -8105,7 +8279,10 @@ function mtl_render_front_main_page() {
 	// Discreet footer links, varying with login state. (The primary member
 	// sign-in / sign-up / account controls live in the catalog's own top-bar
 	// nav; these footer links are a quiet secondary path).
-	if ( is_user_logged_in() && mtl_can_manage_library() ) {
+	if ( mtl_is_prelaunch_visitor() ) {
+		// The catalog preview before launch: no account links at all.
+		$footer = mtl_prelaunch_footer_html();
+	} elseif ( is_user_logged_in() && mtl_can_manage_library() ) {
 		$footer  = '<a href="' . esc_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) . '">Open Admin Portal</a>';
 		$footer .= '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
 	} elseif ( is_user_logged_in() ) {
@@ -8117,6 +8294,45 @@ function mtl_render_front_main_page() {
 	}
 
 	mtl_render_front_shell( 'Browse Tools', $body, $footer );
+}
+
+/**
+ * Footer links for customers before launch, on the Coming soon page and the
+ * catalog preview. No account links, since none of those pages are open.
+ *
+ * Staff sign in through WordPress's own login, because the plugin's sign-in
+ * page is closed too. Anybody already signed in, such as a member left signed
+ * in when the switch was turned back off, gets Log Out instead.
+ * wp_logout_url() goes through wp-login.php, which is never closed.
+ *
+ * @return string HTML.
+ */
+function mtl_prelaunch_footer_html() {
+	if ( is_user_logged_in() ) {
+		return '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
+	}
+	return '<a href="' . esc_url( wp_login_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) ) . '">Staff sign in</a>';
+}
+
+/**
+ * The page customers get in place of every public page before launch. See
+ * mtl_handle_front_pages().
+ *
+ * @return void Outputs the page and exits.
+ */
+function mtl_render_coming_soon_page() {
+	$body  = '<div class="mtl-front-card">';
+	$body .= '<h2 style="margin-top: 0;">Coming soon</h2>';
+	$body .= '<p>' . nl2br( esc_html( mtl_coming_soon_message() ) ) . '</p>';
+	if ( mtl_catalog_preview_enabled() ) {
+		$body .= '<p style="margin-bottom: 0;"><a class="mtl-front-button" href="' . esc_url( mtl_front_page_url( 'main' ) ) . '">Browse our tools</a></p>';
+	}
+	$body .= '</div>';
+
+	$footer  = '<a href="' . esc_url( mtl_home_page_url() ) . '">&larr; Home</a>';
+	$footer .= mtl_prelaunch_footer_html();
+
+	mtl_render_front_shell( 'Coming Soon', $body, $footer );
 }
 
 /**
@@ -8207,14 +8423,21 @@ function mtl_reset_cookie_path() {
 	return is_string( $path ) && '' !== $path ? $path : '/';
 }
 
-add_filter( 'lostpassword_url', 'mtl_lost_password_url', 10, 0 );
+add_filter( 'lostpassword_url', 'mtl_lost_password_url', 10, 1 );
 
 /**
  * Points every "Lost your password?" link at the branded page.
  *
+ * Except before launch, when that page is behind the Coming soon page and
+ * staff still need a way to reset a password. Core's own link is kept then.
+ *
+ * @param string $url Core's lost-password URL.
  * @return string
  */
-function mtl_lost_password_url() {
+function mtl_lost_password_url( $url = '' ) {
+	if ( ! mtl_library_is_live() ) {
+		return $url;
+	}
 	return mtl_front_page_url( 'lostpassword' );
 }
 
@@ -8235,6 +8458,12 @@ add_filter( 'retrieve_password_message', 'mtl_reset_email_message', 10, 3 );
  * @return string
  */
 function mtl_reset_email_message( $message, $key, $user_login ) {
+	// Left alone before launch, for the same reason as mtl_lost_password_url():
+	// the branded page is closed, and core's link still works.
+	if ( ! mtl_library_is_live() ) {
+		return $message;
+	}
+
 	// Replace the whole wp-login.php line, including core's appended &wp_lang.
 	return preg_replace(
 		'#^.*wp-login\.php\?login=.*$#m',
@@ -8276,6 +8505,13 @@ function mtl_reset_link_url( $key, $user_login ) {
  * @return bool True if the mail was handed off successfully.
  */
 function mtl_send_member_setup_email( $user_id ) {
+	// Held until launch: the link opens a page customers can't reach yet, and
+	// it expires within a day. Checked before get_password_reset_key() below,
+	// which would cancel a link sent earlier.
+	if ( ! mtl_library_is_live() ) {
+		return false;
+	}
+
 	$user = get_userdata( (int) $user_id );
 	if ( ! $user || '' === trim( (string) $user->user_email ) ) {
 		return false;
@@ -8647,7 +8883,9 @@ function mtl_send_password_changed_email( $user ) {
 		sprintf( 'This is a confirmation that the password for your %s account was changed on %s.', $org_name, $changed_at ),
 		'',
 		'You can sign in with your new password here:',
-		mtl_front_page_url( 'login' ),
+		// Before launch the branded sign-in page shows Coming soon, and the
+		// people resetting a password then are staff, through wp-login.php.
+		mtl_library_is_live() ? mtl_front_page_url( 'login' ) : wp_login_url(),
 		'',
 		$alarm_line,
 		'',
@@ -8894,6 +9132,37 @@ function mtl_block_empty_front_login( $user ) {
 
 	wp_safe_redirect( add_query_arg( 'mtl_msg', 'login_empty', mtl_front_page_url( 'login' ) ) );
 	exit;
+}
+
+// Priority 100: after core has checked the password (20-30) and after its spam
+// check (99), so $user is a WP_User only when the password was right.
+add_filter( 'authenticate', 'mtl_refuse_member_login_before_launch', 100 );
+
+/**
+ * Refuses a member's sign-in until the library goes live, wherever they try:
+ * wp-login.php, XML-RPC, or another plugin's login form. The plugin's own
+ * sign-in page is behind the Coming soon page by then anyway.
+ *
+ * Acts only on a correct password, so it never tells a guesser whether an
+ * account exists. Staff are checked on the account being signed in, not with
+ * mtl_can_manage_library(), which reads the current user, and there is none
+ * yet during sign-in.
+ *
+ * @param null|WP_User|WP_Error $user Result so far from the authenticate chain.
+ * @return null|WP_User|WP_Error
+ */
+function mtl_refuse_member_login_before_launch( $user ) {
+	if ( ! $user instanceof WP_User || mtl_library_is_live() ) {
+		return $user;
+	}
+	if ( user_can( $user, 'manage_options' ) || user_can( $user, MTL_STAFF_CAP ) ) {
+		return $user;
+	}
+	if ( ! in_array( 'mtl_member', (array) $user->roles, true ) ) {
+		return $user;
+	}
+
+	return new WP_Error( 'mtl_not_live', '<strong>Error:</strong> The library isn&rsquo;t open yet, so member accounts can&rsquo;t sign in. Please check back soon.' );
 }
 
 /**
