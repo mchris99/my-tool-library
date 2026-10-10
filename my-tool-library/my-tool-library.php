@@ -1485,6 +1485,13 @@ function mtl_render_phone_input( $iso, $national, $id_prefix = '' ) {
 	$countries  = mtl_get_phone_country_options();
 	$iso        = mtl_valid_phone_country( $iso );
 	$codes_json = wp_json_encode( wp_list_pluck( $countries, 'code' ) );
+
+	// Prefilled the way it will be stored, because Signup and My Account have
+	// no live formatter to tidy raw digits. Left as typed if it won't parse.
+	$formatted = mtl_format_phone_number( $iso, $national );
+	if ( '' === $formatted['error'] ) {
+		$national = substr( $formatted['value'], strlen( $countries[ $iso ]['code'] ) + 2 );
+	}
 	?>
 	<div class="mtl-phone-widget" data-codes="<?php echo esc_attr( $codes_json ); ?>">
 		<select name="phone_country" id="<?php echo esc_attr( $id_prefix . 'phone_country' ); ?>" class="mtl-phone-country" required>
@@ -1504,6 +1511,9 @@ function mtl_render_phone_input( $iso, $national, $id_prefix = '' ) {
  * Purely cosmetic: mtl_format_phone_number() always re-derives the canonical
  * value from scratch server-side on submit, using only the digits, so
  * nothing typed here has to be trusted.
+ *
+ * Admin pages only. Signup and My Account ship no JavaScript, so a member's
+ * number is formatted when it is saved instead.
  */
 function mtl_phone_formatter_script() {
 	?>
@@ -7417,8 +7427,7 @@ function mtl_training_filter_select( $trainings, $element_id ) {
  *   mtlTaxonomyMatches( sel, catIds, subIds ) -> bool
  *   mtlIdsIntersect( csvIds, picked )         -> bool, the same any-of test
  *                                                the tag selects need
- *   mtlTaxonomyClear( tree )                  -> unticks it, and re-enables
- *                                                children a parent had covered
+ *   mtlTaxonomyClear( tree )                  -> unticks it
  *   mtlTrainingMatches( picked, csvIds )      -> bool, with "any" meaning
  *                                                "requires at least one"
  *
@@ -7427,8 +7436,8 @@ function mtl_training_filter_select( $trainings, $element_id ) {
  * selection matches everything, which is what "leave it blank for any" means.
  *
  * A ticked parent is included on its own, never expanded into its children:
- * the category mapping already covers every tool in that category. Its
- * children are read as disabled and skipped, since they could only repeat it.
+ * the category mapping already covers every tool in that category. A child
+ * ticked under it is read too, and can only repeat it.
  */
 function mtl_taxonomy_matcher_script() {
 	?>
@@ -7442,9 +7451,6 @@ function mtl_taxonomy_matcher_script() {
 				return sel;
 			}
 			tree.querySelectorAll( 'input[type="checkbox"]:checked' ).forEach( function ( box ) {
-				if ( box.disabled ) {
-					return;
-				}
 				if ( box.hasAttribute( 'data-tx-parent' ) ) {
 					sel.cats.push( box.value );
 				} else if ( box.hasAttribute( 'data-tx-child-of' ) ) {
@@ -7504,15 +7510,13 @@ function mtl_taxonomy_matcher_script() {
 }
 
 /**
- * Style and behaviour for the tree: indentation, and greying a branch's
- * children out while its parent is ticked.
+ * Styles for the tree: indentation, and greying a branch's children out while
+ * its parent is ticked.
  *
  * A ticked parent already matches every tool in that category, so its children
- * could only ever be redundant. Disabling them says so, and keeps redundant
- * ids out of the query string.
- *
- * Callers emit this wherever suits their page, sometimes above the tree markup,
- * so it waits for the document rather than assuming the tree is there.
+ * could only ever be redundant, and greying them says so. CSS only, because
+ * the public catalog ships no JavaScript. A greyed child ticked anyway still
+ * submits, and changes nothing, since the match is an OR.
  */
 function mtl_taxonomy_tree_assets() {
 	?>
@@ -7537,33 +7541,9 @@ function mtl_taxonomy_tree_assets() {
 		.mtl-tx-parent, .mtl-tx-child { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; line-height: 1.6; }
 		.mtl-tx-parent { font-weight: 600; }
 		.mtl-tx-child { margin-left: 22px; font-weight: 400; }
-		.mtl-tx-child.mtl-tx-covered { opacity: 0.5; }
+		.mtl-tx-branch:has(.mtl-tx-parent input:checked) .mtl-tx-child { opacity: 0.5; }
 		.mtl-tx-empty { color: #666; font-size: 0.85em; margin: 0; }
 	</style>
-	<script>
-	( function () {
-		var wire = function () {
-			document.querySelectorAll( '.mtl-tx-tree' ).forEach( function ( tree ) {
-				var sync = function () {
-					tree.querySelectorAll( '[data-tx-parent]' ).forEach( function ( parent ) {
-						var id = parent.getAttribute( 'data-tx-parent' );
-						tree.querySelectorAll( '[data-tx-child-of="' + id + '"]' ).forEach( function ( child ) {
-							child.disabled = parent.checked;
-							child.closest( '.mtl-tx-child' ).classList.toggle( 'mtl-tx-covered', parent.checked );
-						} );
-					} );
-				};
-				tree.addEventListener( 'change', sync );
-				sync();
-			} );
-		};
-		if ( 'loading' === document.readyState ) {
-			document.addEventListener( 'DOMContentLoaded', wire );
-		} else {
-			wire();
-		}
-	}() );
-	</script>
 	<?php
 }
 
