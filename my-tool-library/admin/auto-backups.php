@@ -54,10 +54,11 @@ define( 'MTL_BACKUP_MAGIC', "MTL-ENCRYPTED-BACKUP 1\n" );
 define( 'MTL_BACKUP_CHUNK', 65536 );
 
 /**
- * libsodium's SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_TAG_MESSAGE, the
- * tag on every chunk but the last. The polyfill WordPress loads on hosts
- * without the sodium extension defines the other tags but not this one (it
- * calls the same 0 TAG_PUSH), so the constant can't be relied on.
+ * The value of libsodium's
+ * SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_TAG_MESSAGE, the tag on every
+ * chunk but the last. The polyfill WordPress loads on hosts without the
+ * sodium extension defines the other tags but not this one (it calls the
+ * same 0 TAG_PUSH), so the constant can't be relied on.
  */
 define( 'MTL_BACKUP_TAG_MESSAGE', 0 );
 
@@ -238,7 +239,7 @@ function mtl_backup_folder_is_public() {
 				'sslverify' => apply_filters( 'https_local_ssl_verify', false ),
 			)
 		);
-		$public = ! is_wp_error( $response ) && 200 === wp_remote_retrieve_response_code( $response ) && 'mtl-backup-folder-probe' === trim( wp_remote_retrieve_body( $response ) );
+		$public   = ! is_wp_error( $response ) && 200 === wp_remote_retrieve_response_code( $response ) && 'mtl-backup-folder-probe' === trim( wp_remote_retrieve_body( $response ) );
 	}
 
 	set_transient( 'mtl_backup_folder_public', $public ? 'yes' : 'no', DAY_IN_SECONDS );
