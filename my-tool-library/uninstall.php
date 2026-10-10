@@ -56,10 +56,12 @@ $mtl_options = array(
 	'mtl_logo_url',
 	'mtl_org_name',
 	'mtl_pickup_directions',
+	'mtl_reservation_hold_days',
 	'mtl_show_tool_location',
 	'mtl_tool_request_text',
 	'mtl_tool_request_url',
 	'mtl_verification_directions',
+	'mtl_verified_badge_image_url',
 );
 
 foreach ( $mtl_options as $mtl_option ) {
