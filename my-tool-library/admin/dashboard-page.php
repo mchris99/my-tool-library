@@ -1605,7 +1605,14 @@ function mtl_render_dashboard_page() {
 				<?php wp_nonce_field( 'mtl_dashboard_layout_action', 'mtl_dashboard_layout_nonce' ); ?>
 				<input type="hidden" name="mtl_dashboard_layout_json" id="mtl-layout-json" value="<?php echo esc_attr( $layout_json ); ?>">
 				<button type="submit" name="mtl_save_dashboard_layout" id="mtl-save-layout-btn" class="button button-primary">Save Layout</button>
-				<button type="submit" name="mtl_reset_dashboard_layout" class="button" onclick="return confirm('Reset the dashboard to its default layout?');">Reset</button>
+				<?php
+				$reset_layout_confirm = array(
+					'title'   => 'Reset Layout',
+					'message' => 'Reset the dashboard to its default layout?',
+					'confirm' => 'Reset Layout',
+				);
+				?>
+				<button type="submit" name="mtl_reset_dashboard_layout" class="button"<?php echo mtl_confirm_attr( $reset_layout_confirm ); ?>>Reset</button>
 			</form>
 		</div>
 	</div>

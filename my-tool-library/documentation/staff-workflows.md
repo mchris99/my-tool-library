@@ -7,12 +7,12 @@ How to do the everyday jobs at the desk, plus the setup work an administrator do
 - [Common tasks](#common-tasks)
 - [Getting started](#getting-started): [Roles and permissions](#staff-roles-and-permissions) · [Admin view switch](#working-the-desk-as-an-administrator) · [First-time setup](#first-time-setup) · [Bulk import](#bulk-importing-tools-and-members) · [Staff accounts](#creating-staff-accounts)
 - [Tools](#tools): [Adding a tool](#adding-a-tool) · [Shelf location](#shelf-location) · [Resources and partner links](#resources-and-partner-links) · [Private notes](#private-notes) · [Sub-categories](#sub-categories) · [Maintenance](#putting-a-tool-under-maintenance) · [Retiring or deleting](#retiring-or-deleting-a-tool)
-- [Members](#members): [Adding a member](#adding-a-member) · [Online sign-ins](#online-sign-ins) · [Logins after a CSV import](#creating-logins-after-a-csv-import) · [Verifying identity](#verifying-identity) · [Hosting photos and documents](#hosting-photos-and-documents) · [Trainings](#trainings-and-certifications) · [Forgotten passwords](#forgotten-passwords) · [Deleting a member](#deleting-a-member)
+- [Members](#members): [Adding a member](#adding-a-member) · [Online sign-ins](#online-sign-ins) · [Logins after a CSV import](#creating-logins-after-a-csv-import) · [Verifying identity](#verifying-identity) · [Profile photos](#profile-photos) · [Hosting photos and documents](#hosting-photos-and-documents) · [Trainings](#trainings-and-certifications) · [Forgotten passwords](#forgotten-passwords) · [Locking an account](#locking-a-members-account) · [Deleting a member](#deleting-a-member)
 - [Loans and reservations](#loans-and-reservations): [Checking out a reservation](#checking-out-a-reservation) · [Quick Loan](#quick-loan) · [Quick Reserve](#quick-reserve) · [Bulk checkout](#bulk-checkout) · [From a member's record](#working-from-a-members-record) · [Renewing or returning](#renewing-or-returning-a-loan) · [Backdating a return](#backdating-a-return) · [Hold period](#reservation-hold-period) · [Overdue tools](#overdue-tools)
 - [Member agreements](#member-agreements): [Modes](#choosing-a-mode) · [Writing and revising](#writing-and-revising-agreements) · [How members agree](#how-members-agree) · [Recording paper signatures](#recording-paper-signatures) · [Agreement requests](#sending-agreement-requests) · [After a CSV import](#agreements-after-a-csv-import) · [Agreement record](#downloading-a-members-agreement-record)
 - [Dashboard](#dashboard)
 - [Library settings](#library-settings): [Asking members to give](#asking-members-to-give) · [Tool requests](#letting-people-request-tools) · [Branding](#branding)
-- [Data and backups](#data-and-backups): [Backing up](#backing-up-your-data) · [Database reset and sign-ins](#database-reset-and-member-sign-ins) · [Editing this guide](#editing-this-guide)
+- [Data and backups](#data-and-backups): [Backing up](#backing-up-your-data) · [Automatic backups](#automatic-backups) · [Restoring](#restoring-from-a-backup) · [Database reset and sign-ins](#database-reset-and-member-sign-ins) · [Editing this guide](#editing-this-guide)
 
 ## Common tasks
 
@@ -24,13 +24,17 @@ How to do the everyday jobs at the desk, plus the setup work an administrator do
 | Check a tool back in                               | [Renewing or returning a loan](#renewing-or-returning-a-loan)        |
 | Extend a loan                                      | [Renewing or returning a loan](#renewing-or-returning-a-loan)        |
 | Follow up on a late tool                           | [Overdue tools](#overdue-tools)                                      |
+| Stop someone borrowing until they talk to staff    | [Locking a member's account](#locking-a-members-account)             |
 | Sign up a new member                               | [Adding a member](#adding-a-member)                                  |
 | Check someone's ID                                 | [Verifying identity](#verifying-identity)                            |
+| Add a member's photo                               | [Profile photos](#profile-photos)                                    |
 | Take a broken tool out of circulation              | [Putting a tool under maintenance](#putting-a-tool-under-maintenance) |
 | Add a new tool                                     | [Adding a tool](#adding-a-tool)                                      |
 | Help a member who can't sign in                    | [Forgotten passwords](#forgotten-passwords)                          |
 | See everything a member or tool has done           | [Dashboard](#dashboard)                                              |
 | Back up the library                                | [Backing up your data](#backing-up-your-data)                        |
+| Back up on a schedule without remembering to       | [Automatic backups](#automatic-backups)                              |
+| Put the library back after a mistake or data loss  | [Restoring from a backup](#restoring-from-a-backup)                  |
 
 ---
 
@@ -44,6 +48,7 @@ There are two staff roles, both standard WordPress roles. **Editor** is for anyo
 | ------------------------------------------------------------------------ | :----: | :-----------: |
 | View the Dashboard                                                       |   ✅   |      ✅       |
 | Add or edit members                                                      |   ✅   |      ✅       |
+| Lock or unlock a member's account                                        |   ✅   |      ✅       |
 | Record member trainings                                                  |   ✅   |      ✅       |
 | Record a member's agreement (Add Member, or the Record agreement dialog) |   ✅   |      ✅       |
 | Ask one member to agree (Send agreement request)                         |   ✅   |      ✅       |
@@ -64,6 +69,8 @@ There are two staff roles, both standard WordPress roles. **Editor** is for anyo
 | ↳ Categories, tags and trainings lists                                   |   ❌   |      ✅       |
 | ↳ Member Agreements list                                                 |   ❌   |      ✅       |
 | ↳ Export data (`.sql` / CSV)                                             |   ❌   |      ✅       |
+| ↳ Automatic backups (set up, see, download)                              |   ❌   |      ✅       |
+| ↳ Restore from a `.sql` backup                                           |   ❌   |      ✅       |
 | ↳ Run Database Setup                                                     |   ❌   |      ✅       |
 
 Editors don't see the **Setup** tab at all.
@@ -74,7 +81,7 @@ Members don't need staff permission to delete their own account. See [Deleting a
 
 ### Working the desk as an administrator
 
-The **Admin view** switch at the top of **Setup** hides delete, bulk import and database setup, so an administrator on a desk shift can't lose data by accident. With it off, the plugin behaves as it does for an Editor. It affects only your account and doesn't change any WordPress permissions. Switch it back on from **Setup**.
+The **Admin view** switch at the top of **Setup** hides delete, bulk import, restore and database setup, so an administrator on a desk shift can't lose data by accident. With it off, the plugin behaves as it does for an Editor. It affects only your account and doesn't change any WordPress permissions. Switch it back on from **Setup**.
 
 ### First-time setup
 
@@ -83,13 +90,14 @@ Do this once, when the plugin is first installed.
 1. Activate the plugin from the WordPress **Plugins** screen.
 2. Under **Settings > General**, set the **Timezone** to a city, not a UTC offset, so Daylight Saving is handled for you. Every loan and reservation timestamp uses it, and past timestamps can't be corrected later.
 3. Go to **My Tool Library > Setup**. Under **Database Configuration**, slide the toggle, click **Run Database Setup**, and type `Delete ALL my data` to confirm. This creates the plugin's tables, and no other page works until it's done.
-4. **Only run Database Setup once.** On a library that's already running, it wipes every member, tool, loan and reservation, with no undo. Use **Export Data** first if you're troubleshooting a live library.
+4. **Only run Database Setup once.** On a library that's already running, it wipes every member, tool, loan and reservation, with no undo. Use **Export Data** first if you're troubleshooting a live library, so you can [restore](#restoring-from-a-backup) afterwards.
 5. Fill in the rest of **Setup**:
     - **General Details**: name, logo, colors, fonts, button style, and an optional **Verified Badge Image URL** that replaces the green "Verified" pill on a verified member's account page. The giving and tool-request fields are here too (see [Asking members to give](#asking-members-to-give) and [Letting people request tools](#letting-people-request-tools)).
     - **Reservations & Loans**: the default loan length, the [Reservation Hold Period](#reservation-hold-period) (14 days by default), and whether members see a tool's [shelf location](#shelf-location).
     - **Categories & Tags**: what staff pick from when adding tools, such as Woodworking or Cordless.
     - **Member Trainings**: the trainings you offer. See [Trainings and certifications](#trainings-and-certifications).
     - **Member Agreements**: waivers and other statements members must agree to. **Set this up before anyone joins**, since adding it later means extra work for staff and members. See [Member agreements](#member-agreements).
+    - **Automatic Backups**: turn them on and save the backup key somewhere safe. See [Automatic backups](#automatic-backups).
 6. Set up outgoing email with an SMTP plugin such as WP Mail SMTP, Post SMTP or FluentSMTP. Members don't get any email without it. Use a from address on your own domain, and add SPF and DKIM records for the mail service you chose.
 7. Copy the **Public Page Link** from Setup into your site's menu or onto a button. It's the one link your community needs to browse, reserve and sign up.
 8. Load your tools and members, one at a time or by [bulk import](#bulk-importing-tools-and-members).
@@ -210,10 +218,11 @@ On **Membership**, click **Add a New Member**.
 
 1. Enter their name, phone, address and email. Pick the phone number's country first; the number formats itself. **State / Province** covers the U.S. and Canada, so choose "N/A" for anywhere else. The email becomes their sign-in username, so it must be unique.
 2. If they give monthly, enter the amount under **Recurring Donation**.
-3. Paste in their ID and proof-of-address links if you have them (see [Verifying identity](#verifying-identity)). They're **unverified** until both are on file, which doesn't stop them browsing or reserving online.
-4. Under **Trainings**, tick anything they've completed and enter the date.
-5. If agreements are on, tick the ones they've signed on paper. Leave them blank if they haven't signed yet.
-6. Leave **Email them a link to choose their password** ticked unless you have a reason not to, then save.
+3. If you've taken their photo, paste its link into **Profile Photo URL** (see [Profile photos](#profile-photos)).
+4. Paste in their ID and proof-of-address links if you have them (see [Verifying identity](#verifying-identity)). They're **unverified** until both are on file, which doesn't stop them browsing or reserving online.
+5. Under **Trainings**, tick anything they've completed and enter the date.
+6. If agreements are on, tick the ones they've signed on paper. Leave them blank if they haven't signed yet.
+7. Leave **Email them a link to choose their password** ticked unless you have a reason not to, then save.
 
 ### Online sign-ins
 
@@ -262,15 +271,27 @@ If a member changes their name, phone or address on their own Account page, any 
 
 > **Note:** If your library doesn't need verification, an administrator can put any URL in both fields to mark someone verified. You can also tell members it isn't needed under **Setup > Member Verification Directions**.
 
+### Profile photos
+
+A profile photo helps staff recognize a member at the desk. It's optional, and a member without one can borrow and reserve as usual.
+
+1. Take the photo at the desk and upload it to the folder where the library keeps member photos (see [Hosting photos and documents](#hosting-photos-and-documents)).
+2. On **Membership**, click **Edit** on the member, paste the link into **Profile Photo URL**, and save. You can also add it when [adding a member](#adding-a-member).
+
+The photo appears in a small frame at the top of the member's detail panel. Click it to open the full-size image in a new tab. It's for staff only, and members never see it.
+
+To remove a photo, clear the field and save, then delete the file from wherever it's hosted.
+
 ### Hosting photos and documents
 
 Photos and documents are links to files hosted elsewhere, such as Google Drive:
 
 - **Tool photos and training badges** are public, so share them with "Anyone with the link".
+- **Profile photos** are personal. Share them only with staff, like verification documents.
 - **Verification documents** are sensitive. Share them only with staff.
 - **Agreement files** are the exception. They're uploaded to this site's Media Library and are public. See [Writing and revising agreements](#writing-and-revising-agreements).
 
-Deleting a member doesn't delete their hosted files. The site administrator is emailed the links and asked to delete them by hand.
+Deleting a member doesn't delete their hosted photo or documents. The site administrator is emailed the links and asked to delete them by hand.
 
 ### Trainings and certifications
 
@@ -299,13 +320,34 @@ If a member gets a confirmation they didn't expect, someone else reset their pas
 
 If reset emails never arrive for anyone, the site's mail setup is the problem, not the plugin. Most hosts need an SMTP plugin (see [First-time setup](#first-time-setup)).
 
+### Locking a member's account
+
+Lock an account when a member shouldn't borrow anything until they've talked to staff, for example over a late or damaged tool. Any staff member can do it, and it can be undone.
+
+1. On **Membership**, open the member's detail panel.
+2. Click **Lock Account**, under their reservations.
+3. Read what will happen in the dialog, then click **Lock Account** to confirm.
+
+While an account is locked:
+
+- The member can still sign in and see their Account and My Loans & Reservations pages. A red banner there and at the top of the catalog says their account is locked and to speak with library staff.
+- They can't reserve tools. The catalog shows a message where the **Reserve This Tool** button would be.
+- Staff can't lend to them, reserve for them or renew their loans, from any page. Quick Loan, Quick Reserve and Bulk checkout show **Locked** when you pick them.
+- They can still return tools. Mark them returned as usual.
+
+Locking cancels their active reservations, so the next person in each queue moves up. The member is emailed that their account is locked, which reservations were cancelled, and that they should speak with library staff. The email gives no reason, so note it in their private notes for the rest of the staff. If the email can't be sent, the message on Membership tells you, and you'll need to reach them another way.
+
+Locked members have a red **Locked** badge on their row. To list them all, set **Account Locked?** under Advanced Search to "Yes".
+
+To lift it, open the detail panel and click **Unlock Account**. No email is sent, and cancelled reservations don't come back, so the member reserves again if they still want those tools.
+
 ### Deleting a member
 
 **Administrators only.** Editors can ask an administrator, or point the member to the self-service option below.
 
 Click **Delete** on the member's row on **Membership**. This removes the person but keeps the library's records of what they borrowed.
 
-- **Removed for good:** name, address, phone and email (replaced with placeholders), verification links, private staff notes, and their WordPress sign-in.
+- **Removed for good:** name, address, phone and email (replaced with placeholders), profile photo and verification links, private staff notes, and their WordPress sign-in.
 - **Kept:** every loan, past and current reservations, and completed trainings, so tool histories and totals stay correct.
 
 Their row becomes **Former Member** with a **Removed** badge, and Edit and Delete disappear. Current reservations are cancelled. Open loans are left alone, so end them yourself, or retire the tools if they're missing.
@@ -314,7 +356,7 @@ The sign-in is deleted only if its email still matches the record. If it doesn't
 
 Deleting can't be undone, so [export a backup](#backing-up-your-data) first if you're unsure.
 
-Two emails go out every time: one confirming to the member, and one to the site administrator with the deleted record, asking them to delete the stored verification files.
+Two emails go out every time: one confirming to the member, and one to the site administrator with the deleted record, asking them to delete the stored photo and verification files.
 
 Members can delete their own account from **Account > Danger Zone > Delete Account and Remove Personal Data**. The result and emails are the same, so staff always hear about it.
 
@@ -345,11 +387,11 @@ For someone borrowing on the spot without a reservation:
 2. Type the member's name or email and pick them. A **Verified** or **Not Verified** pill appears.
 3. Choose a due date and click **Create Loan**.
 
-Quick Loan isn't available while the tool is on loan or under maintenance.
+Quick Loan isn't available while the tool is on loan or under maintenance, or for a member whose account is [locked](#locking-a-members-account).
 
 ### Quick Reserve
 
-For someone at the desk who wants to reserve a tool for later, whether or not they have an online account: open the tool's row on **Inventory**, click **Quick Reserve**, pick the member and click **Create Reservation**. It won't work if they already have that tool on loan or reserved.
+For someone at the desk who wants to reserve a tool for later, whether or not they have an online account: open the tool's row on **Inventory**, click **Quick Reserve**, pick the member and click **Create Reservation**. It won't work if they already have that tool on loan or reserved, or if their account is [locked](#locking-a-members-account).
 
 ### Bulk checkout
 
@@ -364,6 +406,7 @@ The whole batch goes through or none of it does, and the problem rows are named.
 
 - A barcode that matches no tool, or the same tool on two rows.
 - A retired tool.
+- A member whose account is [locked](#locking-a-members-account).
 - Lending a tool that's on loan or under maintenance. Tick **Reserve?** for that row instead.
 - A due date in the past.
 
@@ -384,6 +427,8 @@ On **Loans & Reservations**, open the loan:
 - **End loan (mark returned)** checks the tool back in for the next person.
 
 For a quick drop-off, find the tool on **Inventory** (the search box accepts a barcode scanner), open its row and click **Mark Returned**. You can also return a loan from the member's record (see [Working from a member's record](#working-from-a-members-record)).
+
+A [locked](#locking-a-members-account) member's loans can be returned but not renewed.
 
 ### Backdating a return
 
@@ -512,11 +557,63 @@ Clearing both removes the Account page box. The link must start with `http://` o
 
 ### Backing up your data
 
-Before a bulk import, plugin update or big cleanup, download a backup from **Setup > Export Data**: a SQL file or a ZIP of CSVs.
+Turn on [automatic backups](#automatic-backups) so there's always a recent copy on the site. Then also download a backup from **Setup > Export Data** regularly and keep it somewhere other than the website. Weekly is a good habit, and always do it before a bulk import, plugin update or big cleanup. Automatic backups live on the same server as the site, so they can't help if the whole site is lost, and a restore can only bring back what's in the file.
 
-**Keep the `.sql` file if you want something you can restore from.** The CSVs are for reading in a spreadsheet. Re-importing them creates new records with new ID numbers, and loans and reservations can't be imported at all. Restoring a `.sql` file needs database access, such as phpMyAdmin, the `mysql` command line or `wp db import`. The plugin has no restore button.
+**Keep the `.sql` file.** It's the one [Restore from Backup](#restoring-from-a-backup) reads, and it keeps every record's ID number, so members' sign-ins still match after a restore. The ZIP of CSVs is for reading in a spreadsheet. Re-importing the CSVs creates new records with new ID numbers, and loans and reservations can't be imported at all.
 
 Store exports somewhere private. They hold members' contact details and verification links, and agreement records keep the names and emails of deleted members.
+
+### Automatic backups
+
+**Setup > Automatic Backups** saves an encrypted copy of the `.sql` dump to the WordPress Media Library on a schedule.
+
+1. Tick **Back up automatically**.
+2. Set **Back Up Every** (1 to 90 days; 7 is a good choice) and **Backups to Keep** (10 by default). Each time a new backup is made, the oldest beyond that number is deleted.
+3. Click **Save Backup Settings**.
+4. Open **Show backup key**, click **Copy**, and save the key in a password manager. Do this now, not later.
+5. Click **Back up now** to make the first backup straight away and check that it works.
+
+Each backup is named after the date and time it was made, such as `my-tool-library-backup-2026-10-17-030512-…sql.enc`. The random letters on the end stop anyone guessing the address.
+
+**The backup key matters.** Backups are encrypted with it, so a stolen copy is unreadable. This site opens its own backups without you typing anything. If the site's database is ever lost, though, the key is lost with it, and you'll need your saved copy to open the backups. Nobody can recover a lost key, including the plugin's authors.
+
+**Who can see them:** only Administrators. Backups don't appear in the Media Library, the WordPress REST API or anywhere else for Editors or the public. Downloading one from the Media Library goes through a link that only works for a signed-in Administrator. What you download is still encrypted, and Restore from Backup opens it.
+
+**When they run:** around 3 a.m. site time on the day they're due. WordPress only runs scheduled tasks when someone visits the site, so on a quiet site the backup happens with the first visit after 3 a.m. The Automatic Backups box shows when the last backup ran and when the next is due, and warns you when:
+
+- the last attempt failed, with the reason
+- a backup is overdue. If that keeps happening, ask your host to run `wp-cron.php` on a schedule.
+- the site's scheduler is switched off (`DISABLE_WP_CRON`)
+- the server hands out files from the backup folder to anyone who knows a file's exact address. Backups are still encrypted and unguessable there, but for the strongest protection give your host the server rule shown in the warning.
+
+Turning automatic backups off stops new ones. Backups already in the Media Library stay until you delete them there.
+
+### Restoring from a backup
+
+**Setup > Restore from Backup** replaces everything in the library with the contents of a backup. Use it after a mistake you can't fix by hand, a bad import, an accidental **Run Database Setup**, or a lost or damaged database.
+
+1. If the library still works, download a fresh `.sql` file from **Export Data** first, in case you want today's data back.
+2. Under **Restore from**, pick one of the backups stored in the Media Library. Or leave it on **A file I upload** and choose a `.sql` file from Export Data, or a `.sql.enc` automatic backup you downloaded. A stored backup is read straight from the server, so the upload size limit doesn't apply to it.
+3. If you're uploading an automatic backup this site can't open on its own (one from another site, or from before this site's database was lost), paste your saved backup key into **Backup key**. Otherwise leave it empty.
+4. Slide the toggle, click **Restore from Backup**, and type `Replace ALL my data` to confirm.
+
+Every member, tool, loan, reservation, training and agreement record is replaced with the one in the file. Anything added after the file was downloaded is gone, so re-enter it afterwards.
+
+The whole file is checked before anything changes. A file that isn't a backup from this plugin, was cut short while downloading, or was edited by hand is turned away, and so is an encrypted backup opened with the wrong key. If the database refuses any part of it partway through, everything goes back to how it was. Either way you see "Nothing was restored" and your data is unchanged.
+
+A restore leaves these alone:
+
+- **Setup settings** (branding, loan and hold defaults, the member agreements mode) aren't in the backup and stay as they are.
+- **Members' sign-ins** live in WordPress, not in the backup. On the same site they reconnect on their own, because the backup keeps each member's ID number. Someone who joined after the backup was made sees "we couldn't match your sign-in to a membership record" until you re-add them with the same email. See [Database reset and member sign-ins](#database-reset-and-member-sign-ins).
+- **Files** attached to agreements stay in the WordPress Media Library.
+
+**Restoring onto a new WordPress site**, after losing the old one: install and activate the plugin, set the same timezone as before under **Settings > General**, then restore. An automatic backup needs your saved backup key here. You don't need to run Database Setup first, since the restore creates the plugin's tables when there are none. Members have no sign-ins on the new site yet, so press **Create logins** and then **Send setup emails** under **Member Logins** on the Membership page. Re-enter your Setup settings too. If your agreements have files attached, move the Media Library across as well, since each agreement points at its file by Media Library number.
+
+Good to know:
+
+- **Older backups work.** A file from an earlier version of the plugin loads into the current tables, and anything added since then gets its default. A file from a newer version is turned away, so update the plugin first.
+- **Restore older files here, not with phpMyAdmin.** Exports made before Restore from Backup existed wrote every `%` in your data incorrectly. Restore from Backup fixes them as it loads; a direct database import doesn't.
+- **If the file is too big to upload**, the page says so and shows the largest file your server accepts. Pick a stored automatic backup instead if one is recent enough, or ask your host to raise the upload limit. Failing that, a plain `.sql` file from the plugin version you're running now can be imported with phpMyAdmin, the `mysql` command line or `wp db import`. Encrypted `.sql.enc` backups can only be restored here.
 
 ### Database reset and member sign-ins
 
@@ -524,7 +621,7 @@ Running **Run Database Setup** on a live library deletes every record but leaves
 
 To reconnect them:
 
-- **Restore the `.sql` backup.** The old IDs come back and every sign-in reconnects.
+- **Restore the `.sql` backup** with [Restore from Backup](#restoring-from-a-backup). The old IDs come back and every sign-in reconnects.
 - **Or re-add members with the same email**, by hand or by CSV. Their sign-in reconnects, they keep their password, and no setup email is sent. After a CSV, press **Create logins** under Member Logins to reconnect the whole batch.
 - If one member is still stuck, make their email on **Membership** match their WordPress account under **Users**.
 

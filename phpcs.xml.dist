@@ -45,19 +45,25 @@
         <exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_key"/>
         <exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_value"/>
 
-        <!-- fopen()/fread()/fclose() here are always used on either a
+        <!-- fopen()/fread()/fwrite()/fclose() here are used on a
              php://output / php://temp stream (building a CSV/SQL/ZIP file
-             for direct download) or an already-validated uploaded tmp file
-             (is_uploaded_file() checked first); none of these are real
-             filesystem paths WP_Filesystem is designed for, and WP_Filesystem
-             has no stream-wrapper equivalent for php://output. -->
+             for direct download), an already-validated uploaded tmp file
+             (is_uploaded_file() checked first), or an automatic backup in
+             uploads/mtl-backups, which admin/auto-backups.php encrypts and
+             writes a chunk at a time as the dump is built. WP_Filesystem has
+             no stream-wrapper equivalent for php://output and no way to
+             append to a file piece by piece, and it can prompt for FTP
+             credentials, which a scheduled backup has no one to answer. -->
         <exclude name="WordPress.WP.AlternativeFunctions.file_system_operations_fopen"/>
         <exclude name="WordPress.WP.AlternativeFunctions.file_system_operations_fread"/>
+        <exclude name="WordPress.WP.AlternativeFunctions.file_system_operations_fwrite"/>
         <exclude name="WordPress.WP.AlternativeFunctions.file_system_operations_fclose"/>
 
         <!-- setup-page.php reads the plugin's own bundled admin/schema.sql by
              a hardcoded local path (never a URL or user input) to run Database
-             Setup. wp_remote_get() is for HTTP requests and doesn't apply;
+             Setup, and Restore from Backup reads the uploaded .sql file from
+             PHP's temp directory once is_uploaded_file() has verified it.
+             wp_remote_get() is for HTTP requests and doesn't apply;
              WP_Filesystem() is avoided here since it can prompt for FTP/SSH
              credentials on hosts without direct filesystem access, which
              would turn a one-click admin action into a broken/blocked one. -->
@@ -111,6 +117,7 @@
                 <element value="mtl_giving_section_html"/>
                 <element value="mtl_tool_request_section_html"/>
                 <element value="mtl_shop_location_block"/>
+                <element value="mtl_confirm_attr"/>
             </property>
         </properties>
     </rule>

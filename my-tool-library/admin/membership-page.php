@@ -786,10 +786,10 @@ function mtl_render_record_agreement_form( $member, $acceptances, $changed = fal
 		<?php endif; ?>
 
 		<p style="margin-bottom:0;">
-			<a class="button" href="<?php echo esc_url( remove_query_arg( 'mtl_record_agreement' ) ); ?>#mtl-detail-<?php echo esc_attr( $member_id ); ?>">Cancel</a>
 			<?php if ( $outstanding ) : ?>
 				<button type="submit" name="mtl_record_agreement" value="1" class="button button-primary">Record</button>
 			<?php endif; ?>
+			<a class="button" href="<?php echo esc_url( remove_query_arg( 'mtl_record_agreement' ) ); ?>#mtl-detail-<?php echo esc_attr( $member_id ); ?>">Cancel</a>
 		</p>
 	</form>
 	<?php
@@ -1016,6 +1016,13 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 			<?php mtl_render_trainings_picker( $trainings, $values['training_starts'], $id_prefix ); ?>		</td>
 	</tr>
 	<tr>
+		<th scope="row"><label for="<?php echo $field_id( 'profile_photo_url' ); ?>">Profile Photo URL</label></th>
+		<td>
+			<input type="url" name="profile_photo_url" id="<?php echo $field_id( 'profile_photo_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['profile_photo_url'] ); ?>" placeholder="https://...">
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Staff-only.</strong> Never shown to members. Keep photos in a private folder.</p>
+		</td>
+	</tr>
+	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'photo_id_scan_url' ); ?>">Photo ID Scan URL</label></th>
 		<td>
 			<input type="url" name="photo_id_scan_url" id="<?php echo $field_id( 'photo_id_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['photo_id_scan_url'] ); ?>" placeholder="https://...">
@@ -1105,6 +1112,7 @@ function mtl_render_membership_page() {
 		'signup_date'               => gmdate( 'Y-m-d' ),
 		'recurring_donation_amount' => '',
 		'has_donated_tools'         => 'N',
+		'profile_photo_url'         => '',
 		'photo_id_scan_url'         => '',
 		'address_proof_scan_url'    => '',
 		'private_notes'             => '',
@@ -1288,6 +1296,7 @@ function mtl_render_membership_page() {
 			$zip_code        = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
 			$country         = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
 			$signup_date     = sanitize_text_field( wp_unslash( $_POST['signup_date'] ?? '' ) );
+			$profile_photo   = sanitize_url( wp_unslash( $_POST['profile_photo_url'] ?? '' ) );
 			$photo_id_url    = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
 			$addr_proof_url  = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
 			$private_notes   = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
@@ -1387,8 +1396,9 @@ function mtl_render_membership_page() {
 						'recurring_donation_amount' => $donation,
 						'has_donated_tools'         => $has_donated,
 						'private_notes'             => '' !== $private_notes ? $private_notes : null,
+						'profile_photo_url'         => '' !== $profile_photo ? $profile_photo : null,
 					),
-					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s' )
+					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%s' )
 				);
 
 				if ( $inserted ) {
@@ -1512,6 +1522,7 @@ function mtl_render_membership_page() {
 				$form_values['signup_date']               = $signup_date;
 				$form_values['recurring_donation_amount'] = $donation_display;
 				$form_values['has_donated_tools']         = $has_donated;
+				$form_values['profile_photo_url']         = $profile_photo;
 				$form_values['photo_id_scan_url']         = $photo_id_url;
 				$form_values['address_proof_scan_url']    = $addr_proof_url;
 				$form_values['private_notes']             = $private_notes;
@@ -2128,6 +2139,7 @@ function mtl_render_membership_page() {
 			$zip_code        = sanitize_text_field( wp_unslash( $_POST['zip_code'] ?? '' ) );
 			$country         = mtl_valid_country( sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ) );
 			$signup_date     = sanitize_text_field( wp_unslash( $_POST['signup_date'] ?? '' ) );
+			$profile_photo   = sanitize_url( wp_unslash( $_POST['profile_photo_url'] ?? '' ) );
 			$photo_id_url    = sanitize_url( wp_unslash( $_POST['photo_id_scan_url'] ?? '' ) );
 			$addr_proof_url  = sanitize_url( wp_unslash( $_POST['address_proof_scan_url'] ?? '' ) );
 			$private_notes   = sanitize_textarea_field( wp_unslash( $_POST['private_notes'] ?? '' ) );
@@ -2225,9 +2237,10 @@ function mtl_render_membership_page() {
 						'recurring_donation_amount' => $donation,
 						'has_donated_tools'         => $has_donated,
 						'private_notes'             => '' !== $private_notes ? $private_notes : null,
+						'profile_photo_url'         => '' !== $profile_photo ? $profile_photo : null,
 					),
 					array( 'member_id' => $edit_member_id ),
-					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s' ),
+					array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%s' ),
 					array( '%d' )
 				);
 
@@ -2360,6 +2373,7 @@ function mtl_render_membership_page() {
 					'signup_date'               => $signup_date,
 					'recurring_donation_amount' => $donation_display,
 					'has_donated_tools'         => $has_donated,
+					'profile_photo_url'         => $profile_photo,
 					'photo_id_scan_url'         => $photo_id_url,
 					'address_proof_scan_url'    => $addr_proof_url,
 					'private_notes'             => $private_notes,
@@ -2481,14 +2495,18 @@ function mtl_render_membership_page() {
 				// $wpdb->query()'s affected-rows return is 0 both when nothing
 				// matched AND when the posted date equals the existing one, so
 				// it can't distinguish "no such active loan" from "no-op save".
-				$ext_active = $wpdb->get_var(
+				// Its member comes from the loan itself, never from the POST.
+				$ext_member_id = (int) $wpdb->get_var(
 					$wpdb->prepare(
-						"SELECT loan_id FROM {$tbl_loans} WHERE loan_id = %d AND return_date IS NULL",
+						"SELECT member_id FROM {$tbl_loans} WHERE loan_id = %d AND return_date IS NULL",
 						$ext_loan_id
 					)
 				);
-				if ( ! $ext_active ) {
+				if ( ! $ext_member_id ) {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That loan could not be found, or has already been returned.</p></div>';
+				} elseif ( mtl_member_is_locked( $ext_member_id ) ) {
+					$reopen_member_id = $ext_member_id;
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot extend this loan.</strong> This member&rsquo;s account is locked. Unlock it first.</p></div>';
 				} else {
 					$wpdb->query(
 						$wpdb->prepare(
@@ -2564,6 +2582,11 @@ function mtl_render_membership_page() {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The due date can&rsquo;t be in the past. Please pick today or a later date.</p></div>';
 			} elseif ( ! $sl_res ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That reservation is no longer active, so it could not be checked out.</p></div>';
+			} elseif ( mtl_member_is_locked( (int) $sl_res->member_id ) ) {
+				// Locking cancels every active reservation, so this only fires
+				// for a page loaded before the lock; kept as defense-in-depth,
+				// like the retired check below.
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot start this loan.</strong> This member&rsquo;s account is locked.</p></div>';
 			} else {
 				// Anyone else with an earlier active reservation for the same
 				// tool means this member is no longer first in line.
@@ -2638,6 +2661,54 @@ function mtl_render_membership_page() {
 	}
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
+	// 3F. HANDLE "LOCK ACCOUNT" / "UNLOCK ACCOUNT" FROM THE MEMBER DETAIL
+	// PANEL. Editors as well as Administrators: it is desk work, and unlike
+	// deleting it can be undone. See mtl_lock_member() for what a lock does.
+	if ( ( isset( $_POST['mtl_member_lock'] ) || isset( $_POST['mtl_member_unlock'] ) ) && mtl_can_manage_library() ) {
+		if ( isset( $_POST['mtl_member_lock_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_member_lock_nonce'] ) ), 'mtl_member_lock_action' ) ) {
+			$lock_member_id   = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
+			$reopen_member_id = $lock_member_id;
+
+			if ( isset( $_POST['mtl_member_lock'] ) ) {
+				$lock_result = mtl_lock_member( $lock_member_id );
+				$lock_name   = esc_html( $lock_result['name'] );
+				$lock_email  = esc_html( $lock_result['email'] );
+
+				if ( 'locked' === $lock_result['outcome'] ) {
+					$lock_res_note = '';
+					if ( $lock_result['cancelled_reservations'] > 0 ) {
+						$lock_res_note = 1 === $lock_result['cancelled_reservations']
+							? ' Their active reservation was cancelled.'
+							: ' Their ' . (int) $lock_result['cancelled_reservations'] . ' active reservations were cancelled.';
+					}
+					// Staff need to know if the member was never told, since
+					// the email is the only thing that says to come and talk.
+					$lock_email_note = $lock_result['email_sent']
+						? ' An email asking them to speak with library staff was sent to ' . $lock_email . '.'
+						: ' <strong>The email to ' . $lock_email . ' could not be sent</strong>, so let them know another way.';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Account locked.</strong> ' . $lock_name . ' can still sign in, but can&rsquo;t reserve or borrow tools until the account is unlocked.' . esc_html( $lock_res_note ) . wp_kses_post( $lock_email_note ) . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $lock_name is esc_html()'d above.
+				} elseif ( 'already_locked' === $lock_result['outcome'] ) {
+					echo '<div class="notice notice-warning is-dismissible"><p>' . $lock_name . '&rsquo;s account was already locked, so nothing changed.</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $lock_name is esc_html()'d above.
+				} else {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member could not be found, or was deleted.</p></div>';
+				}
+			} else {
+				$unlock_result = mtl_unlock_member( $lock_member_id );
+				$unlock_name   = esc_html( $unlock_result['name'] );
+
+				if ( 'unlocked' === $unlock_result['outcome'] ) {
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Account unlocked.</strong> ' . $unlock_name . ' can reserve and borrow tools again. Reservations cancelled by the lock aren&rsquo;t restored.</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $unlock_name is esc_html()'d above.
+				} elseif ( 'not_locked' === $unlock_result['outcome'] ) {
+					echo '<div class="notice notice-warning is-dismissible"><p>' . $unlock_name . '&rsquo;s account wasn&rsquo;t locked, so nothing changed.</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $unlock_name is esc_html()'d above.
+				} else {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member could not be found, or was deleted.</p></div>';
+				}
+			}
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
 	// 4. HANDLE "EDIT" LINK (GET): load the requested member into the Edit
 	// panel. Skipped if a submitted edit above already failed validation, since
 	// that block already populated $editing/$edit_values with the admin's input.
@@ -2686,6 +2757,7 @@ function mtl_render_membership_page() {
 					'signup_date'               => $member_row->signup_date,
 					'recurring_donation_amount' => $member_row->recurring_donation_amount,
 					'has_donated_tools'         => $member_row->has_donated_tools,
+					'profile_photo_url'         => (string) $member_row->profile_photo_url,
 					'photo_id_scan_url'         => (string) $member_row->photo_id_scan_url,
 					'address_proof_scan_url'    => (string) $member_row->address_proof_scan_url,
 					'private_notes'             => stripslashes( (string) $member_row->private_notes ),
@@ -2793,6 +2865,36 @@ function mtl_render_membership_page() {
 			padding: 2px 9px;
 			font-size: 0.8em;
 			white-space: nowrap;
+		}
+
+		/* Solid, unlike the pale Not Verified badge beside it: a lock is
+			enforced, where verification is only a flag for staff to weigh. */
+		.mtl-locked-badge {
+			display: inline-block;
+			background: #b32d2e;
+			color: #fff;
+			border: 1px solid #b32d2e;
+			border-radius: 12px;
+			padding: 2px 9px;
+			font-size: 0.8em;
+			white-space: nowrap;
+			margin-top: 3px;
+		}
+
+		.mtl-detail-panel p.mtl-lock-status {
+			color: #b32d2e;
+			font-weight: 600;
+			margin-bottom: 8px;
+		}
+
+		.mtl-lock-effects {
+			list-style: disc;
+			margin: 0 0 16px 20px;
+			color: #50575e;
+		}
+
+		.mtl-lock-effects li {
+			margin-bottom: 6px;
 		}
 
 		/* Advanced filters: related fields are boxed into side-by-side groups
@@ -2972,6 +3074,25 @@ function mtl_render_membership_page() {
 
 		.mtl-detail-panel p {
 			margin: 4px 0 14px 0;
+		}
+
+		/* Profile photo, top of the detail panel. A fixed frame cropped to
+			fill, since photos taken at the desk come in any shape; clicking it
+			opens the whole image. */
+		.mtl-profile-photo-link {
+			display: block;
+			width: max-content;
+			margin: 4px 0 14px 0;
+		}
+
+		.mtl-profile-photo {
+			display: block;
+			width: 96px;
+			height: 120px;
+			object-fit: cover;
+			border: 1px solid #ccd0d4;
+			border-radius: 4px;
+			background: #fff;
 		}
 
 		/* Per-member borrowing activity */
@@ -3327,12 +3448,26 @@ function mtl_render_membership_page() {
 			margin-top: 12px;
 		}
 
+		/* Framed like the Lock Account modal (.mtl-lm-modal), wider for the
+			agreement text, and placed and capped like that modal's overlay. */
 		dialog.mtl-record-dialog {
 			max-width: 640px;
 			width: 92%;
-			border: 1px solid #c3c4c7;
-			border-radius: 4px;
-			padding: 18px 22px;
+			border: none;
+			border-radius: 6px;
+			box-shadow: 0 8px 30px rgba(0, 0, 0, .3);
+			padding: 22px 24px 24px 24px;
+			margin-top: 8vh;
+			max-height: calc(92vh - 16px);
+			overflow-y: auto;
+			color: inherit;
+		}
+
+		/* The inline fallback's box, which the dialog's frame replaces. */
+		dialog.mtl-record-dialog .mtl-record-inline {
+			border: none;
+			padding: 0;
+			margin: 0;
 		}
 
 		dialog.mtl-record-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
@@ -3640,7 +3775,14 @@ function mtl_render_membership_page() {
 
 			<div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
 				<p style="margin-top: 0;"><strong>Member ID:</strong> #<?php echo esc_html( $edit_member_id ); ?> <span style="color:#666; font-size:0.85em;">(cannot be changed)</span></p>
-				<form method="post" action="<?php echo esc_url( $base_url ); ?>" onsubmit="return confirm('Save changes to this member?');">
+				<?php
+				$save_member_confirm = array(
+					'title'   => 'Save Changes',
+					'message' => 'Save changes to this member?',
+					'confirm' => 'Save Changes',
+				);
+				?>
+				<form method="post" action="<?php echo esc_url( $base_url ); ?>"<?php echo mtl_confirm_attr( $save_member_confirm ); ?>>
 					<?php wp_nonce_field( 'mtl_edit_member_action', 'mtl_edit_member_nonce' ); ?>
 					<input type="hidden" name="member_id" value="<?php echo esc_attr( $edit_member_id ); ?>">
 
@@ -3684,6 +3826,8 @@ function mtl_render_membership_page() {
             m.has_donated_tools,
             m.anonymized_at,
             m.private_notes,
+            m.locked_at,
+            m.profile_photo_url,
             v.photo_id_scan_url,
             v.address_proof_scan_url,
             v.verified_at
@@ -3901,6 +4045,14 @@ function mtl_render_membership_page() {
 							<option value="no">No</option>
 						</select>
 					</div>
+					<div>
+						<label for="adv-m-locked">Account Locked?</label>
+						<select id="adv-m-locked">
+							<option value="">Any</option>
+							<option value="1">Yes</option>
+							<option value="0">No</option>
+						</select>
+					</div>
 					<?php if ( mtl_agreements_tracking() ) : ?>
 						<div>
 							<?php // A badge finds one member; this is what lets staff work through a backlog after revising an agreement. ?>
@@ -4085,11 +4237,22 @@ function mtl_render_membership_page() {
 							),
 							$base_url
 						);
-						$delete_confirm = sprintf(
-							'Permanently delete member "%s" (%s)? This cannot be undone. If they have loan or reservation history, that history will be kept on record and their personal data will be anonymized instead of removed outright. Any active reservations of theirs will be cancelled, freeing up their spot in the queue.',
-							$full_name,
-							$member->email
+						$delete_confirm = array(
+							'title'   => 'Delete Member',
+							'message' => 'Permanently delete %s (' . $member->email . ')?',
+							'subject' => $full_name,
+							'details' => array(
+								'This cannot be undone.',
+								'If they have loan or reservation history, that history will be kept on record and their personal data will be anonymized instead of removed outright.',
+								'Any active reservations of theirs will be cancelled, freeing up their spot in the queue.',
+							),
+							'confirm' => 'Delete Member',
+							'danger'  => true,
 						);
+
+						// A Former Member has no account left to be locked out
+						// of, whatever the column says.
+						$is_locked = ! $is_anonymized && ! empty( $member->locked_at );
 
 						// Borrowing activity for this member. Computed here (not
 						// in the detail row below) because the main row needs it
@@ -4116,6 +4279,7 @@ function mtl_render_membership_page() {
 							data-donation="<?php echo esc_attr( $member->recurring_donation_amount ); ?>"
 							data-donated="<?php echo esc_attr( strtolower( $member->has_donated_tools ) ); ?>"
 							data-verified="<?php echo $is_verified ? 'yes' : 'no'; ?>"
+							data-locked="<?php echo $is_locked ? '1' : '0'; ?>"
 							<?php // Only whether notes exist; the notes themselves stay in the detail panel. ?>
 							data-hasnotes="<?php echo trim( (string) $member->private_notes ) !== '' ? '1' : '0'; ?>"
 							<?php
@@ -4177,6 +4341,9 @@ function mtl_render_membership_page() {
 								<?php else : ?>
 									<span class="mtl-unverified-badge">Not Verified</span>
 								<?php endif; ?>
+								<?php if ( $is_locked ) : ?>
+									<span class="mtl-locked-badge" title="Locked <?php echo esc_attr( wp_strip_all_tags( mtl_format_date( $member->locked_at ) ) ); ?>: can&rsquo;t reserve or borrow tools">Locked</span>
+								<?php endif; ?>
 								<?php
 								// Two labels, because they mean different things
 								// to staff: caught by a revision, versus never
@@ -4228,8 +4395,15 @@ function mtl_render_membership_page() {
 									// does what it says rather than reporting a
 									// state staff cannot act on from here.
 									if ( null === $member_login || $member_login['pending'] ) :
+										$setup_link_confirm = array(
+											'title'   => 'Send Setup Link',
+											'message' => 'Email %s a link to set their password?',
+											'subject' => $member->email,
+											'details' => array( 'Any link sent to them earlier will stop working.' ),
+											'confirm' => 'Send Setup Link',
+										);
 										?>
-										<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('Email <?php echo esc_js( $member->email ); ?> a link to set their password? Any link sent to them earlier will stop working.');">
+										<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;"<?php echo mtl_confirm_attr( $setup_link_confirm ); ?>>
 											<?php wp_nonce_field( 'mtl_send_one_setup_email_action', 'mtl_send_one_setup_email_nonce' ); ?>
 											<input type="hidden" name="member_id" value="<?php echo esc_attr( $member->member_id ); ?>">
 											<button type="submit" name="mtl_send_one_setup_email" class="button button-small">Send&nbsp;setup&nbsp;link</button>
@@ -4243,7 +4417,7 @@ function mtl_render_membership_page() {
 									// account themselves from the public Account page.
 									if ( mtl_can_delete_members() ) :
 										?>
-										<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('<?php echo esc_js( $delete_confirm ); ?>');">
+										<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;"<?php echo mtl_confirm_attr( $delete_confirm ); ?>>
 											<?php wp_nonce_field( 'mtl_delete_member_action', 'mtl_delete_member_nonce' ); ?>
 											<input type="hidden" name="member_id" value="<?php echo esc_attr( $member->member_id ); ?>">
 											<button type="submit" name="mtl_delete_member" class="button button-small mtl-btn-danger">Delete</button>
@@ -4261,6 +4435,16 @@ function mtl_render_membership_page() {
 							<td colspan="9">
 								<div class="mtl-detail-panel">
 									<div class="mtl-detail-col">
+										<?php if ( ! empty( $member->profile_photo_url ) ) : ?>
+											<?php
+											// Lazy, so a page of members does not fetch every
+											// photo up front: this row is hidden until opened.
+											?>
+											<a href="<?php echo esc_url( $member->profile_photo_url ); ?>" target="_blank" rel="noopener noreferrer" class="mtl-profile-photo-link" title="Open full size in a new tab">
+												<img src="<?php echo esc_url( $member->profile_photo_url ); ?>" alt="<?php echo esc_attr( 'Photo of ' . $full_name . ', opens full size in a new tab' ); ?>" class="mtl-profile-photo" loading="lazy">
+											</a>
+										<?php endif; ?>
+
 										<strong>Full Address</strong>
 										<?php $mtl_addr_lines = mtl_member_address_lines( $member ); ?>
 										<p><?php echo esc_html( $mtl_addr_lines[0] ); ?><br><?php echo esc_html( $mtl_addr_lines[1] ); ?></p>
@@ -4510,6 +4694,8 @@ function mtl_render_membership_page() {
 														data-due-date="<?php echo esc_attr( $loan->due_date ); ?>"
 														<?php // ISO date portion of the checkout timestamp (never mtl_format_date(), which is display-only): the modal's Return date can't go back past this day. ?>
 														data-loan-date="<?php echo esc_attr( substr( (string) $loan->loan_date, 0, 10 ) ); ?>"
+														<?php // A locked member's loan can be returned but not extended, so the modal hides Extend. ?>
+														data-locked="<?php echo $is_locked ? '1' : '0'; ?>"
 														title="Click to manage this loan">
 														<span>
 															<?php echo esc_html( stripslashes( $loan->tool_name ) ); ?>
@@ -4546,6 +4732,35 @@ function mtl_render_membership_page() {
 										<?php else : ?>
 											<p style="color: #999;">No active reservations.</p>
 										<?php endif; ?>
+
+										<?php if ( ! $is_anonymized ) : ?>
+											<?php if ( $is_locked ) : ?>
+												<p class="mtl-lock-status">Locked since <?php echo mtl_format_date( $member->locked_at ); ?>. They can sign in, but can&rsquo;t reserve or borrow tools.</p>
+												<?php
+												$unlock_confirm = array(
+													'title'   => 'Unlock Account',
+													'message' => 'Unlock the account of %s?',
+													'subject' => $full_name,
+													'details' => array( 'They will be able to reserve and borrow tools again.' ),
+													'confirm' => 'Unlock Account',
+												);
+												?>
+												<form method="post" action="<?php echo esc_url( $base_url ); ?>"<?php echo mtl_confirm_attr( $unlock_confirm ); ?>>
+													<?php wp_nonce_field( 'mtl_member_lock_action', 'mtl_member_lock_nonce' ); ?>
+													<input type="hidden" name="member_id" value="<?php echo esc_attr( $mid ); ?>">
+													<button type="submit" name="mtl_member_unlock" class="button">Unlock Account</button>
+												</form>
+											<?php else : ?>
+												<?php // Opens the shared Lock Account modal below, which asks staff to confirm. ?>
+												<p>
+													<button type="button" class="button mtl-btn-danger mtl-lock-launch"
+														data-member-id="<?php echo esc_attr( $mid ); ?>"
+														data-member-name="<?php echo esc_attr( $full_name ); ?>"
+														data-member-email="<?php echo esc_attr( $member->email ); ?>"
+														data-res-count="<?php echo esc_attr( $res_count ); ?>">Lock Account</button>
+												</p>
+											<?php endif; ?>
+										<?php endif; ?>
 									</div>
 								</div>
 							</td>
@@ -4572,7 +4787,9 @@ function mtl_render_membership_page() {
 			<h3 id="mtl-lm-title" style="margin-top: 0;">Manage Loan</h3>
 			<p class="mtl-lm-tool-line">Tool: <strong id="mtl-lm-tool-name"></strong></p>
 
-			<div class="mtl-lm-section">
+			<p class="mtl-lm-note" id="mtl-lm-locked-note" style="display: none;">This member&rsquo;s account is locked, so the loan can&rsquo;t be extended. It can still be returned.</p>
+
+			<div class="mtl-lm-section" id="mtl-lm-extend-section">
 				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-lm-extend-form">
 					<?php wp_nonce_field( 'mtl_member_loan_action', 'mtl_member_loan_nonce' ); ?>
 					<input type="hidden" name="loan_id" id="mtl-lm-extend-loan-id" value="">
@@ -4593,7 +4810,15 @@ function mtl_render_membership_page() {
 			</div>
 
 			<div class="mtl-lm-section">
-				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-lm-return-form" onsubmit="return confirm('Mark this tool as returned? This ends the loan.');">
+				<?php
+				$lm_return_confirm = array(
+					'title'   => 'Mark as Returned',
+					'message' => 'Mark this tool as returned?',
+					'details' => array( 'This ends the loan.' ),
+					'confirm' => 'Mark as Returned',
+				);
+				?>
+				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-lm-return-form"<?php echo mtl_confirm_attr( $lm_return_confirm ); ?>>
 					<?php wp_nonce_field( 'mtl_member_loan_action', 'mtl_member_loan_nonce' ); ?>
 					<input type="hidden" name="loan_id" id="mtl-lm-return-loan-id" value="">
 					<input type="hidden" name="member_id" id="mtl-lm-return-member-id" value="">
@@ -4650,7 +4875,17 @@ function mtl_render_membership_page() {
 			<p class="mtl-lm-note" id="mtl-rm-maintenance-note" style="display: none;">This tool is under maintenance, so the loan can't be started yet. Mark it back in service on the <strong>Inventory</strong> page first.</p>
 
 			<div class="mtl-lm-section">
-				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-rm-cancel-form" onsubmit="return confirm('Cancel this reservation? This ends it and removes it from the member list.');">
+				<?php
+				$rm_cancel_confirm = array(
+					'title'   => 'Cancel Reservation',
+					'message' => 'Cancel this reservation?',
+					'details' => array( 'This ends it and removes it from the member list.' ),
+					'confirm' => 'Cancel Reservation',
+					'cancel'  => 'Keep Reservation',
+					'danger'  => true,
+				);
+				?>
+				<form method="post" action="<?php echo esc_url( $base_url ); ?>" id="mtl-rm-cancel-form"<?php echo mtl_confirm_attr( $rm_cancel_confirm ); ?>>
 					<?php wp_nonce_field( 'mtl_member_cancel_reservation_action', 'mtl_member_cancel_reservation_nonce' ); ?>
 					<input type="hidden" name="reservation_id" id="mtl-rm-cancel-reservation-id" value="">
 					<input type="hidden" name="member_id" id="mtl-rm-cancel-member-id" value="">
@@ -4660,6 +4895,35 @@ function mtl_render_membership_page() {
 					</div>
 				</form>
 			</div>
+		</div>
+	</div>
+
+	<?php
+	// ---- Shared Lock Account modal (one per page; the member is set by JS
+			// when a detail panel's Lock Account button is clicked). This is
+			// the confirmation step: nothing is locked until its form is
+			// submitted. ----
+	?>
+	<div id="mtl-lock-overlay" class="mtl-lm-overlay" style="display: none;">
+		<div class="mtl-lm-modal" role="dialog" aria-modal="true" aria-labelledby="mtl-lock-title" aria-describedby="mtl-lock-effects">
+			<button type="button" class="mtl-lm-close" id="mtl-lock-close" aria-label="Close">&times;</button>
+			<h3 id="mtl-lock-title" style="margin-top: 0;">Lock Account</h3>
+			<p class="mtl-lm-tool-line">Lock the account of <strong id="mtl-lock-name"></strong>?</p>
+
+			<ul class="mtl-lock-effects" id="mtl-lock-effects">
+				<li>They can still sign in and see their account, but can&rsquo;t reserve tools, and loans can&rsquo;t be started or extended for them.</li>
+				<li id="mtl-lock-res-line"></li>
+				<li>An email to <strong id="mtl-lock-email"></strong> will tell them the account is locked and to speak with library staff.</li>
+			</ul>
+
+			<form method="post" action="<?php echo esc_url( $base_url ); ?>">
+				<?php wp_nonce_field( 'mtl_member_lock_action', 'mtl_member_lock_nonce' ); ?>
+				<input type="hidden" name="member_id" id="mtl-lock-member-id" value="">
+				<div class="mtl-lm-actions">
+					<button type="submit" name="mtl_member_lock" class="button mtl-btn-danger">Lock Account</button>
+					<button type="button" class="button" id="mtl-lock-cancel">Cancel</button>
+				</div>
+			</form>
 		</div>
 	</div>
 
@@ -4743,6 +5007,7 @@ function mtl_render_membership_page() {
 				donationMax: document.getElementById('adv-m-donation-max'),
 				donated: document.getElementById('adv-m-donated'),
 				verified: document.getElementById('adv-m-verified'),
+				locked: document.getElementById('adv-m-locked'),
 				agreements: document.getElementById('adv-m-agreements'),
 				agreement: document.getElementById('adv-m-agreement'),
 				agreementVersion: document.getElementById('adv-m-agreement-version'),
@@ -4893,6 +5158,7 @@ function mtl_render_membership_page() {
 					donationMax: advFields.donationMax.value !== '' ? parseFloat(advFields.donationMax.value) : null,
 					donated: advFields.donated.value,
 					verified: advFields.verified.value,
+					locked: advFields.locked.value,
 					agreements: advFields.agreements ? advFields.agreements.value : '',
 					agreement: advFields.agreement ? advFields.agreement.value : '',
 					agreementVersion: advFields.agreementVersion ? advFields.agreementVersion.value : '',
@@ -4922,6 +5188,7 @@ function mtl_render_membership_page() {
 					if (visible && f.signupTo && d.signup > f.signupTo) visible = false;
 					if (visible && f.donated && d.donated !== f.donated) visible = false;
 					if (visible && f.verified && d.verified !== f.verified) visible = false;
+					if (visible && f.locked && d.locked !== f.locked) visible = false;
 					if (visible && f.hasNotes && d.hasnotes !== f.hasNotes) visible = false;
 					if (visible && f.agreements && d.agreements !== f.agreements) visible = false;
 
@@ -5166,6 +5433,8 @@ function mtl_render_membership_page() {
 			const returnLoanId    = document.getElementById('mtl-lm-return-loan-id');
 			const returnMemberId  = document.getElementById('mtl-lm-return-member-id');
 			const returnDate      = document.getElementById('mtl-lm-return-date');
+			const extendSection   = document.getElementById('mtl-lm-extend-section');
+			const lockedNote      = document.getElementById('mtl-lm-locked-note');
 
 			function dateFromToday(days) {
 				const d = new Date();
@@ -5196,6 +5465,11 @@ function mtl_render_membership_page() {
 					returnDate.value = returnDate.max;
 					returnDate.min   = li.dataset.loanDate || '';
 				}
+				// The server refuses the extension either way; this just
+				// doesn't offer it.
+				const locked = li.dataset.locked === '1';
+				extendSection.style.display = locked ? 'none' : '';
+				lockedNote.style.display    = locked ? 'block' : 'none';
 				clearActiveDueButton();
 				overlay.style.display = 'flex';
 			}
@@ -5346,6 +5620,57 @@ function mtl_render_membership_page() {
 	</script>
 
 	<script>
+		// ---- Lock Account modal ----
+		document.addEventListener('DOMContentLoaded', function() {
+			const overlay = document.getElementById('mtl-lock-overlay');
+			if (!overlay) return;
+			const nameEl        = document.getElementById('mtl-lock-name');
+			const emailEl       = document.getElementById('mtl-lock-email');
+			const resLine       = document.getElementById('mtl-lock-res-line');
+			const memberIdInput = document.getElementById('mtl-lock-member-id');
+			const cancelBtn     = document.getElementById('mtl-lock-cancel');
+			let launcher = null;
+
+			function openModal(btn) {
+				launcher = btn;
+				const resCount = parseInt(btn.dataset.resCount, 10) || 0;
+				// textContent, so a stored name or email can't become markup.
+				nameEl.textContent  = btn.dataset.memberName;
+				emailEl.textContent = btn.dataset.memberEmail;
+				memberIdInput.value = btn.dataset.memberId;
+				resLine.textContent = resCount === 1
+					? 'Their active reservation will be cancelled, and the next person in line moves up.'
+					: 'Their ' + resCount + ' active reservations will be cancelled, and the next person in each line moves up.';
+				resLine.style.display = resCount > 0 ? '' : 'none';
+				overlay.style.display = 'flex';
+				// Cancel, not Lock, takes focus: Enter on an unread dialog
+				// should back out rather than lock someone.
+				cancelBtn.focus();
+			}
+
+			function closeModal() {
+				overlay.style.display = 'none';
+				if (launcher) launcher.focus();
+			}
+
+			document.querySelectorAll('.mtl-lock-launch').forEach(function(btn) {
+				btn.addEventListener('click', function() {
+					openModal(btn);
+				});
+			});
+
+			document.getElementById('mtl-lock-close').addEventListener('click', closeModal);
+			cancelBtn.addEventListener('click', closeModal);
+			overlay.addEventListener('mousedown', function(e) {
+				if (e.target === overlay) closeModal();
+			});
+			document.addEventListener('keydown', function(e) {
+				if (e.key === 'Escape' && overlay.style.display !== 'none') closeModal();
+			});
+		});
+	</script>
+
+	<script>
 		// Record Agreement: moves the form the detail panel already rendered
 		// inline into a native <dialog>. The launcher is a real link, so with
 		// scripting off it just navigates and the inline form is what you get.
@@ -5379,7 +5704,28 @@ function mtl_render_membership_page() {
 						// just "dialog".
 						dialog.setAttribute('aria-labelledby', 'mtl-record-title-' + memberId);
 						dialog.appendChild(inline.firstElementChild ? inline : inline);
-						document.body.appendChild(dialog);
+
+						// The Lock Account modal's close button and backdrop
+						// click. Added after the form so the focus query below
+						// still lands on the first checkbox.
+						const closeBtn = document.createElement('button');
+						closeBtn.type = 'button';
+						closeBtn.className = 'mtl-lm-close';
+						closeBtn.setAttribute('aria-label', 'Close');
+						closeBtn.textContent = '×';
+						closeBtn.addEventListener('click', function() { dialog.close(); });
+						dialog.appendChild(closeBtn);
+						dialog.addEventListener('mousedown', function(ev) {
+							const box = dialog.getBoundingClientRect();
+							if (ev.clientX < box.left || ev.clientX > box.right || ev.clientY < box.top || ev.clientY > box.bottom) {
+								dialog.close();
+							}
+						});
+
+						// Inside the wrapper, not loose in <body>, so the title
+						// picks up the branded header style. showModal() puts it
+						// in the top layer wherever it sits.
+						(document.querySelector('.mtl-admin-wrapper') || document.body).appendChild(dialog);
 					}
 
 					// showModal() gives focus containment and Escape for free,

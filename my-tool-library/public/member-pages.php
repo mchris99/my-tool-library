@@ -375,6 +375,9 @@ function mtl_front_notice( $key ) {
 		// The reserve gate sends members here, so say plainly that no
 		// reservation was made.
 		'agreements_required'    => array( 'error', 'Before you can reserve a tool, please read and agree to our member agreements below. Your reservation was not created.' ),
+		// From a Reserve button on a page opened before staff locked the
+		// account; the catalog stops offering one once it is locked.
+		'account_locked'         => array( 'error', 'Your account is locked, so that tool was not reserved. Please speak with library staff.' ),
 		// Sign-in failures, carried back from wp-login.php by
 		// mtl_handle_failed_front_login(). Deliberately does not say WHICH of
 		// the two was wrong: that would confirm to anyone guessing whether a
@@ -723,23 +726,15 @@ function mtl_member_page_styles() {
 			align-items: center;
 		}
 
-		/* Warning shown before a verified member saves changes to Your details. */
-		.mtl-member-dialog {
-			width: calc(100% - 32px);
-			max-width: 460px;
-			padding: 24px;
-			border: 1px solid #dcdcde;
-			border-radius: 8px;
-			box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-			color: #1d2327;
+		/* Warning shown in place of Save when a verified member's changes to
+		Your details would reset their verification. */
+		.mtl-member-verif-confirm {
+			max-width: none;
+			margin: 18px 0 0 0;
 		}
 
-		.mtl-member-dialog::backdrop {
-			background: rgba(0, 0, 0, 0.45);
-		}
-
-		.mtl-member-dialog p {
-			margin: 8px 0 18px 0;
+		.mtl-member-verif-confirm p {
+			margin: 8px 0 14px 0;
 		}
 
 		/* Tables (reservations queue, past loans) */
@@ -1030,6 +1025,7 @@ function mtl_member_page_styles() {
 			the shop's rules verbatim from public/shop-page.php. */
 		<?php echo mtl_shop_badge_pill_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
 		<?php echo mtl_tool_links_css( $accent ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS; the accent is esc_html()'d inside the helper. ?>
+		<?php echo mtl_locked_banner_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
 	</style>
 	<?php
 	return ob_get_clean();
@@ -1086,6 +1082,61 @@ function mtl_agreements_banner_html() {
 		. esc_html( $text ) . ' '
 		. '<a href="' . esc_url( mtl_front_page_url( 'account' ) . '#mtl-agreements' ) . '">' . esc_html__( 'Review your agreements', 'my-tool-library' ) . '</a>'
 		. '</div>';
+}
+
+/**
+ * The standing red banner telling a signed-in member their account is
+ * locked, or '' when it isn't. Shown at the top of the catalog, the Account
+ * page and My Loans & Reservations. See mtl_lock_member().
+ *
+ * Not a live region, for the same reason as mtl_agreements_banner_html().
+ *
+ * @return string HTML, or '' when there is nothing to say.
+ */
+function mtl_account_locked_banner_html() {
+	$member = mtl_current_member();
+	if ( ! $member || empty( $member->locked_at ) ) {
+		return '';
+	}
+
+	$contact = mtl_contact_email();
+	$reach   = '' !== $contact
+		? ' You can reach us at <a href="' . esc_url( 'mailto:' . $contact ) . '">' . esc_html( $contact ) . '</a>.'
+		: '';
+
+	return '<div class="mtl-locked-banner">'
+		. '<strong>' . esc_html__( 'Your account has been locked.', 'my-tool-library' ) . '</strong> '
+		. esc_html__( 'You can still sign in and see your account, but you can\'t reserve or borrow tools. Please speak with library staff.', 'my-tool-library' )
+		. $reach
+		. '</div>';
+}
+
+/**
+ * CSS for mtl_account_locked_banner_html(), shared by the catalog and the
+ * member pages, which each have their own <style> block.
+ *
+ * Solid red rather than the pale .mtl-front-notice-error, so it reads as a
+ * standing state of the account and not as the result of the last click.
+ *
+ * @return string CSS, ready to drop inside a <style> block.
+ */
+function mtl_locked_banner_css() {
+	return '
+		.mtl-locked-banner {
+			background: #b32d2e;
+			color: #fff;
+			border-radius: 6px;
+			padding: 14px 18px;
+			margin: 0 0 16px 0;
+			font-size: 0.95em;
+			line-height: 1.5;
+		}
+
+		.mtl-locked-banner a {
+			color: #fff;
+			text-decoration: underline;
+		}
+	';
 }
 
 /**
@@ -1226,8 +1277,9 @@ function mtl_render_agreements_fieldset( $agreements, $args = array() ) {
  * The error summary shown when a submit is missing agreements.
  *
  * A real element at the top of the form, linking to the checkboxes it is about.
- * role="alert" announces it on a re-render; tabindex lets focus move to it, so
- * a screen-reader user submitting an incomplete form hears why.
+ * role="alert" announces it on a re-render, and autofocus (made focusable by
+ * tabindex) lands a keyboard or screen-reader user on the explanation rather
+ * than at the top of an apparently unchanged page. No script involved.
  *
  * @param object[] $missing   Agreement rows that were not ticked.
  * @param string   $id_prefix Same prefix the fieldset was rendered with.
@@ -1240,7 +1292,7 @@ function mtl_render_agreements_error_summary( $missing, $id_prefix ) {
 
 	ob_start();
 	?>
-	<div class="mtl-front-notice mtl-front-notice-error mtl-agreements-summary" role="alert" tabindex="-1" id="<?php echo esc_attr( $id_prefix ); ?>-summary">
+	<div class="mtl-front-notice mtl-front-notice-error mtl-agreements-summary" role="alert" tabindex="-1" autofocus id="<?php echo esc_attr( $id_prefix ); ?>-summary">
 		<div><strong><?php esc_html_e( 'You must agree to:', 'my-tool-library' ); ?></strong></div>
 		<ul>
 			<?php foreach ( $missing as $agreement ) : ?>
@@ -1252,16 +1304,6 @@ function mtl_render_agreements_error_summary( $missing, $id_prefix ) {
 			<?php endforeach; ?>
 		</ul>
 	</div>
-	<script>
-		// Focus the summary so a keyboard or screen-reader user lands on the
-		// explanation rather than at the top of an apparently unchanged page.
-		// Progressive enhancement only: role="alert" already announces it, and
-		// the summary's links work without any of this.
-		(function() {
-			var s = document.getElementById(<?php echo wp_json_encode( $id_prefix . '-summary' ); ?>);
-			if (s) { s.focus(); }
-		})();
-	</script>
 	<?php
 	return ob_get_clean();
 }
@@ -1395,6 +1437,12 @@ function mtl_handle_reserve_action() {
 	$member = mtl_current_member();
 	if ( ! $member ) {
 		$redirect( 'login_required' );
+	}
+
+	// Ahead of the agreements gate: sending a locked member off to agree to
+	// something would only lead to a second refusal.
+	if ( ! empty( $member->locked_at ) ) {
+		$redirect( 'account_locked' );
 	}
 
 	// The agreements gate, online mode only: in paper mode a member can't agree
@@ -1886,7 +1934,6 @@ function mtl_render_signup_page() {
 		</p>
 	</div>
 	<?php
-	mtl_phone_formatter_script();
 	$body = ob_get_clean();
 
 	mtl_render_front_shell( 'Create Account', $body );
@@ -2219,6 +2266,7 @@ function mtl_render_member_reservations_page() {
 	<div class="mtl-member-wrap<?php echo $listing ? ' mtl-member-wrap-wide' : ''; ?>">
 		<a class="mtl-member-back" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a>
 
+		<?php echo mtl_account_locked_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 		<?php echo mtl_front_notice_html(); ?>
 		<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 
@@ -2437,6 +2485,10 @@ function mtl_render_account_page() {
 
 	$errors = array();
 
+	// A verified member's unsaved edits, held while they confirm a change that
+	// would reset their verification. Null when nothing is waiting.
+	$pending_details = null;
+
 	// Agreements state, carried down to the render below.
 	$agreement_ticked   = array();
 	$agreement_invalid  = array();
@@ -2577,6 +2629,29 @@ function mtl_render_account_page() {
 				);
 				$was_verified    = mtl_member_is_verified( $member->member_id );
 
+				// A verified member confirms before a change that resets their
+				// verification. Asked by the server, not a browser dialog, so the
+				// page needs no script: the first Save re-renders the form with
+				// their edits and a warning, and only "Yes, save my changes"
+				// (value "confirm") goes on to write.
+				$confirmed = 'confirm' === sanitize_key( wp_unslash( $_POST['mtl_update_account'] ) );
+				if ( $details_changed && $was_verified && ! $confirmed ) {
+					$pending_details = array(
+						'first_name'     => $first,
+						'last_name'      => $last,
+						'phone_iso'      => $phone_country,
+						'phone_national' => $phone_national,
+						'address_line1'  => $address1,
+						'address_line2'  => $address2,
+						'city'           => $city,
+						'state'          => $state,
+						'zip_code'       => $zip_code,
+						'country'        => $country,
+					);
+				}
+			}
+
+			if ( empty( $errors ) && null === $pending_details ) {
 				$updated = $wpdb->update(
 					$tbl_members,
 					array(
@@ -2655,9 +2730,22 @@ function mtl_render_account_page() {
 	$is_verified    = mtl_member_is_verified( $member->member_id );
 	$user           = wp_get_current_user();
 	$confirm_delete = isset( $_GET['mtl_confirm_delete'] ) && '1' === $_GET['mtl_confirm_delete'];
-	// Prefilled from the stored row, not the POST, like every field on this
-	// form, so a failed save reverts it too.
+	// Your details is prefilled from the stored row, not the POST, so a failed
+	// save reverts it. The exception is a change waiting on the verification
+	// warning: the form keeps those edits, so "Yes, save my changes" sends them.
 	$phone_parsed = mtl_parse_stored_phone_number( $member->phone_number );
+	$details_form = $pending_details ? $pending_details : array(
+		'first_name'     => stripslashes( $member->first_name ),
+		'last_name'      => stripslashes( $member->last_name ),
+		'phone_iso'      => $phone_parsed['iso'],
+		'phone_national' => $phone_parsed['national'],
+		'address_line1'  => stripslashes( $member->address_line1 ),
+		'address_line2'  => stripslashes( (string) $member->address_line2 ),
+		'city'           => stripslashes( $member->city ),
+		'state'          => $member->state,
+		'zip_code'       => $member->zip_code,
+		'country'        => $member->country,
+	);
 	// Same blank and fallback rules as $pickup_directions on My Reservations.
 	$verification_directions = trim(
 		(string) get_option(
@@ -2737,6 +2825,7 @@ function mtl_render_account_page() {
 	<div class="mtl-member-wrap">
 		<a class="mtl-member-back" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a>
 
+		<?php echo mtl_account_locked_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 		<?php echo mtl_front_notice_html(); ?>
 		<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
 
@@ -2826,7 +2915,12 @@ function mtl_render_account_page() {
 
 					<?php echo mtl_render_agreements_error_summary( $agreement_missing, 'mtl-ac-agreement' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer. ?>
 
-					<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>#mtl-agreements">
+					<?php
+					// No #mtl-agreements on the action: browsers ignore autofocus
+					// when the URL names a fragment, and the error summary above
+					// relies on it. The card is near the top of the page anyway.
+					?>
+					<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">
 						<?php wp_nonce_field( 'mtl_agreements_agree_action', 'mtl_agreements_agree_nonce' ); ?>
 						<?php
 						echo mtl_render_agreements_fieldset( // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer.
@@ -2902,10 +2996,10 @@ function mtl_render_account_page() {
 
 			<?php
 			// Collapsed by default, but forced open when a submitted edit
-			// just failed validation; otherwise the error banner above
-			// would point at a form the member can no longer see.
+			// just failed validation, or is waiting on the verification
+			// warning; otherwise the member couldn't see what it refers to.
 			?>
-			<details class="mtl-member-card" <?php echo ! empty( $errors ) ? 'open' : ''; ?>>
+			<details class="mtl-member-card" <?php echo ( ! empty( $errors ) || $pending_details ) ? 'open' : ''; ?>>
 				<summary class="mtl-member-summary">Your details</summary>
 				<div class="mtl-member-collapsible-body">
 				<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>" id="mtl-account-form">
@@ -2914,11 +3008,11 @@ function mtl_render_account_page() {
 					<div class="mtl-member-row">
 						<div class="mtl-member-field">
 							<label for="mtl-ac-first">First name</label>
-							<input type="text" id="mtl-ac-first" name="first_name" value="<?php echo esc_attr( stripslashes( $member->first_name ) ); ?>" required>
+							<input type="text" id="mtl-ac-first" name="first_name" value="<?php echo esc_attr( $details_form['first_name'] ); ?>" required>
 						</div>
 						<div class="mtl-member-field">
 							<label for="mtl-ac-last">Last name</label>
-							<input type="text" id="mtl-ac-last" name="last_name" value="<?php echo esc_attr( stripslashes( $member->last_name ) ); ?>" required>
+							<input type="text" id="mtl-ac-last" name="last_name" value="<?php echo esc_attr( $details_form['last_name'] ); ?>" required>
 						</div>
 					</div>
 
@@ -2930,29 +3024,29 @@ function mtl_render_account_page() {
 
 					<div class="mtl-member-field">
 						<label for="mtl-ac-phone_national">Phone number</label>
-						<?php mtl_render_phone_input( $phone_parsed['iso'], $phone_parsed['national'], 'mtl-ac-' ); ?>
+						<?php mtl_render_phone_input( $details_form['phone_iso'], $details_form['phone_national'], 'mtl-ac-' ); ?>
 					</div>
 
 					<div class="mtl-member-field">
 						<label for="mtl-ac-address1">Address</label>
-						<input type="text" id="mtl-ac-address1" name="address_line1" value="<?php echo esc_attr( stripslashes( $member->address_line1 ) ); ?>" required>
+						<input type="text" id="mtl-ac-address1" name="address_line1" value="<?php echo esc_attr( $details_form['address_line1'] ); ?>" required>
 					</div>
 
 					<div class="mtl-member-field">
 						<label for="mtl-ac-address2">Address line 2 <span style="font-weight:normal;">(optional)</span></label>
-						<input type="text" id="mtl-ac-address2" name="address_line2" value="<?php echo esc_attr( stripslashes( (string) $member->address_line2 ) ); ?>">
+						<input type="text" id="mtl-ac-address2" name="address_line2" value="<?php echo esc_attr( $details_form['address_line2'] ); ?>">
 					</div>
 
 					<div class="mtl-member-row">
 						<div class="mtl-member-field">
 							<label for="mtl-ac-city">City</label>
-							<input type="text" id="mtl-ac-city" name="city" value="<?php echo esc_attr( stripslashes( $member->city ) ); ?>" required>
+							<input type="text" id="mtl-ac-city" name="city" value="<?php echo esc_attr( $details_form['city'] ); ?>" required>
 						</div>
 						<div class="mtl-member-field">
 							<label for="mtl-ac-state">State / Province</label>
 							<select id="mtl-ac-state" name="state" required>
 								<?php foreach ( mtl_get_state_options() as $mtl_state_code => $mtl_state_label ) : ?>
-									<option value="<?php echo esc_attr( $mtl_state_code ); ?>" <?php selected( $member->state, $mtl_state_code ); ?>><?php echo esc_html( $mtl_state_label ); ?> (<?php echo esc_html( $mtl_state_code ); ?>)</option>
+									<option value="<?php echo esc_attr( $mtl_state_code ); ?>" <?php selected( $details_form['state'], $mtl_state_code ); ?>><?php echo esc_html( $mtl_state_label ); ?> (<?php echo esc_html( $mtl_state_code ); ?>)</option>
 								<?php endforeach; ?>
 							</select>
 						</div>
@@ -2961,93 +3055,39 @@ function mtl_render_account_page() {
 					<div class="mtl-member-row">
 						<div class="mtl-member-field">
 							<label for="mtl-ac-zip">ZIP code</label>
-							<input type="text" id="mtl-ac-zip" name="zip_code" value="<?php echo esc_attr( $member->zip_code ); ?>" required>
+							<input type="text" id="mtl-ac-zip" name="zip_code" value="<?php echo esc_attr( $details_form['zip_code'] ); ?>" required>
 						</div>
 						<div class="mtl-member-field">
 							<label for="mtl-ac-country">Country</label>
 							<select id="mtl-ac-country" name="country" required>
 								<?php foreach ( mtl_get_country_options() as $mtl_country_name ) : ?>
-									<option value="<?php echo esc_attr( $mtl_country_name ); ?>" <?php selected( $member->country, $mtl_country_name ); ?>><?php echo esc_html( $mtl_country_name ); ?></option>
+									<option value="<?php echo esc_attr( $mtl_country_name ); ?>" <?php selected( $details_form['country'], $mtl_country_name ); ?>><?php echo esc_html( $mtl_country_name ); ?></option>
 								<?php endforeach; ?>
 							</select>
 						</div>
 					</div>
-					<?php if ( $is_verified ) : ?>
-						<p class="mtl-member-hint"><strong>Note:</strong> changing your personal information will reset your verified status, and staff will need to re-verify your account.</p>
-					<?php endif; ?>
+					<?php if ( $pending_details ) : ?>
+						<?php // autofocus scrolls the member straight to it; the form posts to a URL with no fragment, which autofocus needs. ?>
+						<div class="mtl-front-notice mtl-front-notice-error mtl-member-verif-confirm" role="alert" tabindex="-1" autofocus>
+							<strong>You&rsquo;ll lose your verified status</strong>
+							<p>Saving these changes to your personal information will reset your verified status. Staff will need to re-verify your account before you can check out tools.</p>
+							<div class="mtl-member-confirm-actions">
+								<button type="submit" name="mtl_update_account" value="confirm" class="mtl-member-btn">Yes, save my changes</button>
+								<a class="mtl-member-btn mtl-member-btn-ghost" href="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">No, keep my current details</a>
+							</div>
+						</div>
+					<?php else : ?>
+						<?php if ( $is_verified ) : ?>
+							<p class="mtl-member-hint"><strong>Note:</strong> changing your personal information will reset your verified status, and staff will need to re-verify your account.</p>
+						<?php endif; ?>
 
-					<p style="margin: 18px 0 0 0;">
-						<button type="submit" name="mtl_update_account" value="1" class="mtl-member-btn">Save Changes</button>
-					</p>
+						<p style="margin: 18px 0 0 0;">
+							<button type="submit" name="mtl_update_account" value="1" class="mtl-member-btn">Save Changes</button>
+						</p>
+					<?php endif; ?>
 				</form>
 				</div>
 			</details>
-
-			<?php if ( $is_verified ) : ?>
-				<?php
-				// Confirmation before a verified member saves a change that will
-				// reset their verification (see the profile update handler).
-				// Progressive enhancement: without JavaScript the form still
-				// submits, and the note above the button gives the same warning.
-				?>
-				<dialog class="mtl-member-dialog" id="mtl-account-verif-dialog" aria-labelledby="mtl-account-verif-title">
-					<strong id="mtl-account-verif-title">You&rsquo;ll lose your verified status</strong>
-					<p>Saving these changes to your personal information will reset your verified status. Staff will need to re-verify your account before you can check out tools.</p>
-					<div class="mtl-member-confirm-actions">
-						<button type="button" class="mtl-member-btn" data-mtl-verif-confirm>Yes, save my changes</button>
-						<button type="button" class="mtl-member-btn mtl-member-btn-ghost" data-mtl-verif-cancel autofocus>No, keep editing</button>
-					</div>
-				</dialog>
-				<script>
-					(function() {
-						var form   = document.getElementById('mtl-account-form');
-						var dialog = document.getElementById('mtl-account-verif-dialog');
-						if (!form || !dialog) { return; }
-
-						// The same fields the server compares. Phone digits only,
-						// since the live formatter rewrites the punctuation.
-						var names = ['first_name', 'last_name', 'phone_country', 'phone_national', 'address_line1', 'address_line2', 'city', 'state', 'zip_code', 'country'];
-						function snapshot() {
-							return names.map(function(n) {
-								var el = form.elements[n];
-								var v  = el ? String(el.value).trim() : '';
-								return 'phone_national' === n ? v.replace(/\D+/g, '') : v;
-							}).join('\u0000');
-						}
-						var initial = snapshot();
-
-						function submitForReal() {
-							// form.submit() skips the submit event (so this
-							// handler doesn't fire again) but also drops the
-							// clicked button, which the server looks for.
-							var flag   = document.createElement('input');
-							flag.type  = 'hidden';
-							flag.name  = 'mtl_update_account';
-							flag.value = '1';
-							form.appendChild(flag);
-							HTMLFormElement.prototype.submit.call(form);
-						}
-
-						form.addEventListener('submit', function(e) {
-							if (snapshot() === initial) { return; }
-							e.preventDefault();
-							if ('function' === typeof dialog.showModal) {
-								dialog.showModal();
-							} else if (window.confirm('Saving these changes will reset your verified status, and staff will need to re-verify your account. Save anyway?')) {
-								submitForReal();
-							}
-						});
-
-						dialog.querySelector('[data-mtl-verif-confirm]').addEventListener('click', function() {
-							dialog.close();
-							submitForReal();
-						});
-						dialog.querySelector('[data-mtl-verif-cancel]').addEventListener('click', function() {
-							dialog.close();
-						});
-					})();
-				</script>
-			<?php endif; ?>
 
 			<details class="mtl-member-card">
 				<summary class="mtl-member-summary">Your loan history</summary>
@@ -3195,7 +3235,6 @@ function mtl_render_account_page() {
 		<?php endif; ?>
 	</div>
 	<?php
-	mtl_phone_formatter_script();
 	$body = ob_get_clean();
 
 	mtl_render_front_shell( 'My Account', $body, mtl_member_page_footer() );

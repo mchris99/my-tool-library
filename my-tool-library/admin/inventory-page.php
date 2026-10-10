@@ -814,7 +814,7 @@ function mtl_tool_links_editor_script() {
 				var target  = 'json' === modeInput.value ? 'rows' : 'json';
 				var problem = 'json' === target ? rowsToJson() : jsonToRows();
 				if ( problem ) {
-					window.alert( problem );
+					window.mtlDialog.alert( { title: 'Check the Links', message: problem } );
 					return;
 				}
 				setMode( target );
@@ -1843,6 +1843,8 @@ function mtl_render_inventory_page() {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot loan this tool.</strong> It is under maintenance. Mark it back in service first.</p></div>';
 			} elseif ( ! $ql_member_ok ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please pick a member from the list before creating the loan.</p></div>';
+			} elseif ( mtl_member_is_locked( $ql_member_id ) ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot loan this tool.</strong> This member&rsquo;s account is locked. Unlock it on the Membership page first.</p></div>';
 			} else {
 				// A tool is one physical item, so it cannot go out twice at once.
 				$ql_on_loan = $wpdb->get_var( $wpdb->prepare( "SELECT loan_id FROM {$tbl_loans} WHERE tool_id = %d AND return_date IS NULL LIMIT 1", $ql_tool_id ) );
@@ -1886,6 +1888,8 @@ function mtl_render_inventory_page() {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot reserve this tool.</strong> It is retired. Reactivate it first.</p></div>';
 			} elseif ( ! $qr_member_ok ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please pick a member from the list before creating the reservation.</p></div>';
+			} elseif ( mtl_member_is_locked( $qr_member_id ) ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Cannot reserve this tool.</strong> This member&rsquo;s account is locked. Unlock it on the Membership page first.</p></div>';
 			} else {
 				// Same two guards as the public self-service reserve flow: no
 				// reserving a tool the member already has on loan, and no
@@ -2921,7 +2925,14 @@ function mtl_render_inventory_page() {
 
 			<div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
 				<p style="margin-top: 0;"><strong>Tool ID:</strong> #<?php echo esc_html( $edit_tool_id ); ?> <span style="color:#666; font-size:0.85em;">(cannot be changed)</span></p>
-				<form method="post" action="<?php echo esc_url( $base_url ); ?>" onsubmit="return confirm('Save changes to this tool?');">
+				<?php
+				$save_tool_confirm = array(
+					'title'   => 'Save Changes',
+					'message' => 'Save changes to this tool?',
+					'confirm' => 'Save Changes',
+				);
+				?>
+				<form method="post" action="<?php echo esc_url( $base_url ); ?>"<?php echo mtl_confirm_attr( $save_tool_confirm ); ?>>
 					<?php wp_nonce_field( 'mtl_edit_tool_action', 'mtl_edit_tool_nonce' ); ?>
 					<input type="hidden" name="tool_id" value="<?php echo esc_attr( $edit_tool_id ); ?>">
 
@@ -3315,10 +3326,13 @@ function mtl_render_inventory_page() {
 							),
 							$base_url
 						);
-						$delete_confirm = sprintf(
-							'Permanently delete "%s" (Barcode: %s)? This cannot be undone.',
-							stripslashes( $item->tool_name ),
-							stripslashes( $item->barcode )
+						$delete_confirm = array(
+							'title'   => 'Delete Tool',
+							'message' => 'Permanently delete %s (Barcode: ' . stripslashes( $item->barcode ) . ')?',
+							'subject' => stripslashes( $item->tool_name ),
+							'details' => array( 'This cannot be undone.' ),
+							'confirm' => 'Delete Tool',
+							'danger'  => true,
 						);
 
 						// Loan/reservation state backing the boolean filters.
@@ -3409,7 +3423,7 @@ function mtl_render_inventory_page() {
 						if ( mtl_can_delete_tools() ) {
 							ob_start();
 							?>
-							<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('<?php echo esc_js( $delete_confirm ); ?>');">
+							<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;"<?php echo mtl_confirm_attr( $delete_confirm ); ?>>
 								<?php wp_nonce_field( 'mtl_delete_tool_action', 'mtl_delete_tool_nonce' ); ?>
 								<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
 								<button type="submit" name="mtl_delete_tool" class="button mtl-btn-danger">Delete</button>
@@ -3450,7 +3464,16 @@ function mtl_render_inventory_page() {
 												?>
 												<?php if ( $active_loan ) : ?>
 													<?php // The return date defaults to today; backdating it covers drop-offs processed a day or more later. ?>
-													<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('Mark this tool as returned?');">
+													<?php
+													$return_confirm = array(
+														'title'   => 'Mark Returned',
+														'message' => 'Mark %s as returned?',
+														'subject' => stripslashes( $item->tool_name ),
+														'details' => array( 'This ends the loan.' ),
+														'confirm' => 'Mark Returned',
+													);
+													?>
+													<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;"<?php echo mtl_confirm_attr( $return_confirm ); ?>>
 														<?php wp_nonce_field( 'mtl_mark_returned_action', 'mtl_mark_returned_nonce' ); ?>
 														<input type="hidden" name="loan_id" value="<?php echo esc_attr( $active_loan->loan_id ); ?>">
 														<?php echo mtl_return_date_field_html( $active_loan->loan_date, '', false ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-escaped markup from the helper. ?>
@@ -3489,7 +3512,20 @@ function mtl_render_inventory_page() {
 												<?php endif; ?>
 											</form>
 											<a href="<?php echo esc_url( $edit_url ); ?>" class="button">Edit</a>
-											<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;" onsubmit="return confirm('Retire &quot;<?php echo esc_js( stripslashes( $item->tool_name ) ); ?>&quot;? It will be hidden from the public catalog and blocked from new loans/reservations, but its history is kept and this can be undone with Reactivate.');">
+											<?php
+											$retire_confirm = array(
+												'title'   => 'Retire Tool',
+												'message' => 'Retire %s?',
+												'subject' => stripslashes( $item->tool_name ),
+												'details' => array(
+													'It will be hidden from the public catalog and blocked from new loans and reservations.',
+													'Its history is kept, and this can be undone with Reactivate.',
+												),
+												'confirm' => 'Retire Tool',
+												'danger'  => true,
+											);
+											?>
+											<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;"<?php echo mtl_confirm_attr( $retire_confirm ); ?>>
 												<?php wp_nonce_field( 'mtl_retire_tool_action', 'mtl_retire_tool_nonce' ); ?>
 												<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
 												<button type="submit" name="mtl_retire_tool" class="button">Retire</button>
@@ -3717,6 +3753,7 @@ function mtl_render_inventory_page() {
 				<p class="mtl-ql-hint" id="mtl-ql-member-hint">Start typing to find a member by name or email, then click to select.</p>
 				<div class="mtl-ql-member-info" id="mtl-ql-member-info" style="display: none;">
 					<dl>
+						<dt id="mtl-ql-info-locked-label">Account</dt><dd id="mtl-ql-info-locked"></dd>
 						<dt>Verification</dt><dd id="mtl-ql-info-verified"></dd>
 						<dt>Trainings</dt><dd id="mtl-ql-info-trainings"></dd>
 						<dt>Overdue</dt><dd id="mtl-ql-info-overdue"></dd>
@@ -4290,6 +4327,15 @@ function mtl_render_inventory_page() {
 			function showVerifiedPill(m) {
 				const extra = memberInfo[m.id] || { trainings: [], overdue: 0, agreement: '' };
 				memberInfoBox.style.display = 'block';
+
+				// Only shown when locked. Unlike the rows below, this one
+				// is enforced: the server refuses the loan or reservation.
+				const lockLabel = document.getElementById('mtl-ql-info-locked-label');
+				const lockValue = document.getElementById('mtl-ql-info-locked');
+				lockLabel.style.display = m.locked ? '' : 'none';
+				lockValue.style.display = m.locked ? '' : 'none';
+				if (m.locked) infoPill(lockValue, 'bad', 'Locked: can’t borrow or reserve');
+
 				infoPill(document.getElementById('mtl-ql-info-verified'),
 					m.verified ? 'ok' : 'warn', m.verified ? 'Verified' : 'Not verified');
 				document.getElementById('mtl-ql-info-trainings').textContent =

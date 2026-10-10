@@ -9,26 +9,33 @@ Run a community tool-lending library from WordPress: inventory, memberships, res
 
 Built by the [Milwaukee Tool Library](https://mkelibrary.org) (Evan Maruszewski & Chris McHenry).
 
-![Public tool catalog](my-tool-library/documentation/assets/screenshot-3.png)
+![Public tool catalog](my-tool-library/documentation/assets/screenshot-1.png)
 
 ## What it does
 
 **For your community**
 
-- Browse and search/filter the tool catalog (no account required)
-- Create a free account, reserve a tool, and track queue position
-- View active loans and due dates (due soon, due today, overdue)
-- Every public-facing page works with **JavaScript disabled**
+- Browse and search the catalog without an account
+- Sign up free, reserve tools, and see your place in each queue
+- See loans flagged due soon, due today or overdue, plus your loan history
+- Update your details, see your trainings, or delete your account
+- Agree to member agreements online, if the library uses them
+- No JavaScript on any public page
 
 **For your staff**
 
-- Configurable Dashboard of stat panels (membership, loans, overdue, popularity, asset value)
-- Inventory management with CSV bulk import and per-tool financial tracking
-- Membership management with CSV bulk import and identity-verification tracking
-- Member trainings with optional badge images and expiring certifications
-- Unified Loans & Reservations page: check out, cancel, renew, end
-- Reservations that expire on their own after a configurable hold period
-- Setup page for branding, categories/tags/trainings, database install, and full data export
+- **Dashboard:** drag, resize and hide stat panels (membership, loans, overdue, popularity, donors, asset value)
+- **Inventory:** CSV import, sub-categories, shelf locations, resource and partner links, value and depreciation
+- **Maintenance and Retire:** take a tool out of service for a while, or for good
+- **Membership:** CSV import, ID verification, profile photos, private notes, setup-link emails
+- **Account locks:** stop a member reserving or borrowing until unlocked
+- **Trainings:** expiring certifications; tools can require them
+- **Member agreements:** online, or recorded from signed paper copies
+- **Loans & Reservations:** check out, renew, return and cancel in one place, including bulk checkout by barcode
+- **Reservations** expire on their own after a hold period you set
+- **Workflows:** a staff guide inside the admin
+- **Setup:** branding, categories/tags/trainings, and defaults
+- **Backup and restore:** download the whole library as one `.sql` file, schedule encrypted automatic backups to the Media Library (administrators only), and restore either from Setup after a mistake or a lost database
 
 ## Requirements
 
@@ -49,7 +56,7 @@ Full installation steps, FAQ, and changelog: [`my-tool-library/readme.txt`](my-t
 
 ## Scope and assumptions
 
-This plugin is built around a specific, deliberately simple operating model: single location/single copy per tool, staff-run (not enforced) identity verification, WordPress Editors and Administrators as staff, no payment processing, and no status notifications (account and password email only). See the ["Assumptions and intended use"](my-tool-library/readme.txt) section of the full readme before installing.
+This plugin is built around a specific, deliberately simple operating model: single location/single copy per tool, staff-run (not enforced) identity verification, WordPress Editors and Administrators as staff, no payment processing, and no status notifications (account, password and member-agreement email only). See the ["Assumptions and intended use"](my-tool-library/readme.txt) section of the full readme before installing.
 
 ## Documentation
 

@@ -1485,6 +1485,13 @@ function mtl_render_phone_input( $iso, $national, $id_prefix = '' ) {
 	$countries  = mtl_get_phone_country_options();
 	$iso        = mtl_valid_phone_country( $iso );
 	$codes_json = wp_json_encode( wp_list_pluck( $countries, 'code' ) );
+
+	// Prefilled the way it will be stored, because Signup and My Account have
+	// no live formatter to tidy raw digits. Left as typed if it won't parse.
+	$formatted = mtl_format_phone_number( $iso, $national );
+	if ( '' === $formatted['error'] ) {
+		$national = substr( $formatted['value'], strlen( $countries[ $iso ]['code'] ) + 2 );
+	}
 	?>
 	<div class="mtl-phone-widget" data-codes="<?php echo esc_attr( $codes_json ); ?>">
 		<select name="phone_country" id="<?php echo esc_attr( $id_prefix . 'phone_country' ); ?>" class="mtl-phone-country" required>
@@ -1504,6 +1511,9 @@ function mtl_render_phone_input( $iso, $national, $id_prefix = '' ) {
  * Purely cosmetic: mtl_format_phone_number() always re-derives the canonical
  * value from scratch server-side on submit, using only the digits, so
  * nothing typed here has to be trusted.
+ *
+ * Admin pages only. Signup and My Account ship no JavaScript, so a member's
+ * number is formatted when it is saved instead.
  */
 function mtl_phone_formatter_script() {
 	?>
@@ -2839,7 +2849,7 @@ function mtl_resolve_return_timestamp( $loan_id, $posted_date ) {
  * reservation that turned into a loan from one nobody came to collect. The
  * keys here are the only values that column ever holds, and this map is the
  * single place their wording lives, so a label is corrected in one edit
- * rather than at each of the eight sites that close a reservation.
+ * rather than at each of the nine sites that close a reservation.
  *
  * 'lapsed' is the only one nobody chose: mtl_expire_stale_reservations()
  * applies it on a timer. The rest all name an actor or an event, since "the
@@ -2860,6 +2870,7 @@ function mtl_reservation_close_reasons() {
 		'cancelled_member' => __( 'Cancelled by the member', 'my-tool-library' ),
 		'tool_retired'     => __( 'Cancelled: tool retired', 'my-tool-library' ),
 		'member_deleted'   => __( 'Cancelled: member deleted', 'my-tool-library' ),
+		'member_locked'    => __( 'Cancelled: account locked', 'my-tool-library' ),
 	);
 }
 
@@ -3394,7 +3405,11 @@ function mtl_tool_all_links_html( $tool ) {
  * One document alone leaves a member unverified, and the pickers show that so
  * staff can see at a glance whether a walk-in has produced their papers.
  *
- * @return array<int, array{id:int, verified:bool, name:string, email:string, label:string, search:string}>
+ * `locked` is shown for the same reason, but unlike verification it is
+ * enforced: the server refuses a loan or reservation for a locked member
+ * whatever the picker shows.
+ *
+ * @return array<int, array{id:int, verified:bool, locked:bool, name:string, email:string, label:string, search:string}>
  */
 function mtl_get_member_picker_list() {
 	global $wpdb;
@@ -3408,7 +3423,8 @@ function mtl_get_member_picker_list() {
 	foreach (
 		$wpdb->get_results(
 			"SELECT m.member_id, m.first_name, m.last_name, m.email,
-                    (v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS verified
+                    (v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS verified,
+                    (m.locked_at IS NOT NULL) AS locked
              FROM {$tbl_members} m
              LEFT JOIN {$tbl_verifications} v ON v.member_id = m.member_id
              ORDER BY m.last_name ASC, m.first_name ASC"
@@ -3419,6 +3435,7 @@ function mtl_get_member_picker_list() {
 		$out[] = array(
 			'id'       => (int) $row->member_id,
 			'verified' => (bool) $row->verified,
+			'locked'   => (bool) $row->locked,
 			'name'     => $name,
 			'email'    => (string) $row->email,
 			'label'    => $name . ' (' . $row->email . ')',
@@ -3528,12 +3545,15 @@ function mtl_get_member_info_map( $member_ids ) {
  * refuses (public/member-pages.php). Bulk Checkout treats them more gently but
  * never more permissively, so no path can create a duplicate reservation.
  *
+ * A locked member (see mtl_lock_member()) can neither borrow nor reserve
+ * anything, so their lock overrides every other answer except a retired tool's.
+ *
  * @param int $tool_id   Tool row ID.
  * @param int $member_id Member the row is for; 0 before one is picked, which
  *                       leaves the self/other distinctions unresolved.
  * @return array{found:bool, tool_id:int, tool_name:string, barcode:string,
- *               retired:bool, maintenance:bool, on_loan_by:int,
- *               reserved_by_self:bool,
+ *               retired:bool, maintenance:bool, member_locked:bool,
+ *               on_loan_by:int, reserved_by_self:bool,
  *               queue_size:int, display:string, can_loan:bool,
  *               loan_blocker:string, loan_warning:string, can_reserve:bool,
  *               reserve_blocker:string, reserve_skip:string}
@@ -3551,6 +3571,7 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 		'barcode'          => '',
 		'retired'          => false,
 		'maintenance'      => false,
+		'member_locked'    => false,
 		'on_loan_by'       => 0,
 		'reserved_by_self' => false,
 		'queue_size'       => 0,
@@ -3579,11 +3600,12 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 		return $status;
 	}
 
-	$status['found']       = true;
-	$status['tool_name']   = stripslashes( (string) $tool->tool_name );
-	$status['barcode']     = (string) $tool->barcode;
-	$status['retired']     = ! empty( $tool->retired_at );
-	$status['maintenance'] = ! empty( $tool->maintenance_at );
+	$status['found']         = true;
+	$status['tool_name']     = stripslashes( (string) $tool->tool_name );
+	$status['barcode']       = (string) $tool->barcode;
+	$status['retired']       = ! empty( $tool->retired_at );
+	$status['maintenance']   = ! empty( $tool->maintenance_at );
+	$status['member_locked'] = ( $member_id > 0 && mtl_member_is_locked( $member_id ) );
 
 	// Who holds it, not merely whether somebody does: reserving is legal behind
 	// another member's loan and illegal behind your own.
@@ -3666,6 +3688,20 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 		$status['reserve_blocker'] = '';
 	} elseif ( '' !== $status['reserve_skip'] ) {
 		$status['reserve_blocker'] = '';
+	}
+
+	// Last, so it overrides everything above, a skip included: a Reserve row
+	// for a locked member should say why it was refused rather than quietly
+	// do nothing. Returns before the training check, whose warning would
+	// only be noise on a loan that cannot happen.
+	if ( $status['member_locked'] ) {
+		$status['can_loan']        = false;
+		$status['loan_blocker']    = __( 'This member\'s account is locked. Unlock it on the Membership page first.', 'my-tool-library' );
+		$status['loan_warning']    = '';
+		$status['can_reserve']     = false;
+		$status['reserve_blocker'] = $status['loan_blocker'];
+		$status['reserve_skip']    = '';
+		return $status;
 	}
 
 	// Same advisory channel as the queue warning above, so every caller that
@@ -4049,12 +4085,13 @@ function mtl_email_table_row( $label, $value ) {
 }
 
 /**
- * Asks the site administrator to delete the verification files belonging to a
- * member whose record has just been removed, and hands over the member's full
- * details as the library's record of what was deleted.
+ * Asks the site administrator to delete the photo and verification files
+ * belonging to a member whose record has just been removed, and hands over the
+ * member's full details as the library's record of what was deleted.
  *
- * Deleting a member drops the member_verifications row, which destroys the
- * LINKS to their ID and proof-of-address scans, but the files themselves live
+ * Deleting a member clears their profile photo link and drops the
+ * member_verifications row, which destroys the LINKS to their photo and their
+ * ID and proof-of-address scans, but the files themselves live
  * wherever the library uploaded them (a Drive folder, a media library, a share)
  * and nothing in this plugin can reach out and delete them. So the links are
  * mailed to the administrator before they are lost, together with the request
@@ -4114,12 +4151,12 @@ function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open
 	// action to take. An admin who reads "please delete their files" and
 	// finds none listed learns to skim the next one.
 	$subject = $doc_urls
-		? sprintf( '[%s] Member record deleted: please delete their verification files', $org_name )
-		: sprintf( '[%s] Member record deleted: no verification files to delete', $org_name );
+		? sprintf( '[%s] Member record deleted: please delete their stored files', $org_name )
+		: sprintf( '[%s] Member record deleted: no stored files to delete', $org_name );
 
 	$purpose = $doc_urls
 		? 'This email is the library\'s record of what was deleted, and of the request to remove the files listed at the end.'
-		: 'This email is the library\'s record of what was deleted. There are no verification files to remove. See the end.';
+		: 'This email is the library\'s record of what was deleted. There are no stored files to remove. See the end.';
 
 	$lines = array(
 		sprintf( 'The library record below was deleted on %s.', $deleted_at ),
@@ -4170,7 +4207,7 @@ function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open
 	$lines[] = '';
 
 	if ( $doc_urls ) {
-		$lines[] = 'VERIFICATION FILES TO DELETE';
+		$lines[] = 'FILES TO DELETE';
 		$lines[] = '';
 		$lines[] = 'The links below have been removed from the database, but the FILES they point at are stored outside it and could not be deleted automatically. Please delete them from wherever the library keeps them:';
 		$lines[] = '';
@@ -4180,9 +4217,9 @@ function mtl_send_verification_cleanup_email( $row, $member_id, $doc_urls, $open
 		$lines[] = '';
 		$lines[] = 'Once the files are gone, please delete this email too, because after them it is the last copy of those links.';
 	} else {
-		$lines[] = 'VERIFICATION FILES TO DELETE: none.';
+		$lines[] = 'FILES TO DELETE: none.';
 		$lines[] = '';
-		$lines[] = 'This member had no verification documents on file, so there are no files to delete. No action is needed beyond keeping this record.';
+		$lines[] = 'This member had no photo or verification documents on file, so there are no files to delete. No action is needed beyond keeping this record.';
 	}
 
 	$lines[] = '';
@@ -4219,7 +4256,7 @@ function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $canc
 		'',
 		sprintf( 'Your %s account has been deleted, as requested.', $org_name ),
 		'',
-		'Your name, contact details and any identification documents we held for you have been permanently removed. Your borrowing history is kept as part of the library\'s records, but it is no longer linked to your name.',
+		'Your name, contact details, photo and any identification documents we held for you have been permanently removed. Your borrowing history is kept as part of the library\'s records, but it is no longer linked to your name.',
 	);
 
 	if ( $cancelled_res > 0 ) {
@@ -4267,9 +4304,10 @@ function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $canc
  * row were dropped (see schema.sql).
  *
  * What IS destroyed is the personal, identifying material: the row's own
- * name/address/contact fields, the member_verifications row holding their ID
- * and proof-of-address scans, and, fully rather than anonymized, their WordPress
- * account, which wp_delete_user() removes from both wp_users and wp_usermeta.
+ * name/address/contact fields and profile photo link, the member_verifications
+ * row holding their ID and proof-of-address scans, and, fully rather than
+ * anonymized, their WordPress account, which wp_delete_user() removes from
+ * both wp_users and wp_usermeta.
  *
  * Any still-active reservation is cancelled first, otherwise a departed
  * member would keep occupying a spot in a tool's queue indefinitely; this
@@ -4285,11 +4323,11 @@ function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $canc
  *
  * Two emails go out once the record is gone, both built entirely from details
  * captured before the row was touched: the deleted member's full record to
- * the site administrator, asking them to delete the verification FILES this
- * plugin cannot reach (see mtl_send_verification_cleanup_email()), and a
- * confirmation to the member that their account has been deleted. Neither is
- * sent when the record was already anonymized, since that deletion, and its
- * emails, happened the first time.
+ * the site administrator, asking them to delete the photo and verification
+ * FILES this plugin cannot reach (see mtl_send_verification_cleanup_email()),
+ * and a confirmation to the member that their account has been deleted.
+ * Neither is sent when the record was already anonymized, since that
+ * deletion, and its emails, happened the first time.
  *
  * @param int    $member_id    Member row ID.
  * @param string $initiated_by 'member' when they deleted their own account,
@@ -4334,9 +4372,12 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 	$already_anonymized = ( null !== $row->anonymized_at );
 
 	// Everything the two emails need, read while the row still says who this
-	// is. The verification links especially: the row holding them is deleted
-	// further down, and once it is gone nothing can point at those files.
-	$doc_urls   = array();
+	// is. The file links especially: they are cleared further down, and once
+	// they are gone nothing can point at those files.
+	$doc_urls = array();
+	if ( '' !== trim( (string) $row->profile_photo_url ) ) {
+		$doc_urls['Profile photo'] = trim( (string) $row->profile_photo_url );
+	}
 	$verif_urls = $wpdb->get_row(
 		$wpdb->prepare(
 			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
@@ -4411,26 +4452,28 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 	$wpdb->update(
 		$tbl_members,
 		array(
-			'first_name'    => 'Former',
-			'last_name'     => 'Member',
-			'address_line1' => '(removed)',
-			'address_line2' => null,
-			'city'          => '(removed)',
-			'state'         => 'N/A',
-			'zip_code'      => '00000',
-			'country'       => 'United States',
-			'phone_number'  => '(removed)',
+			'first_name'        => 'Former',
+			'last_name'         => 'Member',
+			'address_line1'     => '(removed)',
+			'address_line2'     => null,
+			'city'              => '(removed)',
+			'state'             => 'N/A',
+			'zip_code'          => '00000',
+			'country'           => 'United States',
+			'phone_number'      => '(removed)',
 			// .invalid is the IANA-reserved, never-resolving TLD (RFC 2606),
 			// guaranteed unique against the UNIQUE constraint without risking a
 			// real mailbox, and it frees their real address for a future signup.
-			'email'         => 'deleted-member-' . $member_id . '@example.invalid',
+			'email'             => 'deleted-member-' . $member_id . '@example.invalid',
 			// Staff-only notes are about the person, so they go with the rest
 			// of their identifying details.
-			'private_notes' => null,
-			'anonymized_at' => current_time( 'mysql' ),
+			'private_notes'     => null,
+			// The file itself is on the administrator's list in $doc_urls.
+			'profile_photo_url' => null,
+			'anonymized_at'     => current_time( 'mysql' ),
 		),
 		array( 'member_id' => $member_id ),
-		array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ),
+		array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ),
 		array( '%d' )
 	);
 
@@ -4477,6 +4520,269 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 	);
 }
 
+// ==========================================================================
+// MEMBER ACCOUNT LOCKS
+//
+// Staff lock an account from the member's detail panel on the Membership
+// page. A locked member can still sign in and see everything on their Account
+// and My Loans & Reservations pages, but cannot reserve a tool, and staff
+// cannot start or renew a loan for them. Returning a tool is never blocked.
+//
+// The lock is one column, members.locked_at, and every path that creates a
+// loan or reservation, or moves a due date, checks it: the member's own
+// Reserve button, Quick Loan, Quick Reserve, Bulk Checkout (through
+// mtl_tool_row_status()), the Loans & Reservations checkout and renew
+// actions, and the Membership page's Start Loan and Extend actions.
+// ==========================================================================
+
+/**
+ * Whether a member's account is locked.
+ *
+ * Callers holding a full member row (mtl_current_member() selects *) read
+ * locked_at directly instead; this is for the staff paths that only have an
+ * id, usually one derived from a loan or reservation.
+ *
+ * @param int $member_id Member row ID.
+ * @return bool False for an unknown member, so it never blocks on a bad id;
+ *              the caller's own "member not found" check reports that.
+ */
+function mtl_member_is_locked( $member_id ) {
+	global $wpdb;
+	$tbl_members = $wpdb->prefix . 'members';
+
+	return (bool) $wpdb->get_var(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+			"SELECT member_id FROM {$tbl_members} WHERE member_id = %d AND locked_at IS NOT NULL",
+			(int) $member_id
+		)
+	);
+}
+
+/**
+ * Tells a member their account has been locked and to speak with staff.
+ *
+ * Deliberately gives no reason. The lock records none, and whatever prompted
+ * it is a conversation for the desk, not something to put in writing to an
+ * inbox that may be shared.
+ *
+ * @param string   $email           The member's email address.
+ * @param string   $first_name      Their first name, for the greeting.
+ * @param string[] $cancelled_tools Names of the tools whose reservations the
+ *                                  lock cancelled.
+ * @param int      $open_loans      Tools they still have out, which are still
+ *                                  due back.
+ * @return bool True if the mail was handed off successfully.
+ */
+function mtl_send_account_locked_email( $email, $first_name, $cancelled_tools, $open_loans ) {
+	$email = sanitize_email( (string) $email );
+	if ( ! is_email( $email ) ) {
+		return false;
+	}
+
+	$org_name      = mtl_email_org_name();
+	$greeting_name = trim( (string) $first_name );
+
+	$lines = array(
+		'' !== $greeting_name ? sprintf( 'Hi %s,', $greeting_name ) : 'Hello,',
+		'',
+		sprintf( 'Your %s account has been locked by library staff.', $org_name ),
+		'',
+		'You can still sign in and see your account, but you can\'t reserve or borrow tools while it is locked.',
+	);
+
+	if ( 1 === count( $cancelled_tools ) ) {
+		$lines[] = '';
+		$lines[] = sprintf( 'Your reservation for %s has been cancelled.', $cancelled_tools[0] );
+	} elseif ( $cancelled_tools ) {
+		$lines[] = '';
+		$lines[] = 'Your reservations for these tools have been cancelled:';
+		foreach ( $cancelled_tools as $tool_name ) {
+			$lines[] = sprintf( '  - %s', $tool_name );
+		}
+	}
+
+	// Locking blocks renewals, so the member should not expect to be able to
+	// extend whatever they have out.
+	if ( $open_loans > 0 ) {
+		$lines[] = '';
+		$lines[] = 1 === $open_loans
+			? 'You still have a tool on loan. Please return it by its due date.'
+			: sprintf( 'You still have %d tools on loan. Please return them by their due dates.', $open_loans );
+	}
+
+	$lines[] = '';
+	$lines[] = 'Please speak with library staff about your account.';
+
+	$contact_email = mtl_contact_email();
+	if ( '' !== $contact_email ) {
+		$lines[] = sprintf( 'You can reach us at %s.', $contact_email );
+	}
+
+	$lines[] = '';
+	$lines[] = 'Your account:';
+	$lines[] = mtl_front_page_url( 'account' );
+	$lines[] = '';
+	$lines[] = sprintf( '-- %s', $org_name );
+
+	return (bool) wp_mail( $email, sprintf( '[%s] Your account has been locked', $org_name ), implode( "\r\n", $lines ) );
+}
+
+/**
+ * Locks a member's account, cancels their active reservations, and emails
+ * them to say so.
+ *
+ * Reservations are cancelled rather than kept, because a locked member cannot
+ * be lent the tool, and leaving them in a queue would hold up everyone behind
+ * them until their hold period ran out. Open loans are left alone: the member
+ * still has the tools and can return them normally.
+ *
+ * The lock is written first, guarded on locked_at IS NULL, so a double-submit
+ * finds it already set and stops there: no second cancellation pass and no
+ * second email. Writing it before the cancellation also closes the window in
+ * which the member could reserve again between the two.
+ *
+ * @param int $member_id Member row ID.
+ * @return array{outcome:string, name:string, email:string, cancelled_reservations:int, email_sent:bool}
+ *         outcome is 'locked', 'already_locked' or 'not_found' (which covers a
+ *         Former Member, since there is no account left to lock).
+ */
+function mtl_lock_member( $member_id ) {
+	global $wpdb;
+	$member_id     = (int) $member_id;
+	$tbl_members   = $wpdb->prefix . 'members';
+	$tbl_res       = $wpdb->prefix . 'tool_reservations';
+	$tbl_loans     = $wpdb->prefix . 'loans';
+	$tbl_inventory = $wpdb->prefix . 'tool_inventory';
+
+	$result = array(
+		'outcome'                => 'not_found',
+		'name'                   => '',
+		'email'                  => '',
+		'cancelled_reservations' => 0,
+		'email_sent'             => false,
+	);
+
+	// Every interpolation through the end of this function is a table name
+	// built from $wpdb->prefix.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	$row = $wpdb->get_row(
+		$wpdb->prepare(
+			"SELECT member_id, first_name, last_name, email, anonymized_at, locked_at FROM {$tbl_members} WHERE member_id = %d",
+			$member_id
+		)
+	);
+	if ( ! $row || null !== $row->anonymized_at ) {
+		return $result;
+	}
+	$result['name']  = trim( stripslashes( (string) $row->first_name ) . ' ' . stripslashes( (string) $row->last_name ) );
+	$result['email'] = (string) $row->email;
+
+	$locked = $wpdb->query(
+		$wpdb->prepare(
+			"UPDATE {$tbl_members} SET locked_at = %s WHERE member_id = %d AND locked_at IS NULL",
+			current_time( 'mysql' ),
+			$member_id
+		)
+	);
+	if ( ! $locked ) {
+		$result['outcome'] = 'already_locked';
+		return $result;
+	}
+	$result['outcome'] = 'locked';
+
+	// Read before the cancel, while these rows still match: the tool names go
+	// in the email, and each tool's queue needs its next member promoting.
+	$active = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT r.tool_id, t.tool_name
+			   FROM {$tbl_res} r
+			   JOIN {$tbl_inventory} t ON t.tool_id = r.tool_id
+			  WHERE r.member_id = %d AND r.expiry_date IS NULL
+			  ORDER BY r.reservation_date ASC",
+			$member_id
+		)
+	);
+
+	$result['cancelled_reservations'] = (int) $wpdb->query(
+		$wpdb->prepare(
+			"UPDATE {$tbl_res} SET expiry_date = %s, closed_reason = %s WHERE member_id = %d AND expiry_date IS NULL",
+			current_time( 'mysql' ),
+			'member_locked',
+			$member_id
+		)
+	);
+
+	$open_loans = (int) $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT COUNT(*) FROM {$tbl_loans} WHERE member_id = %d AND return_date IS NULL",
+			$member_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	$cancelled_tools = array();
+	foreach ( $active as $reservation ) {
+		mtl_sync_reservation_readiness( (int) $reservation->tool_id );
+		$cancelled_tools[] = trim( stripslashes( (string) $reservation->tool_name ) );
+	}
+
+	// Last, once the lock and the cancellations have stuck, for the same
+	// reason as the emails in mtl_delete_or_anonymize_member().
+	$result['email_sent'] = mtl_send_account_locked_email(
+		(string) $row->email,
+		stripslashes( (string) $row->first_name ),
+		$cancelled_tools,
+		$open_loans
+	);
+
+	return $result;
+}
+
+/**
+ * Unlocks a member's account.
+ *
+ * Nothing the lock cancelled comes back: the member reserves again if they
+ * still want those tools. No email is sent, since staff usually unlock while
+ * talking to the member, which is what the lock email asked them to do.
+ *
+ * @param int $member_id Member row ID.
+ * @return array{outcome:string, name:string} outcome is 'unlocked',
+ *         'not_locked' or 'not_found'.
+ */
+function mtl_unlock_member( $member_id ) {
+	global $wpdb;
+	$member_id   = (int) $member_id;
+	$tbl_members = $wpdb->prefix . 'members';
+
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+	$row = $wpdb->get_row(
+		$wpdb->prepare(
+			"SELECT first_name, last_name, anonymized_at FROM {$tbl_members} WHERE member_id = %d",
+			$member_id
+		)
+	);
+	if ( ! $row || null !== $row->anonymized_at ) {
+		return array(
+			'outcome' => 'not_found',
+			'name'    => '',
+		);
+	}
+
+	$unlocked = $wpdb->query(
+		$wpdb->prepare(
+			"UPDATE {$tbl_members} SET locked_at = NULL WHERE member_id = %d AND locked_at IS NOT NULL",
+			$member_id
+		)
+	);
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+	return array(
+		'outcome' => $unlocked ? 'unlocked' : 'not_locked',
+		'name'    => trim( stripslashes( (string) $row->first_name ) . ' ' . stripslashes( (string) $row->last_name ) ),
+	);
+}
+
 // Admin pages.
 require_once MTL_PLUGIN_DIR . 'admin/dashboard-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/inventory-page.php';
@@ -4484,6 +4790,9 @@ require_once MTL_PLUGIN_DIR . 'admin/membership-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/loans-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/workflows-page.php';
 require_once MTL_PLUGIN_DIR . 'admin/setup-page.php';
+// Not a page: the scheduled backup and its Media Library protections, which
+// have to be in place on every request, front end and cron included.
+require_once MTL_PLUGIN_DIR . 'admin/auto-backups.php';
 
 // Public-facing customer pages.
 require_once MTL_PLUGIN_DIR . 'public/shop-page.php';
@@ -4635,6 +4944,366 @@ function mtl_apply_custom_admin_styles() {
             }
         </style>';
 	}
+}
+
+// ==========================================================================
+// SHARED DIALOG (staff screens)
+//
+// Every confirm, alert and type-to-confirm prompt on this plugin's admin
+// screens opens in one styled window that looks like the Membership page's
+// Lock Account modal, not in the browser's own pop-up. A form, or one of its
+// submit buttons, opts in with mtl_confirm_attr(); a script that decides for
+// itself whether to ask calls window.mtlDialog. The member-facing pages keep
+// the browser's confirm().
+//
+// Printed in admin_head rather than the footer so the submit listener is in
+// place before any form on the page can be submitted.
+// ==========================================================================
+
+add_action( 'admin_head', 'mtl_admin_dialog_assets' );
+
+/**
+ * Builds the attribute that makes a form, or one of its submit buttons, ask
+ * in the shared dialog before it submits.
+ *
+ * Keys, all optional but message:
+ * - title:   heading, e.g. 'Delete Tool'.
+ * - message: the question. A '%s' in it is replaced by subject, in bold.
+ * - subject: what is being acted on, e.g. the member's name.
+ * - details: what will happen, one bullet each.
+ * - confirm: label of the button that goes ahead. Defaults to 'OK'.
+ * - cancel:  label of the button that backs out. Defaults to 'Cancel'.
+ * - danger:  true for a red confirm button, for anything destructive.
+ *
+ * @param array $args See above.
+ * @return string ' data-mtl-confirm="..."', escaped for an HTML attribute.
+ */
+function mtl_confirm_attr( $args ) {
+	return ' data-mtl-confirm="' . esc_attr( wp_json_encode( $args, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) ) . '"';
+}
+
+/**
+ * Prints the shared dialog's styles and script on this plugin's admin
+ * screens. See the section comment above.
+ */
+function mtl_admin_dialog_assets() {
+	$screen = get_current_screen();
+	if ( ! $screen || false === strpos( $screen->id, 'mtl-' ) ) {
+		return;
+	}
+	?>
+	<style>
+		/* The values are the Lock Account modal's (.mtl-lm-* on the
+			Membership page), so every dialog reads as one component. One
+			z-index step above those modals, since a confirm can open from
+			inside one. */
+		.mtl-dialog-overlay {
+			position: fixed;
+			inset: 0;
+			z-index: 100100;
+			background: rgba(0, 0, 0, .5);
+			display: flex;
+			align-items: flex-start;
+			justify-content: center;
+			padding: 8vh 16px 16px 16px;
+			overflow-y: auto;
+		}
+
+		.mtl-dialog {
+			position: relative;
+			background: #fff;
+			border-radius: 6px;
+			box-shadow: 0 8px 30px rgba(0, 0, 0, .3);
+			padding: 22px 24px 24px 24px;
+			width: 100%;
+			max-width: 420px;
+		}
+
+		.mtl-dialog-close {
+			position: absolute;
+			top: 8px;
+			right: 10px;
+			border: none;
+			background: none;
+			font-size: 1.6em;
+			line-height: 1;
+			color: #787c82;
+			cursor: pointer;
+		}
+
+		.mtl-dialog-close:hover {
+			color: #1d2327;
+		}
+
+		/* Room for the close button beside a title that wraps. */
+		.mtl-dialog h3 {
+			margin-top: 0;
+			padding-right: 20px;
+		}
+
+		.mtl-dialog-message {
+			margin: 0 0 16px 0;
+			color: #50575e;
+		}
+
+		.mtl-dialog-details {
+			list-style: disc;
+			margin: 0 0 16px 20px;
+			color: #50575e;
+		}
+
+		.mtl-dialog-details li {
+			margin-bottom: 6px;
+		}
+
+		.mtl-dialog-field {
+			margin: 0 0 16px 0;
+		}
+
+		.mtl-dialog-label {
+			display: block;
+			font-weight: 600;
+			font-size: 0.9em;
+			margin-bottom: 4px;
+		}
+
+		.mtl-dialog-input {
+			box-sizing: border-box;
+			width: 100%;
+			padding: 6px 8px;
+			border: 1px solid #8c8f94;
+			border-radius: 4px;
+		}
+
+		.mtl-dialog-actions {
+			margin-top: 10px;
+		}
+
+		.mtl-dialog .button.mtl-dialog-danger {
+			color: #b32d2e;
+			border-color: #b32d2e;
+			background: #fff;
+		}
+
+		.mtl-dialog .button.mtl-dialog-danger:hover,
+		.mtl-dialog .button.mtl-dialog-danger:focus {
+			background: #b32d2e;
+			color: #fff;
+		}
+	</style>
+	<script>
+		/*
+		 * window.mtlDialog.confirm(options) and .alert(options) open the window
+		 * and resolve true when the go-ahead button is pressed, false when it is
+		 * backed out of. options takes mtl_confirm_attr()'s keys, plus `match`:
+		 * a phrase that must be typed before the go-ahead button enables.
+		 * .submit(form, submitter) sends a form once it has been confirmed.
+		 */
+		(function () {
+			var els = null;
+			var settle = null;
+			var returnFocus = null;
+
+			// Built on first use and appended inside the page wrapper, so the
+			// title picks up the branded header style, as Lock Account's does.
+			function build() {
+				var overlay = document.createElement('div');
+				overlay.className = 'mtl-dialog-overlay';
+				overlay.style.display = 'none';
+				overlay.innerHTML =
+					'<div class="mtl-dialog" role="alertdialog" aria-modal="true" aria-labelledby="mtl-dialog-title" aria-describedby="mtl-dialog-body">' +
+						'<button type="button" class="mtl-dialog-close" aria-label="Close">&times;</button>' +
+						'<h3 id="mtl-dialog-title"></h3>' +
+						'<div id="mtl-dialog-body">' +
+							'<p class="mtl-dialog-message"></p>' +
+							'<ul class="mtl-dialog-details"></ul>' +
+						'</div>' +
+						'<div class="mtl-dialog-field">' +
+							'<label class="mtl-dialog-label" for="mtl-dialog-input"></label>' +
+							'<input type="text" id="mtl-dialog-input" class="mtl-dialog-input" autocomplete="off" spellcheck="false">' +
+						'</div>' +
+						'<div class="mtl-dialog-actions">' +
+							'<button type="button" class="button mtl-dialog-ok"></button> ' +
+							'<button type="button" class="button mtl-dialog-cancel"></button>' +
+						'</div>' +
+					'</div>';
+				(document.querySelector('.mtl-admin-wrapper') || document.body).appendChild(overlay);
+
+				els = {
+					overlay: overlay,
+					title: overlay.querySelector('h3'),
+					message: overlay.querySelector('.mtl-dialog-message'),
+					details: overlay.querySelector('.mtl-dialog-details'),
+					field: overlay.querySelector('.mtl-dialog-field'),
+					label: overlay.querySelector('.mtl-dialog-label'),
+					input: overlay.querySelector('.mtl-dialog-input'),
+					ok: overlay.querySelector('.mtl-dialog-ok'),
+					cancel: overlay.querySelector('.mtl-dialog-cancel')
+				};
+
+				els.ok.addEventListener('click', function () { close(true); });
+				els.cancel.addEventListener('click', function () { close(false); });
+				overlay.querySelector('.mtl-dialog-close').addEventListener('click', function () { close(false); });
+				// A press on the backdrop, not the window, backs out.
+				overlay.addEventListener('mousedown', function (e) {
+					if (e.target === overlay) close(false);
+				});
+				els.input.addEventListener('input', function () {
+					els.ok.disabled = els.input.value.trim() !== els.input.dataset.match;
+				});
+				els.input.addEventListener('keydown', function (e) {
+					if (e.key === 'Enter') {
+						e.preventDefault();
+						if (!els.ok.disabled) close(true);
+					}
+				});
+			}
+
+			// Sets el to text, with its first '%s' replaced by sub inside a
+			// <tag>. textContent throughout, so a stored name can't become markup.
+			function fill(el, text, sub, tag) {
+				var at = (sub === undefined || sub === null) ? -1 : text.indexOf('%s');
+				el.textContent = '';
+				if (at < 0) {
+					el.textContent = text;
+					return;
+				}
+				var strong = document.createElement(tag);
+				strong.textContent = sub;
+				el.appendChild(document.createTextNode(text.slice(0, at)));
+				el.appendChild(strong);
+				el.appendChild(document.createTextNode(text.slice(at + 2)));
+			}
+
+			function open(opts, isAlert) {
+				if (typeof opts === 'string') opts = { message: opts };
+				if (!els) build();
+				if (settle) close(false);
+				returnFocus = document.activeElement;
+
+				els.title.textContent = opts.title || '';
+				els.title.style.display = opts.title ? '' : 'none';
+				fill(els.message, opts.message || '', opts.subject, 'strong');
+
+				els.details.textContent = '';
+				(opts.details || []).forEach(function (text) {
+					var li = document.createElement('li');
+					li.textContent = text;
+					els.details.appendChild(li);
+				});
+				els.details.style.display = els.details.children.length ? '' : 'none';
+
+				var match = opts.match || '';
+				els.field.style.display = match ? '' : 'none';
+				els.input.value = '';
+				els.input.dataset.match = match;
+				if (match) fill(els.label, 'To confirm, type %s exactly:', match, 'code');
+
+				els.ok.textContent = opts.confirm || 'OK';
+				els.ok.disabled = !!match;
+				els.ok.classList.toggle('mtl-dialog-danger', !!opts.danger);
+				els.ok.classList.toggle('button-primary', !opts.danger);
+				els.cancel.textContent = opts.cancel || 'Cancel';
+				els.cancel.style.display = isAlert ? 'none' : '';
+
+				els.overlay.style.display = 'flex';
+				// Cancel takes focus, as on Lock Account: Enter on an unread
+				// dialog should back out rather than go ahead.
+				(match ? els.input : isAlert ? els.ok : els.cancel).focus();
+
+				return new Promise(function (resolve) { settle = resolve; });
+			}
+
+			function close(result) {
+				if (!settle) return;
+				var done = settle;
+				settle = null;
+				els.overlay.style.display = 'none';
+				if (returnFocus && returnFocus.focus && document.contains(returnFocus)) returnFocus.focus();
+				returnFocus = null;
+				done(result);
+			}
+
+			// Captured at the window and stopped there, so a modal underneath
+			// (Bulk Checkout, Manage Loan) doesn't also close on the same
+			// Escape. Tab cycles inside the window while it is open.
+			window.addEventListener('keydown', function (e) {
+				if (!settle) return;
+				if (e.key === 'Escape') {
+					e.preventDefault();
+					e.stopPropagation();
+					close(false);
+				} else if (e.key === 'Tab') {
+					var stops = Array.prototype.filter.call(
+						els.overlay.querySelectorAll('button, input'),
+						function (el) { return !el.disabled && el.offsetParent !== null; }
+					);
+					if (!stops.length) return;
+					var first = stops[0];
+					var last = stops[stops.length - 1];
+					var inside = els.overlay.contains(document.activeElement);
+					if (e.shiftKey && (!inside || document.activeElement === first)) {
+						e.preventDefault();
+						last.focus();
+					} else if (!e.shiftKey && (!inside || document.activeElement === last)) {
+						e.preventDefault();
+						first.focus();
+					}
+				}
+			}, true);
+
+			// Sends form as though submitter had been pressed, without firing
+			// submit again, so whatever asked doesn't ask twice. form.submit()
+			// leaves the button's name out, and handlers tell actions apart by
+			// it, so a hidden copy carries it.
+			function submit(form, submitter) {
+				var copy = null;
+				if (submitter && submitter.name) {
+					copy = document.createElement('input');
+					copy.type = 'hidden';
+					copy.name = submitter.name;
+					copy.value = submitter.value;
+					form.appendChild(copy);
+				}
+				HTMLFormElement.prototype.submit.call(form);
+				// The posted data is already gathered. Left in place, the copy
+				// would be posted again with the next button pressed on a page
+				// restored from the back/forward cache.
+				if (copy) copy.remove();
+			}
+
+			// Forms and buttons carrying mtl_confirm_attr(). Listens at the
+			// document, after the form's own handlers, so a script that stops
+			// the submit (no member picked yet) does so before anyone is asked
+			// to confirm it.
+			document.addEventListener('submit', function (e) {
+				if (e.defaultPrevented) return;
+				var form = e.target;
+				var submitter = e.submitter || null;
+				var source = submitter && submitter.hasAttribute('data-mtl-confirm') ? submitter
+					: form.hasAttribute('data-mtl-confirm') ? form : null;
+				if (!source) return;
+				var raw = source.getAttribute('data-mtl-confirm');
+				var opts;
+				try {
+					opts = JSON.parse(raw);
+				} catch (err) {
+					opts = { message: raw };
+				}
+				e.preventDefault();
+				open(opts, false).then(function (ok) {
+					if (ok) submit(form, submitter);
+				});
+			});
+
+			window.mtlDialog = {
+				confirm: function (opts) { return open(opts, false); },
+				alert: function (opts) { return open(opts, true); },
+				submit: submit
+			};
+		}());
+	</script>
+	<?php
 }
 
 // ==========================================================================
@@ -6329,7 +6998,7 @@ function mtl_register_staff_capabilities() {
 }
 
 // Plain counter, not the plugin version: bump when a table or column is added.
-define( 'MTL_DB_VERSION', 7 );
+define( 'MTL_DB_VERSION', 9 );
 
 // init, not admin_init: the public catalog and member pages read these
 // columns too, so a visitor arriving after a plugin update, before any staff
@@ -6384,6 +7053,14 @@ function mtl_maybe_upgrade_schema() {
 		// one a wrong guess would misreport.
 		'tool_reservations' => array(
 			'closed_reason' => 'VARCHAR(20) DEFAULT NULL',
+		),
+		'members'           => array(
+			// NULL for every existing member, which reads as "not locked": no
+			// account was locked before the feature existed.
+			'locked_at'         => 'TIMESTAMP NULL DEFAULT NULL',
+			// NULL for every existing member, which reads as "no photo", the
+			// same as a member staff have not photographed yet.
+			'profile_photo_url' => 'VARCHAR(255) DEFAULT NULL',
 		),
 	);
 
@@ -6753,8 +7430,7 @@ function mtl_training_filter_select( $trainings, $element_id ) {
  *   mtlTaxonomyMatches( sel, catIds, subIds ) -> bool
  *   mtlIdsIntersect( csvIds, picked )         -> bool, the same any-of test
  *                                                the tag selects need
- *   mtlTaxonomyClear( tree )                  -> unticks it, and re-enables
- *                                                children a parent had covered
+ *   mtlTaxonomyClear( tree )                  -> unticks it
  *   mtlTrainingMatches( picked, csvIds )      -> bool, with "any" meaning
  *                                                "requires at least one"
  *
@@ -6763,8 +7439,8 @@ function mtl_training_filter_select( $trainings, $element_id ) {
  * selection matches everything, which is what "leave it blank for any" means.
  *
  * A ticked parent is included on its own, never expanded into its children:
- * the category mapping already covers every tool in that category. Its
- * children are read as disabled and skipped, since they could only repeat it.
+ * the category mapping already covers every tool in that category. A child
+ * ticked under it is read too, and can only repeat it.
  */
 function mtl_taxonomy_matcher_script() {
 	?>
@@ -6778,9 +7454,6 @@ function mtl_taxonomy_matcher_script() {
 				return sel;
 			}
 			tree.querySelectorAll( 'input[type="checkbox"]:checked' ).forEach( function ( box ) {
-				if ( box.disabled ) {
-					return;
-				}
 				if ( box.hasAttribute( 'data-tx-parent' ) ) {
 					sel.cats.push( box.value );
 				} else if ( box.hasAttribute( 'data-tx-child-of' ) ) {
@@ -6840,15 +7513,13 @@ function mtl_taxonomy_matcher_script() {
 }
 
 /**
- * Style and behaviour for the tree: indentation, and greying a branch's
- * children out while its parent is ticked.
+ * Styles for the tree: indentation, and greying a branch's children out while
+ * its parent is ticked.
  *
  * A ticked parent already matches every tool in that category, so its children
- * could only ever be redundant. Disabling them says so, and keeps redundant
- * ids out of the query string.
- *
- * Callers emit this wherever suits their page, sometimes above the tree markup,
- * so it waits for the document rather than assuming the tree is there.
+ * could only ever be redundant, and greying them says so. CSS only, because
+ * the public catalog ships no JavaScript. A greyed child ticked anyway still
+ * submits, and changes nothing, since the match is an OR.
  */
 function mtl_taxonomy_tree_assets() {
 	?>
@@ -6873,33 +7544,9 @@ function mtl_taxonomy_tree_assets() {
 		.mtl-tx-parent, .mtl-tx-child { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; line-height: 1.6; }
 		.mtl-tx-parent { font-weight: 600; }
 		.mtl-tx-child { margin-left: 22px; font-weight: 400; }
-		.mtl-tx-child.mtl-tx-covered { opacity: 0.5; }
+		.mtl-tx-branch:has(.mtl-tx-parent input:checked) .mtl-tx-child { opacity: 0.5; }
 		.mtl-tx-empty { color: #666; font-size: 0.85em; margin: 0; }
 	</style>
-	<script>
-	( function () {
-		var wire = function () {
-			document.querySelectorAll( '.mtl-tx-tree' ).forEach( function ( tree ) {
-				var sync = function () {
-					tree.querySelectorAll( '[data-tx-parent]' ).forEach( function ( parent ) {
-						var id = parent.getAttribute( 'data-tx-parent' );
-						tree.querySelectorAll( '[data-tx-child-of="' + id + '"]' ).forEach( function ( child ) {
-							child.disabled = parent.checked;
-							child.closest( '.mtl-tx-child' ).classList.toggle( 'mtl-tx-covered', parent.checked );
-						} );
-					} );
-				};
-				tree.addEventListener( 'change', sync );
-				sync();
-			} );
-		};
-		if ( 'loading' === document.readyState ) {
-			document.addEventListener( 'DOMContentLoaded', wire );
-		} else {
-			wire();
-		}
-	}() );
-	</script>
 	<?php
 }
 
@@ -7049,9 +7696,12 @@ function mtl_plugin_deactivate() {
 	// Drops the custom rule from the cached rewrite rules on deactivation,
 	// so a deactivated plugin doesn't leave a dangling route behind.
 	flush_rewrite_rules();
-	// Likewise unschedule the reservation sweep, so WordPress isn't left
-	// trying to fire an event whose callback no longer exists.
+	// Likewise unschedule the reservation sweep and the automatic backup, so
+	// WordPress isn't left trying to fire events whose callbacks no longer
+	// exist. The backup comes back by itself on reactivation (see
+	// mtl_backup_keep_scheduled()).
 	wp_clear_scheduled_hook( 'mtl_daily_reservation_sweep' );
+	wp_clear_scheduled_hook( 'mtl_auto_backup' );
 }
 
 add_action( 'init', 'mtl_register_rewrite_rules' );
