@@ -4854,6 +4854,13 @@ function mtl_apply_custom_admin_styles() {
                 --mtl-link-color: ' . mtl_css_value( $l_color, '#00b3ff' ) . ';
                 --mtl-btn-scale: ' . mtl_css_value( $btn_scale, '1' ) . ';
             }
+            /*
+             * line-height is unitless so it scales with the Header Font
+             * Size. WordPress gives the admin body line-height: 1.4em, which
+             * is fixed at about 18px and inherited as that length, so a
+             * larger heading would spill out of its line box and cover the
+             * text beneath it.
+             */
             .mtl-admin-wrapper h2,
             .mtl-admin-wrapper h3,
             .mtl-admin-wrapper h4,
@@ -4862,6 +4869,7 @@ function mtl_apply_custom_admin_styles() {
                 font-family: ' . mtl_css_value( $h_font ) . ';
                 font-size: ' . mtl_css_value( $h_size ) . ';
                 font-weight: ' . mtl_css_value( $h_weight, '700' ) . ';
+                line-height: 1.25;
                 text-transform: ' . mtl_css_value( $h_transform, 'none' ) . ';
             }
             .mtl-admin-wrapper a {
