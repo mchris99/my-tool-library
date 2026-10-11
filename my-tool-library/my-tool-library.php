@@ -4,7 +4,7 @@
  * Plugin URI: https://mkelibrary.org
  * Description: An open-source WordPress plugin for Tool Librarians to manage their membership and inventory in one place.
  * Version: 1.0.0
- * Requires at least: 5.8
+ * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Milwaukee Tool Library (Evan Maruszewski & Chris McHenry)
  * Author URI: https://mkelibrary.org
@@ -4824,7 +4824,9 @@ require_once MTL_PLUGIN_DIR . 'admin/auto-backups.php';
 // mtl_handle_front_pages().
 require_once MTL_PLUGIN_DIR . 'admin/go-live.php';
 
-// Public-facing customer pages.
+// Public-facing customer pages. The look comes first, since the page files
+// build on its settings and styles.
+require_once MTL_PLUGIN_DIR . 'public/public-look.php';
 require_once MTL_PLUGIN_DIR . 'public/shop-page.php';
 require_once MTL_PLUGIN_DIR . 'public/member-pages.php';
 
@@ -8010,25 +8012,44 @@ function mtl_contact_line_html() {
 }
 
 /**
- * Shared standalone HTML shell for the front-end pages, themed from the same
- * appearance settings as the admin pages.
+ * Shared standalone HTML shell for the front-end pages: the top bar, the
+ * page, the footer and, for staff before launch, the preview bar. Styled
+ * from the Public pages look (public/public-look.php), never from the staff
+ * appearance settings.
  *
  * @param string $title       Page title.
- * @param string $body_html   Fills the centered main area. Built internally
- *                             from escaped pieces, never from raw user input.
+ * @param string $body_html   Fills the main area, which lays out nothing of
+ *                             its own. Built internally from escaped pieces,
+ *                             never from raw user input.
  * @param string $footer_html Fills the discreet footer link row at the bottom.
  *                             The public contact line is appended below it
  *                             automatically, so callers never pass it in;
  *                             that is what puts the address on every one of
  *                             these pages from this single place.
+ * @param string $nav_current Top bar item to mark as the current page: browse,
+ *                             loans, account, signin, join, or '' to work it
+ *                             out from the requested mtl_page.
  * @return void Outputs the page directly and exits.
  */
-function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
+function mtl_render_front_shell( $title, $body_html, $footer_html = '', $nav_current = '' ) {
 	$org_name = get_option( 'mtl_org_name', '' );
 	if ( '' === $org_name ) {
 		$org_name = 'My Tool Library';
 	}
 	$logo_url = get_option( 'mtl_logo_url', '' );
+	$look     = mtl_public_look();
+
+	if ( '' === $nav_current ) {
+		$by_page     = array(
+			'main'         => 'browse',
+			'reservations' => 'loans',
+			'account'      => 'account',
+			'login'        => 'signin',
+			'signup'       => 'join',
+		);
+		$page        = sanitize_key( (string) get_query_var( 'mtl_page' ) );
+		$nav_current = isset( $by_page[ $page ] ) ? $by_page[ $page ] : '';
+	}
 
 	// Resolved once here so the footer markup below stays a plain echo.
 	$contact_html = mtl_contact_line_html();
@@ -8044,22 +8065,6 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 		$preview_note .= ' ' . mtl_go_live_next_step_html();
 	}
 
-	$h_color = get_option( 'mtl_header_color', '#ff6600' );
-	$b_color = get_option( 'mtl_body_color', '#096491' );
-	$l_color = get_option( 'mtl_link_color', '#00b3ff' );
-	$bg      = get_option( 'mtl_background_color', '#ffffff' );
-	$radius  = get_option( 'mtl_border_radius', '4px' );
-	// Same button scale the admin pages use, so the Setup page's Button Size
-	// setting reaches the public-facing pages too.
-	$btn_scale = get_option( 'mtl_button_scale', '1' );
-
-	// On a standalone page "inherit" would fall back to the browser's default
-	// serif; substitute a neutral system stack instead.
-	$b_font = get_option( 'mtl_body_font', 'inherit' );
-	if ( 'inherit' === $b_font || '' === $b_font ) {
-		$b_font = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-	}
-
 	status_header( 200 );
 	header( 'Content-Type: text/html; charset=utf-8' );
 	?>
@@ -8071,192 +8076,32 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<meta name="robots" content="noindex">
 		<title><?php echo esc_html( $title . ' - ' . $org_name ); ?></title>
+		<?php
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- <style> built from esc_url()'d plugin URLs and core's wp_print_font_faces().
+		echo mtl_public_font_faces_html( $look );
+		?>
 		<style>
-			body {
-				margin: 0;
-				min-height: 100vh;
-				display: flex;
-				flex-direction: column;
-				background: <?php echo mtl_css_value( $bg, '#ffffff' ); ?>;
-				color: <?php echo mtl_css_value( $b_color, '#096491' ); ?>;
-				font-family: <?php echo mtl_css_value( $b_font ); ?>;
-			}
-
-			.mtl-front-header {
-				text-align: center;
-				padding: 40px 20px 10px 20px;
-			}
-
-			.mtl-front-header img {
-				max-height: 80px;
-				width: auto;
-			}
-
-			.mtl-front-header h1 {
-				color: <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
-				margin: 10px 0 0 0;
-			}
-
-			.mtl-front-content {
-				flex: 1;
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				padding: 20px;
-			}
-
-			.mtl-front-card {
-				max-width: 480px;
-				width: 100%;
-				background: #fff;
-				border: 1px solid #ccd0d4;
-				border-radius: <?php echo esc_html( '999px' === $radius ? '16px' : $radius ); ?>;
-				box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
-				padding: 30px;
-				text-align: center;
-			}
-
-			.mtl-front-card p {
-				line-height: 1.6;
-			}
-
-			a {
-				color: <?php echo mtl_css_value( $l_color, '#00b3ff' ); ?>;
-			}
-
-			.mtl-front-footer {
-				text-align: center;
-				padding: 25px 20px;
-				font-size: 0.8em;
-			}
-
-			.mtl-front-footer a {
-				color: #8c8f94;
-				text-decoration: none;
-				margin: 0 8px;
-			}
-
-			.mtl-front-footer a:hover {
-				text-decoration: underline;
-			}
-
-			/* Contact line: its own row under the footer links. Kept in the
-				footer's quiet grey, but underlined, since it is the one thing down
-				here a member may actively need, and it should not read as
-				body text. */
-			.mtl-front-contact {
-				margin: 10px 0 0 0;
-				color: #8c8f94;
-			}
-
-			.mtl-front-contact a {
-				margin: 0;
-				text-decoration: underline;
-			}
-
-			/* Status banner (e.g. a failed sign-in). Same colors as the member
-				pages' .mtl-front-notice, but sized for the narrower card:
-				full width, no auto-centering. */
-			.mtl-front-card .mtl-front-notice {
-				margin: 0 0 16px 0;
-				padding: 12px 16px;
-				border-radius: 6px;
-				font-size: 0.95em;
-				text-align: left;
-			}
-
-			.mtl-front-card .mtl-front-notice-success {
-				background: #edf7ed;
-				border: 1px solid #b6dcb6;
-				color: #1e5b25;
-			}
-
-			.mtl-front-card .mtl-front-notice-error {
-				background: #fcf0f1;
-				border: 1px solid #f0c0c4;
-				color: #8a1f28;
-			}
-
-			/* Make the core wp_login_form() output match the card. */
-			.mtl-front-card form p {
-				text-align: left;
-				margin: 0 0 14px 0;
-			}
-
-			.mtl-front-card label {
-				display: block;
-				font-weight: 600;
-				margin-bottom: 4px;
-			}
-
-			.mtl-front-card input[type="text"],
-			.mtl-front-card input[type="password"] {
-				width: 100%;
-				box-sizing: border-box;
-				padding: 8px 10px;
-				border: 1px solid #8c8f94;
-				border-radius: 4px;
-				font-size: 1em;
-			}
-
-			.mtl-front-card input[type="submit"] {
-				background: <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
-				border: 1px solid <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
-				color: #fff;
-				padding: calc(9px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>) calc(22px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
-				border-radius: <?php echo mtl_css_value( $radius, '4px' ); ?>;
-				font-size: calc(1em * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
-				cursor: pointer;
-			}
-
-			.login-remember {
-				font-weight: 400;
-			}
-
-			.login-remember label {
-				font-weight: 400;
-			}
-
-			/* A link that reads as the card's main action, matching the
-				submit button above. */
-			.mtl-front-card .mtl-front-button {
-				display: inline-block;
-				background: <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
-				border: 1px solid <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
-				color: #fff;
-				padding: calc(9px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>) calc(22px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
-				border-radius: <?php echo mtl_css_value( $radius, '4px' ); ?>;
-				font-size: calc(1em * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
-				text-decoration: none;
-			}
-
-			/* Staff only, before launch: a thin strip saying what customers
-				see in place of this page. Held to the bottom of the window, since
-				the catalog pins its Home and account buttons to the top. Sticky
-				rather than fixed, so it covers nothing at the end of the page. */
-			.mtl-front-preview-bar {
-				position: sticky;
-				bottom: 0;
-				background: #1d2327;
-				color: #f0f0f1;
-				font-size: 0.85em;
-				line-height: 1.5;
-				padding: 8px 16px;
-				text-align: center;
-			}
-
-			.mtl-front-preview-bar a {
-				color: #72aee6;
-			}
+		<?php
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CSS from the sanitized look; every setting value passes mtl_css_value().
+		echo mtl_public_look_css( $look );
+		?>
 		</style>
 	</head>
 
-	<body>
-		<header class="mtl-front-header">
-			<?php if ( ! empty( $logo_url ) ) : ?>
-				<img src="<?php echo esc_url( $logo_url ); ?>" alt="<?php echo esc_attr( $org_name ); ?>">
-			<?php endif; ?>
-			<h1><?php echo esc_html( $org_name ); ?></h1>
+	<body class="mtl-front mtl-btn-style-<?php echo esc_attr( $look['button_style'] ); ?>">
+		<header class="mtl-topbar">
+			<div class="mtl-topbar-inner">
+				<a class="mtl-brand" href="<?php echo esc_url( mtl_home_page_url() ); ?>">
+					<?php if ( ! empty( $logo_url ) ) : ?>
+						<img src="<?php echo esc_url( $logo_url ); ?>" alt="">
+					<?php endif; ?>
+					<span><?php echo esc_html( $org_name ); ?></span>
+				</a>
+				<?php
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url()/esc_html()-wrapped in mtl_front_nav_html().
+				echo mtl_front_nav_html( $nav_current );
+				?>
+			</div>
 		</header>
 		<main class="mtl-front-content">
 			<?php
@@ -8266,12 +8111,14 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 		</main>
 		<?php if ( '' !== $footer_html || '' !== $contact_html ) : ?>
 			<footer class="mtl-front-footer">
-				<?php
-				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built internally from esc_*()-wrapped pieces, never from raw user input (see docblock).
-				echo $footer_html;
-				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url()/esc_html()-wrapped in mtl_contact_line_html().
-				echo $contact_html;
-				?>
+				<div class="mtl-front-footer-inner">
+					<?php
+					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built internally from esc_*()-wrapped pieces, never from raw user input (see docblock).
+					echo $footer_html;
+					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url()/esc_html()-wrapped in mtl_contact_line_html().
+					echo $contact_html;
+					?>
+				</div>
 			</footer>
 		<?php endif; ?>
 		<?php if ( $preview_note ) : ?>
