@@ -201,21 +201,24 @@ function mtl_shop_tool_share_url( $tool_id, $base ) {
  *
  * @param object $tool Tool row from the catalog query.
  * @param string $base Base page URL.
- * @param array  $ctx  Viewer context: is_member, is_locked, is_admin (bool);
+ * @param array  $ctx  Viewer context: is_member, is_locked, is_admin,
+ *                     reserve_closed (bool);
  *                     reserved, loaned (tool_id => true lookups);
  *                     reserve_nonce_field (pre-rendered wp_nonce_field
  *                     string); login_url, signup_url, reservations_url.
  * @return string
  */
 function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
-	$on_loan   = ( (int) $tool->active_loans > 0 );
-	$res       = (int) $tool->active_res;
-	$share_url = mtl_shop_tool_share_url( $tool->tool_id, $base );
-	$tool_id   = (int) $tool->tool_id;
+	$on_loan = ( (int) $tool->active_loans > 0 );
+	$res     = (int) $tool->active_res;
+	$tool_id = (int) $tool->tool_id;
 	// Only ever true when the visitor asked for retired tools by filter, since
 	// the catalog query hides them otherwise.
 	$retired     = ! empty( $tool->retired_at );
 	$maintenance = ! empty( $tool->maintenance_at );
+	// A retired tool's link has to ask for retired tools too, or it opens an
+	// empty detail box.
+	$share_url = mtl_shop_tool_share_url( $tool_id, $retired ? add_query_arg( 'mtl_retired', 'include', $base ) : $base );
 
 	ob_start();
 	?>
@@ -250,8 +253,8 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 
 		<?php
 		// Collapsed by default (native <details>, no JS) so visitors see a
-		// small button instead of a raw URL. The field is readonly, since
-		// click-to-select would need JavaScript.
+		// small button instead of a raw URL. The field is plain readonly text
+		// because click-to-select would need JavaScript.
 		?>
 		<details class="mtl-shop-share">
 			<summary class="mtl-shop-btn mtl-shop-btn-ghost" style="list-style:none;">Link to this tool</summary>
@@ -301,13 +304,13 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 		<?php echo mtl_shop_location_block( $tool->location ); ?>
 
 		<?php
-		// The Reserve control depends on the viewer. Reserving is POST + nonce,
-		// never GET, so it can't be triggered by prefetch or CSRF.
+		// Reserving is POST + nonce, never GET, so prefetch or CSRF can't
+		// trigger it.
 		?>
 		<?php if ( $retired ) : ?>
 			<p class="mtl-shop-reserve-note">This tool has been retired from the collection and can no longer be borrowed or reserved.</p>
 		<?php elseif ( ! empty( $ctx['reserve_closed'] ) ) : ?>
-			<?php // In place of the button before launch, for staff previewing as well as customers. mtl_handle_reserve_action() refuses regardless. ?>
+			<?php // In place of the button before launch, for staff previewing as well as visitors. mtl_handle_reserve_action() refuses regardless. ?>
 			<p class="mtl-shop-prelaunch-note">Reservations open when we launch.</p>
 		<?php elseif ( ! empty( $ctx['is_member'] ) ) : ?>
 			<?php if ( isset( $ctx['loaned'][ $tool_id ] ) ) : ?>
@@ -325,7 +328,7 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 					<button type="submit" class="mtl-shop-reserve">Reserve This Tool</button>
 				</form>
 				<?php if ( $maintenance ) : ?>
-					<p class="mtl-shop-reserve-note">You&rsquo;ll join the waiting queue and can track your place under My Reservations. It can be picked up once it&rsquo;s back in service.</p>
+					<p class="mtl-shop-reserve-note">You&rsquo;ll join the waiting queue and can track your place under My Reservations. The tool can be picked up once it&rsquo;s back in service.</p>
 				<?php else : ?>
 					<p class="mtl-shop-reserve-note">You&rsquo;ll join the waiting queue and can track your place under My Reservations.</p>
 				<?php endif; ?>
@@ -438,15 +441,15 @@ function mtl_render_shop_page() {
 			'label' => 'Oldest',
 		),
 		'name'      => array(
-			'order' => 't.tool_name ASC',
+			'order' => 't.tool_name ASC, t.tool_id ASC',
 			'label' => 'Name A&ndash;Z',
 		),
 		'name_desc' => array(
-			'order' => 't.tool_name DESC',
+			'order' => 't.tool_name DESC, t.tool_id DESC',
 			'label' => 'Name Z&ndash;A',
 		),
 		'brand'     => array(
-			'order' => 't.brand ASC',
+			'order' => 't.brand ASC, t.tool_id ASC',
 			'label' => 'Brand',
 		),
 	);
@@ -517,9 +520,11 @@ function mtl_render_shop_page() {
 	$having = '';
 	if ( 'available' === $a_status ) {
 		$having     = 'HAVING active_loans = 0';
-		$where_sql .= ( '' === $where_sql ? 'WHERE ' : ' AND ' ) . 't.maintenance_at IS NULL';
+		$where_sql .= ( '' === $where_sql ? 'WHERE ' : ' AND ' ) . 't.maintenance_at IS NULL AND t.retired_at IS NULL';
 	} elseif ( 'maintenance' === $a_status ) {
-		$where_sql .= ( '' === $where_sql ? 'WHERE ' : ' AND ' ) . 't.maintenance_at IS NOT NULL';
+		// Both filters exclude retired tools, matching their badge, which
+		// shows Retired and never Available or Under Maintenance.
+		$where_sql .= ( '' === $where_sql ? 'WHERE ' : ' AND ' ) . 't.maintenance_at IS NOT NULL AND t.retired_at IS NULL';
 	} elseif ( 'onloan' === $a_status ) {
 		$having = 'HAVING active_loans > 0';
 	} elseif ( 'noreserved' === $a_status ) {
@@ -551,18 +556,19 @@ function mtl_render_shop_page() {
 	}
 	$offset = ( $page_no - 1 ) * $per_page;
 
-	// The page of results.
-	// t.location is selected whatever the Setup switch says;
-	// mtl_shop_location_block() is the single place that decides whether a
-	// member is shown it, so the query does not have to be built two ways.
-	$page_sql  = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.retired_at, t.maintenance_at'
+	// The page of results. t.location is selected whatever the Setup switch
+	// says; mtl_shop_location_block() is the single place that decides whether
+	// a member is shown it, so the query does not have to be built two ways.
+	// The selected-tool query below reuses $select, so both give the panel the
+	// same columns.
+	$select    = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.retired_at, t.maintenance_at'
 		. mtl_tool_link_columns_sql() . ','
 		. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 		. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
 		. " GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories,"
 		. " GROUP_CONCAT(DISTINCT tr.training_name ORDER BY tr.training_name SEPARATOR ', ') AS required_trainings,"
-		. " {$sub_loans} AS active_loans, {$sub_res} AS active_res"
-		. " {$from} {$where_sql} GROUP BY t.tool_id {$having} ORDER BY {$order_by} LIMIT %d OFFSET %d";
+		. " {$sub_loans} AS active_loans, {$sub_res} AS active_res";
+	$page_sql  = "{$select} {$from} {$where_sql} GROUP BY t.tool_id {$having} ORDER BY {$order_by} LIMIT %d OFFSET %d";
 	$page_args = array_merge( $args, array( $per_page, $offset ) );
 	$tools     = $wpdb->get_results( $wpdb->prepare( $page_sql, $page_args ) );
 
@@ -573,14 +579,7 @@ function mtl_render_shop_page() {
 		$sel_retired_sql = '' !== $retired_where ? ' AND ' . $retired_where : '';
 		$selected        = $wpdb->get_row(
 			$wpdb->prepare(
-				'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.retired_at, t.maintenance_at'
-				. mtl_tool_link_columns_sql() . ','
-				. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
-				. " GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags,"
-				. " GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories,"
-				. " GROUP_CONCAT(DISTINCT tr.training_name ORDER BY tr.training_name SEPARATOR ', ') AS required_trainings,"
-				. " {$sub_loans} AS active_loans, {$sub_res} AS active_res"
-				. " {$from} WHERE t.tool_id = %d{$sel_retired_sql} GROUP BY t.tool_id",
+				"{$select} {$from} WHERE t.tool_id = %d{$sel_retired_sql} GROUP BY t.tool_id",
 				$sel_id
 			)
 		);
@@ -677,7 +676,7 @@ function mtl_render_shop_page() {
 	}
 
 	// Accent color mirrors the admin header color set on the Setup page.
-	$accent = get_option( 'mtl_header_color', '#ff6600' );
+	$accent = mtl_css_value( get_option( 'mtl_header_color', '#ff6600' ), '#ff6600' );
 
 	// ======================================================================
 	// RENDER
@@ -1123,7 +1122,7 @@ function mtl_render_shop_page() {
 
 		/* Badges + pills */
 		<?php echo mtl_shop_badge_pill_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
-		<?php echo mtl_tool_links_css( $accent ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS; the accent is esc_html()'d inside the helper. ?>
+		<?php echo mtl_tool_links_css( $accent ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS; $accent went through mtl_css_value() above. ?>
 
 		/* Detail box */
 		.mtl-shop-detail {
@@ -1650,7 +1649,7 @@ function mtl_render_shop_page() {
 					<?php // Only visible on narrow screens while the overlay is open. ?>
 					<a href="#mtl-shop-closed" class="mtl-shop-detail-close" aria-label="Close">&times;</a>
 					<div class="mtl-shop-detail-empty">
-						<p style="margin:0;">Select a tool to see its full details, availability and reservation options.</p>
+						<p style="margin:0;">Select a tool to see its details.</p>
 					</div>
 					<?php foreach ( $panel_tools as $panel_tool ) : ?>
 						<div class="mtl-shop-detail-panel" id="<?php echo esc_attr( mtl_shop_panel_id( $panel_tool->tool_id ) ); ?>" tabindex="-1">
