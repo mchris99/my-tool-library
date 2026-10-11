@@ -65,7 +65,7 @@ function mtl_bulk_agree_process( $path, $send_email = false ) {
 		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> That file could not be read.</p></div>';
 	}
 
-	$headers = fgetcsv( $handle );
+	$headers = fgetcsv( $handle, 0, ',', '"', '\\' );
 	if ( ! $headers ) {
 		fclose( $handle );
 		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was recorded.</strong> That file is empty.</p></div>';
@@ -109,7 +109,7 @@ function mtl_bulk_agree_process( $path, $send_email = false ) {
 	$row_no      = 1;
 
 	while ( true ) {
-		$row = fgetcsv( $handle );
+		$row = fgetcsv( $handle, 0, ',', '"', '\\' );
 		if ( false === $row ) {
 			break;
 		}
@@ -184,11 +184,12 @@ function mtl_bulk_agree_process( $path, $send_email = false ) {
 		return '<div class="notice notice-warning is-dismissible"><p><strong>Nothing was recorded.</strong> No dates were filled in.</p></div>';
 	}
 
-	$written   = 0;
-	$skipped   = 0;
-	$by_member = array();
-	$started   = microtime( true );
-	$ran_out   = false;
+	$written      = 0;
+	$skipped      = 0;
+	$write_failed = 0;
+	$by_member    = array();
+	$started      = microtime( true );
+	$ran_out      = false;
 
 	$outstanding_for = array();
 	foreach ( $planned as $item ) {
@@ -216,34 +217,45 @@ function mtl_bulk_agree_process( $path, $send_email = false ) {
 			$by_member[ $item['member'] ][]     = $acceptance_id;
 			$outstanding_for[ $item['member'] ] = array_diff( $outstanding_for[ $item['member'] ], array( $item['agreement'] ) );
 		} else {
-			++$skipped;
+			++$write_failed;
 		}
 	}
 
 	// Mail shares the same budget as the writing. A send is an SMTP round trip,
 	// so a few hundred of them will outrun a request on their own, and anyone
 	// left unmailed is reported rather than silently dropped.
-	$emailed   = 0;
-	$unemailed = 0;
+	$emailed      = 0;
+	$email_failed = 0;
+	$unemailed    = 0;
 	if ( $send_email ) {
 		foreach ( $by_member as $member_id => $ids ) {
 			if ( microtime( true ) - $started > 20 ) {
-				$unemailed = count( $by_member ) - $emailed;
+				$unemailed = count( $by_member ) - $emailed - $email_failed;
 				break;
 			}
 			if ( mtl_send_agreement_confirmation_email( $member_id, $ids ) ) {
 				++$emailed;
+			} else {
+				++$email_failed;
 			}
 		}
 	}
 
-	$notice = '<div class="notice notice-success is-dismissible"><p><strong>'
+	$notice = '<div class="notice notice-' . ( $write_failed || $email_failed ? 'warning' : 'success' ) . ' is-dismissible"><p><strong>'
 		. esc_html( sprintf( '%1$d recorded for %2$d member(s).', $written, count( $by_member ) ) ) . '</strong>';
 	if ( $skipped > 0 ) {
 		$notice .= ' ' . esc_html( sprintf( '%d already on record, so skipped.', $skipped ) );
 	}
+	if ( $write_failed > 0 ) {
+		// A re-upload skips what was recorded and tries these again.
+		$notice .= ' <strong>' . esc_html( sprintf( '%d could not be recorded.', $write_failed ) ) . '</strong> Upload the same file again to retry them.';
+	}
 	if ( $emailed > 0 ) {
 		$notice .= ' ' . esc_html( sprintf( '%d member(s) emailed their copy.', $emailed ) );
+	}
+	if ( $email_failed > 0 ) {
+		// A re-upload would skip these members, so it can't resend their copy.
+		$notice .= ' <strong>' . esc_html( sprintf( '%d member(s) could not be emailed.', $email_failed ) ) . '</strong> Use <em>Resend agreement email</em> on their detail panel to try again.';
 	}
 	if ( $unemailed > 0 ) {
 		$notice .= ' ' . esc_html( sprintf( '%d could not be emailed in time; their agreements are recorded either way.', $unemailed ) );
@@ -253,6 +265,53 @@ function mtl_bulk_agree_process( $path, $send_email = false ) {
 	}
 
 	return $notice . '</p></div>';
+}
+
+/**
+ * Makes a text cell safe to open in a spreadsheet.
+ *
+ * Excel, LibreOffice and Google Sheets run a cell starting with = + - @ (or a
+ * tab or carriage return ahead of one) as a formula, so a name typed as
+ * =HYPERLINK(...) would run on the administrator's computer. A leading
+ * apostrophe makes the spreadsheet show the text as typed.
+ *
+ * @param string $value Cell text.
+ * @return string
+ */
+function mtl_csv_text_cell( $value ) {
+	$value = (string) $value;
+	return '' !== $value && false !== strpos( "=+-@\t\r", $value[0] ) ? "'" . $value : $value;
+}
+
+/**
+ * The active agreements a member still owes, worked out from data the
+ * Membership page has already loaded for every member.
+ *
+ * Gives the same answer as mtl_member_outstanding_agreements(): an agreement is
+ * owed unless the member accepted its current version or a later one. Used in
+ * the member list, where calling that helper would be one query per member.
+ *
+ * @param object[] $active_agreements Rows from mtl_get_active_agreements(), in display order.
+ * @param string[] $accepted_versions This member's "agreement_id:version" pairs from mtl_get_member_acceptance_versions_map().
+ * @return object[] The owed agreements, in the same order.
+ */
+function mtl_outstanding_from_versions( $active_agreements, $accepted_versions ) {
+	$best = array();
+	foreach ( (array) $accepted_versions as $pair ) {
+		$parts = array_map( 'intval', explode( ':', (string) $pair ) );
+		if ( 2 === count( $parts ) ) {
+			$best[ $parts[0] ] = max( isset( $best[ $parts[0] ] ) ? $best[ $parts[0] ] : 0, $parts[1] );
+		}
+	}
+
+	$owed = array();
+	foreach ( (array) $active_agreements as $agreement ) {
+		$id = (int) $agreement->agreement_id;
+		if ( ! isset( $best[ $id ] ) || $best[ $id ] < (int) $agreement->version_num ) {
+			$owed[] = $agreement;
+		}
+	}
+	return $owed;
 }
 
 /**
@@ -346,7 +405,7 @@ function mtl_maybe_serve_bulk_agree_csv() {
 	foreach ( $agreements as $agreement ) {
 		$headers[] = mtl_bulk_agree_heading( $agreement );
 	}
-	fputcsv( $out, $headers );
+	fputcsv( $out, $headers, ',', '"', '\\' );
 
 	foreach ( $members as $member ) {
 		$member_id = (int) $member->member_id;
@@ -354,18 +413,21 @@ function mtl_maybe_serve_bulk_agree_csv() {
 			continue;
 		}
 
+		// Members type their own names at signup, so these cells are
+		// neutralised against spreadsheet formulas. The upload reads only
+		// member_id and the agreement columns, so the round trip is unaffected.
 		$row = array(
 			$member_id,
-			stripslashes( (string) $member->first_name ),
-			stripslashes( (string) $member->last_name ),
-			(string) $member->email,
+			mtl_csv_text_cell( stripslashes( (string) $member->first_name ) ),
+			mtl_csv_text_cell( stripslashes( (string) $member->last_name ) ),
+			mtl_csv_text_cell( (string) $member->email ),
 		);
 		// Blank cells throughout. A pre-ticked file is a file somebody uploads
 		// without reading, and every row here is a permanent attestation.
 		foreach ( $agreements as $unused ) {
 			$row[] = '';
 		}
-		fputcsv( $out, $row );
+		fputcsv( $out, $row, ',', '"', '\\' );
 	}
 
 	fclose( $out );
@@ -377,11 +439,13 @@ add_action( 'admin_init', 'mtl_maybe_serve_bulk_agree_csv' );
  * Serves a downloadable CSV template for the Membership Bulk Import feature.
  * Runs on admin_init (before any HTML) so it can send download headers, the
  * same way the inventory template download works.
+ *
+ * @return void
  */
 function mtl_maybe_serve_member_csv_template() {
 	$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 	if (
-		! isset( $_GET['mtl_download_member_template'] ) || '' === $page ||
+		! isset( $_GET['mtl_download_member_template'] ) ||
 		'mtl-membership' !== $page ||
 		! mtl_can_bulk_import()
 	) {
@@ -417,7 +481,10 @@ function mtl_maybe_serve_member_csv_template() {
 			'address_proof_scan_url',
 			'private_notes',
 			'trainings',
-		)
+		),
+		',',
+		'"',
+		'\\'
 	);
 	// One clearly-fake example row so admins can see the expected format at a
 	// glance, so delete/overwrite it before uploading real member data.
@@ -435,8 +502,8 @@ function mtl_maybe_serve_member_csv_template() {
 			'53202',
 			'United States',
 			// The importer accepts any date string PHP's strtotime() understands
-			// (see the normalization a few lines below), but the template models
-			// the site-wide MM/DD/YYYY convention.
+			// (see "1B. HANDLE BULK CSV IMPORT" in mtl_render_membership_page()),
+			// but the template models the site-wide MM/DD/YYYY convention.
 			gmdate( 'm/d/Y' ),
 			'10.00',
 			'N',
@@ -445,10 +512,13 @@ function mtl_maybe_serve_member_csv_template() {
 			'',
 			// "Name: completion date" pairs, semicolon-separated. Names are
 			// matched against the trainings set up on the Setup page (see the
-			// importer's lookup below); the date is when that member completed
+			// importer's lookup in section 1B); the date is when that member completed
 			// it, which is what their certification length runs from.
 			'Ladder Safety: ' . gmdate( 'n/j/Y' ) . '; Welding Basics: ' . gmdate( 'n/j/Y' ),
-		)
+		),
+		',',
+		'"',
+		'\\'
 	);
 	fclose( $out );
 	exit;
@@ -473,6 +543,8 @@ add_action( 'admin_init', 'mtl_maybe_serve_agreement_record' );
  *
  * IT WRITES NOTHING. No acceptance row, no user meta, no status change.
  * Producing evidence must never alter it.
+ *
+ * @return void
  */
 function mtl_maybe_serve_agreement_record() {
 	$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
@@ -692,7 +764,7 @@ function mtl_render_record_agreement_form( $member, $acceptances, $changed = fal
 
 	ob_start();
 	?>
-	<form method="post" class="mtl-record-agreement-form">
+	<form method="post" action="<?php echo esc_url( menu_page_url( 'mtl-membership', false ) ); ?>" class="mtl-record-agreement-form">
 		<?php wp_nonce_field( 'mtl_record_agreement_action', 'mtl_record_agreement_nonce' ); ?>
 		<input type="hidden" name="agreement_member_id" value="<?php echo esc_attr( $member_id ); ?>">
 
@@ -857,6 +929,7 @@ function mtl_read_posted_training_starts() {
  *
  * @param int               $member_id       Member row ID.
  * @param array<int,string> $training_starts training_id => start_date (Y-m-d).
+ * @return void
  */
 function mtl_sync_member_trainings( $member_id, $training_starts ) {
 	global $wpdb;
@@ -898,6 +971,7 @@ function mtl_sync_member_trainings( $member_id, $training_starts ) {
  *                             the Add form passes true: Edit never creates an
  *                             account, so offering it there would promise
  *                             something that handler does not do.
+ * @return void
  */
 function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $offer_setup = false ) {
 	$field_id = function ( $name ) use ( $id_prefix ) {
@@ -1031,14 +1105,14 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 		<th scope="row"><label for="<?php echo $field_id( 'photo_id_scan_url' ); ?>">Photo ID Scan URL</label></th>
 		<td>
 			<input type="url" name="photo_id_scan_url" id="<?php echo $field_id( 'photo_id_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['photo_id_scan_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Keep scans in private folder. A member counts as verified once both scans are on file.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Keep scans in a private folder. A member counts as verified once both scans are on file.</p>
 		</td>
 	</tr>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'address_proof_scan_url' ); ?>">Proof of Address Scan URL</label></th>
 		<td>
 			<input type="url" name="address_proof_scan_url" id="<?php echo $field_id( 'address_proof_scan_url' ); ?>" class="regular-text" maxlength="255" value="<?php echo esc_url( $values['address_proof_scan_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Keep scans in private folder. A member counts as verified once both scans are on file.</p>
+			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;"><strong>Sensitive.</strong> Keep scans in a private folder. A member counts as verified once both scans are on file.</p>
 		</td>
 	</tr>
 	<tr>
@@ -1054,6 +1128,8 @@ function mtl_render_member_form_fields( $values, $trainings, $id_prefix = '', $o
 
 /**
  * Renders the Membership admin page.
+ *
+ * @return void
  */
 function mtl_render_membership_page() {
 	global $wpdb;
@@ -1068,6 +1144,19 @@ function mtl_render_membership_page() {
 	$tbl_reservations  = $wpdb->prefix . 'tool_reservations';
 	$tbl_trainings     = $wpdb->prefix . 'member_trainings';
 	$tbl_training_map  = $wpdb->prefix . 'member_training_mappings';
+
+	// Whether a member row exists and is not anonymized. Handlers that write to
+	// one member check this first: a form left open while the member was
+	// deleted must not write to the "Former Member" row.
+	$member_is_current = function ( $member_id ) use ( $wpdb, $tbl_members ) {
+		return $member_id > 0 && (bool) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+				"SELECT member_id FROM {$tbl_members} WHERE member_id = %d AND anonymized_at IS NULL",
+				$member_id
+			)
+		);
+	};
 
 	// Available trainings, shown as the tick-and-date picker on the Add/Edit
 	// forms, as the Trainings filter's options, and matched by name during CSV
@@ -1086,7 +1175,7 @@ function mtl_render_membership_page() {
 	// matching the Setup page's configured default loan length (same
 	// convention as Quick Loan on the Inventory page).
 	$mtl_default_loan_days = (int) get_option( 'mtl_default_loan_days', 21 );
-	$mtl_default_due_date  = gmdate( 'Y-m-d', strtotime( '+' . $mtl_default_loan_days . ' days' ) );
+	$mtl_default_due_date  = gmdate( 'Y-m-d', strtotime( current_time( 'Y-m-d' ) . ' +' . $mtl_default_loan_days . ' days' ) );
 
 	// Set by the loan/reservation action handlers below when they succeed, so
 	// the affected member's detail row can be reopened automatically after
@@ -1114,7 +1203,7 @@ function mtl_render_membership_page() {
 		'state'                     => '',
 		'zip_code'                  => '',
 		'country'                   => 'United States',
-		'signup_date'               => gmdate( 'Y-m-d' ),
+		'signup_date'               => current_time( 'Y-m-d' ),
 		'recurring_donation_amount' => '',
 		'has_donated_tools'         => 'N',
 		'profile_photo_url'         => '',
@@ -1165,7 +1254,10 @@ function mtl_render_membership_page() {
 
 			$check = mtl_check_agreements_submission( $outstanding, $ticked, $posted['versions'] );
 
-			if ( $check['stale'] || $check['added'] ) {
+			if ( ! $member_is_current( $target_id ) ) {
+				$record_agreement_id = 0;
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member record could not be found.</p></div>';
+			} elseif ( $check['stale'] || $check['added'] ) {
 				// Staff must never attest to text that changed under them
 				// mid-conversation. Nothing is written and the form re-renders
 				// with the new wording, unticked.
@@ -1230,7 +1322,9 @@ function mtl_render_membership_page() {
 			$target_id = isset( $_POST['agreement_member_id'] ) ? absint( $_POST['agreement_member_id'] ) : 0;
 			$event_ids = $target_id > 0 ? mtl_latest_acceptance_event_ids( $target_id ) : array();
 
-			if ( ! $event_ids ) {
+			if ( ! $member_is_current( $target_id ) ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member record could not be found.</p></div>';
+			} elseif ( ! $event_ids ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Nothing to send.</strong> This member has no agreements on record.</p></div>';
 			} elseif ( mtl_send_agreement_confirmation_email( $target_id, $event_ids ) ) {
 				echo '<div class="notice notice-success is-dismissible"><p><strong>Sent.</strong> The member has been emailed their copy of the most recent agreements recorded for them. Nothing about their record has changed.</p></div>';
@@ -1324,7 +1418,7 @@ function mtl_render_membership_page() {
 
 			// signup_date is NOT NULL in the schema; fall back to today.
 			if ( '' === $signup_date || ! strtotime( $signup_date ) ) {
-				$signup_date = gmdate( 'Y-m-d' );
+				$signup_date = current_time( 'Y-m-d' );
 			}
 
 			// country is NOT NULL with a DB default, but that default only
@@ -1440,8 +1534,8 @@ function mtl_render_membership_page() {
 						}
 
 						// Their copy, same checkbox treatment as the dialog.
-						if ( $mtl_written_ids && isset( $_POST['mtl_send_agreement_copy'] ) ) {
-							mtl_send_agreement_confirmation_email( $new_member_id, $mtl_written_ids );
+						if ( $mtl_written_ids && isset( $_POST['mtl_send_agreement_copy'] ) && ! mtl_send_agreement_confirmation_email( $new_member_id, $mtl_written_ids ) ) {
+							echo '<div class="notice notice-warning is-dismissible"><p><strong>Their emailed copy could not be sent</strong>. Use <em>Resend agreement email</em> on their detail panel to try again.</p></div>';
 						}
 					}
 
@@ -1610,7 +1704,7 @@ function mtl_render_membership_page() {
 						rewind( $handle );
 					}
 
-					$header_row = fgetcsv( $handle );
+					$header_row = fgetcsv( $handle, 0, ',', '"', '\\' );
 
 					if ( false === $header_row ) {
 						echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The CSV file appears to be empty.</p></div>';
@@ -1645,9 +1739,9 @@ function mtl_render_membership_page() {
 								$training_lookup[ strtolower( $mtl_training->training_name ) ] = (int) $mtl_training->training_id;
 							}
 
-							// Emails already claimed earlier in THIS file, the
-							// DB uniqueness check can't catch two rows in the same
-							// upload sharing an email, since neither exists yet.
+							// Emails claimed earlier in THIS file, so a repeat
+							// gets a clearer message than the DB uniqueness
+							// check would give it.
 							$seen_emails = array();
 
 							$get_col = function ( $row, $name ) use ( $columns ) {
@@ -1659,7 +1753,7 @@ function mtl_render_membership_page() {
 							$max_bulk_rows   = 5000; // Sanity cap so a huge file can't tie up the request indefinitely.
 
 							while ( true ) {
-								$row = fgetcsv( $handle );
+								$row = fgetcsv( $handle, 0, ',', '"', '\\' );
 								if ( false === $row ) {
 									break;
 								}
@@ -1702,7 +1796,7 @@ function mtl_render_membership_page() {
 								$row_notes = sanitize_textarea_field( $get_col( $row, 'private_notes' ) );
 
 								$row_signup_raw = $get_col( $row, 'signup_date' );
-								$row_signup     = ( '' !== $row_signup_raw && strtotime( $row_signup_raw ) ) ? gmdate( 'Y-m-d', strtotime( $row_signup_raw ) ) : gmdate( 'Y-m-d' );
+								$row_signup     = ( '' !== $row_signup_raw && strtotime( $row_signup_raw ) ) ? gmdate( 'Y-m-d', strtotime( $row_signup_raw ) ) : current_time( 'Y-m-d' );
 
 								$row_donation = floatval( $get_col( $row, 'recurring_donation_amount' ) );
 
@@ -2051,7 +2145,7 @@ function mtl_render_membership_page() {
 				$agreement_batch_notice .= ' ' . intval( $agreement_batch['remaining'] ) . ' still to go. Press the button again to continue.';
 			}
 			if ( $agreement_batch['excluded'] > 0 ) {
-				$agreement_batch_notice .= ' ' . intval( $agreement_batch['excluded'] ) . ' were left out because they cannot sign in yet.';
+				$agreement_batch_notice .= ' ' . intval( $agreement_batch['excluded'] ) . ( 1 === intval( $agreement_batch['excluded'] ) ? ' was' : ' were' ) . ' left out because they cannot sign in yet.';
 			}
 			$agreement_batch_notice .= '</p></div>';
 		} else {
@@ -2172,7 +2266,7 @@ function mtl_render_membership_page() {
 			$has_donated = ( isset( $_POST['has_donated_tools'] ) && 'Y' === $_POST['has_donated_tools'] ) ? 'Y' : 'N';
 
 			if ( '' === $signup_date || ! strtotime( $signup_date ) ) {
-				$signup_date = gmdate( 'Y-m-d' );
+				$signup_date = current_time( 'Y-m-d' );
 			}
 
 			if ( '' === $country ) {
@@ -2212,6 +2306,9 @@ function mtl_render_membership_page() {
 				if ( $email_in_use ) {
 					$error         = true;
 					$error_message = 'That email address already belongs to another member. Please enter a different email address.';
+				} elseif ( ! $member_is_current( $edit_member_id ) ) {
+					$error         = true;
+					$error_message = 'That member record could not be found.';
 				} else {
 					$old_email = (string) $wpdb->get_var(
 						$wpdb->prepare(
@@ -2234,6 +2331,11 @@ function mtl_render_membership_page() {
 							$error         = true;
 							$error_message = 'That email address is already used by another WordPress account, so it cannot also be this member&rsquo;s sign-in. The member was not updated.';
 						}
+					} elseif ( 0 !== strcasecmp( $old_email, $email ) && mtl_email_taken_by_non_member( $email ) ) {
+						// No sign-in yet, but Create logins would later fail on
+						// this address, so it is refused now, as Add does.
+						$error         = true;
+						$error_message = 'That email address is already used by another WordPress account, so it cannot also be this member&rsquo;s sign-in. The member was not updated.';
 					}
 				}
 			}
@@ -2416,7 +2518,12 @@ function mtl_render_membership_page() {
 
 			$delete_member_id = isset( $_POST['member_id'] ) ? intval( $_POST['member_id'] ) : 0;
 
-			if ( $delete_member_id > 0 ) {
+			if ( $delete_member_id > 0 && ! $member_is_current( $delete_member_id ) ) {
+				// Already anonymized, as when a refresh re-posts the delete: the
+				// helper would report success again, minus the emails it already
+				// sent the first time.
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member could not be found or was already deleted.</p></div>';
+			} elseif ( $delete_member_id > 0 ) {
 				$result       = mtl_delete_or_anonymize_member( $delete_member_id, 'staff' );
 				$display_name = esc_html( stripslashes( (string) $result['name'] ) );
 				$res_note     = $result['cancelled_reservations'] > 0
@@ -2439,7 +2546,7 @@ function mtl_render_membership_page() {
 
 				if ( 'anonymized' === $result['outcome'] ) {
 					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $display_name is esc_html()'d above.
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Personal data removed.</strong> ' . $display_name . ' is now shown as a former member. Their personal details, verification documents and online sign-in have been permanently removed, while their loans, reservations and completed trainings have been kept so the library&rsquo;s records stay accurate.' . esc_html( $res_note ) . wp_kses_post( $orphan_note ) . wp_kses_post( $cleanup_note ) . '</p></div>';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Personal data removed.</strong> ' . $display_name . ' is now shown as a former member. Their personal details' . ( ! empty( $result['wp_user_deleted'] ) ? ', verification documents and online sign-in have' : ' and verification documents have' ) . ' been permanently removed, while their loans, reservations and completed trainings have been kept so the library&rsquo;s records stay accurate.' . esc_html( $res_note ) . wp_kses_post( $orphan_note ) . wp_kses_post( $cleanup_note ) . '</p></div>';
 				} else {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member could not be found or was already deleted.</p></div>';
 				}
@@ -2509,7 +2616,7 @@ function mtl_render_membership_page() {
 			$ext_due     = isset( $_POST['due_date'] ) ? sanitize_text_field( wp_unslash( $_POST['due_date'] ) ) : '';
 			if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $ext_due ) || ! strtotime( $ext_due ) ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Please provide a valid due date.</p></div>';
-			} elseif ( $ext_due < gmdate( 'Y-m-d' ) ) {
+			} elseif ( $ext_due < current_time( 'Y-m-d' ) ) {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The due date can&rsquo;t be in the past. Please pick today or a later date.</p></div>';
 			} else {
 				// Confirm the loan is still active before reporting success;
@@ -2585,8 +2692,8 @@ function mtl_render_membership_page() {
 			$sl_due            = isset( $_POST['due_date'] ) ? sanitize_text_field( wp_unslash( $_POST['due_date'] ) ) : '';
 			$sl_due_error      = false;
 			if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $sl_due ) || ! strtotime( $sl_due ) ) {
-				$sl_due = gmdate( 'Y-m-d', strtotime( '+' . (int) get_option( 'mtl_default_loan_days', 21 ) . ' days' ) );
-			} elseif ( $sl_due < gmdate( 'Y-m-d' ) ) {
+				$sl_due = gmdate( 'Y-m-d', strtotime( current_time( 'Y-m-d' ) . ' +' . (int) get_option( 'mtl_default_loan_days', 21 ) . ' days' ) );
+			} elseif ( $sl_due < current_time( 'Y-m-d' ) ) {
 				$sl_due_error = true;
 			}
 
@@ -2750,7 +2857,9 @@ function mtl_render_membership_page() {
 			);
 			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-			if ( $member_row ) {
+			// A former member's row has no Edit link; a stale one must not
+			// open it either.
+			if ( $member_row && empty( $member_row->anonymized_at ) ) {
 				// training_id => start_date, exactly the shape the picker wants.
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
 				$existing_training_rows   = $wpdb->get_results( $wpdb->prepare( "SELECT training_id, start_date FROM {$tbl_training_map} WHERE member_id = %d", $edit_member_id ) );
@@ -2764,15 +2873,18 @@ function mtl_render_membership_page() {
 
 				$editing     = true;
 				$edit_values = array(
-					'first_name'                => stripslashes( $member_row->first_name ),
-					'last_name'                 => stripslashes( $member_row->last_name ),
+					// No stripslashes() on the way into the form: values are
+					// stored unslashed, so it would drop real backslashes, and
+					// the next save would store the stripped text.
+					'first_name'                => (string) $member_row->first_name,
+					'last_name'                 => (string) $member_row->last_name,
 					'email'                     => $member_row->email,
 					'phone_country'             => $edit_phone_parsed['iso'],
 					'phone_national'            => $edit_phone_parsed['national'],
-					'address_line1'             => stripslashes( $member_row->address_line1 ),
-					'address_line2'             => stripslashes( (string) $member_row->address_line2 ),
-					'city'                      => stripslashes( $member_row->city ),
-					'state'                     => stripslashes( $member_row->state ),
+					'address_line1'             => (string) $member_row->address_line1,
+					'address_line2'             => (string) $member_row->address_line2,
+					'city'                      => (string) $member_row->city,
+					'state'                     => (string) $member_row->state,
 					'zip_code'                  => $member_row->zip_code,
 					'country'                   => $member_row->country,
 					'signup_date'               => $member_row->signup_date,
@@ -2781,7 +2893,7 @@ function mtl_render_membership_page() {
 					'profile_photo_url'         => (string) $member_row->profile_photo_url,
 					'photo_id_scan_url'         => (string) $member_row->photo_id_scan_url,
 					'address_proof_scan_url'    => (string) $member_row->address_proof_scan_url,
-					'private_notes'             => stripslashes( (string) $member_row->private_notes ),
+					'private_notes'             => (string) $member_row->private_notes,
 					'training_starts'           => $existing_training_starts,
 				);
 			} else {
@@ -3618,8 +3730,8 @@ function mtl_render_membership_page() {
 		<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
 			<summary style="font-size: 1.1em; font-weight: 600; cursor: pointer; outline: none; color: var(--mtl-header-color);">
 				Member Logins
-				<?php if ( $logins_missing > 0 || $logins_pending > 0 ) : ?>
-					<span style="font-weight: 400; color: #8a6d00;">(<?php echo intval( $logins_missing + $logins_pending ); ?> need attention)</span>
+				<?php if ( ! $logins_all_done ) : ?>
+					<span style="font-weight: 400; color: #8a6d00;">(<?php echo intval( $logins_missing + $logins_pending + $logins_blocked ); ?> need attention)</span>
 				<?php endif; ?>
 			</summary>
 
@@ -3681,8 +3793,9 @@ function mtl_render_membership_page() {
 		<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
 			<summary style="font-size: 1.1em; font-weight: 600; cursor: pointer; outline: none; color: var(--mtl-header-color);">
 				Member Agreements
-				<?php if ( $ag_outstanding > 0 ) : ?>
-					<span style="font-weight: 400; color: #8a6d00;">(<?php echo intval( $ag_outstanding ); ?> have not agreed)</span>
+				<?php // Both sets: those who can be asked and those who can't sign in yet, which don't overlap. ?>
+				<?php if ( $ag_outstanding + $ag_excluded > 0 ) : ?>
+					<span style="font-weight: 400; color: #8a6d00;">(<?php echo intval( $ag_outstanding + $ag_excluded ); ?> have not agreed)</span>
 				<?php endif; ?>
 			</summary>
 
@@ -3691,7 +3804,7 @@ function mtl_render_membership_page() {
 				<p style="margin-top: 0;">Ask members to review and agree to the current agreements. They receive an email with a link and agree on the website themselves.</p>
 
 				<ul style="margin: 0 0 15px 20px; list-style: disc;">
-					<li><strong><?php echo intval( $ag_outstanding ); ?></strong> member(s) have not agreed to all of the current agreements.</li>
+					<li><strong><?php echo intval( $ag_outstanding ); ?></strong> member(s) who can sign in have not agreed to all of the current agreements.</li>
 					<li><strong><?php echo intval( $ag_never_agreed ); ?></strong> of those have never agreed to anything.</li>
 					<?php if ( $ag_recent > 0 ) : ?>
 						<li><strong><?php echo intval( $ag_recent ); ?></strong> were emailed in the last 24 hours and will be skipped.</li>
@@ -3702,7 +3815,7 @@ function mtl_render_membership_page() {
 					<?php // Reported rather than silently dropped: a silent drop looks like a successful send. ?>
 					<div class="notice notice-warning inline" style="margin: 0 0 15px 0;">
 						<p style="margin: 6px 0;">
-							<strong>&#9888; <?php echo intval( $ag_excluded ); ?> of them cannot sign in yet, so they have no way to agree. Create their logins first. </strong>
+							<strong>&#9888; <?php echo intval( $ag_excluded ); ?> more have not agreed but cannot sign in yet, so they have no way to agree. Create their logins first. </strong>
 							See <em>Member Logins</em> above, then send setup emails. They will be left out of this send.
 						</p>
 					</div>
@@ -3768,7 +3881,7 @@ function mtl_render_membership_page() {
 						<p style="margin: 6px 0;"><strong>&#9888; This cannot be undone.</strong> Every date you enter becomes a permanent record that the member signed that agreement, attributed to your account. There is no way to remove one afterwards, so only upload a file you have checked against the signed forms.</p>
 					</div>
 
-					<form method="post" action="" enctype="multipart/form-data">
+					<form method="post" action="<?php echo esc_url( $base_url ); ?>" enctype="multipart/form-data">
 						<?php wp_nonce_field( 'mtl_bulk_agree_upload_action', 'mtl_bulk_agree_nonce' ); ?>
 						<p>
 							<label for="mtl-bulk-agree-file"><strong>Completed file</strong></label><br>
@@ -3934,25 +4047,32 @@ function mtl_render_membership_page() {
 	// Lifetime loan counts. "past due" deliberately counts BOTH loans returned
 	// after their due date AND loans still out that are overdue right now, so
 	// it reads as "how many times has this member kept a tool too long".
+	// Overdue is judged against the site's date, not MySQL's CURDATE(), which
+	// follows the database server's time zone.
+	$mtl_today      = current_time( 'Y-m-d' );
 	$loan_stats     = array();
 	$loan_stat_rows = $wpdb->get_results(
-		"
+		$wpdb->prepare(
+			"
         SELECT member_id,
                COUNT(*) AS total_loans,
                SUM(CASE WHEN return_date IS NULL THEN 1 ELSE 0 END) AS active_loans,
                SUM(CASE WHEN return_date IS NOT NULL THEN 1 ELSE 0 END) AS prior_loans,
-               SUM(CASE WHEN return_date IS NULL AND due_date < CURDATE() THEN 1 ELSE 0 END) AS overdue_now,
+               SUM(CASE WHEN return_date IS NULL AND due_date < %s THEN 1 ELSE 0 END) AS overdue_now,
                -- DATE(return_date), not a raw comparison: return_date is a full
                -- timestamp and due_date stays a plain date, so a bare > would
                -- wrongly count a same-day return (any time after midnight) as late.
                SUM(CASE
                      WHEN return_date IS NOT NULL AND DATE(return_date) > due_date THEN 1
-                     WHEN return_date IS NULL AND due_date < CURDATE() THEN 1
+                     WHEN return_date IS NULL AND due_date < %s THEN 1
                      ELSE 0
                    END) AS past_due_loans
         FROM {$tbl_loans}
         GROUP BY member_id
-    "
+    ",
+			$mtl_today,
+			$mtl_today
+		)
 	);
 	foreach ( $loan_stat_rows as $row ) {
 		$loan_stats[ (int) $row->member_id ] = $row;
@@ -3961,15 +4081,18 @@ function mtl_render_membership_page() {
 	// The tools each member currently has out.
 	$active_loans_by_member = array();
 	$active_loan_rows       = $wpdb->get_results(
-		"
+		$wpdb->prepare(
+			"
         SELECT l.loan_id, l.member_id, l.loan_date, l.due_date,
-               DATEDIFF(CURDATE(), l.due_date) AS days_past_due,
+               DATEDIFF(%s, l.due_date) AS days_past_due,
                t.tool_name, t.barcode
         FROM {$tbl_loans} l
         JOIN {$tbl_inventory} t ON t.tool_id = l.tool_id
         WHERE l.return_date IS NULL
         ORDER BY l.due_date ASC
-    "
+    ",
+			$mtl_today
+		)
 	);
 	foreach ( $active_loan_rows as $row ) {
 		$active_loans_by_member[ (int) $row->member_id ][] = $row;
@@ -4328,7 +4451,7 @@ function mtl_render_membership_page() {
 							// it carries a trace saying so.
 							if ( mtl_agreements_tracking() ) :
 								?>
-							data-agreements="<?php echo esc_attr( $mtl_ag_status ); ?>"
+							data-agreements="<?php echo esc_attr( $is_anonymized && in_array( $mtl_ag_status, array( 'none', 'outdated' ), true ) ? '' : $mtl_ag_status ); ?>"
 							data-agreement-vers="<?php echo esc_attr( $mtl_ag_vers ); ?>"
 								<?php
 							endif;
@@ -4470,11 +4593,11 @@ function mtl_render_membership_page() {
 								<?php endif; ?>
 							</td>
 						</tr>
-						<!--
-							Hidden detail row: full contact info plus links to the
-							member's sensitive verification documents. Toggled
-							open/closed by clicking anywhere on the row above.
-						-->
+						<?php
+						// Hidden detail row: full contact info plus links to the
+						// member's sensitive verification documents. Toggled
+						// open/closed by clicking anywhere on the row above.
+						?>
 						<tr class="mtl-detail-row" id="mtl-detail-<?php echo esc_attr( $member->member_id ); ?>" style="display: none;">
 							<td colspan="9">
 								<div class="mtl-detail-panel">
@@ -4532,7 +4655,7 @@ function mtl_render_membership_page() {
 										// instead.
 										if ( mtl_agreements_tracking() ) :
 											$mtl_p_acceptances = isset( $member_acceptances[ $mid ] ) ? $member_acceptances[ $mid ] : array();
-											$mtl_p_outstanding = mtl_member_outstanding_agreements( $mid );
+											$mtl_p_outstanding = mtl_outstanding_from_versions( $mtl_active_agreements, isset( $member_agreement_vers[ $mid ] ) ? $member_agreement_vers[ $mid ] : array() );
 											$mtl_p_out_ids     = array_map( 'intval', wp_list_pluck( $mtl_p_outstanding, 'agreement_id' ) );
 											$mtl_p_active      = count( $mtl_active_agreements );
 											$mtl_p_accepted    = $mtl_p_active - count( $mtl_p_outstanding );
@@ -4613,10 +4736,11 @@ function mtl_render_membership_page() {
 													<p class="mtl-agreement-actions">
 														<?php if ( $mtl_p_can_record && $mtl_p_outstanding ) : ?>
 															<?php
-															// A real link, so the dialog works with scripting off:
-															// following it renders the identical form inline below.
-															// A staff member who cannot open the dialog would
-															// otherwise have NO way to record a signature.
+															// A real link: following it renders the identical form
+															// inline below and reopens this panel, so a browser
+															// without <dialog> support can still record a
+															// signature. The admin pages need scripting either way,
+															// since the panel itself only opens with it.
 															$mtl_p_launch = add_query_arg( 'mtl_record_agreement', $mid, $base_url ) . '#mtl-detail-' . $mid;
 															?>
 															<a class="button mtl-record-launch" data-member="<?php echo esc_attr( $mid ); ?>" href="<?php echo esc_url( $mtl_p_launch ); ?>">Record agreement</a>
@@ -4849,7 +4973,7 @@ function mtl_render_membership_page() {
 							<button type="button" class="button button-small mtl-lm-due-btn" data-days="<?php echo (int) $lm_days; ?>"><?php echo (int) $lm_days; ?> days</button>
 						<?php endforeach; ?>
 					</div>
-					<input type="date" name="due_date" id="mtl-lm-due" class="mtl-lm-due-input" value="" min="<?php echo esc_attr( gmdate( 'Y-m-d' ) ); ?>" required>
+					<input type="date" name="due_date" id="mtl-lm-due" class="mtl-lm-due-input" value="" min="<?php echo esc_attr( current_time( 'Y-m-d' ) ); ?>" required>
 
 					<div class="mtl-lm-actions">
 						<button type="submit" name="mtl_member_extend_loan" class="button button-primary">Save New Due Date</button>
@@ -4910,7 +5034,7 @@ function mtl_render_membership_page() {
 							<button type="button" class="button button-small mtl-rm-due-btn<?php echo $rm_days === $mtl_default_loan_days ? ' mtl-lm-due-active' : ''; ?>" data-days="<?php echo (int) $rm_days; ?>"><?php echo (int) $rm_days; ?> days</button>
 						<?php endforeach; ?>
 					</div>
-					<input type="date" name="due_date" id="mtl-rm-due" class="mtl-lm-due-input" value="<?php echo esc_attr( $mtl_default_due_date ); ?>" min="<?php echo esc_attr( gmdate( 'Y-m-d' ) ); ?>" required>
+					<input type="date" name="due_date" id="mtl-rm-due" class="mtl-lm-due-input" value="<?php echo esc_attr( $mtl_default_due_date ); ?>" min="<?php echo esc_attr( current_time( 'Y-m-d' ) ); ?>" required>
 
 					<div class="mtl-lm-actions">
 						<button type="submit" name="mtl_member_start_loan" class="button button-primary">Start Loan for This Member</button>
@@ -5348,7 +5472,7 @@ function mtl_render_membership_page() {
 				});
 			}
 
-			searchInput.addEventListener('keyup', applyFilters);
+			searchInput.addEventListener('input', applyFilters);
 			advFieldEls.forEach(function(el) {
 				el.addEventListener('input', applyFilters);
 				el.addEventListener('change', applyFilters);
@@ -5366,6 +5490,11 @@ function mtl_render_membership_page() {
 					msAll.checked = false;
 					refreshMsLabel();
 					closeMsPanel();
+				}
+				// Rebuilds and disables the Version select to match the
+				// cleared agreement.
+				if (advFields.agreement) {
+					advFields.agreement.dispatchEvent(new Event('change'));
 				}
 				applyFilters();
 			});
@@ -5463,13 +5592,36 @@ function mtl_render_membership_page() {
 
 			// Establish the initial paginated view (all rows matched, page 1).
 			applyFilters();
+
+			<?php
+			// If a loan/reservation action above just succeeded, reopen that
+			// member's detail row so staff can see the result without having
+			// to re-find and re-click the member. Turns to the row's page first,
+			// since renderPage() hides every row outside the current page.
+			// A followed Record agreement link reopens its member the same way,
+			// so the form is in view behind the dialog, or inline where the
+			// browser has no <dialog>.
+			$mtl_reopen_id = $reopen_member_id > 0 ? $reopen_member_id : $record_agreement_id;
+			?>
+			<?php if ( $mtl_reopen_id > 0 ) : ?>
+				const reopenRow = document.querySelector('.mtl-member-row[data-member-id="<?php echo (int) $mtl_reopen_id; ?>"]');
+				if (reopenRow) {
+					const reopenIndex = Array.from(tbody.querySelectorAll('tr.mtl-member-row'))
+						.filter(function(r) { return r.dataset.matched !== '0'; })
+						.indexOf(reopenRow);
+					if (reopenIndex >= 0) {
+						currentPage = Math.floor(reopenIndex / pageSize) + 1;
+						renderPage();
+					}
+					reopenRow.click();
+					reopenRow.scrollIntoView({ block: 'center' });
+				}
+			<?php endif; ?>
 		});
 	</script>
 
 	<script>
 		// ---- Manage Loan modal ----
-		// Registered after the script above (which owns tbody's row-expand
-		// click delegation), so reopenRow.click() below has a listener to hit.
 		document.addEventListener('DOMContentLoaded', function() {
 			const overlay = document.getElementById('mtl-lm-overlay');
 			if (!overlay) return;
@@ -5553,18 +5705,6 @@ function mtl_render_membership_page() {
 				});
 			});
 
-			<?php
-			// If a loan/reservation action above just succeeded, reopen that
-					// member's detail row so staff can see the result without having
-					// to re-find and re-click the member.
-			?>
-			<?php if ( $reopen_member_id > 0 ) : ?>
-				const reopenRow = document.querySelector('.mtl-member-row[data-member-id="<?php echo (int) $reopen_member_id; ?>"]');
-				if (reopenRow) {
-					reopenRow.click();
-					reopenRow.scrollIntoView({ block: 'center' });
-				}
-			<?php endif; ?>
 		});
 	</script>
 
@@ -5720,8 +5860,9 @@ function mtl_render_membership_page() {
 
 	<script>
 		// Record Agreement: moves the form the detail panel already rendered
-		// inline into a native <dialog>. The launcher is a real link, so with
-		// scripting off it just navigates and the inline form is what you get.
+		// inline into a native <dialog>. The launcher is a real link, so where
+		// <dialog> isn't supported it just navigates and the inline form, in
+		// the reopened panel, is what you get.
 		document.addEventListener('DOMContentLoaded', function() {
 			const launchers = document.querySelectorAll('.mtl-record-launch');
 			if (!launchers.length || typeof HTMLDialogElement === 'undefined') {
@@ -5731,19 +5872,21 @@ function mtl_render_membership_page() {
 			launchers.forEach(function(link) {
 				link.addEventListener('click', function(e) {
 					const memberId = link.dataset.member;
-					const inline = document.querySelector('#mtl-detail-' + memberId + ' .mtl-record-inline');
+					let dialog = document.getElementById('mtl-record-dialog-' + memberId);
+					// Once a dialog exists the form has moved into it, so the
+					// inline container is only looked for the first time.
+					const inline = dialog ? null : document.querySelector('#mtl-detail-' + memberId + ' .mtl-record-inline');
 
 					// The form is only in the DOM once the link has been
 					// followed. On a first click there is nothing to move, so
 					// let the navigation happen and the dialog opens on the
 					// way back.
-					if (!inline) {
+					if (!dialog && !inline) {
 						return;
 					}
 
 					e.preventDefault();
 
-					let dialog = document.getElementById('mtl-record-dialog-' + memberId);
 					if (!dialog) {
 						dialog = document.createElement('dialog');
 						dialog.id = 'mtl-record-dialog-' + memberId;
@@ -5751,7 +5894,7 @@ function mtl_render_membership_page() {
 						// Announces as "Record agreement, <name>" rather than
 						// just "dialog".
 						dialog.setAttribute('aria-labelledby', 'mtl-record-title-' + memberId);
-						dialog.appendChild(inline.firstElementChild ? inline : inline);
+						dialog.appendChild(inline);
 
 						// The Lock Account modal's close button and backdrop
 						// click. Added after the form so the focus query below
@@ -5785,8 +5928,7 @@ function mtl_render_membership_page() {
 			});
 
 			// A dialog rendered open on page load: the link was followed
-			// without scripting intercepting it, so upgrade it now. The inline
-			// container stays in the DOM as the fallback.
+			// without scripting intercepting it, so upgrade it now.
 			const openInline = document.querySelector('.mtl-record-inline');
 			if (openInline) {
 				const form = openInline.querySelector('.mtl-record-agreement-form');

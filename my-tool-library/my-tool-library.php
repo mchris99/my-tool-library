@@ -65,7 +65,9 @@ function mtl_css_value( $value, $fallback = 'inherit' ) {
  * @return string Formatted date, or an em dash if $value is empty/unparseable.
  */
 function mtl_format_date( $value, $format = 'm/d/Y' ) {
-	if ( empty( $value ) ) {
+	// MySQL's zero date is what a blank DATE became before blanks were saved
+	// as NULL, and strtotime() reads it as a real date in the year -1.
+	if ( empty( $value ) || 0 === strpos( (string) $value, '0000-00-00' ) ) {
 		return '&mdash;';
 	}
 	$ts = strtotime( $value );
@@ -3499,10 +3501,15 @@ function mtl_get_member_info_map( $member_ids ) {
 
 	foreach (
 		$wpdb->get_results(
-			"SELECT member_id, COUNT(*) AS overdue
-             FROM {$tbl_loans}
-             WHERE return_date IS NULL AND due_date < CURDATE()
-             GROUP BY member_id"
+			// The site's date, not MySQL's CURDATE(), which follows the
+			// database server's time zone rather than the library's.
+			$wpdb->prepare(
+				"SELECT member_id, COUNT(*) AS overdue
+                 FROM {$tbl_loans}
+                 WHERE return_date IS NULL AND due_date < %s
+                 GROUP BY member_id",
+				current_time( 'Y-m-d' )
+			)
 		) as $row
 	) {
 		$id = (int) $row->member_id;
@@ -3661,7 +3668,11 @@ function mtl_tool_row_status( $tool_id, $member_id = 0 ) {
 		$status['reserve_skip'] = __( 'Already on loan to this member.', 'my-tool-library' );
 	} elseif ( $on_loan_other ) {
 		$status['loan_blocker'] = __( 'On loan to another member. End that loan first.', 'my-tool-library' );
-		$status['can_reserve']  = true;
+		if ( $status['reserved_by_self'] ) {
+			$status['reserve_skip'] = __( 'This member has already reserved it.', 'my-tool-library' );
+		} else {
+			$status['can_reserve'] = true;
+		}
 	} else {
 		$status['can_loan']     = true;
 		$status['loan_blocker'] = '';
@@ -3756,15 +3767,19 @@ function mtl_create_loan( $tool_id, $member_id, $due_date ) {
 	$tbl_res   = $wpdb->prefix . 'tool_reservations';
 	$now       = current_time( 'mysql' );
 
+	// A double-clicked Quick Loan sends two POSTs at once, and both would pass
+	// the check below before either inserts. A named lock per tool makes the
+	// second wait, then find the first one's loan.
+	$lock = 'mtl_loan_' . md5( $wpdb->prefix . '|' . $tool_id );
+	if ( '1' !== (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 10)', $lock ) ) ) {
+		return 0;
+	}
+
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$already_out = $wpdb->get_var(
 		$wpdb->prepare( "SELECT loan_id FROM {$tbl_loans} WHERE tool_id = %d AND return_date IS NULL LIMIT 1", $tool_id )
 	);
-	if ( $already_out ) {
-		return 0;
-	}
-
-	$inserted = $wpdb->insert(
+	$inserted    = $already_out ? false : $wpdb->insert(
 		$tbl_loans,
 		array(
 			'tool_id'   => $tool_id,
@@ -3774,10 +3789,11 @@ function mtl_create_loan( $tool_id, $member_id, $due_date ) {
 		),
 		array( '%d', '%d', '%s', '%s' )
 	);
-	if ( ! $inserted ) {
+	$loan_id     = $inserted ? (int) $wpdb->insert_id : 0;
+	$wpdb->query( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
+	if ( ! $loan_id ) {
 		return 0;
 	}
-	$loan_id = (int) $wpdb->insert_id;
 
 	// Their own reservation for this tool is now satisfied, so close it the same
 	// way the Loans page checkout does, by stamping today's expiry.
@@ -3822,6 +3838,13 @@ function mtl_create_reservation( $tool_id, $member_id ) {
 
 	$tbl_res = $wpdb->prefix . 'tool_reservations';
 
+	// Same lock name as the public Reserve button, so a double-click here, or
+	// staff and the member reserving at the same moment, can't both insert.
+	$lock = 'mtl_reserve_' . md5( $wpdb->prefix . '|' . $member_id . '|' . $tool_id );
+	if ( '1' !== (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 10)', $lock ) ) ) {
+		return 0;
+	}
+
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$duplicate = $wpdb->get_var(
 		$wpdb->prepare(
@@ -3830,11 +3853,8 @@ function mtl_create_reservation( $tool_id, $member_id ) {
 			$member_id
 		)
 	);
-	if ( $duplicate ) {
-		return 0;
-	}
 
-	$inserted = $wpdb->insert(
+	$inserted = $duplicate ? false : $wpdb->insert(
 		$tbl_res,
 		array(
 			'tool_id'          => $tool_id,
@@ -3844,12 +3864,13 @@ function mtl_create_reservation( $tool_id, $member_id ) {
 		array( '%d', '%d', '%s' )
 	);
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-	if ( ! $inserted ) {
-		return 0;
-	}
 	// Read before the sync below, which runs its own queries and would leave
 	// $wpdb->insert_id describing one of those instead.
-	$reservation_id = (int) $wpdb->insert_id;
+	$reservation_id = $inserted ? (int) $wpdb->insert_id : 0;
+	$wpdb->query( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
+	if ( ! $reservation_id ) {
+		return 0;
+	}
 
 	// A tool already on the shelf makes a sole reservation collectable at once.
 	mtl_sync_reservation_readiness( $tool_id );
@@ -4333,7 +4354,7 @@ function mtl_send_account_deleted_email( $email, $first_name, $open_loans, $canc
  * @param string $initiated_by 'member' when they deleted their own account,
  *                             'staff' when an administrator did it for them.
  *                             Only affects the wording of the admin email.
- * @return array{outcome:string,name:string,cancelled_reservations:int,wp_user_orphaned:bool,cleanup_email_sent:bool,member_email_sent:bool} outcome is 'anonymized' or 'not_found'; name is the display name captured before any changes; wp_user_orphaned is true when an account still claims this member id but could not be verified, so it was left alone; cleanup_email_sent is whether the administrator's copy of the record got out.
+ * @return array{outcome:string,name:string,cancelled_reservations:int,wp_user_orphaned:bool,wp_user_deleted:bool,cleanup_email_sent:bool,member_email_sent:bool} outcome is 'anonymized' or 'not_found'; name is the display name captured before any changes; wp_user_orphaned is true when an account still claims this member id but could not be verified, so it was left alone; wp_user_deleted is true when their sign-in was deleted; cleanup_email_sent is whether the administrator's copy of the record got out.
  */
 function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 	global $wpdb;
@@ -4360,6 +4381,7 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 			'name'                   => '',
 			'cancelled_reservations' => 0,
 			'wp_user_orphaned'       => false,
+			'wp_user_deleted'        => false,
 			'cleanup_email_sent'     => false,
 			'member_email_sent'      => false,
 		);
@@ -4515,6 +4537,7 @@ function mtl_delete_or_anonymize_member( $member_id, $initiated_by = 'staff' ) {
 		'name'                   => $name,
 		'cancelled_reservations' => $cancelled_reservations,
 		'wp_user_orphaned'       => $wp_user_orphaned,
+		'wp_user_deleted'        => (bool) $wp_user_id,
 		'cleanup_email_sent'     => (bool) $cleanup_sent,
 		'member_email_sent'      => (bool) $member_notified,
 	);
@@ -6134,8 +6157,11 @@ function mtl_send_agreement_confirmation_email( $member_id, $acceptance_ids ) {
 /**
  * The acceptance rows written to a member most recently, as ids.
  *
- * "Most recently" means every row sharing the highest accepted_at for that
- * member. That is the newest acceptance event, never an older one.
+ * "Most recently" means written last, not dated last: every row sharing the
+ * accepted_at of the member's highest acceptance_id. Rows are never updated,
+ * so the id is the write order, while accepted_at can be backdated (a bulk
+ * upload records the date on the paper form). A bulk row that gave different
+ * dates to different agreements comes back as the last-written date only.
  *
  * ONE-SECOND RESOLUTION IS THE LIMIT OF THIS. accepted_at is a DATETIME, so two
  * separate events in the same second come back together. Only safe where that
@@ -6163,7 +6189,7 @@ function mtl_latest_acceptance_event_ids( $member_id ) {
 			   FROM {$acceptances}
 			  WHERE member_id = %d
 			    AND accepted_at = (
-			        SELECT MAX(accepted_at) FROM {$acceptances} WHERE member_id = %d
+			        SELECT accepted_at FROM {$acceptances} WHERE member_id = %d ORDER BY acceptance_id DESC LIMIT 1
 			    )",
 			(int) $member_id,
 			(int) $member_id

@@ -160,7 +160,7 @@ Staff sign in with ordinary WordPress accounts. There's no separate staff login.
 2. Enter their username and email, and set **Role** to **Editor**. Use **Administrator** only for the people who run the library, since it controls the whole site.
 3. Click **Add New User**. WordPress emails them a link to set a password, or you can set one and share it securely.
 
-They can sign in at `/wp-admin/` or on the plugin's **Sign In** page, linked from the catalog footer, which takes staff straight to **My Tool Library**. To change an existing account's role, go to **Users**, click their name and change **Role**.
+They can sign in at `/wp-admin/` or on the plugin's **Sign In** page, linked from the catalog footer, which takes staff straight to **My Tool Library**. Before the library [goes live](#going-live), the plugin's **Sign In** page shows Coming soon, so staff use `/wp-admin/` or the **Staff sign in** link at the bottom of the Coming soon page. To change an existing account's role, go to **Users**, click their name and change **Role**.
 
 > **Note:** Staff who also borrow tools need a staff account with a different username and email from their member account. Otherwise they can't borrow as a member.
 
@@ -280,7 +280,7 @@ Anyone with a membership can use **Lost your password?**, even before they've se
 A CSV import creates no sign-ins and sends no email, so that importing an old list doesn't email everyone at once. Afterwards, an administrator opens the **Member Logins** panel below the import box:
 
 1. **Create logins** makes the missing accounts and sends nothing.
-2. **Send setup emails** emails everyone who hasn't chosen a password.
+2. **Send setup emails** emails everyone who hasn't chosen a password. Before the library [goes live](#going-live), this button is greyed out: create the logins now, and send the emails on launch day.
 
 Both work in batches, so press the button again if the panel says some remain. Nobody gets the email twice in 24 hours unless you tick the box to include them.
 
@@ -352,6 +352,8 @@ Members see badges for their current trainings near the top of their account pag
 ### Forgotten passwords
 
 Members reset their own password. They click **Lost your password?** on the **Sign In** page, enter their email, and follow the emailed link to choose a new one. A second email confirms the change. Setting a first password doesn't send that confirmation.
+
+Before the library [goes live](#going-live), members can't sign in at all, and the **Sign In** page shows Coming soon. Staff reset a forgotten password from **Lost your password?** on the `/wp-admin/` sign-in page instead.
 
 If a member gets a confirmation they didn't expect, someone else reset their password. Have them change it, and check whether their account email was changed too. If it was, fix the email and password under **Users**, then send them a reset link.
 
@@ -533,6 +535,8 @@ An imported roster shows "No agreements" for everyone. That's expected. In this 
 2. **Send setup emails** from the same panel, so members choose passwords.
 3. **Send agreement requests** (Membership > Member Agreements), or record paper signatures in bulk if you already have them.
 
+Before the library [goes live](#going-live), only step 1 and recording paper signatures are available. Steps 2 and 3 wait for launch day.
+
 ### Downloading a member's agreement record
 
 **Administrators only.** **Download agreement record** on the member's detail panel gives a printable history of everything they've agreed to. Each entry shows the text, the time in both UTC and local time, the version and its publish date, the file and its fingerprint, and who recorded it if staff did. It's available for Former Members too, so it's the document to produce if anyone asks what a member agreed to.
@@ -644,7 +648,7 @@ A restore leaves these alone:
 - **Members' sign-ins** live in WordPress, not in the backup. On the same site they reconnect on their own, because the backup keeps each member's ID number. Someone who joined after the backup was made sees "we couldn't match your sign-in to a membership record" until you re-add them with the same email. See [Database reset and member sign-ins](#database-reset-and-member-sign-ins).
 - **Files** attached to agreements stay in the WordPress Media Library.
 
-**Restoring onto a new WordPress site**, after losing the old one: install and activate the plugin, set the same timezone as before under **Settings > General**, then restore. An automatic backup needs your saved backup key here. You don't need to run Database Setup first, since the restore creates the plugin's tables when there are none. Members have no sign-ins on the new site yet, so press **Create logins** and then **Send setup emails** under **Member Logins** on the Membership page. Re-enter your Setup settings too. If your agreements have files attached, move the Media Library across as well, since each agreement points at its file by Media Library number.
+**Restoring onto a new WordPress site**, after losing the old one: install and activate the plugin, set the same timezone as before under **Settings > General**, then restore. An automatic backup needs your saved backup key here. You don't need to run Database Setup first, since the restore creates the plugin's tables when there are none. Members have no sign-ins on the new site yet, so turn on **Go Live** in Setup (a new site starts with the Coming soon page, and holds setup emails until then), then press **Create logins** and **Send setup emails** under **Member Logins** on the Membership page. Re-enter your Setup settings too. If your agreements have files attached, move the Media Library across as well, since each agreement points at its file by Media Library number.
 
 Good to know:
 

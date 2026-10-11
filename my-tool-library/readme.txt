@@ -82,7 +82,7 @@ This plugin is built around a specific, deliberately simple operating model. Bef
 5. Still on the Setup page, fill in your organization's name, logo, and colors, and set the Home Page Link and any pickup/verification directions you want members to see.
 6. Copy the Public Page Link shown on the Setup page and add it to your site's navigation menu (or link to it from any page or post); this is the one link your customers need to reach the tool catalog. Until you go live (step 8), it shows a Coming soon page.
 7. Add your tool categories and tags (Setup page), then add tools (My Tool Library > Inventory) and members (My Tool Library > Membership). Inventory and members can be added one at a time, or via CSV bulk import on either page.
-8. When you're ready to open, turn on Go Live at the top of the Setup page, then send setup emails from Membership > Member Logins. Until then, customers see a Coming soon page and member accounts can't sign in, while staff use everything as normal. See "Why does my library say Coming soon?" in the FAQ.
+8. When you're ready to open, turn on Go Live at the top of the Setup page, then under Membership > Member Logins press Create logins (if any members still need one) and Send setup emails. Until then, customers see a Coming soon page and member accounts can't sign in, while staff use everything as normal. See "Why does my library say Coming soon?" in the FAQ.
 
 = Permalinks =
 
@@ -126,6 +126,8 @@ After a CSV import, use the Member Logins panel instead of going row by row: Cre
 
 A member can also sort this out themselves without staff help. "Lost your password?" creates the account if it is missing and emails them a link.
 
+Before the library goes live, no member can sign in, and setup emails wait. Create logins still works, and a member with no account has a Create login button on their row in place of Send setup link. Send the emails once you're live.
+
 = Why does my library say Coming soon? =
 
 Because it isn't live yet. A new install starts closed to the public, so you can set up, load tools and members, and test without anybody signing up or reserving early. Until an administrator turns on Go Live at the top of the Setup page:
@@ -134,7 +136,7 @@ Because it isn't live yet. A new install starts closed to the public, so you can
 * Optionally, under the same switch, customers can browse the catalog. Sign-up, sign-in and reserving stay closed, and every account link is taken out.
 * Member accounts can't sign in anywhere, including WordPress's own login page.
 * Setup emails and agreement requests wait, because their links lead to pages customers can't open yet. Send them once you're live.
-* Staff see the real pages, with a bar along the bottom of the window saying what customers see instead, and use the staff pages as normal. Staff who forget their password reset it through WordPress's own login page.
+* Staff see the real pages, with a bar along the bottom of the window saying what customers see instead, and use the staff pages as normal. They sign in at /wp-admin/ or from the Staff sign in link on the Coming soon page, and reset a forgotten password through WordPress's own login page.
 
 On launch day, turn on Go Live, then send setup emails (and agreement requests, if you use them) from Membership. A library that was already running when this switch was added stays live. Go Live can be turned back off, but members then lose access to their accounts, loans and due dates until it's on again, so it isn't meant for short closures.
 
@@ -191,6 +193,8 @@ Yes. Under Setup > Restore from Backup, pick one of the automatic backups stored
 Yes. Under Setup > Automatic Backups, choose how often (every 1 to 90 days) and how many to keep. Each backup is the same SQL dump as Export Data, encrypted as it is written and saved to the Media Library under a name with the date, time and a random token, for example my-tool-library-backup-2026-10-17-030512-....sql.enc. Only Administrators can see or download them: they are private, hidden from Editors and the REST API, kept in their own folder that Apache servers refuse to serve, and downloaded through an administrator-only link. If the server hands out files from that folder anyway (nginx ignores .htaccess files), the Setup page says so and shows the rule to block it, which it finds out by requesting a test file from its own site once a day.
 
 The encryption key is stored in the database and shown on the Setup page. Save a copy somewhere else, such as a password manager: if the database is ever lost, the backups cannot be opened without it, and nobody can recover it. Uninstalling the plugin leaves the key in place for the same reason.
+
+Backups are hidden from Editors only while the plugin is active. If it is deactivated or deleted, the backups stay in the Media Library, where Editors can see and delete them. The files stay encrypted, so their contents remain safe.
 
 Backups run through WordPress's scheduler, which only fires when someone visits the site, so on a quiet site a backup can run some hours late. Because these backups live on the same server, keep downloading a dump from Export Data now and then and store it somewhere else.
 

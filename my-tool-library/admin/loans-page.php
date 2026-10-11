@@ -178,7 +178,7 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 				$html      .= '<button type="button" class="button button-small' . ( $is_default ? ' mtl-lr-due-quick-active' : '' ) . '" onclick="mtl_lr_set_due(this, ' . (int) $days_option . ')">' . (int) $days_option . ' days</button>';
 			}
 			$html .= '</div>';
-			$html .= '<input type="date" name="due_date" value="' . esc_attr( $default_due ) . '" min="' . esc_attr( gmdate( 'Y-m-d' ) ) . '" required>';
+			$html .= '<input type="date" name="due_date" value="' . esc_attr( $default_due ) . '" min="' . esc_attr( current_time( 'Y-m-d' ) ) . '" required>';
 			$html .= '<button type="submit" class="button button-primary">Check out to this member</button>';
 			$html .= '</form>';
 		} else {
@@ -220,7 +220,7 @@ function mtl_lr_detail_html( $rec, $nonce_field = '', $default_due = '', $defaul
 				$html .= '<button type="button" class="button button-small" onclick="mtl_lr_set_due(this, ' . (int) $days_option . ')">' . (int) $days_option . ' days</button>';
 			}
 			$html .= '</div>';
-			$html .= '<input type="date" name="due_date" value="' . esc_attr( $rec['due_date'] ) . '" min="' . esc_attr( gmdate( 'Y-m-d' ) ) . '" required>';
+			$html .= '<input type="date" name="due_date" value="' . esc_attr( $rec['due_date'] ) . '" min="' . esc_attr( current_time( 'Y-m-d' ) ) . '" required>';
 			$html .= '<button type="submit" class="button button-primary">Renew loan</button>';
 			$html .= '</form>';
 		}
@@ -312,7 +312,7 @@ function mtl_lr_handle_bulk_checkout() {
 		return '<div class="notice notice-error is-dismissible"><p><strong>Nothing was checked out.</strong> Pick a member from the list first.</p></div>';
 	}
 
-	$today   = gmdate( 'Y-m-d' );
+	$today   = current_time( 'Y-m-d' );
 	$plan    = array();
 	$errors  = array();
 	$seen    = array();
@@ -370,17 +370,20 @@ function mtl_lr_handle_bulk_checkout() {
 		}
 
 		// A malformed date falls back to the configured length, matching the
-		// single-reservation checkout above; a past one is refused outright.
+		// single-reservation checkout in mtl_lr_handle_actions(); a past one is
+		// refused outright.
 		$due = isset( $dues[ $index ] ) ? sanitize_text_field( (string) $dues[ $index ] ) : '';
 		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $due ) || ! strtotime( $due ) ) {
-			$due = gmdate( 'Y-m-d', strtotime( '+' . (int) get_option( 'mtl_default_loan_days', 21 ) . ' days' ) );
+			$due = gmdate( 'Y-m-d', strtotime( $today . ' +' . (int) get_option( 'mtl_default_loan_days', 21 ) . ' days' ) );
 		} elseif ( $due < $today ) {
 			$errors[]                = sprintf( 'Row %1$d: the due date for %2$s is in the past.', $row_no, esc_html( $status['tool_name'] ) );
 			$state['rows'][ $index ] = 'The due date cannot be in the past.';
 			continue;
 		}
 
-		if ( '' !== $status['loan_warning'] ) {
+		// The queue itself, not loan_warning, which also carries the training
+		// advisory.
+		if ( $status['queue_size'] > ( $status['reserved_by_self'] ? 1 : 0 ) ) {
 			$jumped[] = $status['tool_name'];
 		}
 
@@ -389,6 +392,8 @@ function mtl_lr_handle_bulk_checkout() {
 			'tool' => $tool_id,
 			'name' => $status['tool_name'],
 			'due'  => $due,
+			// Advisory only, as on the single checkout: reported, never blocking.
+			'gap'  => mtl_tool_training_gap( $tool_id, $member_id ),
 		);
 	}
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -406,13 +411,17 @@ function mtl_lr_handle_bulk_checkout() {
 		return '<div class="notice notice-warning is-dismissible"><p><strong>Nothing was checked out.</strong> ' . esc_html( $nothing ) . '</p></div>';
 	}
 
-	$loaned   = 0;
-	$reserved = 0;
-	$failed   = array();
+	$loaned    = 0;
+	$reserved  = 0;
+	$failed    = array();
+	$untrained = array();
 	foreach ( $plan as $item ) {
 		if ( 'loan' === $item['act'] ) {
 			if ( mtl_create_loan( $item['tool'], $member_id, $item['due'] ) > 0 ) {
 				++$loaned;
+				if ( $item['gap'] ) {
+					$untrained[] = $item['name'] . ' (' . implode( ', ', $item['gap'] ) . ')';
+				}
 			} else {
 				$failed[] = $item['name'];
 			}
@@ -425,7 +434,7 @@ function mtl_lr_handle_bulk_checkout() {
 
 	$state['open'] = false;
 
-	$member_name = trim( stripslashes( (string) $member->first_name ) . ' ' . stripslashes( (string) $member->last_name ) );
+	$member_name = mtl_lr_name( $member->first_name, $member->last_name );
 	$parts       = array();
 	if ( $loaned > 0 ) {
 		/* translators: %s: number of tools. */
@@ -446,6 +455,9 @@ function mtl_lr_handle_bulk_checkout() {
 	if ( $jumped ) {
 		$notice .= ' Reserved by another member at the time: ' . esc_html( implode( ', ', $jumped ) ) . '.';
 	}
+	if ( $untrained ) {
+		$notice .= ' <strong>Training not current:</strong> ' . esc_html( implode( '; ', $untrained ) ) . '. The loans were recorded anyway.';
+	}
 	if ( $failed ) {
 		$notice .= ' <strong>Could not be recorded:</strong> ' . esc_html( implode( ', ', $failed ) )
 			. '. Somebody else may have taken these while the batch was being entered.';
@@ -456,7 +468,8 @@ function mtl_lr_handle_bulk_checkout() {
 
 /**
  * Handles the admin actions on this page: checking a reservation out as a
- * loan, cancelling a reservation, and ending (returning) a loan. Processes
+ * loan, cancelling a reservation, renewing or ending (returning) a loan, and
+ * the bulk checkout, which it hands to mtl_lr_handle_bulk_checkout(). Processes
  * the POST inline (before the page's data is queried) and returns a
  * WordPress admin-notice HTML string to echo, rather than redirecting.
  * Every mutation is nonce- and capability-guarded and carries an
@@ -482,9 +495,8 @@ function mtl_lr_handle_actions() {
 	$tbl_inventory    = $wpdb->prefix . 'tool_inventory';
 
 	$action = sanitize_key( wp_unslash( $_POST['mtl_lr_action'] ) );
-	// Full timestamp: writes the TIMESTAMP columns (loan_date/expiry_date/
-	// return_date) with the exact moment; the due_date fallback below still
-	// re-formats it to a plain Y-m-d via strtotime().
+	// Full timestamp, since cancel writes it to expiry_date; the due_date
+	// fallbacks below re-format it to a plain Y-m-d via strtotime().
 	$today        = current_time( 'mysql' );
 	$default_days = (int) get_option( 'mtl_default_loan_days', 21 );
 
@@ -635,7 +647,9 @@ function mtl_lr_handle_actions() {
 				$loan_id
 			)
 		);
-		if ( $done ) {
+		// An unchanged due date updates 0 rows, which is still a success:
+		// $renew_member_id was read with return_date IS NULL, so the loan is open.
+		if ( false !== $done && $renew_member_id ) {
 			return '<div class="notice notice-success is-dismissible"><p><strong>Loan renewed.</strong> New due date: ' . mtl_format_date( $due_date ) . '.</p></div>';
 		}
 		return '<div class="notice notice-error is-dismissible"><p>That loan could not be renewed (it may already be returned).</p></div>';
@@ -710,17 +724,22 @@ function mtl_render_loans_page() {
 
 	// --- Loans (current + previous) ---
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only ($wpdb->prefix-derived), no request-derived data.
+	// Days past due count from the site's date, not MySQL's CURDATE(), which
+	// follows the database server's time zone.
 	$loan_rows = $wpdb->get_results(
-		"
+		$wpdb->prepare(
+			"
         SELECT l.loan_id, l.tool_id, l.member_id, l.loan_date, l.due_date, l.return_date,
                t.tool_name, t.barcode, t.brand, t.location,
                m.first_name, m.last_name, m.email, m.phone_number, m.locked_at,
-               DATEDIFF(CURDATE(), l.due_date) AS days_past_due,
+               DATEDIFF(%s, l.due_date) AS days_past_due,
                (SELECT COUNT(*) FROM {$tbl_verifications} v WHERE v.member_id = l.member_id AND v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS is_verified
         FROM {$tbl_loans} l
         JOIN {$tbl_inventory} t ON t.tool_id = l.tool_id
         JOIN {$tbl_members} m ON m.member_id = l.member_id
-    "
+    ",
+			current_time( 'Y-m-d' )
+		)
 	);
 
 	// --- Active reservations, with queue position + size derived on the fly ---
@@ -873,7 +892,6 @@ function mtl_render_loans_page() {
 			'queue_place'      => 0,
 			'queue_size'       => 0,
 			'days_past_due'    => (int) $l->days_past_due,
-			'days_left'        => 0,
 			'loan_id'          => (int) $l->loan_id,
 			'reservation_id'   => 0,
 			'is_verified'      => ( (int) $l->is_verified > 0 ),
@@ -918,7 +936,6 @@ function mtl_render_loans_page() {
 			'queue_place'      => (int) $r->queue_place,
 			'queue_size'       => (int) $r->queue_size,
 			'days_past_due'    => 0,
-			'days_left'        => 0,
 			'loan_id'          => 0,
 			'reservation_id'   => (int) $r->reservation_id,
 			'is_verified'      => ( (int) $r->is_verified > 0 ),
@@ -958,7 +975,6 @@ function mtl_render_loans_page() {
 			'queue_place'      => 0,
 			'queue_size'       => 0,
 			'days_past_due'    => 0,
-			'days_left'        => 0,
 			'loan_id'          => (int) $l->loan_id,
 			'reservation_id'   => 0,
 			'is_verified'      => ( (int) $l->is_verified > 0 ),
@@ -999,7 +1015,6 @@ function mtl_render_loans_page() {
 			'queue_place'      => 0,
 			'queue_size'       => 0,
 			'days_past_due'    => 0,
-			'days_left'        => 0,
 			'loan_id'          => 0,
 			'reservation_id'   => (int) $r->reservation_id,
 			'is_verified'      => false,
@@ -1162,11 +1177,23 @@ function mtl_render_loans_page() {
 			font-size: 0.85em;
 		}
 
+		.mtl-adv-fields .mtl-adv-multi {
+			grid-column: span 2;
+		}
+
 		/* Sits beside the category tree, so it matches its height. */
 		.mtl-adv-fields .mtl-adv-multi select[multiple] {
 			height: 170px;
 			resize: vertical;
 			overflow: auto;
+		}
+
+		.mtl-adv-fields .mtl-adv-multi small {
+			display: block;
+			font-size: 0.72em;
+			color: #787c82;
+			line-height: 1.35;
+			margin-top: 2px;
 		}
 
 		/*
@@ -1722,20 +1749,23 @@ function mtl_render_loans_page() {
 						</select>
 					</div>
 				</div>
-				<div class="mtl-adv-multi">
-					<label>Categories</label>
-					<?php mtl_taxonomy_tree( $tx_rows, array(), array(), 'mtl-lr-tx' ); ?>
+				<?php // Inside .mtl-adv-fields, as on the Inventory page, so the sizing rules for these boxes apply. ?>
+				<div class="mtl-adv-fields">
+					<div class="mtl-adv-multi">
+						<label>Categories</label>
+						<?php mtl_taxonomy_tree( $tx_rows, array(), array(), 'mtl-lr-tx' ); ?>
+					</div>
+					<div class="mtl-adv-multi">
+						<label for="lr-adv-tag">Tags</label>
+						<select id="lr-adv-tag" multiple size="4">
+							<?php foreach ( $lr_tags as $lr_tag ) : ?>
+								<option value="<?php echo esc_attr( $lr_tag->tag_id ); ?>"><?php echo esc_html( $lr_tag->tag_name ); ?></option>
+							<?php endforeach; ?>
+						</select>
+						<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick several.</small>
+					</div>
+					<?php mtl_training_filter_select( $lr_trainings, 'lr-adv-training' ); ?>
 				</div>
-				<div class="mtl-adv-multi">
-					<label for="lr-adv-tag">Tags</label>
-					<select id="lr-adv-tag" multiple size="4">
-						<?php foreach ( $lr_tags as $lr_tag ) : ?>
-							<option value="<?php echo esc_attr( $lr_tag->tag_id ); ?>"><?php echo esc_html( $lr_tag->tag_name ); ?></option>
-						<?php endforeach; ?>
-					</select>
-					<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick several.</small>
-				</div>
-				<?php mtl_training_filter_select( $lr_trainings, 'lr-adv-training' ); ?>
 			</fieldset>
 
 			<fieldset class="mtl-adv-group">
@@ -1904,7 +1934,7 @@ function mtl_render_loans_page() {
 						<?php else : ?>
 							<tr>
 								<td colspan="8" style="text-align: center; padding: 20px;">
-									No loans or reservations found. Add loan and reservation records to the database to see them here.
+									No loans or reservations yet.
 								</td>
 							</tr>
 						<?php endif; ?>
@@ -2296,7 +2326,7 @@ function mtl_render_loans_page() {
 	$bc_state   = mtl_bulk_checkout_state();
 	$bc_members = mtl_get_member_picker_list();
 	$bc_days    = (int) get_option( 'mtl_default_loan_days', 21 );
-	$bc_due     = gmdate( 'Y-m-d', strtotime( '+' . $bc_days . ' days' ) );
+	$bc_due     = gmdate( 'Y-m-d', strtotime( current_time( 'Y-m-d' ) . ' +' . $bc_days . ' days' ) );
 	// Only read back when the handler above already ran, which means it already
 	// verified the nonce and the capability; phpcs cannot see that from here.
 	// phpcs:disable WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -2394,7 +2424,7 @@ function mtl_render_loans_page() {
 								</td>
 								<td class="mtl-bc-status"></td>
 								<td class="mtl-bc-due-cell">
-									<input type="date" name="bulk_due[<?php echo (int) $bc_i; ?>]" class="mtl-bc-due" value="<?php echo esc_attr( $bc_row_due ); ?>" min="<?php echo esc_attr( gmdate( 'Y-m-d' ) ); ?>">
+									<input type="date" name="bulk_due[<?php echo (int) $bc_i; ?>]" class="mtl-bc-due" value="<?php echo esc_attr( $bc_row_due ); ?>" min="<?php echo esc_attr( current_time( 'Y-m-d' ) ); ?>">
 									<?php foreach ( array( 7, 14, 21, 30 ) as $bc_quick ) : ?>
 										<button type="button" class="button button-small mtl-bc-due-btn<?php echo $bc_quick === $bc_days ? ' mtl-bc-due-active' : ''; ?>" data-days="<?php echo (int) $bc_quick; ?>"><?php echo (int) $bc_quick; ?></button>
 									<?php endforeach; ?>
@@ -2446,16 +2476,25 @@ function mtl_render_loans_page() {
 				return me > 0 && members.some(function(m) { return m.id === me && m.locked; });
 			}
 
+			// Local date parts, as mtl_lr_set_due() uses: toISOString() would
+			// give the UTC date, a day off in the evening or early morning.
 			function dueFromDays(days) {
 				const d = new Date();
 				d.setDate(d.getDate() + days);
-				return d.toISOString().slice(0, 10);
+				return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+			}
+
+			// Own keys only, so a barcode like "constructor" can't match an
+			// Object.prototype member.
+			function toolFor(barcode) {
+				const key = barcode.trim();
+				return Object.prototype.hasOwnProperty.call(tools, key) ? tools[key] : null;
 			}
 
 			// The client half of mtl_tool_row_status(). Returns the pill plus
 			// what the row would actually do.
 			function rowStatus(barcode, reserve) {
-				const tool = tools[barcode.trim()];
+				const tool = toolFor(barcode);
 				if (!barcode.trim()) return null;
 				if (!tool) return { cls: 'bad', text: 'No such barcode', act: 'block' };
 
@@ -2496,7 +2535,7 @@ function mtl_render_loans_page() {
 					due.disabled = reserve.checked;
 					dueBtns.forEach(function(b) { b.disabled = reserve.checked; });
 
-					const tool = tools[barcode.value.trim()];
+					const tool = toolFor(barcode.value);
 					tr.querySelector('.mtl-bc-tool-name').textContent = tool ? tool.name : '';
 
 					const st = rowStatus(barcode.value, reserve.checked);
@@ -2514,8 +2553,9 @@ function mtl_render_loans_page() {
 				if (loans) parts.push('Loan ' + loans);
 				if (reserves) parts.push('reserve ' + reserves);
 				if (skips) parts.push('skip ' + skips);
-				submit.textContent = parts.length ? parts.join(', ').replace(/^l/, 'L') : 'Loan';
-				summary.textContent = blocked ? blocked + ' row(s) need attention' : '';
+				const label = parts.join(', ');
+				submit.textContent = label ? label.charAt(0).toUpperCase() + label.slice(1) : 'Loan';
+				summary.textContent = blocked ? blocked + (1 === blocked ? ' row needs' : ' rows need') + ' attention' : '';
 				// Disabled only when the batch would do nothing at all. Blocked
 				// rows stay submittable so the server produces the real message.
 				submit.disabled = (loans + reserves + skips) === 0;
@@ -2555,7 +2595,7 @@ function mtl_render_loans_page() {
 				if (!e.target.classList.contains('mtl-bc-barcode')) return;
 				refresh();
 				const tr = e.target.closest('tr');
-				if (tools[e.target.value.trim()]) advanceFrom(tr);
+				if (toolFor(e.target.value)) advanceFrom(tr);
 			});
 
 			tbody.addEventListener('change', function(e) {
@@ -2607,7 +2647,7 @@ function mtl_render_loans_page() {
 					extra.trainings.length ? extra.trainings.join(', ') : 'None current';
 				setPill(document.getElementById('mtl-bc-info-overdue'),
 					extra.overdue ? 'bad' : 'ok',
-					extra.overdue ? extra.overdue + ' tool(s) overdue' : 'Nothing overdue');
+					extra.overdue ? extra.overdue + (1 === extra.overdue ? ' tool' : ' tools') + ' overdue' : 'Nothing overdue');
 
 				// The agreements row is absent entirely when the feature is off,
 				// rather than present and reassuring about nothing.
@@ -2638,7 +2678,7 @@ function mtl_render_loans_page() {
 					search.setAttribute('aria-expanded', 'false');
 					return;
 				}
-				const hits = members.filter(function(m) { return m.search.indexOf(q) !== -1; }).slice(0, 10);
+				const hits = members.filter(function(m) { return m.search.toLowerCase().indexOf(q) !== -1; }).slice(0, 10);
 				if (!hits.length) {
 					const none = document.createElement('div');
 					none.className = 'mtl-bc-empty';

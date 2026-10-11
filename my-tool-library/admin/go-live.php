@@ -106,14 +106,13 @@ function mtl_library_status_notice( $key ) {
 
 			// Counted now rather than carried in the URL. Members added by staff
 			// can't sign in until they choose a password, and their setup emails
-			// were held until now.
-			// The setup email batch only reaches members who already have a
-			// sign-in, so anyone without one needs Create logins first.
+			// were held until launch. Send setup emails only reaches members who
+			// already have a sign-in, so anyone without one needs Create logins first.
 			if ( mtl_members_table_exists() ) {
 				$no_login = mtl_count_members_without_login();
 				$waiting  = $no_login + mtl_count_members_setup_pending();
 				if ( $waiting > 0 ) {
-					$text .= ' ' . intval( $waiting ) . ' member(s) haven&rsquo;t chosen a password yet. Under <a href="' . $membership . '">Membership &rarr; Member Logins</a>, ';
+					$text .= ' ' . intval( $waiting ) . ' ' . ( 1 === (int) $waiting ? 'member hasn&rsquo;t' : 'members haven&rsquo;t' ) . ' chosen a password yet. Under <a href="' . $membership . '">Membership &rarr; Member Logins</a>, ';
 					$text .= $no_login > 0 ? 'press Create logins, then Send setup emails' : 'press Send setup emails';
 					$text .= mtl_agreements_online() ? ', then ask members to agree under Member Agreements.' : '.';
 				} elseif ( mtl_agreements_online() ) {
@@ -163,8 +162,8 @@ function mtl_held_until_live_notice( $what ) {
  * @param bool|null $tables_ready Whether Database Setup has been run, when the
  *                                caller already knows; null to check.
  * @return array[] One item each, in order: 'status' ('ok', 'warn' or 'info'),
- *                 'label' and 'hint' (plain text), and 'url' (where it is
- *                 fixed, or '').
+ *                 'label' and 'hint' (HTML that may contain entities, printed
+ *                 through wp_kses_post()), and 'url' (where it is fixed, or '').
  */
 function mtl_launch_checklist( $tables_ready = null ) {
 	global $wpdb;
@@ -219,7 +218,7 @@ function mtl_launch_checklist( $tables_ready = null ) {
 	}
 	$items[] = array(
 		'status' => $tools > 0 ? 'ok' : 'warn',
-		'label'  => $tools > 0 ? sprintf( '%d tool(s) in the catalog', $tools ) : 'No tools in the catalog yet',
+		'label'  => $tools > 0 ? sprintf( 1 === $tools ? '%d tool in the catalog' : '%d tools in the catalog', $tools ) : 'No tools in the catalog yet',
 		'hint'   => '',
 		'url'    => $tools > 0 ? '' : admin_url( 'admin.php?page=mtl-inventory' ),
 	);
@@ -263,7 +262,7 @@ function mtl_launch_checklist( $tables_ready = null ) {
 	$items[] = array(
 		'status' => 'info',
 		'label'  => 'Check that outgoing email works',
-		'hint'   => 'This can&rsquo;t be checked from here. Setup emails go out on launch day, so send yourself a test from your SMTP plugin first.',
+		'hint'   => 'This can&rsquo;t be checked from here. Before you send setup emails, send yourself a test to make sure email arrives.',
 		'url'    => '',
 	);
 
@@ -291,9 +290,9 @@ function mtl_render_go_live_section( $requested_section, $tables_ready = null ) 
 	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- a result key after the redirect, only ever looked up in a fixed list.
 	$notice = isset( $_GET['mtl_status_msg'] ) ? mtl_library_status_notice( sanitize_key( wp_unslash( $_GET['mtl_status_msg'] ) ) ) : '';
 
-	// The Go Live switch asks before it saves, in the shared dialog. Opening
-	// is ordinary; closing again is not, since members lose their accounts
-	// until it is turned back on.
+	// The Go Live switch confirms in the shared dialog before it saves. Closing
+	// is marked as dangerous, since members can't sign in until it's turned
+	// back on.
 	$asks = array(
 		'open'  => array(
 			'title'   => 'Go Live',
@@ -412,10 +411,10 @@ function mtl_render_go_live_section( $requested_section, $tables_ready = null ) 
 					<?php if ( $since > 0 ) : ?>
 						Live since <?php echo esc_html( wp_date( get_option( 'date_format' ), $since ) ); ?>.
 					<?php endif; ?>
-					Customers can sign up, sign in and reserve tools. Turning this off puts the Coming soon page back, and members can&rsquo;t sign in or see their loans until it&rsquo;s on again.
+					Customers can sign up, sign in and reserve tools.
 				</p>
 			<?php else : ?>
-				<p class="mtl-golive-help">While this is off, customers see a Coming soon page and can&rsquo;t sign up, sign in or reserve tools. Setup emails and agreement requests wait until you go live. Staff can still use everything. Turn it on when you&rsquo;re ready to open.</p>
+				<p class="mtl-golive-help">Customers see a Coming soon page until you go live, and setup emails and agreement requests wait until then. Staff can use everything as normal.</p>
 
 				<hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
 
@@ -460,7 +459,7 @@ function mtl_render_go_live_section( $requested_section, $tables_ready = null ) 
 					'info' => array( '&bull;', 'Reminder:' ),
 				);
 				?>
-				<?php // Collapsed: it advises, it never blocks Go Live, and the summary line says whether there is anything in it worth opening for. ?>
+				<?php // Collapsed because it only advises; the summary line says whether anything needs a look. ?>
 				<details class="mtl-golive-checklist">
 					<summary>
 						Launch checklist:
@@ -532,8 +531,8 @@ function mtl_render_not_live_notice() {
 		return;
 	}
 
-	// On Setup the Go Live section says the same thing, open at the top of the
-	// page. Not while the admin view is off, which hides that section.
+	// Skipped on Setup, where the Go Live section says the same thing at the
+	// top of the page, unless the admin view is off and hides that section.
 	$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 	if ( 'mtl-setup' === $page && mtl_can_manage_settings() ) {
 		return;
