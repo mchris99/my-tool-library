@@ -3326,61 +3326,6 @@ function mtl_tool_links_html( $pairs, $link_list ) {
 }
 
 /**
- * The front-end CSS for what mtl_tool_links_html() renders.
- *
- * The catalog and My Reservations both show these sections, so this lives
- * beside the renderer for the same reason mtl_shop_badge_pill_css() does: one
- * copy, so restyling a link list restyles it on both. The count's pill shape
- * comes from that helper; only its spacing is set here.
- *
- * Each page styles its own <summary> typography, so the section heading
- * matches the headings around it rather than importing the other page's.
- *
- * @param string $accent The site's accent colour, for the link text.
- * @return string CSS, ready to drop inside a <style> block.
- */
-function mtl_tool_links_css( $accent ) {
-	ob_start();
-	?>
-		.mtl-links {
-			margin: 0;
-		}
-
-		.mtl-links > summary {
-			cursor: pointer;
-		}
-
-		.mtl-links-count {
-			margin: 0;
-			min-width: 16px;
-			text-align: center;
-		}
-
-		.mtl-links-list {
-			list-style: none;
-			margin: 0;
-			padding: 0;
-		}
-
-		.mtl-links-list li {
-			padding: 5px 0;
-			border-top: 1px solid #f0f1f2;
-		}
-
-		.mtl-links-list a {
-			color: <?php echo esc_html( $accent ); ?>;
-			text-decoration: none;
-		}
-
-		.mtl-links-list a:hover,
-		.mtl-links-list a:focus {
-			text-decoration: underline;
-		}
-	<?php
-	return ob_get_clean();
-}
-
-/**
  * Every link list a tool carries, rendered in registry order.
  *
  * One call per detail view, so the three that show a tool cannot drift apart,

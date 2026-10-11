@@ -1046,15 +1046,17 @@ body.mtl-front {
 	color: var(--mtl-ink-2);
 }
 
-/* 16px is the floor: phones zoom into any smaller field on focus. */
-:where(.mtl-front) .mtl-field :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea),
+/* 16px is the floor: phones zoom into any smaller field on focus. The field
+	list sits in :where() so the select rule below can still add its chevron
+	and padding. */
+:where(.mtl-front) .mtl-field :where(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea),
 :where(.mtl-front) .mtl-front-card :is(input[type="text"], input[type="email"], input[type="password"]) {
 	width: 100%;
 	min-height: 46px;
 	padding: 0 12px;
 	border: 1px solid var(--mtl-field-border);
 	border-radius: var(--mtl-radius);
-	background: var(--mtl-panel);
+	background-color: var(--mtl-panel);
 	color: var(--mtl-ink);
 	font-family: var(--mtl-font-text);
 	font-size: max(16px, calc(var(--mtl-text-size) * .94));

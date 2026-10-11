@@ -6,7 +6,7 @@
  * pages and POST forms, matching the public shop page (public/shop-page.php).
  *
  *   mtl_page=signup        : create a member account
- *   mtl_page=reservations  : "My Loans & Reservations": active loans with a
+ *   mtl_page=reservations  : "My loans & reservations": active loans with a
  *                              due-soon/overdue status, reservation queue,
  *                              place in line, cancel
  *   mtl_page=account       : profile, verification status, past loans, edits
@@ -367,7 +367,7 @@ function mtl_send_signup_existing_email( $email ) {
  */
 function mtl_front_notice( $key ) {
 	$map = array(
-		'reserved'               => array( 'success', 'Your reservation is in. Check My Loans &amp; Reservations for your place in line and pickup details.' ),
+		'reserved'               => array( 'success', 'Your reservation is in. See My loans &amp; reservations for your place in line and pickup details.' ),
 		'already_reserved'       => array( 'error', 'You already have an active reservation for that tool.' ),
 		'on_loan_conflict'       => array( 'error', 'You currently have that tool checked out, so there&rsquo;s no need to reserve it.' ),
 		'login_required'         => array( 'error', 'Please sign in to reserve a tool.' ),
@@ -429,641 +429,1213 @@ function mtl_front_notice_html() {
 }
 
 /**
- * Top-right nav cluster for the shop page, adapting to login state: logged
- * out gets Sign In + Sign Up; signed-in member gets a native <details> account
- * menu (no JS needed); signed-in admin gets Admin Portal + Log Out. Rendered
- * inside the shop markup (public/shop-page.php), which supplies the CSS.
+ * Shared <style> for the member pages (sign up, My loans & reservations,
+ * Account and the member-only notice).
  *
- * @return string HTML.
- */
-function mtl_member_nav_html() {
-	$out = '<div class="mtl-shop-account-nav">';
-
-	// The catalog preview before launch has no account features at all. Only
-	// Log Out stays, for anybody left signed in when the library was closed to
-	// the public again.
-	if ( mtl_is_prelaunch_visitor() ) {
-		if ( is_user_logged_in() ) {
-			$out .= '<a class="mtl-shop-btn mtl-shop-btn-ghost" href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
-		}
-		return $out . '</div>';
-	}
-
-	if ( ! is_user_logged_in() ) {
-		$out .= '<a class="mtl-shop-btn mtl-shop-btn-ghost" href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">Sign In</a>';
-		$out .= '<a class="mtl-shop-btn" href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Sign Up</a>';
-		return $out . '</div>';
-	}
-
-	if ( mtl_can_manage_library() ) {
-		$out .= '<a class="mtl-shop-btn mtl-shop-btn-ghost" href="' . esc_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) . '">Admin Portal</a>';
-		$out .= '<a class="mtl-shop-btn mtl-shop-btn-ghost" href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
-		return $out . '</div>';
-	}
-
-	$member = mtl_current_member();
-	$label  = $member ? ( 'Hi, ' . $member->first_name ) : 'My Account';
-
-	$out .= '<details class="mtl-shop-account-menu">';
-	$out .= '<summary class="mtl-shop-btn mtl-shop-btn-ghost">' . esc_html( $label ) . ' &#9662;</summary>';
-	$out .= '<div class="mtl-shop-account-menu-panel">';
-	$out .= '<a href="' . esc_url( mtl_front_page_url( 'reservations' ) ) . '">My Loans &amp; Reservations</a>';
-	$out .= '<a href="' . esc_url( mtl_front_page_url( 'account' ) ) . '">Account</a>';
-	$out .= '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
-	$out .= '</div></details>';
-
-	return $out . '</div>';
-}
-
-/**
- * Shared <style> for the standalone member pages (signup / reservations /
- * account). Overrides .mtl-front-content to top-align (the front-end shell
- * normally centers a single card) and adds table / form / badge styling.
+ * Built only on the Public pages look's custom properties and the shared
+ * classes in public/public-look.php (buttons, fields, notices, status line),
+ * so nothing here repeats them or names a color of its own.
  *
  * @return string The <style> element.
  */
 function mtl_member_page_styles() {
-	$accent = mtl_css_value( get_option( 'mtl_header_color', '#ff6600' ), '#ff6600' );
 	ob_start();
 	?>
 	<style>
-		.mtl-front-content {
-			display: block;
-			padding: 24px 16px 56px 16px;
-		}
-
-		.mtl-member-wrap {
-			max-width: 760px;
+		.mtl-member {
+			max-width: 960px;
 			margin: 0 auto;
+			padding: 34px 24px 70px;
 		}
 
-		.mtl-member-card {
-			background: #fff;
-			border: 1px solid #ccd0d4;
-			border-radius: 8px;
-			padding: 22px 24px;
-			margin-bottom: 20px;
-			text-align: left;
+		.mtl-member-lede {
+			margin: 8px 0 0;
+			max-width: 62ch;
+			color: var(--mtl-ink-2);
 		}
 
-		.mtl-member-card h2 {
-			margin: 0 0 14px 0;
+		.mtl-member-notices {
+			margin-top: 22px;
 		}
 
-		/* Admin-editable informational copy (Setup page), visually distinct
-			from the main content cards so it reads as a note, not a form. */
-		.mtl-member-directions {
-			background: #f6f7f7;
-			border-style: dashed;
-		}
-
-		.mtl-member-directions strong {
-			font-size: 0.9em;
-			text-transform: uppercase;
-			letter-spacing: 0.03em;
-			color: #646970;
-		}
-
-		.mtl-member-directions p {
-			color: #3c434a;
-		}
-
-		.mtl-member-card h3 {
-			margin: 22px 0 10px 0;
-			font-size: 1.05em;
-		}
-
-		/* <details>-based cards (Trainings, Your details, Your loan history):
-			collapsed by default, no JavaScript required to open them. */
-		details.mtl-member-card {
-			padding: 0;
-		}
-
-		.mtl-member-summary {
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-			gap: 12px;
-			cursor: pointer;
-			padding: 22px 24px;
-			font-weight: 600;
-			font-size: 1.05em;
-			outline: none;
-			/* Suppress the browser's own disclosure triangle so the chevron
-				below is the only marker; each engine needs its own opt-out. */
-			list-style: none;
-		}
-
-		.mtl-member-summary::-webkit-details-marker {
-			display: none;
-		}
-
-		/* Chevron drawn from borders, so it needs no font or image and takes
-			the text color. Points down when closed, up when open. */
-		.mtl-member-summary::after {
-			content: "";
-			flex: 0 0 auto;
-			width: 9px;
-			height: 9px;
-			margin-right: 2px;
-			border-right: 2px solid currentColor;
-			border-bottom: 2px solid currentColor;
-			transform: translateY(-2px) rotate(45deg);
-			transition: transform 0.2s ease;
-			opacity: 0.55;
-		}
-
-		details.mtl-member-card[open] .mtl-member-summary::after {
-			transform: translateY(2px) rotate(-135deg);
-		}
-
-		.mtl-member-summary:hover::after {
-			opacity: 1;
-		}
-
-		/* outline:none above removes the default focus ring, which would leave
-			keyboard users with no idea where they are. Put a visible one back,
-			only for keyboard focus so a mouse click does not leave a ring. */
-		.mtl-member-summary:focus-visible {
-			outline: 2px solid currentColor;
-			outline-offset: -4px;
-			border-radius: 4px;
-		}
-
-		/* Respect a reduced-motion preference: the chevron still flips but
-			doesn't animate. */
-		@media (prefers-reduced-motion: reduce) {
-			.mtl-member-summary::after {
-				transition: none;
-			}
-		}
-
-		details.mtl-member-card[open] .mtl-member-summary {
-			padding-bottom: 10px;
-		}
-
-		.mtl-member-collapsible-body {
-			padding: 0 24px 22px 24px;
-		}
-
-		/* Consider Giving and Request a Tool cards. Plain cards, not banners:
-			members see them on every visit, so they shouldn't read as alerts. */
-		.mtl-member-giving-text,
-		.mtl-member-request-text {
-			margin: 6px 0 0 0;
-		}
-
-		.mtl-member-giving-action,
-		.mtl-member-request-action {
-			margin: 14px 0 0 0;
-		}
-
-		/* Give Now and Wishlist side by side, wrapping on narrow screens. */
-		.mtl-member-giving-action {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 10px;
-		}
-
-		.mtl-member-btn-giving,
-		.mtl-member-btn-request {
-			display: inline-block;
-		}
-
-		/* Admin-uploaded badge images (training/verified), shown inline in
-			place of the green pill. */
-		.mtl-badge-img {
-			display: inline-block;
-			vertical-align: middle;
-			border-radius: 4px;
-		}
-
-		.mtl-verified-badge-img {
-			height: 28px;
-			width: auto;
-		}
-
-		.mtl-training-badge-img {
-			height: 36px;
-			width: 36px;
-			object-fit: cover;
-			border: 1px solid #ccd0d4;
-			margin-left: 6px;
-		}
-
-		.mtl-member-back {
-			display: inline-block;
-			margin-bottom: 16px;
-			font-size: 0.9em;
-		}
-
-		.mtl-front-notice {
-			max-width: 760px;
-			margin: 0 auto 18px auto;
-			padding: 12px 16px;
-			border-radius: 6px;
-			font-size: 0.95em;
-		}
-
-		.mtl-front-notice-success {
-			background: #edf7ed;
-			border: 1px solid #b6dcb6;
-			color: #1e5b25;
-		}
-
-		.mtl-front-notice-error {
-			background: #fcf0f1;
-			border: 1px solid #f0c0c4;
-			color: #8a1f28;
-		}
-
-		/* Forms */
-		.mtl-member-field {
-			margin-bottom: 14px;
-		}
-
-		.mtl-member-field label {
-			display: block;
-			font-weight: 600;
-			margin-bottom: 4px;
-		}
-
-		.mtl-member-field input {
-			width: 100%;
-			box-sizing: border-box;
-			padding: 9px 11px;
-			border: 1px solid #8c8f94;
-			border-radius: 4px;
-			font-size: 1em;
-		}
-
-		.mtl-member-field input[readonly] {
-			background: #f6f7f7;
-			color: #646970;
-		}
-
-		.mtl-member-hint {
-			font-size: 0.82em;
-			color: #646970;
-			margin: 4px 0 0 0;
-		}
-
-		.mtl-member-row {
-			display: flex;
-			gap: 14px;
-			flex-wrap: wrap;
-		}
-
-		.mtl-member-row>.mtl-member-field {
-			flex: 1 1 220px;
-		}
-
-		.mtl-member-btn {
-			display: inline-block;
-			padding: 10px 20px;
-			border: 1px solid <?php echo mtl_css_value( $accent, '#ff6600' ); ?>;
-			border-radius: 4px;
-			background: <?php echo mtl_css_value( $accent, '#ff6600' ); ?>;
-			color: #fff;
-			font-size: 1em;
-			font-weight: 600;
-			cursor: pointer;
-			text-decoration: none;
-		}
-
-		.mtl-member-btn-ghost {
-			background: #fff;
-			color: #3c434a;
-			border-color: #ccd0d4;
-			font-weight: 400;
-		}
-
-		.mtl-member-btn-danger {
-			background: #fff;
-			color: #b32d2e;
-			border-color: #e2a3a4;
-			font-weight: 400;
-		}
-
-		.mtl-member-confirm-actions {
-			display: flex;
-			gap: 10px;
-			flex-wrap: wrap;
-			align-items: center;
-		}
-
-		/* Warning shown in place of Save when a verified member's changes to
-		Your details would reset their verification. */
-		.mtl-member-verif-confirm {
-			max-width: none;
-			margin: 18px 0 0 0;
-		}
-
-		.mtl-member-verif-confirm p {
-			margin: 8px 0 14px 0;
-		}
-
-		/* Tables (reservations queue, past loans) */
-		.mtl-member-table {
-			width: 100%;
-			border-collapse: collapse;
-			font-size: 0.94em;
-		}
-
-		.mtl-member-table th,
-		.mtl-member-table td {
-			text-align: left;
-			padding: 9px 10px;
-			border-bottom: 1px solid #eef0f2;
-			vertical-align: middle;
-		}
-
-		.mtl-member-table th {
-			font-size: 0.8em;
-			text-transform: uppercase;
-			letter-spacing: 0.03em;
-			color: #646970;
+		.mtl-member-notices > :last-child {
+			margin-bottom: 0;
 		}
 
 		.mtl-member-empty {
-			color: #646970;
-			margin: 8px 0 0 0;
+			margin: 0;
+			padding: 18px 20px;
+			color: var(--mtl-ink-2);
 		}
 
-		/* Status pills */
-		.mtl-pill {
-			display: inline-block;
-			padding: 2px 9px;
-			border-radius: 12px;
-			font-size: 0.8em;
-			font-weight: 600;
+		.mtl-front-notice ul {
+			margin: 6px 0 0;
+			padding-left: 20px;
 		}
 
-		.mtl-pill-green {
-			background: #e6f4ea;
-			color: #1e7b34;
+		.mtl-front-notice p {
+			margin: 0;
 		}
 
-		.mtl-pill-amber {
-			background: #fcf3e3;
-			color: #8a6d00;
+		/* A red-outline button, for the one step that really destroys
+			something; the link that leads to it is a red text link. */
+		.mtl-btn.mtl-member-danger-btn {
+			border: 2px solid var(--mtl-late);
+			color: var(--mtl-late);
 		}
 
-		.mtl-pill-red {
-			background: #fcecec;
-			color: #b32d2e;
+		/* ---------- Ready for pickup ---------- */
+
+		.mtl-ready {
+			margin-top: 24px;
+			display: grid;
+			grid-template-columns: 92px minmax(0, 1fr) auto;
+			gap: 18px;
+			align-items: center;
+			padding: 16px 20px;
+			background: var(--mtl-highlight);
+			border: 2px solid var(--mtl-btn);
+			border-radius: var(--mtl-radius);
 		}
 
-		.mtl-pill-orange {
-			background: #fbe6d2;
-			color: #9a4d00;
+		.mtl-ready-no-photo {
+			grid-template-columns: minmax(0, 1fr) auto;
 		}
 
-		.mtl-pill-grey {
-			background: #f0f1f2;
-			color: #50575e;
+		.mtl-ready + .mtl-ready {
+			margin-top: 12px;
 		}
 
-		.mtl-member-queue-place {
+		.mtl-ready-photo {
+			display: block;
+			width: 92px;
+			aspect-ratio: 4 / 3;
+			object-fit: contain;
+			background: var(--mtl-panel);
+			border: 1px solid var(--mtl-rule);
+			border-radius: 4px;
+		}
+
+		.mtl-ready p {
+			margin: 2px 0 0;
+		}
+
+		.mtl-ready .mtl-ready-title {
+			margin: 0;
+			color: var(--mtl-ink);
+			font-family: var(--mtl-font-text);
+			font-stretch: 100%;
+			font-size: 18px;
 			font-weight: 700;
-			font-size: 1.05em;
+			line-height: 1.35;
 		}
 
-		/* ---- My Reservations: two-column list + :target detail box ---- */
-		.mtl-member-wrap-wide {
-			max-width: 1080px;
+		.mtl-ready-by {
+			font-weight: 700;
 		}
 
-		.mtl-res-layout {
-			display: flex;
+		.mtl-ready .mtl-ready-note {
+			margin-top: 4px;
+			font-size: 14.5px;
+		}
+
+		.mtl-pickup-note {
+			margin: 26px 0 0;
+			padding: 2px 0 2px 14px;
+			border-left: 3px solid var(--mtl-rule);
+			color: var(--mtl-ink-2);
+			font-size: 15px;
+		}
+
+		.mtl-pickup-note strong {
+			color: var(--mtl-ink);
+		}
+
+		/* ---------- Checked out: date-due slips ---------- */
+
+		.mtl-slips {
+			display: grid;
+			gap: 10px;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.mtl-slip {
+			display: grid;
+			grid-template-columns: 96px minmax(0, 1fr) auto;
 			gap: 20px;
-			align-items: flex-start;
+			align-items: center;
+			padding: 14px 20px 14px 14px;
+			background: var(--mtl-panel);
+			border: 1px solid var(--mtl-rule);
+			border-radius: var(--mtl-radius);
 		}
 
-		.mtl-res-main {
-			flex: 1 1 auto;
-			min-width: 0;
+		.mtl-slip-due {
+			padding-right: 14px;
+			border-right: 1px dashed var(--mtl-rule);
+			line-height: 1;
+			text-align: center;
 		}
 
-		.mtl-res-detail-col {
-			flex: 0 0 320px;
-			position: sticky;
-			top: 16px;
+		.mtl-slip-m,
+		.mtl-slip-w {
+			display: block;
+			font-size: 14px;
+			color: var(--mtl-ink-2);
 		}
 
-		@media (max-width: 820px) {
-			.mtl-res-layout {
-				flex-direction: column;
-			}
-
-			.mtl-res-detail-col {
-				position: static;
-				width: 100%;
-			}
+		.mtl-slip-w {
+			font-size: 13px;
 		}
 
-		/* Clicking a tool name reveals its panel; every panel is pre-rendered
-			hidden and CSS :target shows the one whose id matches the fragment. */
-		.mtl-res-name-link {
-			font-weight: 600;
-			text-decoration: none;
+		.mtl-slip-d {
+			display: block;
+			margin: 2px 0;
+			color: var(--mtl-heading);
+			font-family: var(--mtl-font-display);
+			font-stretch: 75%;
+			font-weight: 800;
+			font-size: 46px;
+			letter-spacing: -0.02em;
 		}
 
-		.mtl-res-name-link:hover {
-			text-decoration: underline;
+		.mtl-slip-late .mtl-slip-m,
+		.mtl-slip-late .mtl-slip-d {
+			color: var(--mtl-late);
 		}
 
-		.mtl-res-detail {
-			background: #fff;
-			border: 1px solid #ccd0d4;
-			border-radius: 8px;
-			overflow: hidden;
+		.mtl-slip h3 {
+			font-size: 21px;
+			font-weight: 700;
 		}
 
+		.mtl-slip-meta {
+			margin: 3px 0 0;
+			color: var(--mtl-ink-2);
+			font-size: 15px;
+		}
+
+		.mtl-slip-state {
+			margin: 0;
+			font-size: 15px;
+			font-weight: 700;
+			text-align: right;
+		}
+
+		.mtl-slip-state-late {
+			color: var(--mtl-late);
+		}
+
+		.mtl-slip-state-soon {
+			color: var(--mtl-out);
+		}
+
+		.mtl-slip-state-fine {
+			color: var(--mtl-ink-2);
+			font-weight: 400;
+		}
+
+		/* ---------- Reservations ---------- */
+
+		.mtl-res-list {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.mtl-res-row {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) 200px 180px auto;
+			gap: 16px;
+			align-items: center;
+			padding: 12px 20px;
+			border-top: 1px solid var(--mtl-rule);
+		}
+
+		.mtl-res-row:first-child {
+			border-top: 0;
+		}
+
+		.mtl-res-row h3 {
+			font-size: 19px;
+			font-weight: 700;
+		}
+
+		.mtl-res-row h3 a {
+			color: inherit;
+		}
+
+		.mtl-res-meta {
+			margin: 2px 0 0;
+			color: var(--mtl-ink-2);
+			font-size: 14.5px;
+		}
+
+		.mtl-res-line {
+			font-size: 15px;
+		}
+
+		.mtl-res-line strong {
+			font-size: 17px;
+		}
+
+		/* Squares for the queue. The sentence above them says the same thing,
+			so they are hidden from screen readers. */
+		.mtl-line-dots {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 4px;
+			margin-top: 5px;
+		}
+
+		.mtl-line-dots i {
+			width: 14px;
+			height: 14px;
+			border: 1.5px solid var(--mtl-ink-2);
+			border-radius: 3px;
+		}
+
+		.mtl-line-dots .mtl-line-ahead {
+			background: var(--mtl-ink-2);
+		}
+
+		.mtl-line-dots .mtl-line-you {
+			background: var(--mtl-btn);
+			border-color: var(--mtl-ink);
+		}
+
+		.mtl-line-more {
+			margin-left: 2px;
+			color: var(--mtl-ink-2);
+			font-size: 13px;
+			line-height: 1;
+		}
+
+		.mtl-res-state {
+			font-size: 14.5px;
+		}
+
+		.mtl-res-state .mtl-status {
+			display: flex;
+		}
+
+		.mtl-res-cancel,
+		.mtl-res-foot a,
+		.mtl-acct-danger a {
+			display: inline-flex;
+			align-items: center;
+			min-height: 44px;
+		}
+
+		.mtl-res-cancel {
+			justify-self: end;
+		}
+
+		.mtl-res-foot {
+			display: flex;
+			justify-content: flex-end;
+			margin-top: 4px;
+			font-size: 15px;
+		}
+
+		/* ---------- Reservation detail panel ---------- */
+
+		/* Every panel is printed hidden and :target shows the one whose id is
+			in the URL. With none open the column is not drawn at all, so the
+			page keeps its single column. */
+		.mtl-res-detail,
 		.mtl-res-detail-panel {
 			display: none;
 		}
 
+		.mtl-res-page:has(.mtl-res-detail-panel:target) .mtl-res-detail,
 		.mtl-res-detail-panel:target {
 			display: block;
 		}
 
-		.mtl-res-detail:has(.mtl-res-detail-panel:target) .mtl-res-detail-empty {
-			display: none;
+		.mtl-res-detail {
+			margin-top: 32px;
 		}
 
-		.mtl-res-detail-empty {
-			padding: 28px 20px;
-			text-align: center;
-			color: #8c8f94;
+		.mtl-res-detail-panel {
+			overflow: hidden;
+			background: var(--mtl-panel);
+			border: 1px solid var(--mtl-rule);
+			border-radius: var(--mtl-radius);
+		}
+
+		/* In the text, not over the photo: nothing is ever drawn on a photo. */
+		.mtl-res-close {
+			position: absolute;
+			top: 10px;
+			right: 16px;
+			display: inline-flex;
+			align-items: center;
+			min-height: 44px;
+			font-size: 15px;
 		}
 
 		.mtl-res-detail-photo {
+			display: block;
 			width: 100%;
-			max-height: 220px;
+			aspect-ratio: 16 / 10;
+			max-height: 340px;
 			object-fit: contain;
-			background: #f6f7f7;
+			background: var(--mtl-panel);
+			border-bottom: 1px solid var(--mtl-rule);
 		}
 
 		.mtl-res-detail-body {
-			padding: 16px 18px 20px 18px;
+			position: relative;
+			padding: 18px 22px 22px;
 		}
 
-		.mtl-res-detail-name {
-			font-size: 1.2em;
-			font-weight: 700;
+		.mtl-res-detail-body h2 {
+			padding-right: 64px;
+			font-size: 30px;
+			letter-spacing: -0.01em;
+		}
+
+		.mtl-res-detail-body p {
 			margin: 0;
 		}
 
-		.mtl-res-detail-brand {
-			color: #787c82;
-			margin: 2px 0 0 0;
-		}
-
-		.mtl-res-detail-id {
-			color: #787c82;
-			font-size: 0.85em;
-			margin: 2px 0 0 0;
-		}
-
-		/* Tool ID column in the member tables: short, so it never wraps. */
-		.mtl-member-table .mtl-member-tool-id {
-			white-space: nowrap;
-		}
-
-		<?php // The link sections' summaries act as headings here, so they match the h4s. ?>
-		.mtl-res-detail-body h4,
-		.mtl-res-detail-body .mtl-links > summary {
-			margin: 16px 0 6px 0;
-			font-size: 0.95em;
+		.mtl-res-detail-body .mtl-res-detail-sub {
+			margin-top: 4px;
+			color: var(--mtl-ink-2);
+			font-size: 15px;
 		}
 
 		.mtl-res-info {
-			background: #f6f7f7;
-			border-radius: 6px;
+			margin: 18px 0 0;
 			padding: 12px 14px;
-			margin: 14px 0;
+			border-left: 4px solid var(--mtl-wait);
+			border-radius: 0 var(--mtl-radius) var(--mtl-radius) 0;
+			background: color-mix(in srgb, var(--mtl-wait) 8%, var(--mtl-panel));
 		}
 
-		/* Member agreements. The clause itself is the label and therefore the
-			click target, so the row is laid out to keep the checkbox aligned
-			with the first line of what can be several paragraphs of text. */
+		.mtl-res-info-ok {
+			border-left-color: var(--mtl-ok);
+			background: color-mix(in srgb, var(--mtl-ok) 9%, var(--mtl-panel));
+		}
+
+		.mtl-res-info-out {
+			border-left-color: var(--mtl-out);
+			background: color-mix(in srgb, var(--mtl-out) 8%, var(--mtl-panel));
+		}
+
+		.mtl-res-info-maint {
+			border-left-color: var(--mtl-maint);
+			background: color-mix(in srgb, var(--mtl-maint) 9%, var(--mtl-panel));
+		}
+
+		.mtl-res-info strong {
+			display: block;
+			font-size: 17px;
+		}
+
+		.mtl-res-info-ok strong {
+			color: var(--mtl-ok);
+		}
+
+		.mtl-res-info-out strong {
+			color: var(--mtl-out);
+		}
+
+		.mtl-res-info-maint strong {
+			color: var(--mtl-maint);
+		}
+
+		.mtl-res-info-wait strong {
+			color: var(--mtl-wait);
+		}
+
+		.mtl-res-detail-body .mtl-res-info p {
+			margin-top: 4px;
+			font-size: 15px;
+		}
+
+		.mtl-res-detail-body :is(h3, h4),
+		.mtl-res-detail-body .mtl-links > summary {
+			margin: 22px 0 4px;
+			color: var(--mtl-ink);
+			font-family: var(--mtl-font-text);
+			font-stretch: 100%;
+			font-size: 15px;
+			font-weight: 700;
+		}
+
+		.mtl-res-facts {
+			display: grid;
+			grid-template-columns: max-content minmax(0, 1fr);
+			gap: 6px 14px;
+			margin: 22px 0 0;
+			padding-top: 16px;
+			border-top: 1px solid var(--mtl-rule);
+			font-size: 15px;
+		}
+
+		.mtl-res-facts dt {
+			color: var(--mtl-ink-2);
+		}
+
+		.mtl-res-facts dd {
+			margin: 0;
+		}
+
+		.mtl-res-detail-body .mtl-links > summary {
+			cursor: pointer;
+			color: var(--mtl-link);
+		}
+
+		.mtl-res-detail-body .mtl-links-count {
+			margin-left: 4px;
+			color: var(--mtl-ink-2);
+			font-weight: 400;
+		}
+
+		.mtl-res-detail-body .mtl-links-count::before {
+			content: "(";
+		}
+
+		.mtl-res-detail-body .mtl-links-count::after {
+			content: ")";
+		}
+
+		.mtl-res-detail-body .mtl-links-list {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+			font-size: 15px;
+		}
+
+		.mtl-res-detail-body .mtl-links-list li {
+			padding: 6px 0;
+			border-top: 1px solid var(--mtl-rule-soft);
+		}
+
+		.mtl-res-detail-body .mtl-res-detail-cancel {
+			margin-top: 22px;
+			padding-top: 6px;
+			border-top: 1px solid var(--mtl-rule);
+		}
+
+		.mtl-res-detail-cancel a {
+			display: inline-flex;
+			align-items: center;
+			min-height: 44px;
+		}
+
+		/* Wide enough for both: the panel sits beside everything else and stays
+			in view while the list scrolls. It scrolls itself when it is taller
+			than the window, or its foot could never be reached. */
+		@media (min-width: 1000px) {
+			.mtl-res-page:has(.mtl-res-detail-panel:target) {
+				max-width: 1400px;
+				display: grid;
+				grid-template-columns: minmax(0, 1fr) 390px;
+				grid-template-areas: "main detail" "after detail";
+				column-gap: 36px;
+				align-items: start;
+			}
+
+			.mtl-res-page:has(.mtl-res-detail-panel:target) .mtl-res-main {
+				grid-area: main;
+			}
+
+			.mtl-res-page:has(.mtl-res-detail-panel:target) .mtl-res-after {
+				grid-area: after;
+			}
+
+			.mtl-res-page:has(.mtl-res-detail-panel:target) .mtl-res-detail {
+				grid-area: detail;
+				position: sticky;
+				top: 20px;
+				max-height: calc(100vh - 40px);
+				margin-top: 0;
+				overflow-y: auto;
+				border-radius: var(--mtl-radius);
+			}
+		}
+
+		/* ---------- Cancel confirmations ---------- */
+
+		.mtl-confirm {
+			margin-top: 26px;
+			padding: 24px;
+		}
+
+		.mtl-confirm h2 {
+			margin-bottom: 10px;
+			font-size: 26px;
+		}
+
+		.mtl-confirm p {
+			margin: 0 0 12px;
+			max-width: 62ch;
+		}
+
+		.mtl-confirm-actions {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 12px;
+			margin-top: 18px;
+		}
+
+		.mtl-confirm-actions form {
+			margin: 0;
+		}
+
+		/* ---------- Giving and tool-request boxes ---------- */
+
+		.mtl-callout {
+			display: flex;
+			align-items: center;
+			gap: 20px;
+			margin-top: 44px;
+			padding: 20px 22px;
+			border: 1px dashed color-mix(in srgb, var(--mtl-ink) 38%, var(--mtl-page));
+			border-radius: var(--mtl-radius);
+		}
+
+		.mtl-callout + .mtl-callout {
+			margin-top: 16px;
+		}
+
+		.mtl-callout-body {
+			flex: 1 1 auto;
+			min-width: 0;
+		}
+
+		.mtl-callout .mtl-callout-title {
+			color: var(--mtl-ink);
+			font-family: var(--mtl-font-text);
+			font-stretch: 100%;
+			font-size: 17px;
+			font-weight: 700;
+			line-height: 1.4;
+		}
+
+		.mtl-callout-text {
+			margin: 4px 0 0;
+			color: var(--mtl-ink-2);
+		}
+
+		.mtl-callout-actions {
+			display: flex;
+			flex: none;
+			flex-wrap: wrap;
+			gap: 10px;
+			margin-left: auto;
+		}
+
+		/* ---------- Account ---------- */
+
+		.mtl-acct-who {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			margin-top: 24px;
+		}
+
+		.mtl-acct-who > section {
+			padding: 20px 22px;
+		}
+
+		.mtl-acct-who > section + section {
+			border-left: 1px solid var(--mtl-rule);
+		}
+
+		.mtl-acct-who h2 {
+			margin-bottom: 8px;
+			color: var(--mtl-ink-2);
+			font-family: var(--mtl-font-text);
+			font-stretch: 100%;
+			font-size: 15px;
+			font-weight: 700;
+		}
+
+		.mtl-verified {
+			display: flex;
+			align-items: flex-start;
+			gap: 12px;
+		}
+
+		.mtl-verified-check {
+			display: grid;
+			flex: none;
+			place-items: center;
+			width: 30px;
+			height: 30px;
+			border-radius: 50%;
+			background: var(--mtl-ok);
+			color: var(--mtl-panel);
+			font-weight: 800;
+		}
+
+		.mtl-verified-badge-img {
+			display: block;
+			flex: none;
+			height: 36px;
+			width: auto;
+		}
+
+		.mtl-verified strong {
+			display: block;
+			font-size: 18px;
+		}
+
+		.mtl-verified p,
+		.mtl-acct-fine {
+			margin: 2px 0 0;
+			color: var(--mtl-ink-2);
+			font-size: 15px;
+		}
+
+		.mtl-acct-fine {
+			margin-top: 10px;
+			font-size: 14px;
+		}
+
+		.mtl-acct-chips {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.mtl-acct-chips .mtl-chip {
+			padding-left: 6px;
+		}
+
+		.mtl-chip-check {
+			display: grid;
+			place-items: center;
+			width: 22px;
+			height: 22px;
+			border-radius: 50%;
+			background: color-mix(in srgb, var(--mtl-ok) 14%, var(--mtl-panel));
+			color: var(--mtl-ok);
+			font-size: 13px;
+			font-weight: 800;
+		}
+
+		.mtl-chip-badge {
+			display: block;
+			width: 22px;
+			height: 22px;
+			border-radius: 50%;
+			object-fit: cover;
+		}
+
+		.mtl-acct-none {
+			margin: 0;
+			font-weight: 700;
+		}
+
+		.mtl-acct-agree {
+			margin-top: 24px;
+			padding: 22px;
+			border: 2px solid var(--mtl-btn);
+		}
+
+		.mtl-acct-agree h2 {
+			margin-bottom: 12px;
+			font-size: 26px;
+		}
+
+		.mtl-acct-agree .mtl-agreements legend {
+			font-family: var(--mtl-font-text);
+			font-stretch: 100%;
+			font-size: 17px;
+		}
+
+		/* One list of folding rows. Each summary carries a short note on the
+			right so a closed row still says what is inside. */
+		.mtl-acct-panels {
+			margin-top: 26px;
+		}
+
+		.mtl-acct-panels > details + details {
+			border-top: 1px solid var(--mtl-rule);
+		}
+
+		.mtl-acct-panels summary {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto 20px;
+			align-items: center;
+			gap: 16px;
+			min-height: 44px;
+			padding: 18px 22px;
+			cursor: pointer;
+			list-style: none;
+		}
+
+		.mtl-acct-panels summary::-webkit-details-marker {
+			display: none;
+		}
+
+		.mtl-acct-panels summary::after {
+			content: "";
+			justify-self: end;
+			width: 9px;
+			height: 9px;
+			border-right: 2px solid var(--mtl-ink-2);
+			border-bottom: 2px solid var(--mtl-ink-2);
+			transform: rotate(45deg) translateY(-3px);
+		}
+
+		.mtl-acct-panels details[open] > summary::after {
+			transform: rotate(-135deg) translateY(-2px);
+		}
+
+		.mtl-acct-panels summary:hover {
+			background: var(--mtl-hover);
+		}
+
+		.mtl-acct-sum-title {
+			font-size: 18px;
+			font-weight: 700;
+		}
+
+		.mtl-acct-sum-note {
+			color: var(--mtl-ink-2);
+			font-size: 15px;
+			text-align: right;
+		}
+
+		.mtl-acct-body {
+			padding: 2px 22px 24px;
+		}
+
+		.mtl-acct-body > p:first-child {
+			margin-top: 0;
+		}
+
+		.mtl-form-note {
+			margin: 0;
+			color: var(--mtl-ink-2);
+			font-size: 14px;
+		}
+
+		.mtl-form-actions {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 12px 18px;
+			margin-top: 22px;
+		}
+
+		.mtl-member-verif-confirm {
+			margin: 18px 0 0;
+		}
+
+		.mtl-member-verif-confirm p {
+			margin: 6px 0 0;
+		}
+
+		.mtl-member-verif-confirm .mtl-form-actions {
+			margin-top: 14px;
+		}
+
+		/* Loan history and training record. */
+		.mtl-history {
+			margin: 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.mtl-history li {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			gap: 2px 16px;
+			align-items: center;
+			padding: 12px 0;
+			border-top: 1px solid var(--mtl-rule-soft);
+		}
+
+		.mtl-history li:first-child {
+			border-top: 0;
+		}
+
+		.mtl-history-name {
+			font-weight: 700;
+		}
+
+		.mtl-history-meta {
+			grid-column: 1;
+			margin: 0;
+			color: var(--mtl-ink-2);
+			font-size: 15px;
+		}
+
+		.mtl-history .mtl-history-status {
+			grid-column: 2;
+			grid-row: 1 / span 2;
+		}
+
+		.mtl-history-status.mtl-status-note {
+			font-weight: 700;
+		}
+
+		.mtl-acct-danger {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 0 18px;
+			margin-top: 44px;
+			padding-top: 14px;
+			border-top: 1px solid var(--mtl-rule);
+		}
+
+		.mtl-acct-danger p {
+			margin: 0;
+			color: var(--mtl-ink-2);
+			font-size: 15px;
+		}
+
+		/* ---------- Member agreements (sign up and Account) ---------- */
+
 		.mtl-agreements {
-			border: 1px solid #dcdcde;
-			border-radius: 6px;
-			padding: 14px 16px 4px 16px;
-			margin: 18px 0;
-		}
-
-		.mtl-agreements legend {
-			font-weight: 600;
-			padding: 0 6px;
+			min-width: 0;
+			margin: 0;
+			padding: 0;
+			border: 0;
 		}
 
 		.mtl-agreements-intro {
-			margin: 0 0 12px 0;
-			color: #50575e;
+			margin: 0;
+			color: var(--mtl-ink-2);
 		}
 
 		.mtl-agreement-item {
-			margin-bottom: 14px;
+			margin-top: 10px;
+			padding: 12px 14px;
+			background: var(--mtl-panel);
+			border: 1px solid var(--mtl-rule);
+			border-radius: var(--mtl-radius);
 		}
 
+		/* Paired with the error text, never carrying the meaning alone. */
 		.mtl-agreement-item-invalid {
-			border-left: 3px solid #b32d2e;
 			padding-left: 10px;
-			margin-left: -13px;
+			border-left: 5px solid var(--mtl-late);
 		}
 
 		.mtl-agreement-label {
 			display: flex;
-			gap: 10px;
 			align-items: flex-start;
+			gap: 12px;
 			cursor: pointer;
 		}
 
+		/* 3px down lines the box up with the first line of the clause. */
 		.mtl-agreement-label input[type="checkbox"] {
-			flex: 0 0 auto;
-			margin-top: 3px;
-			width: 18px;
-			height: 18px;
+			flex: none;
+			width: 20px;
+			height: 20px;
+			margin: 3px 0 0;
 		}
 
-		/* Paired with the red rule above, never carrying the meaning alone. */
-		.mtl-agreement-error {
-			margin: 4px 0 0 28px;
-			color: #b32d2e;
-			font-weight: 600;
-		}
-
+		.mtl-agreement-error,
 		.mtl-agreement-file,
 		.mtl-agreement-superseded {
-			margin: 4px 0 0 28px;
-			font-size: 0.9em;
+			margin: 6px 0 0 32px;
+			font-size: 14.5px;
+		}
+
+		.mtl-agreement-error {
+			color: var(--mtl-late);
+			font-weight: 700;
 		}
 
 		.mtl-agreement-superseded {
-			color: #50575e;
+			color: var(--mtl-ink-2);
 		}
 
 		.mtl-agreements-assent {
-			margin: 14px 0;
-			color: #50575e;
+			margin: 14px 0 0;
+			color: var(--mtl-ink-2);
+			font-size: 15px;
 		}
 
-		.mtl-agreements-summary ul {
-			margin: 6px 0 0 0;
-			padding-left: 20px;
-		}
-
-		/* The receipt: what they have already agreed to. */
+		/* The receipt: what the member has already agreed to. */
 		.mtl-agreement-receipt {
-			list-style: none;
 			margin: 0;
 			padding: 0;
+			list-style: none;
 		}
 
 		.mtl-agreement-receipt li {
 			display: flex;
-			gap: 10px;
 			align-items: flex-start;
-			margin-bottom: 14px;
+			gap: 12px;
+			padding: 12px 0;
+			border-top: 1px solid var(--mtl-rule-soft);
 		}
 
-		.mtl-agreement-tick {
-			flex: 0 0 auto;
-			color: #007017;
-			font-weight: 700;
+		.mtl-agreement-receipt li:first-child {
+			border-top: 0;
+		}
+
+		.mtl-agreement-receipt .mtl-chip-check {
+			flex: none;
+			margin-top: 2px;
 		}
 
 		.mtl-agreement-meta {
-			margin: 2px 0 0 0;
-			font-size: 0.9em;
-			color: #50575e;
+			margin: 4px 0 0;
+			color: var(--mtl-ink-2);
+			font-size: 14.5px;
 		}
 
-		.mtl-agreement-retired-note {
-			font-style: italic;
+		/* ---------- Sign up ---------- */
+
+		.mtl-signup {
+			display: grid;
+			grid-template-columns: 300px minmax(0, 1fr);
+			gap: 48px;
+			align-items: start;
+			max-width: 1040px;
+			margin: 0 auto;
+			padding: 34px 24px 70px;
 		}
 
-		/* Availability badges + category/tag pills. These pages call the shop's
-			own mtl_shop_status_badges() / mtl_shop_pills() helpers, so they take
-			the shop's rules verbatim from public/shop-page.php. */
-		<?php echo mtl_shop_badge_pill_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
-		<?php echo mtl_tool_links_css( $accent ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS; $accent went through mtl_css_value() above. ?>
-		<?php echo mtl_locked_banner_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
+		.mtl-signup-intro {
+			position: sticky;
+			top: 24px;
+		}
+
+		.mtl-signup-intro p {
+			margin: 12px 0 0;
+			color: var(--mtl-ink-2);
+		}
+
+		.mtl-signup-intro ul {
+			margin: 18px 0 0;
+			padding: 0;
+			list-style: none;
+		}
+
+		.mtl-signup-intro li {
+			padding: 10px 0;
+			border-top: 1px solid var(--mtl-rule);
+		}
+
+		.mtl-signup-intro li:last-child {
+			border-bottom: 1px solid var(--mtl-rule);
+		}
+
+		.mtl-signup-form {
+			padding: 8px 28px 28px;
+		}
+
+		.mtl-signup-form > .mtl-front-notice {
+			margin: 20px 0 0;
+		}
+
+		/* Less at the foot, where the last field's own margin makes it up. */
+		.mtl-signup-form fieldset {
+			min-width: 0;
+			margin: 0;
+			padding: 22px 0 6px;
+			border: 0;
+		}
+
+		.mtl-signup-form .mtl-agreements {
+			padding-bottom: 22px;
+		}
+
+		.mtl-signup-form fieldset + fieldset {
+			border-top: 1px solid var(--mtl-rule);
+		}
+
+		/* Floated, so the legend sits inside the fieldset like a heading
+			rather than cutting into its top edge. */
+		.mtl-signup-form legend,
+		.mtl-agreements legend {
+			float: left;
+			width: 100%;
+			margin: 0 0 14px;
+			padding: 0;
+			color: var(--mtl-heading);
+			font-family: var(--mtl-font-display);
+			font-stretch: 82%;
+			font-size: 21px;
+			font-weight: 700;
+			line-height: 1.2;
+		}
+
+		.mtl-signup-form legend + *,
+		.mtl-agreements legend + * {
+			clear: both;
+		}
+
+		.mtl-signup-form .mtl-form-actions {
+			margin-top: 6px;
+		}
+
+		/* mtl_render_phone_input() markup, shared with the admin pages, so it
+			is styled here rather than given new classes. */
+		.mtl-phone-widget {
+			display: grid;
+			grid-template-columns: 170px minmax(0, 1fr);
+			gap: 8px;
+		}
+
+		/* ---------- Member-only notice ---------- */
+
+		.mtl-front-card h1 {
+			margin: 0 0 14px;
+			font-size: 30px;
+		}
+
+		.mtl-front-card .mtl-confirm-actions {
+			margin-top: 20px;
+		}
+
+		/* The intro column would leave the form too narrow on a tablet. */
+		@media (max-width: 900px) {
+			.mtl-signup {
+				grid-template-columns: minmax(0, 1fr);
+				gap: 22px;
+				max-width: 680px;
+			}
+
+			.mtl-signup-intro {
+				position: static;
+			}
+		}
+
+		@media (max-width: 760px) {
+			.mtl-member {
+				padding: 22px 16px 50px;
+			}
+
+			.mtl-section-head .mtl-section-aside {
+				flex-basis: 100%;
+				margin-left: 0;
+				color: var(--mtl-ink-2);
+			}
+
+			.mtl-ready,
+			.mtl-ready-no-photo {
+				grid-template-columns: 1fr;
+				gap: 12px;
+				padding: 14px 16px;
+			}
+
+			.mtl-ready-photo {
+				display: none;
+			}
+
+			.mtl-slip {
+				grid-template-columns: 74px minmax(0, 1fr);
+				gap: 4px 14px;
+				padding: 12px 14px 12px 10px;
+			}
+
+			.mtl-slip-due {
+				grid-row: 1 / span 2;
+			}
+
+			.mtl-slip-d {
+				font-size: 38px;
+			}
+
+			.mtl-slip-state {
+				grid-column: 2;
+				text-align: left;
+			}
+
+			.mtl-res-row {
+				grid-template-columns: 1fr;
+				gap: 8px;
+				padding: 14px 16px;
+			}
+
+			.mtl-res-cancel {
+				justify-self: start;
+			}
+
+			.mtl-res-detail-body {
+				padding: 16px 16px 20px;
+			}
+
+			.mtl-res-detail-body h2 {
+				font-size: 26px;
+			}
+
+			.mtl-callout {
+				flex-direction: column;
+				align-items: flex-start;
+				gap: 14px;
+				padding: 18px 16px;
+			}
+
+			.mtl-callout-actions {
+				margin-left: 0;
+			}
+
+			.mtl-acct-who {
+				grid-template-columns: 1fr;
+			}
+
+			.mtl-acct-who > section + section {
+				border-top: 1px solid var(--mtl-rule);
+				border-left: 0;
+			}
+
+			.mtl-acct-who > section,
+			.mtl-acct-agree {
+				padding: 18px 16px;
+			}
+
+			.mtl-acct-panels summary {
+				grid-template-columns: minmax(0, 1fr) 20px;
+				gap: 2px 12px;
+				padding: 16px;
+			}
+
+			.mtl-acct-sum-note {
+				grid-column: 1;
+				grid-row: 2;
+				text-align: left;
+			}
+
+			.mtl-acct-panels summary::after {
+				grid-column: 2;
+				grid-row: 1 / span 2;
+			}
+
+			.mtl-acct-body {
+				padding: 2px 16px 20px;
+			}
+
+			.mtl-signup {
+				padding: 22px 16px 50px;
+			}
+
+			.mtl-signup-form {
+				padding: 4px 16px 22px;
+			}
+
+			.mtl-phone-widget {
+				grid-template-columns: 150px minmax(0, 1fr);
+			}
+
+			.mtl-btn-primary.mtl-member-submit {
+				width: 100%;
+			}
+		}
 	</style>
 	<?php
 	return ob_get_clean();
-}
-
-/**
- * Standard "back to the shop" footer link for the member pages.
- *
- * @return string HTML.
- */
-function mtl_member_page_footer() {
-	return '<a href="' . esc_url( mtl_front_page_url( 'main' ) ) . '">&larr; Back to the tool catalog</a>';
 }
 
 // --------------------------------------------------------------------------
@@ -1137,34 +1709,6 @@ function mtl_account_locked_banner_html() {
 		. esc_html__( 'You can still sign in and see your account, but you can\'t reserve or borrow tools. Please speak with library staff.', 'my-tool-library' )
 		. $reach
 		. '</div>';
-}
-
-/**
- * CSS for mtl_account_locked_banner_html(), shared by the catalog and the
- * member pages, which each have their own <style> block.
- *
- * Solid red rather than the pale .mtl-front-notice-error, so it reads as a
- * standing state of the account and not as the result of the last click.
- *
- * @return string CSS, ready to drop inside a <style> block.
- */
-function mtl_locked_banner_css() {
-	return '
-		.mtl-locked-banner {
-			background: #b32d2e;
-			color: #fff;
-			border-radius: 6px;
-			padding: 14px 18px;
-			margin: 0 0 16px 0;
-			font-size: 0.95em;
-			line-height: 1.5;
-		}
-
-		.mtl-locked-banner a {
-			color: #fff;
-			text-decoration: underline;
-		}
-	';
 }
 
 /**
@@ -1277,7 +1821,7 @@ function mtl_render_agreements_fieldset( $agreements, $args = array() ) {
 				<?php if ( $file_url ) : ?>
 					<p class="mtl-agreement-file">
 						<a href="<?php echo esc_url( $file_url ); ?>" target="_blank" rel="noopener noreferrer"
-							aria-label="<?php echo esc_attr( 'View the attached document for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $agreement->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>"><?php esc_html_e( 'View the attached document', 'my-tool-library' ); ?> &#8599;</a>
+							aria-label="<?php echo esc_attr( 'View the attached document for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $agreement->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>"><?php esc_html_e( 'View the attached document', 'my-tool-library' ); ?></a>
 					</p>
 				<?php endif; ?>
 
@@ -1602,6 +2146,9 @@ function mtl_render_signup_page() {
 	$agreement_missing = array();
 	$agreement_changed = false;
 	$agreement_seen    = array();
+	// Where the "You must agree to" line sits in $errors, so the error list
+	// can show it as links to the boxes rather than as plain text.
+	$agreement_error_at = -1;
 
 	// Sticky values so a validation error doesn't wipe the form (password
 	// fields are intentionally never repopulated).
@@ -1721,7 +2268,8 @@ function mtl_render_signup_page() {
 					foreach ( $check['missing'] as $mtl_missed ) {
 						$mtl_names[] = wp_strip_all_tags( mtl_agreement_excerpt( $mtl_missed->agreement_text ) );
 					}
-					$errors[] = __( 'You must agree to:', 'my-tool-library' ) . ' ' . implode( '; ', $mtl_names );
+					$agreement_error_at = count( $errors );
+					$errors[]           = __( 'You must agree to:', 'my-tool-library' ) . ' ' . implode( '; ', $mtl_names );
 				}
 			}
 
@@ -1851,71 +2399,102 @@ function mtl_render_signup_page() {
 
 	$action_url = mtl_front_page_url( 'signup' );
 
+	// Online mode only, since paper mode collects signatures at the desk.
+	// Read live rather than reusing the handler's copy, so the form shows the
+	// agreements as they stand now.
+	$signup_agreements = mtl_agreements_online() ? mtl_get_active_agreements() : array();
+
 	ob_start();
 	echo mtl_member_page_styles();
 	?>
-	<div class="mtl-member-wrap">
-		<a class="mtl-member-back" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a>
+	<div class="mtl-signup">
+		<div class="mtl-signup-intro">
+			<h1 class="mtl-page-title">Join the library</h1>
+			<p>Membership is free. You&rsquo;ll be signed in as soon as you finish.</p>
+			<ul>
+				<li>Reserve tools and see your place in line</li>
+				<li>Check what&rsquo;s due and when</li>
+				<li>Bring a photo ID and proof of address the first time you borrow</li>
+			</ul>
+			<p>Already a member? <a href="<?php echo esc_url( mtl_front_page_url( 'login' ) ); ?>">Sign in</a></p>
+		</div>
 
-		<div class="mtl-member-card">
-			<h2>Create your member account</h2>
-			<p style="margin-top:0; color:#50575e;">Membership is free and lets you reserve tools and track your place in line. You&rsquo;ll be signed in and ready to browse as soon as you finish.</p>
+		<form class="mtl-panel mtl-signup-form" method="post" action="<?php echo esc_url( $action_url ); ?>">
+			<?php wp_nonce_field( 'mtl_signup_action', 'mtl_signup_nonce' ); ?>
 
 			<?php if ( ! empty( $errors ) ) : ?>
-				<div class="mtl-front-notice mtl-front-notice-error" style="max-width:none; margin: 0 0 18px 0;">
-					<?php foreach ( $errors as $e ) : ?>
-						<div><?php echo esc_html( $e ); ?></div>
-					<?php endforeach; ?>
+				<?php
+				// One list of everything to fix. role="alert" announces it on the
+				// re-render, and autofocus (made focusable by tabindex) takes a
+				// keyboard or screen-reader user straight to it.
+				?>
+				<div class="mtl-front-notice mtl-front-notice-error" role="alert" tabindex="-1" autofocus id="mtl-su-errors">
+					<p><strong><?php echo 1 === count( $errors ) ? 'Please fix this and try again:' : 'Please fix these and try again:'; ?></strong></p>
+					<ul>
+						<?php foreach ( $errors as $mtl_error_at => $e ) : ?>
+							<?php if ( $mtl_error_at === $agreement_error_at && $agreement_missing ) : ?>
+								<li>
+									<?php esc_html_e( 'You must agree to:', 'my-tool-library' ); ?>
+									<ul>
+										<?php foreach ( $agreement_missing as $agreement ) : ?>
+											<li><a href="#<?php echo esc_attr( 'mtl-su-agreement-' . (int) $agreement->agreement_id ); ?>"><?php echo esc_html( mtl_agreement_excerpt( $agreement->agreement_text, 12 ) ); ?></a></li>
+										<?php endforeach; ?>
+									</ul>
+								</li>
+							<?php else : ?>
+								<li><?php echo esc_html( $e ); ?></li>
+							<?php endif; ?>
+						<?php endforeach; ?>
+					</ul>
 				</div>
 			<?php endif; ?>
 
-			<form method="post" action="<?php echo esc_url( $action_url ); ?>">
-				<?php wp_nonce_field( 'mtl_signup_action', 'mtl_signup_nonce' ); ?>
-
-				<div class="mtl-member-row">
-					<div class="mtl-member-field">
+			<fieldset>
+				<legend>Your name</legend>
+				<div class="mtl-field-row">
+					<div class="mtl-field">
 						<label for="mtl-su-first">First name</label>
-						<input type="text" id="mtl-su-first" name="first_name" value="<?php echo esc_attr( $vals['first_name'] ); ?>" required>
+						<input type="text" id="mtl-su-first" name="first_name" value="<?php echo esc_attr( $vals['first_name'] ); ?>" autocomplete="given-name" required>
 					</div>
-					<div class="mtl-member-field">
+					<div class="mtl-field">
 						<label for="mtl-su-last">Last name</label>
-						<input type="text" id="mtl-su-last" name="last_name" value="<?php echo esc_attr( $vals['last_name'] ); ?>" required>
+						<input type="text" id="mtl-su-last" name="last_name" value="<?php echo esc_attr( $vals['last_name'] ); ?>" autocomplete="family-name" required>
 					</div>
 				</div>
+			</fieldset>
 
-				<div class="mtl-member-field">
-					<label for="mtl-su-address1">Address</label>
-					<input type="text" id="mtl-su-address1" name="address_line1" value="<?php echo esc_attr( $vals['address_line1'] ); ?>" required>
-					<p class="mtl-member-hint">Used to verify membership when you borrow tools.</p>
+			<fieldset>
+				<legend>Address</legend>
+				<div class="mtl-field">
+					<label for="mtl-su-address1">Street address</label>
+					<input type="text" id="mtl-su-address1" name="address_line1" value="<?php echo esc_attr( $vals['address_line1'] ); ?>" autocomplete="address-line1" aria-describedby="mtl-su-address1-hint" required>
+					<p class="mtl-hint" id="mtl-su-address1-hint">Staff check it against your proof of address.</p>
 				</div>
-
-				<div class="mtl-member-field">
-					<label for="mtl-su-address2">Address line 2 <span style="font-weight:normal;">(optional)</span></label>
-					<input type="text" id="mtl-su-address2" name="address_line2" value="<?php echo esc_attr( $vals['address_line2'] ); ?>">
+				<div class="mtl-field">
+					<label for="mtl-su-address2">Address line 2 <small>(optional)</small></label>
+					<input type="text" id="mtl-su-address2" name="address_line2" value="<?php echo esc_attr( $vals['address_line2'] ); ?>" autocomplete="address-line2">
 				</div>
-
-				<div class="mtl-member-row">
-					<div class="mtl-member-field">
+				<div class="mtl-field-row">
+					<div class="mtl-field">
 						<label for="mtl-su-city">City</label>
-						<input type="text" id="mtl-su-city" name="city" value="<?php echo esc_attr( $vals['city'] ); ?>" required>
+						<input type="text" id="mtl-su-city" name="city" value="<?php echo esc_attr( $vals['city'] ); ?>" autocomplete="address-level2" required>
 					</div>
-					<div class="mtl-member-field">
-						<label for="mtl-su-state">State / Province</label>
+					<div class="mtl-field">
+						<label for="mtl-su-state">State or province</label>
 						<select id="mtl-su-state" name="state" required>
-							<option value="">&mdash; Select &mdash;</option>
+							<option value="">Choose one</option>
 							<?php foreach ( mtl_get_state_options() as $mtl_state_code => $mtl_state_label ) : ?>
 								<option value="<?php echo esc_attr( $mtl_state_code ); ?>" <?php selected( $vals['state'], $mtl_state_code ); ?>><?php echo esc_html( $mtl_state_label ); ?> (<?php echo esc_html( $mtl_state_code ); ?>)</option>
 							<?php endforeach; ?>
 						</select>
 					</div>
 				</div>
-
-				<div class="mtl-member-row">
-					<div class="mtl-member-field">
-						<label for="mtl-su-zip">ZIP code</label>
-						<input type="text" id="mtl-su-zip" name="zip_code" value="<?php echo esc_attr( $vals['zip_code'] ); ?>" required>
+				<div class="mtl-field-row">
+					<div class="mtl-field">
+						<label for="mtl-su-zip">ZIP or postal code</label>
+						<input type="text" id="mtl-su-zip" name="zip_code" value="<?php echo esc_attr( $vals['zip_code'] ); ?>" autocomplete="postal-code" required>
 					</div>
-					<div class="mtl-member-field">
+					<div class="mtl-field">
 						<label for="mtl-su-country">Country</label>
 						<select id="mtl-su-country" name="country" required>
 							<?php foreach ( mtl_get_country_options() as $mtl_country_name ) : ?>
@@ -1924,179 +2503,271 @@ function mtl_render_signup_page() {
 						</select>
 					</div>
 				</div>
+			</fieldset>
 
-				<div class="mtl-member-row">
-					<div class="mtl-member-field">
-						<label for="mtl-su-phone_national">Phone number</label>
-						<?php mtl_render_phone_input( $vals['phone_country'], $vals['phone_national'], 'mtl-su-' ); ?>
-					</div>
+			<fieldset>
+				<legend>Contact and sign-in</legend>
+				<div class="mtl-field">
+					<label for="mtl-su-phone_national">Phone number</label>
+					<?php mtl_render_phone_input( $vals['phone_country'], $vals['phone_national'], 'mtl-su-' ); ?>
 				</div>
-
-				<div class="mtl-member-row">
-					<div class="mtl-member-field">
+				<div class="mtl-field-row">
+					<div class="mtl-field">
 						<label for="mtl-su-email">Email address</label>
-						<input type="email" id="mtl-su-email" name="email" value="<?php echo esc_attr( $vals['email'] ); ?>" required>
-						<p class="mtl-member-hint">You&rsquo;ll sign in with this address.</p>
+						<input type="email" id="mtl-su-email" name="email" value="<?php echo esc_attr( $vals['email'] ); ?>" autocomplete="email" aria-describedby="mtl-su-email-hint" required>
+						<p class="mtl-hint" id="mtl-su-email-hint">You&rsquo;ll sign in with this.</p>
 					</div>
-					<div class="mtl-member-field">
-						<label for="mtl-su-email2">Confirm email address</label>
-						<input type="email" id="mtl-su-email2" name="email2" value="<?php echo esc_attr( $email_confirm ); ?>" required>
+					<div class="mtl-field">
+						<label for="mtl-su-email2">Email address again</label>
+						<input type="email" id="mtl-su-email2" name="email2" value="<?php echo esc_attr( $email_confirm ); ?>" autocomplete="email" required>
 					</div>
 				</div>
-
-				<div class="mtl-member-row">
-					<div class="mtl-member-field">
+				<div class="mtl-field-row">
+					<div class="mtl-field">
 						<label for="mtl-su-pass">Password</label>
-						<input type="password" id="mtl-su-pass" name="password" autocomplete="new-password" required>
-						<p class="mtl-member-hint">At least <?php echo (int) MTL_MIN_PASSWORD_LENGTH; ?> characters.</p>
+						<input type="password" id="mtl-su-pass" name="password" autocomplete="new-password" aria-describedby="mtl-su-pass-hint" required>
+						<p class="mtl-hint" id="mtl-su-pass-hint">At least <?php echo (int) MTL_MIN_PASSWORD_LENGTH; ?> characters.</p>
 					</div>
-					<div class="mtl-member-field">
-						<label for="mtl-su-pass2">Confirm password</label>
+					<div class="mtl-field">
+						<label for="mtl-su-pass2">Password again</label>
 						<input type="password" id="mtl-su-pass2" name="password2" autocomplete="new-password" required>
 					</div>
 				</div>
+			</fieldset>
 
-				<?php
-				// Online mode only, since paper mode collects signatures at the desk.
-				// Read live rather than reusing the handler's copy, so the form
-				// shows the agreements as they stand now.
-				if ( mtl_agreements_online() ) {
-					$signup_agreements = mtl_get_active_agreements();
-					if ( $signup_agreements ) {
-						// Both helpers escape every value they interpolate; the
-						// markup around those values is the plugin's own.
-						echo mtl_render_agreements_error_summary( $agreement_missing, 'mtl-su-agreement' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer.
-						echo mtl_render_agreements_fieldset( // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer.
-							$signup_agreements,
-							array(
-								'context'   => 'signup',
-								'id_prefix' => 'mtl-su-agreement',
-								'legend'    => 'Member agreements',
-								'intro'     => $agreement_changed
-									? 'These have changed since you opened this page. Please read them again.'
-									: 'Please read these and tick each box.',
-								'checked'   => $agreement_ticked,
-								'invalid'   => $agreement_invalid,
-							)
-						);
-					}
-				}
-				?>
+			<?php
+			if ( $signup_agreements ) {
+				// Escapes every value it interpolates; the markup around those
+				// values is the plugin's own. Its legend makes it the form's
+				// fourth group.
+				echo mtl_render_agreements_fieldset( // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the renderer.
+					$signup_agreements,
+					array(
+						'context'   => 'signup',
+						'id_prefix' => 'mtl-su-agreement',
+						'legend'    => 'Member agreements',
+						'intro'     => $agreement_changed
+							? 'These have changed since you opened this page. Please read them again.'
+							: 'Please read these and tick each box.',
+						'checked'   => $agreement_ticked,
+						'invalid'   => $agreement_invalid,
+					)
+				);
+			}
+			?>
 
-				<p style="margin: 18px 0 0 0;">
-					<button type="submit" name="mtl_signup" value="1" class="mtl-member-btn">Create Account</button>
-				</p>
-			</form>
-		</div>
-
-		<p style="text-align:center; margin:0;">
-			Already have an account? <a href="<?php echo esc_url( mtl_front_page_url( 'login' ) ); ?>">Sign in</a>.
-		</p>
+			<div class="mtl-form-actions">
+				<button type="submit" name="mtl_signup" value="1" class="mtl-btn mtl-btn-primary mtl-member-submit">Create my account</button>
+			</div>
+		</form>
 	</div>
 	<?php
 	$body = ob_get_clean();
 
-	mtl_render_front_shell( 'Create Account', $body );
+	mtl_render_front_shell( 'Join the library', $body );
 }
 
 /**
- * Render one reserved tool's detail-panel body for the My Reservations page:
- * the tool's customer-facing details plus this member's reservation info
- * (place in line, ready/on-loan status, dates) and a cancel link. Reuses the
- * shop's badge/pill helpers so it matches the catalog's detail box, and
- * follows the same rule on shelf location: shown only when the library has
- * turned it on for members.
+ * A place in line as an English ordinal: 1st, 2nd, 3rd, 4th, 11th, 22nd.
+ *
+ * @param int $n A positive whole number.
+ * @return string
+ */
+function mtl_member_ordinal( $n ) {
+	$n = (int) $n;
+	if ( in_array( $n % 100, array( 11, 12, 13 ), true ) ) {
+		return $n . 'th';
+	}
+	$suffixes = array(
+		1 => 'st',
+		2 => 'nd',
+		3 => 'rd',
+	);
+	return $n . ( isset( $suffixes[ $n % 10 ] ) ? $suffixes[ $n % 10 ] : 'th' );
+}
+
+/**
+ * The queue drawn as small squares: filled for the people ahead, the button
+ * color for the member, empty for the people behind. Ten at most, then "+N".
+ *
+ * Decoration only, hidden from screen readers: the sentence beside it ("2nd
+ * of 4 in line") says the same thing.
+ *
+ * @param int $place The member's place in line, from 1.
+ * @param int $size  How many are in line, the member included.
+ * @return string HTML, built from integers only.
+ */
+function mtl_member_line_dots_html( $place, $size ) {
+	$place = max( 1, (int) $place );
+	$size  = max( $place, (int) $size );
+	$shown = min( $size, 10 );
+	// Someone further back than tenth is drawn on the last square.
+	$you = min( $place, $shown );
+
+	$out = '<span class="mtl-line-dots" aria-hidden="true">';
+	for ( $i = 1; $i <= $shown; $i++ ) {
+		if ( $i === $you ) {
+			$out .= '<i class="mtl-line-you"></i>';
+		} elseif ( $i < $you ) {
+			$out .= '<i class="mtl-line-ahead"></i>';
+		} else {
+			$out .= '<i></i>';
+		}
+	}
+	if ( $size > $shown ) {
+		$out .= '<span class="mtl-line-more">+' . (int) ( $size - $shown ) . '</span>';
+	}
+	return $out . '</span>';
+}
+
+/**
+ * Where a reservation stands, in the words the member pages use.
+ *
+ * Only the member at the front of the line hears about the tool itself; for
+ * anyone behind them, whether it is out or in for repair changes nothing.
+ *
+ * @param object $r Reservation row with queue_place, active_loans,
+ *                  maintenance_at and ready_since.
+ * @return string[] Status suffix (ok, out, maint or wait, as in
+ *                  .mtl-status-*), its label, and a short note or ''.
+ */
+function mtl_member_reservation_state( $r ) {
+	if ( 1 !== (int) $r->queue_place ) {
+		return array( 'wait', 'Waiting in line', '' );
+	}
+	if ( (int) $r->active_loans > 0 ) {
+		return array( 'out', 'On loan', 'Waiting for its return' );
+	}
+	if ( ! empty( $r->maintenance_at ) ) {
+		return array( 'maint', 'Under maintenance', 'Being repaired or serviced' );
+	}
+	$collect_by = mtl_reservation_collect_by( $r->ready_since );
+	return array( 'ok', 'Ready for pickup', '' !== $collect_by ? 'until ' . gmdate( 'M j', strtotime( $collect_by ) ) : '' );
+}
+
+/**
+ * How a tool is named under its title on the member pages: "No. 63, Makita",
+ * or less when the library hides tool numbers or there is no brand.
+ *
+ * @param int    $tool_id Tool row ID.
+ * @param string $brand   Brand, possibly slashed or empty.
+ * @return string Plain text, not escaped.
+ */
+function mtl_member_tool_meta( $tool_id, $brand ) {
+	$look  = mtl_public_look();
+	$parts = array();
+	if ( $look['show_tool_numbers'] ) {
+		$parts[] = 'No. ' . (int) $tool_id;
+	}
+	$brand = trim( stripslashes( (string) $brand ) );
+	if ( '' !== $brand ) {
+		$parts[] = $brand;
+	}
+	return implode( ', ', $parts );
+}
+
+/**
+ * Render one reserved tool's detail panel for My loans & reservations: the
+ * tool's customer-facing details plus this member's reservation (place in
+ * line, where the tool is, dates) and a cancel link. Laid out like the
+ * catalog's tool panel, and follows the same rule on shelf location: shown
+ * only when the library has turned it on for members.
  *
  * @param object $r        Enriched reservation row from the query below.
  * @param string $self_url Current page URL, used to build the cancel link.
  * @return string HTML.
  */
 function mtl_render_reservation_detail_panel( $r, $self_url ) {
-	$on_loan   = ( (int) $r->active_loans > 0 );
-	$in_maint  = ! empty( $r->maintenance_at );
-	$is_first  = ( 1 === (int) $r->queue_place );
-	$available = ! $on_loan && ! $in_maint;
+	$name        = stripslashes( $r->tool_name );
+	$title_id    = 'res-tool-' . (int) $r->reservation_id . '-title';
+	$state       = mtl_member_reservation_state( $r );
+	$ready_since = trim( (string) $r->ready_since );
+	$collect_by  = mtl_reservation_collect_by( $ready_since );
+	$look        = mtl_public_look();
+
+	$sub = array();
+	if ( '' !== trim( (string) $r->brand ) ) {
+		$sub[] = stripslashes( $r->brand );
+	}
+	if ( $look['show_tool_numbers'] ) {
+		$sub[] = ( $sub ? 'tool no. ' : 'Tool no. ' ) . (int) $r->tool_id;
+	}
+
+	$facts = array(
+		'Category'       => $r->categories,
+		'Sub-categories' => $r->subcategories,
+		'Tags'           => $r->tags,
+	);
+	$facts = array_filter( array_map( 'trim', array_map( 'strval', $facts ) ) );
+
+	// Only opens the confirm prompt; the cancel itself is a POST.
+	$cancel_url = add_query_arg(
+		array(
+			'mtl_confirm' => 'one',
+			'rid'         => (int) $r->reservation_id,
+		),
+		$self_url
+	);
 
 	ob_start();
 	?>
 	<?php if ( ! empty( $r->photo_url ) ) : ?>
-		<img class="mtl-res-detail-photo" src="<?php echo esc_url( $r->photo_url ); ?>" alt="<?php echo esc_attr( stripslashes( $r->tool_name ) ); ?>" loading="lazy">
+		<img class="mtl-res-detail-photo" src="<?php echo esc_url( $r->photo_url ); ?>" alt="<?php echo esc_attr( $name ); ?>" loading="lazy">
 	<?php endif; ?>
 	<div class="mtl-res-detail-body">
-		<p class="mtl-res-detail-name"><?php echo esc_html( stripslashes( $r->tool_name ) ); ?></p>
-		<p class="mtl-res-detail-id">Tool ID #<?php echo (int) $r->tool_id; ?></p>
-		<?php if ( ! empty( $r->brand ) ) : ?>
-			<p class="mtl-res-detail-brand"><?php echo esc_html( stripslashes( $r->brand ) ); ?></p>
+		<a class="mtl-btn-text mtl-res-close" href="#mtl-reservations">Close<span class="mtl-sr-only"> the details for <?php echo esc_html( $name ); ?></span></a>
+		<h2 id="<?php echo esc_attr( $title_id ); ?>"><?php echo esc_html( $name ); ?></h2>
+		<?php if ( $sub ) : ?>
+			<p class="mtl-res-detail-sub"><?php echo esc_html( implode( ', ', $sub ) ); ?></p>
 		<?php endif; ?>
 
-		<div class="mtl-shop-badges"><?php echo mtl_shop_status_badges( $on_loan, (int) $r->queue_size, false, $in_maint ); ?></div>
-
-		<div class="mtl-res-info">
-			<p style="margin:0 0 6px 0; font-weight:600;">Your reservation</p>
-			<p style="margin:0;">
-				Place in line: <strong><?php echo (int) $r->queue_place; ?></strong> of <?php echo (int) $r->queue_size; ?>
-				<?php if ( $is_first && $available ) : ?>
-					<span class="mtl-pill mtl-pill-green" style="margin-left:6px;">Ready for pickup</span>
-				<?php elseif ( $is_first && $on_loan ) : ?>
-					<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Out on loan</span>
-				<?php elseif ( $is_first ) : ?>
-					<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Under maintenance</span>
-				<?php endif; ?>
+		<div class="mtl-res-info mtl-res-info-<?php echo esc_attr( $state[0] ); ?>">
+			<strong><?php echo esc_html( $state[1] ); ?></strong>
+			<p>
+				You&rsquo;re <?php echo esc_html( mtl_member_ordinal( $r->queue_place ) ); ?> of <?php echo (int) $r->queue_size; ?> in line.
+				Reserved on <?php echo mtl_format_date( $r->reservation_date, 'M j, Y' ); ?>.
 			</p>
-			<?php if ( $in_maint && ! $on_loan ) : ?>
-				<p style="margin:6px 0 0 0; color:#50575e; font-size:0.92em;">
-					This tool is being repaired or serviced.
-				</p>
+			<?php if ( 'out' === $state[0] ) : ?>
+				<p>It&rsquo;s out on loan. We&rsquo;ll hold it for you when it comes back.</p>
+			<?php elseif ( 'maint' === $state[0] ) : ?>
+				<p>This tool is being repaired or serviced.</p>
 			<?php endif; ?>
-			<p style="margin:6px 0 0 0; color:#50575e; font-size:0.92em;">
-				Reserved on <?php echo mtl_format_date( $r->reservation_date ); ?>
-			</p>
 			<?php
 			// Only a reservation that is actually collectable has a deadline;
 			// anyone still queued behind a loan has no countdown running.
 			// ready_since is checked separately because a hold period of 0
 			// (never expires) still holds the tool from that date, just with
 			// no cut-off.
-			$mtl_ready_since = trim( (string) $r->ready_since );
-			$mtl_collect_by  = mtl_reservation_collect_by( $mtl_ready_since );
-			if ( '' !== $mtl_ready_since ) :
+			if ( '' !== $ready_since ) :
 				?>
-				<p style="margin:6px 0 0 0; color:#50575e; font-size:0.92em;">
-					Ready for pickup since <strong><?php echo mtl_format_date( $mtl_ready_since ); ?></strong>
-				</p>
-			<?php endif; ?>
-			<?php if ( '' !== $mtl_collect_by ) : ?>
-				<p style="margin:6px 0 0 0; color:#50575e; font-size:0.92em;">
-					Please collect by <strong><?php echo mtl_format_date( $mtl_collect_by ); ?></strong>, or the reservation is cancelled and the tool passes to the next person in line.
+				<p>
+					On the hold shelf since <?php echo mtl_format_date( $ready_since, 'M j' ); ?>.
+					<?php if ( '' !== $collect_by ) : ?>
+						<strong>Pick it up by <?php echo mtl_format_date( $collect_by, 'l, M j' ); ?></strong>, or the reservation is cancelled and the tool passes to the next person in line.
+					<?php endif; ?>
 				</p>
 			<?php endif; ?>
 		</div>
 
-		<?php echo mtl_shop_location_block( $r->location ); ?>
-
-		<?php if ( ! empty( $r->categories ) ) : ?>
-			<h4>Categories</h4>
-			<div><?php echo mtl_shop_pills( $r->categories ); ?></div>
-		<?php endif; ?>
-
-		<?php if ( ! empty( $r->subcategories ) ) : ?>
-			<h4>Sub-categories</h4>
-			<div><?php echo mtl_shop_pills( $r->subcategories ); ?></div>
-		<?php endif; ?>
-
-		<?php if ( ! empty( $r->tags ) ) : ?>
-			<h4>Tags</h4>
-			<div><?php echo mtl_shop_pills( $r->tags ); ?></div>
-		<?php endif; ?>
-
 		<?php if ( ! empty( $r->description ) ) : ?>
-			<h4>Description</h4>
+			<h3>About this tool</h3>
 			<p><?php echo nl2br( esc_html( stripslashes( $r->description ) ) ); ?></p>
 		<?php endif; ?>
 
 		<?php if ( ! empty( $r->components ) ) : ?>
-			<h4>What&rsquo;s included</h4>
+			<h3>What&rsquo;s included</h3>
 			<p><?php echo nl2br( esc_html( stripslashes( $r->components ) ) ); ?></p>
+		<?php endif; ?>
+
+		<?php echo mtl_shop_location_block( $r->location ); ?>
+
+		<?php if ( $facts ) : ?>
+			<dl class="mtl-res-facts">
+				<?php foreach ( $facts as $mtl_label => $mtl_value ) : ?>
+					<dt><?php echo esc_html( $mtl_label ); ?></dt>
+					<dd><?php echo esc_html( stripslashes( $mtl_value ) ); ?></dd>
+				<?php endforeach; ?>
+			</dl>
 		<?php endif; ?>
 
 		<?php
@@ -2106,16 +2777,9 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 		echo mtl_tool_all_links_html( $r );
 		?>
 
-		<?php
-		$mtl_cancel_url = add_query_arg(
-			array(
-				'mtl_confirm' => 'one',
-				'rid'         => (int) $r->reservation_id,
-			),
-			$self_url
-		);
-		?>
-		<a class="mtl-member-btn mtl-member-btn-danger" style="margin-top:16px;" href="<?php echo esc_url( $mtl_cancel_url ); ?>">Cancel this reservation</a>
+		<p class="mtl-res-detail-cancel">
+			<a class="mtl-btn-danger" href="<?php echo esc_url( $cancel_url ); ?>">Cancel this reservation</a>
+		</p>
 	</div>
 	<?php
 	return ob_get_clean();
@@ -2126,7 +2790,7 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 // --------------------------------------------------------------------------
 
 /**
- * Renders the member's "My Loans & Reservations" page and handles its
+ * Renders the member's "My loans & reservations" page and handles its
  * cancel-reservation POST actions.
  *
  * @return void Outputs the page via mtl_render_front_shell(), which exits, or redirects and exits.
@@ -2139,7 +2803,7 @@ function mtl_render_member_reservations_page() {
 
 	$member = mtl_current_member();
 	if ( ! $member ) {
-		mtl_render_member_only_notice( 'My Loans & Reservations', mtl_current_member_link_broken() );
+		mtl_render_member_only_notice( 'My loans & reservations', mtl_current_member_link_broken() );
 		return;
 	}
 
@@ -2230,7 +2894,7 @@ function mtl_render_member_reservations_page() {
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$active_loans = $wpdb->get_results(
 		$wpdb->prepare(
-			"SELECT l.loan_id, l.tool_id, l.due_date, t.tool_name
+			"SELECT l.loan_id, l.tool_id, l.loan_date, l.due_date, t.tool_name
          FROM {$tbl_loans} l
          JOIN {$tbl_inv} t ON t.tool_id = l.tool_id
          WHERE l.member_id = %d AND l.return_date IS NULL
@@ -2242,14 +2906,19 @@ function mtl_render_member_reservations_page() {
 	$today_ts = strtotime( current_time( 'Y-m-d' ) );
 	foreach ( $active_loans as $loan ) {
 		$days_left = (int) round( ( strtotime( $loan->due_date ) - $today_ts ) / DAY_IN_SECONDS );
+		// Three days or fewer is "due soon", and gets the warning color.
 		if ( $days_left < 0 ) {
-			$loan->loan_status = 'overdue';
+			$loan->due_class = 'late';
+			$loan->due_label = -1 === $days_left ? 'Overdue by 1 day' : 'Overdue by ' . abs( $days_left ) . ' days';
 		} elseif ( 0 === $days_left ) {
-			$loan->loan_status = 'due_today';
-		} elseif ( $days_left <= 3 ) {
-			$loan->loan_status = 'due_soon';
+			$loan->due_class = 'soon';
+			$loan->due_label = 'Due today';
+		} elseif ( 1 === $days_left ) {
+			$loan->due_class = 'soon';
+			$loan->due_label = 'Due tomorrow';
 		} else {
-			$loan->loan_status = 'normal';
+			$loan->due_class = $days_left <= 3 ? 'soon' : 'fine';
+			$loan->due_label = 'Due in ' . $days_left . ' days';
 		}
 	}
 
@@ -2321,200 +2990,212 @@ function mtl_render_member_reservations_page() {
 		}
 	}
 
+	$confirm_one = 'one' === $confirm && $confirm_row;
+	$confirm_all = 'all' === $confirm && ! empty( $rows );
+
+	// First in line with the hold started: the tool is on the shelf for them.
+	$ready_rows = array();
+	foreach ( $rows as $r ) {
+		if ( 1 === (int) $r->queue_place && '' !== trim( (string) $r->ready_since ) ) {
+			$ready_rows[] = $r;
+		}
+	}
+
+	$look    = mtl_public_look();
+	$notices = mtl_account_locked_banner_html() . mtl_front_notice_html() . mtl_agreements_banner_html();
+	$giving  = mtl_giving_section_html();
+
 	ob_start();
 	echo mtl_member_page_styles();
 	?>
-	<?php $listing = ! empty( $rows ) && 'all' !== $confirm && ! ( 'one' === $confirm && $confirm_row ); ?>
-	<div class="mtl-member-wrap<?php echo $listing ? ' mtl-member-wrap-wide' : ''; ?>">
-		<a class="mtl-member-back" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a>
+	<div class="mtl-member mtl-res-page">
+		<div class="mtl-res-main">
+			<h1 class="mtl-page-title">Your loans and reservations</h1>
 
-		<?php echo mtl_account_locked_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
-		<?php echo mtl_front_notice_html(); ?>
-		<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
+			<?php if ( '' !== $notices ) : ?>
+				<div class="mtl-member-notices">
+					<?php echo $notices; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- each helper escapes its own output. ?>
+				</div>
+			<?php endif; ?>
 
-		<div class="mtl-member-card">
-			<h2>Active Loans</h2>
-			<?php if ( empty( $active_loans ) ) : ?>
-				<p class="mtl-member-empty">You don&rsquo;t have any tools checked out right now.</p>
+			<?php if ( $confirm_one ) : ?>
+				<section class="mtl-panel mtl-confirm" aria-labelledby="mtl-confirm-title">
+					<h2 id="mtl-confirm-title">Cancel this reservation?</h2>
+					<p>You&rsquo;ll lose your place in line for <strong><?php echo esc_html( stripslashes( $confirm_row->tool_name ) ); ?></strong>, and this can&rsquo;t be undone.</p>
+					<div class="mtl-confirm-actions">
+						<form method="post" action="<?php echo esc_url( $self ); ?>">
+							<?php wp_nonce_field( 'mtl_res_action', 'mtl_res_nonce' ); ?>
+							<input type="hidden" name="mtl_action" value="cancel_reservation">
+							<input type="hidden" name="reservation_id" value="<?php echo (int) $confirm_row->reservation_id; ?>">
+							<button type="submit" class="mtl-btn mtl-member-danger-btn">Yes, cancel this reservation</button>
+						</form>
+						<a class="mtl-btn" href="<?php echo esc_url( $self ); ?>">No, keep it</a>
+					</div>
+				</section>
+
+			<?php elseif ( $confirm_all ) : ?>
+				<?php $mtl_one = ( 1 === count( $rows ) ); ?>
+				<section class="mtl-panel mtl-confirm" aria-labelledby="mtl-confirm-title">
+					<h2 id="mtl-confirm-title"><?php echo $mtl_one ? 'Cancel your reservation?' : 'Cancel all your reservations?'; ?></h2>
+					<?php if ( $mtl_one ) : ?>
+						<p>You&rsquo;ll lose your place in line, and this can&rsquo;t be undone.</p>
+					<?php else : ?>
+						<p>All <?php echo count( $rows ); ?> of your reservations will be cancelled. You&rsquo;ll lose every place in line, and this can&rsquo;t be undone.</p>
+					<?php endif; ?>
+					<div class="mtl-confirm-actions">
+						<form method="post" action="<?php echo esc_url( $self ); ?>">
+							<?php wp_nonce_field( 'mtl_res_action', 'mtl_res_nonce' ); ?>
+							<input type="hidden" name="mtl_action" value="cancel_all">
+							<button type="submit" class="mtl-btn mtl-member-danger-btn"><?php echo $mtl_one ? 'Yes, cancel it' : 'Yes, cancel all reservations'; ?></button>
+						</form>
+						<a class="mtl-btn" href="<?php echo esc_url( $self ); ?>"><?php echo $mtl_one ? 'No, keep it' : 'No, keep them'; ?></a>
+					</div>
+				</section>
+
 			<?php else : ?>
-				<table class="mtl-member-table">
-					<thead>
-						<tr>
-							<th>Tool</th>
-							<th>Tool ID</th>
-							<th>Due</th>
-						</tr>
-					</thead>
-					<tbody>
-						<?php foreach ( $active_loans as $loan ) : ?>
-							<tr>
-								<td><?php echo esc_html( stripslashes( $loan->tool_name ) ); ?></td>
-								<td class="mtl-member-tool-id">#<?php echo (int) $loan->tool_id; ?></td>
-								<td>
-									<?php echo mtl_format_date( $loan->due_date ); ?>
-									<?php if ( 'overdue' === $loan->loan_status ) : ?>
-										<span class="mtl-pill mtl-pill-red" style="margin-left:6px;">Overdue</span>
-									<?php elseif ( 'due_today' === $loan->loan_status ) : ?>
-										<span class="mtl-pill mtl-pill-orange" style="margin-left:6px;">Due today</span>
-									<?php elseif ( 'due_soon' === $loan->loan_status ) : ?>
-										<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Due soon</span>
-									<?php endif; ?>
-								</td>
-							</tr>
-						<?php endforeach; ?>
-					</tbody>
-				</table>
+				<?php
+				foreach ( $ready_rows as $r ) :
+					$mtl_name       = stripslashes( $r->tool_name );
+					$mtl_collect_by = mtl_reservation_collect_by( $r->ready_since );
+					?>
+					<section class="mtl-ready<?php echo empty( $r->photo_url ) ? ' mtl-ready-no-photo' : ''; ?>" aria-labelledby="<?php echo esc_attr( 'mtl-ready-' . (int) $r->reservation_id ); ?>">
+						<?php if ( ! empty( $r->photo_url ) ) : ?>
+							<img class="mtl-ready-photo" src="<?php echo esc_url( $r->photo_url ); ?>" alt="" loading="lazy">
+						<?php endif; ?>
+						<div>
+							<h2 class="mtl-ready-title" id="<?php echo esc_attr( 'mtl-ready-' . (int) $r->reservation_id ); ?>"><?php echo esc_html( $mtl_name ); ?> is ready for you</h2>
+							<p>
+								On the hold shelf since <?php echo mtl_format_date( $r->ready_since, 'l, M j' ); ?>.
+								<?php if ( '' !== $mtl_collect_by ) : ?>
+									<span class="mtl-ready-by">Pick it up by <?php echo mtl_format_date( $mtl_collect_by, 'l, M j' ); ?>.</span>
+								<?php endif; ?>
+							</p>
+							<?php if ( '' !== $pickup_directions ) : ?>
+								<p class="mtl-ready-note"><?php echo nl2br( esc_html( $pickup_directions ) ); ?></p>
+							<?php endif; ?>
+						</div>
+						<a class="mtl-btn" href="<?php echo esc_attr( '#res-tool-' . (int) $r->reservation_id ); ?>">Tool details<span class="mtl-sr-only"> for <?php echo esc_html( $mtl_name ); ?></span></a>
+					</section>
+				<?php endforeach; ?>
+
+				<section aria-labelledby="mtl-loans-title">
+					<div class="mtl-section-head">
+						<h2 id="mtl-loans-title">Checked out</h2>
+						<?php if ( $active_loans ) : ?>
+							<span><?php echo esc_html( count( $active_loans ) . ( 1 === count( $active_loans ) ? ' tool' : ' tools' ) ); ?></span>
+						<?php endif; ?>
+					</div>
+					<?php if ( empty( $active_loans ) ) : ?>
+						<div class="mtl-panel">
+							<p class="mtl-member-empty">You don&rsquo;t have any tools checked out.</p>
+						</div>
+					<?php else : ?>
+						<ul class="mtl-slips">
+							<?php
+							foreach ( $active_loans as $loan ) :
+								$mtl_meta = $look['show_tool_numbers'] ? 'No. ' . (int) $loan->tool_id . ', borrowed ' : 'Borrowed ';
+								?>
+								<li class="mtl-slip<?php echo 'late' === $loan->due_class ? ' mtl-slip-late' : ''; ?>">
+									<div class="mtl-slip-due">
+										<span class="mtl-sr-only">Due</span>
+										<span class="mtl-slip-m"><?php echo mtl_format_date( $loan->due_date, 'M' ); ?></span>
+										<span class="mtl-slip-d"><?php echo mtl_format_date( $loan->due_date, 'j' ); ?></span>
+										<span class="mtl-slip-w"><?php echo mtl_format_date( $loan->due_date, 'D' ); ?></span>
+									</div>
+									<div>
+										<h3><?php echo esc_html( stripslashes( $loan->tool_name ) ); ?></h3>
+										<p class="mtl-slip-meta"><?php echo esc_html( $mtl_meta ); ?><?php echo mtl_format_date( $loan->loan_date, 'M j' ); ?></p>
+									</div>
+									<p class="mtl-slip-state mtl-slip-state-<?php echo esc_attr( $loan->due_class ); ?>"><?php echo esc_html( $loan->due_label ); ?></p>
+								</li>
+							<?php endforeach; ?>
+						</ul>
+					<?php endif; ?>
+				</section>
+
+				<?php if ( ! $ready_rows && '' !== $pickup_directions ) : ?>
+					<p class="mtl-pickup-note"><strong>Picking up a tool.</strong> <?php echo nl2br( esc_html( $pickup_directions ) ); ?></p>
+				<?php endif; ?>
+
+				<section id="mtl-reservations" aria-labelledby="mtl-res-title">
+					<div class="mtl-section-head">
+						<h2 id="mtl-res-title">Reservations</h2>
+						<?php if ( $rows ) : ?>
+							<span><?php echo esc_html( count( $rows ) . ( 1 === count( $rows ) ? ' tool' : ' tools' ) ); ?></span>
+							<span class="mtl-section-aside">Select a tool to see its details.</span>
+						<?php endif; ?>
+					</div>
+					<?php if ( empty( $rows ) ) : ?>
+						<div class="mtl-panel">
+							<p class="mtl-member-empty">You don&rsquo;t have any reservations. Browse the <a href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">tool catalog</a> and reserve a tool to join its queue.</p>
+						</div>
+					<?php else : ?>
+						<ul class="mtl-panel mtl-res-list">
+							<?php
+							foreach ( $rows as $r ) :
+								$mtl_name  = stripslashes( $r->tool_name );
+								$mtl_meta  = mtl_member_tool_meta( $r->tool_id, $r->brand );
+								$mtl_state = mtl_member_reservation_state( $r );
+								// Only opens the confirm prompt; the cancel itself is a POST.
+								$mtl_cancel_url = add_query_arg(
+									array(
+										'mtl_confirm' => 'one',
+										'rid'         => (int) $r->reservation_id,
+									),
+									$self
+								);
+								?>
+								<li class="mtl-res-row">
+									<div>
+										<h3><a href="<?php echo esc_attr( '#res-tool-' . (int) $r->reservation_id ); ?>"><?php echo esc_html( $mtl_name ); ?></a></h3>
+										<?php if ( '' !== $mtl_meta ) : ?>
+											<p class="mtl-res-meta"><?php echo esc_html( $mtl_meta ); ?></p>
+										<?php endif; ?>
+									</div>
+									<div class="mtl-res-line">
+										<strong><?php echo esc_html( mtl_member_ordinal( $r->queue_place ) ); ?></strong> of <?php echo (int) $r->queue_size; ?> in line
+										<?php echo mtl_member_line_dots_html( $r->queue_place, $r->queue_size ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from integers only. ?>
+									</div>
+									<div class="mtl-res-state">
+										<span class="mtl-status mtl-status-<?php echo esc_attr( $mtl_state[0] ); ?>"><?php echo esc_html( $mtl_state[1] ); ?></span>
+										<?php echo esc_html( $mtl_state[2] ); ?>
+									</div>
+									<a class="mtl-btn-danger mtl-res-cancel" href="<?php echo esc_url( $mtl_cancel_url ); ?>">Cancel<span class="mtl-sr-only"> your reservation for <?php echo esc_html( $mtl_name ); ?></span></a>
+								</li>
+							<?php endforeach; ?>
+						</ul>
+						<?php if ( count( $rows ) > 1 ) : ?>
+							<div class="mtl-res-foot">
+								<a class="mtl-btn-danger" href="<?php echo esc_url( add_query_arg( 'mtl_confirm', 'all', $self ) ); ?>">Cancel all reservations</a>
+							</div>
+						<?php endif; ?>
+					<?php endif; ?>
+				</section>
 			<?php endif; ?>
 		</div>
 
-		<?php if ( '' !== $pickup_directions ) : ?>
-			<div class="mtl-member-card mtl-member-directions">
-				<strong>Picking up a tool</strong>
-				<p style="margin:6px 0 0 0;"><?php echo nl2br( esc_html( $pickup_directions ) ); ?></p>
-			</div>
+		<?php if ( $rows && ! $confirm_one && ! $confirm_all ) : ?>
+			<?php // Every panel is printed and CSS :target opens one, as in the catalog. ?>
+			<aside class="mtl-res-detail" aria-label="Reservation details">
+				<?php foreach ( $rows as $r ) : ?>
+					<div class="mtl-res-detail-panel" id="<?php echo esc_attr( 'res-tool-' . (int) $r->reservation_id ); ?>" tabindex="-1" role="region" aria-labelledby="<?php echo esc_attr( 'res-tool-' . (int) $r->reservation_id . '-title' ); ?>">
+						<?php echo mtl_render_reservation_detail_panel( $r, $self ); ?>
+					</div>
+				<?php endforeach; ?>
+			</aside>
 		<?php endif; ?>
 
-		<?php if ( 'one' === $confirm && $confirm_row ) : ?>
-			<div class="mtl-member-card">
-				<h2>My Reservations</h2>
-				<p style="margin-top:0;">Cancel your reservation for <strong><?php echo esc_html( stripslashes( $confirm_row->tool_name ) ); ?></strong>? You&rsquo;ll lose your current place in line, and this can&rsquo;t be undone.</p>
-				<div class="mtl-member-confirm-actions">
-					<form method="post" action="<?php echo esc_url( $self ); ?>" style="margin:0;">
-						<?php wp_nonce_field( 'mtl_res_action', 'mtl_res_nonce' ); ?>
-						<input type="hidden" name="mtl_action" value="cancel_reservation">
-						<input type="hidden" name="reservation_id" value="<?php echo (int) $confirm_row->reservation_id; ?>">
-						<button type="submit" class="mtl-member-btn mtl-member-btn-danger">Yes, cancel this reservation</button>
-					</form>
-					<a class="mtl-member-btn mtl-member-btn-ghost" href="<?php echo esc_url( $self ); ?>">No, keep it</a>
-				</div>
-			</div>
-
-		<?php elseif ( 'all' === $confirm && ! empty( $rows ) ) : ?>
-			<div class="mtl-member-card">
-				<h2>My Reservations</h2>
-				<?php $mtl_one = ( 1 === count( $rows ) ); ?>
-				<?php if ( $mtl_one ) : ?>
-					<p style="margin-top:0;">Cancel <strong>your reservation</strong>? You&rsquo;ll lose your place in line, and this can&rsquo;t be undone.</p>
-				<?php else : ?>
-					<p style="margin-top:0;">Cancel <strong>all <?php echo count( $rows ); ?></strong> of your reservations? You&rsquo;ll lose every place in line, and this can&rsquo;t be undone.</p>
-				<?php endif; ?>
-				<div class="mtl-member-confirm-actions">
-					<form method="post" action="<?php echo esc_url( $self ); ?>" style="margin:0;">
-						<?php wp_nonce_field( 'mtl_res_action', 'mtl_res_nonce' ); ?>
-						<input type="hidden" name="mtl_action" value="cancel_all">
-						<button type="submit" class="mtl-member-btn mtl-member-btn-danger"><?php echo $mtl_one ? 'Yes, cancel it' : 'Yes, cancel all reservations'; ?></button>
-					</form>
-					<a class="mtl-member-btn mtl-member-btn-ghost" href="<?php echo esc_url( $self ); ?>"><?php echo $mtl_one ? 'No, keep it' : 'No, keep them'; ?></a>
-				</div>
-			</div>
-
-		<?php elseif ( empty( $rows ) ) : ?>
-			<div class="mtl-member-card">
-				<h2>My Reservations</h2>
-				<p class="mtl-member-empty">You don&rsquo;t have any active reservations. Browse the <a href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">tool catalog</a> and reserve a tool to join its waiting queue.</p>
-			</div>
-
-		<?php else : ?>
-			<?php // Detail panels open via CSS :target, as in the shop catalog. ?>
-			<div class="mtl-res-layout">
-				<div class="mtl-res-main">
-					<div class="mtl-member-card">
-						<h2>My Reservations</h2>
-						<p style="margin-top:0; color:#50575e;">Select a tool name to see its full details. Once you reach the front of the queue, you&rsquo;ll see whether the tool is ready to pick up or still out on loan.</p>
-						<table class="mtl-member-table">
-							<thead>
-								<tr>
-									<th>Tool</th>
-									<th>Tool ID</th>
-									<th>Place in line</th>
-									<th></th>
-								</tr>
-							</thead>
-							<tbody>
-								<?php
-								foreach ( $rows as $r ) :
-									$is_first  = ( 1 === (int) $r->queue_place );
-									$on_loan   = ( (int) $r->active_loans > 0 );
-									$available = ! $on_loan && empty( $r->maintenance_at );
-									?>
-									<tr>
-										<td><a class="mtl-res-name-link" href="#<?php echo esc_attr( 'res-tool-' . (int) $r->reservation_id ); ?>"><?php echo esc_html( stripslashes( $r->tool_name ) ); ?></a></td>
-										<td class="mtl-member-tool-id">#<?php echo (int) $r->tool_id; ?></td>
-										<td>
-											<span class="mtl-member-queue-place"><?php echo (int) $r->queue_place; ?></span>
-											<span style="color:#8c8f94;"> of <?php echo (int) $r->queue_size; ?></span>
-											<?php if ( $is_first && $available ) : ?>
-												<span class="mtl-pill mtl-pill-green" style="margin-left:6px;">Ready for pickup</span>
-												<?php
-												// Show when the hold started, not just when it ends: a member
-												// coming back to this page wants to know how long the tool has
-												// been waiting for them. ready_since drives the deadline, so
-												// the two always agree.
-												$mtl_ready_since = trim( (string) $r->ready_since );
-												$mtl_collect_by  = mtl_reservation_collect_by( $mtl_ready_since );
-												if ( '' !== $mtl_ready_since ) :
-													?>
-													<span style="color:#50575e; font-size:0.85em; margin-left:6px;">
-														ready since <?php echo mtl_format_date( $mtl_ready_since ); ?>
-														<?php if ( '' !== $mtl_collect_by ) : ?>
-															&middot; collect by <?php echo mtl_format_date( $mtl_collect_by ); ?>
-														<?php endif; ?>
-													</span>
-												<?php endif; ?>
-											<?php elseif ( $is_first && $on_loan ) : ?>
-												<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Out on loan</span>
-											<?php elseif ( $is_first ) : ?>
-												<span class="mtl-pill mtl-pill-amber" style="margin-left:6px;">Under maintenance</span>
-											<?php endif; ?>
-										</td>
-										<td>
-											<?php
-											// Only opens the confirm prompt; the cancel itself is a POST.
-											$mtl_cancel_url = add_query_arg(
-												array(
-													'mtl_confirm' => 'one',
-													'rid' => (int) $r->reservation_id,
-												),
-												$self
-											);
-											?>
-											<a class="mtl-member-btn mtl-member-btn-danger" style="padding:5px 12px; font-size:0.85em;" href="<?php echo esc_url( $mtl_cancel_url ); ?>">Cancel</a>
-										</td>
-									</tr>
-								<?php endforeach; ?>
-							</tbody>
-						</table>
-
-						<p style="margin: 18px 0 0 0;">
-							<a class="mtl-member-btn mtl-member-btn-danger" href="<?php echo esc_url( add_query_arg( 'mtl_confirm', 'all', $self ) ); ?>"><?php echo 1 === count( $rows ) ? 'Cancel reservation' : 'Cancel all reservations'; ?></a>
-						</p>
-					</div>
-				</div>
-
-				<div class="mtl-res-detail-col">
-					<div class="mtl-res-detail" id="mtl-res-detail">
-						<div class="mtl-res-detail-empty">
-							<p style="margin:0;">Select a tool name to see its full details and your reservation here.</p>
-						</div>
-						<?php foreach ( $rows as $r ) : ?>
-							<div class="mtl-res-detail-panel" id="<?php echo esc_attr( 'res-tool-' . (int) $r->reservation_id ); ?>" tabindex="-1">
-								<?php echo mtl_render_reservation_detail_panel( $r, $self ); ?>
-							</div>
-						<?php endforeach; ?>
-					</div>
-				</div>
+		<?php if ( '' !== $giving ) : ?>
+			<?php // Last on the page, so it never pushes a cancel confirmation down. ?>
+			<div class="mtl-res-after">
+				<?php echo $giving; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- mtl_giving_section_html() escapes its own output. ?>
 			</div>
 		<?php endif; ?>
-
-		<?php
-		// Last on the page, so it never pushes a cancel confirmation down.
-		echo mtl_giving_section_html();
-		?>
 	</div>
 	<?php
 	$body = ob_get_clean();
 
-	mtl_render_front_shell( 'My Loans & Reservations', $body, mtl_member_page_footer() );
+	mtl_render_front_shell( 'My loans & reservations', $body );
 }
 
 // --------------------------------------------------------------------------
@@ -2535,7 +3216,7 @@ function mtl_render_account_page() {
 
 	$member = mtl_current_member();
 	if ( ! $member ) {
-		mtl_render_member_only_notice( 'Account', mtl_current_member_link_broken() );
+		mtl_render_member_only_notice( 'My account', mtl_current_member_link_broken() );
 		return;
 	}
 
@@ -2817,7 +3498,7 @@ function mtl_render_account_page() {
 			'A government-issued ID and proof of address are required to become a verified member and to check out tools. Stop by our office to verify membership.'
 		)
 	);
-	// Optional Setup-page image that replaces the green Verified pill.
+	// Optional Setup-page image that replaces the green Verified check.
 	$verified_badge_image_url = trim( (string) get_option( 'mtl_verified_badge_image_url', '' ) );
 
 	// Past + current loans for this member.
@@ -2883,28 +3564,62 @@ function mtl_render_account_page() {
 		$has_active_reservation = ( $res_counts && (int) $res_counts->active > 0 );
 	}
 
+	// When staff verified them, for the Membership panel. Empty on rows saved
+	// before the column was filled in, and the sentence then leaves it out.
+	$verified_at = '';
+	if ( $is_verified ) {
+		$verified_at = (string) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+				"SELECT verified_at FROM {$tbl_verif} WHERE member_id = %d",
+				(int) $member->member_id
+			)
+		);
+	}
+
+	// Tools out now are on My loans & reservations, so the history lists only
+	// what has come back.
+	$past_loans = array();
+	foreach ( $loans as $mtl_loan ) {
+		if ( ! empty( $mtl_loan->return_date ) ) {
+			$past_loans[] = $mtl_loan;
+		}
+	}
+
+	$full_name = trim( stripslashes( (string) $member->first_name ) . ' ' . stripslashes( (string) $member->last_name ) );
+	$notices   = mtl_account_locked_banner_html() . mtl_front_notice_html() . mtl_agreements_banner_html();
+
 	ob_start();
 	echo mtl_member_page_styles();
 	?>
-	<div class="mtl-member-wrap">
-		<a class="mtl-member-back" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a>
+	<div class="mtl-member mtl-acct-page">
+		<h1 class="mtl-page-title"><?php echo esc_html( $full_name ); ?></h1>
+		<?php if ( ! $confirm_delete ) : ?>
+			<p class="mtl-member-lede">
+				<?php if ( ! empty( $member->signup_date ) && 0 !== strpos( (string) $member->signup_date, '0000' ) ) : ?>
+					Member since <?php echo mtl_format_date( $member->signup_date, 'F Y' ); ?>.
+				<?php endif; ?>
+				You sign in with <?php echo esc_html( $user->user_email ); ?>.
+			</p>
+		<?php endif; ?>
 
-		<?php echo mtl_account_locked_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
-		<?php echo mtl_front_notice_html(); ?>
-		<?php echo mtl_agreements_banner_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped inside the helper. ?>
-
-		<?php if ( ! empty( $errors ) ) : ?>
-			<div class="mtl-front-notice mtl-front-notice-error">
-				<?php foreach ( $errors as $e ) : ?>
-					<div><?php echo esc_html( $e ); ?></div>
-				<?php endforeach; ?>
+		<?php if ( '' !== $notices || ! empty( $errors ) ) : ?>
+			<div class="mtl-member-notices">
+				<?php echo $notices; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- each helper escapes its own output. ?>
+				<?php if ( ! empty( $errors ) ) : ?>
+					<div class="mtl-front-notice mtl-front-notice-error" role="alert">
+						<?php foreach ( $errors as $e ) : ?>
+							<p><?php echo esc_html( $e ); ?></p>
+						<?php endforeach; ?>
+					</div>
+				<?php endif; ?>
 			</div>
 		<?php endif; ?>
 
 		<?php if ( $confirm_delete ) : ?>
-			<div class="mtl-member-card">
-				<h2>Delete Account and Remove Personal Data</h2>
-				<p style="margin-top:0;">This permanently deletes your account and cannot be undone.</p>
+			<section class="mtl-panel mtl-confirm" aria-labelledby="mtl-confirm-title">
+				<h2 id="mtl-confirm-title">Delete your account?</h2>
+				<p>This permanently deletes your account and cannot be undone.</p>
 				<p>Your name, address, contact details and verification documents will be removed, and your sign-in will be deleted, so you won&rsquo;t be able to sign in again.</p>
 				<?php if ( $has_history ) : ?>
 					<p>Your past loans and reservations stay on file under &ldquo;former member&rdquo;, with nothing that identifies you, so the library&rsquo;s tool records stay accurate.</p>
@@ -2912,20 +3627,20 @@ function mtl_render_account_page() {
 				<?php if ( $has_active_reservation ) : ?>
 					<p><?php echo 1 === (int) $res_counts->active ? 'You currently have an active reservation. It will be cancelled' : 'You currently have active reservations. They will be cancelled'; ?> as part of deleting your account.</p>
 				<?php endif; ?>
-				<div class="mtl-member-confirm-actions">
-					<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>" style="margin:0;">
+				<div class="mtl-confirm-actions">
+					<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">
 						<?php wp_nonce_field( 'mtl_delete_account_action', 'mtl_delete_account_nonce' ); ?>
-						<button type="submit" name="mtl_delete_account" value="1" class="mtl-member-btn mtl-member-btn-danger">Yes, permanently delete my account</button>
+						<button type="submit" name="mtl_delete_account" value="1" class="mtl-btn mtl-member-danger-btn">Yes, delete my account</button>
 					</form>
-					<a class="mtl-member-btn mtl-member-btn-ghost" href="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">No, keep my account</a>
+					<a class="mtl-btn" href="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">No, keep it</a>
 				</div>
-			</div>
+			</section>
 		<?php else : ?>
 
 			<?php
 			// --- Member agreements ---
-			// Split between the outstanding form here and the receipt at the
-			// foot of the page.
+			// Split between the outstanding form here and the receipt in the
+			// folding list below.
 			$mtl_ag_outstanding     = mtl_agreements_online() ? mtl_member_outstanding_agreements( (int) $member->member_id ) : array();
 			$mtl_ag_acceptances     = mtl_agreements_tracking() ? mtl_get_member_acceptances( (int) $member->member_id ) : array();
 			$mtl_ag_outstanding_ids = array_map( 'intval', wp_list_pluck( $mtl_ag_outstanding, 'agreement_id' ) );
@@ -2936,15 +3651,21 @@ function mtl_render_account_page() {
 			$mtl_ag_superseded  = array();
 			$mtl_ag_receipt     = array();
 			$mtl_ag_retired_rec = array();
+			$mtl_ag_latest      = '';
 			foreach ( $mtl_ag_acceptances as $mtl_acceptance ) {
 				$mtl_aid = (int) $mtl_acceptance->agreement_id;
 				if ( in_array( $mtl_aid, $mtl_ag_outstanding_ids, true ) ) {
 					$mtl_ag_superseded[ $mtl_aid ] = sprintf(
 						/* translators: %s: date the member agreed to the earlier version. */
 						__( 'You agreed to an earlier version of this on %s.', 'my-tool-library' ),
-						wp_strip_all_tags( mtl_format_utc_datetime( $mtl_acceptance->accepted_at, 'j F Y' ) )
+						wp_strip_all_tags( mtl_format_utc_datetime( $mtl_acceptance->accepted_at, 'M j, Y' ) )
 					);
 					continue;
+				}
+
+				// The receipt row's summary shows the most recent date.
+				if ( (string) $mtl_acceptance->accepted_at > $mtl_ag_latest ) {
+					$mtl_ag_latest = (string) $mtl_acceptance->accepted_at;
 				}
 
 				// Retired ones stay in the receipt, sorted after the active ones
@@ -2963,16 +3684,16 @@ function mtl_render_account_page() {
 
 			<?php if ( $mtl_ag_outstanding ) : ?>
 				<?php
-				// Above My Account: members arrive from the reserve gate or an
-				// email to do just this.
+				// Above everything else: members arrive from the reserve gate or
+				// an email to do just this.
 				?>
-				<div class="mtl-member-card" id="mtl-agreements">
-					<h2>Member agreements</h2>
+				<section class="mtl-panel mtl-acct-agree" id="mtl-agreements" aria-labelledby="mtl-agreements-title">
+					<h2 id="mtl-agreements-title">Member agreements</h2>
 
 					<?php if ( ! empty( $agreement_errors ) ) : ?>
-						<div class="mtl-front-notice mtl-front-notice-error" style="max-width:none;">
+						<div class="mtl-front-notice mtl-front-notice-error">
 							<?php foreach ( $agreement_errors as $mtl_ag_err ) : ?>
-								<div><?php echo wp_kses_post( $mtl_ag_err ); ?></div>
+								<p><?php echo wp_kses_post( $mtl_ag_err ); ?></p>
 							<?php endforeach; ?>
 						</div>
 					<?php endif; ?>
@@ -2982,7 +3703,7 @@ function mtl_render_account_page() {
 					<?php
 					// No #mtl-agreements on the action: browsers ignore autofocus
 					// when the URL names a fragment, and the error summary above
-					// relies on it. The card is near the top of the page anyway.
+					// relies on it. The panel is near the top of the page anyway.
 					?>
 					<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">
 						<?php wp_nonce_field( 'mtl_agreements_agree_action', 'mtl_agreements_agree_nonce' ); ?>
@@ -3002,54 +3723,285 @@ function mtl_render_account_page() {
 							)
 						);
 						?>
-						<p style="margin: 0;">
-							<button type="submit" name="mtl_agree" value="1" class="mtl-member-btn">Agree</button>
-						</p>
+						<div class="mtl-form-actions">
+							<button type="submit" name="mtl_agree" value="1" class="mtl-btn mtl-btn-primary">Agree</button>
+						</div>
 					</form>
-				</div>
+				</section>
 			<?php elseif ( $agreement_recorded ) : ?>
 				<?php // role="status" so screen readers announce the change. ?>
-				<div class="mtl-front-notice mtl-front-notice-success" role="status">
-					Thank you. Your agreement has been recorded.
+				<div class="mtl-member-notices">
+					<div class="mtl-front-notice mtl-front-notice-success" role="status">
+						Thank you. Your agreement has been recorded.
+					</div>
 				</div>
 			<?php endif; ?>
 
-			<div class="mtl-member-card">
-				<h2>My Account</h2>
-				<p style="margin-top:0;">
-					Membership status:
-					<?php if ( $is_verified && '' !== $verified_badge_image_url ) : ?>
-						<img class="mtl-badge-img mtl-verified-badge-img" src="<?php echo esc_url( $verified_badge_image_url ); ?>" alt="Verified" title="Verified">
-					<?php elseif ( $is_verified ) : ?>
-						<span class="mtl-pill mtl-pill-green">Verified</span>
+			<div class="mtl-panel mtl-acct-who">
+				<section aria-labelledby="mtl-acct-membership">
+					<h2 id="mtl-acct-membership">Membership</h2>
+					<?php if ( $is_verified ) : ?>
+						<div class="mtl-verified">
+							<?php if ( '' !== $verified_badge_image_url ) : ?>
+								<img class="mtl-verified-badge-img" src="<?php echo esc_url( $verified_badge_image_url ); ?>" alt="">
+							<?php else : ?>
+								<span class="mtl-verified-check" aria-hidden="true">&#10003;</span>
+							<?php endif; ?>
+							<div>
+								<strong>Verified</strong>
+								<?php if ( '' !== $verified_at ) : ?>
+									<p>Staff checked your photo ID and proof of address on <?php echo mtl_format_date( $verified_at, 'M j, Y' ); ?>.</p>
+								<?php else : ?>
+									<p>Staff have checked your photo ID and proof of address.</p>
+								<?php endif; ?>
+							</div>
+						</div>
 					<?php else : ?>
-						<span class="mtl-pill mtl-pill-grey">Not yet verified</span>
+						<div class="mtl-verified">
+							<div>
+								<strong>Not yet verified</strong>
+								<?php if ( '' !== $verification_directions ) : ?>
+									<p><?php echo nl2br( esc_html( $verification_directions ) ); ?></p>
+								<?php endif; ?>
+							</div>
+						</div>
 					<?php endif; ?>
-				</p>
-				<?php if ( ! $is_verified && '' !== $verification_directions ) : ?>
-					<p class="mtl-member-hint" style="font-size:0.9em;"><?php echo nl2br( esc_html( $verification_directions ) ); ?></p>
+				</section>
+				<section aria-labelledby="mtl-acct-trainings">
+					<h2 id="mtl-acct-trainings">Trainings</h2>
+					<?php if ( ! empty( $my_current_trainings ) ) : ?>
+						<ul class="mtl-acct-chips" role="list">
+							<?php foreach ( $my_current_trainings as $mtl_training ) : ?>
+								<li class="mtl-chip">
+									<?php if ( '' !== $mtl_training['badge'] ) : ?>
+										<img class="mtl-chip-badge" src="<?php echo esc_url( $mtl_training['badge'] ); ?>" alt="">
+									<?php else : ?>
+										<span class="mtl-chip-check" aria-hidden="true">&#10003;</span>
+									<?php endif; ?>
+									<?php echo esc_html( $mtl_training['name'] ); ?>
+								</li>
+							<?php endforeach; ?>
+						</ul>
+					<?php else : ?>
+						<p class="mtl-acct-none">None yet</p>
+					<?php endif; ?>
+					<p class="mtl-acct-fine">Staff record trainings at the desk. Some tools need one before you borrow them.</p>
+				</section>
+			</div>
+
+			<div class="mtl-panel mtl-acct-panels">
+				<?php
+				// Closed by default, but forced open when a submitted edit just
+				// failed validation, or is waiting on the verification warning;
+				// otherwise the member couldn't see what it refers to.
+				?>
+				<details <?php echo ( ! empty( $errors ) || $pending_details ) ? 'open' : ''; ?>>
+					<summary><span class="mtl-acct-sum-title">Your details</span><span class="mtl-acct-sum-note">Name, address, phone</span></summary>
+					<div class="mtl-acct-body">
+						<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>" id="mtl-account-form">
+							<?php wp_nonce_field( 'mtl_account_action', 'mtl_account_nonce' ); ?>
+
+							<div class="mtl-field-row">
+								<div class="mtl-field">
+									<label for="mtl-ac-first">First name</label>
+									<input type="text" id="mtl-ac-first" name="first_name" value="<?php echo esc_attr( $details_form['first_name'] ); ?>" autocomplete="given-name" required>
+								</div>
+								<div class="mtl-field">
+									<label for="mtl-ac-last">Last name</label>
+									<input type="text" id="mtl-ac-last" name="last_name" value="<?php echo esc_attr( $details_form['last_name'] ); ?>" autocomplete="family-name" required>
+								</div>
+							</div>
+
+							<div class="mtl-field">
+								<label for="mtl-ac-address1">Street address</label>
+								<input type="text" id="mtl-ac-address1" name="address_line1" value="<?php echo esc_attr( $details_form['address_line1'] ); ?>" autocomplete="address-line1" required>
+							</div>
+
+							<div class="mtl-field">
+								<label for="mtl-ac-address2">Address line 2 <small>(optional)</small></label>
+								<input type="text" id="mtl-ac-address2" name="address_line2" value="<?php echo esc_attr( $details_form['address_line2'] ); ?>" autocomplete="address-line2">
+							</div>
+
+							<div class="mtl-field-row">
+								<div class="mtl-field">
+									<label for="mtl-ac-city">City</label>
+									<input type="text" id="mtl-ac-city" name="city" value="<?php echo esc_attr( $details_form['city'] ); ?>" autocomplete="address-level2" required>
+								</div>
+								<div class="mtl-field">
+									<label for="mtl-ac-state">State or province</label>
+									<select id="mtl-ac-state" name="state" required>
+										<?php foreach ( mtl_get_state_options() as $mtl_state_code => $mtl_state_label ) : ?>
+											<option value="<?php echo esc_attr( $mtl_state_code ); ?>" <?php selected( $details_form['state'], $mtl_state_code ); ?>><?php echo esc_html( $mtl_state_label ); ?> (<?php echo esc_html( $mtl_state_code ); ?>)</option>
+										<?php endforeach; ?>
+									</select>
+								</div>
+							</div>
+
+							<div class="mtl-field-row">
+								<div class="mtl-field">
+									<label for="mtl-ac-zip">ZIP or postal code</label>
+									<input type="text" id="mtl-ac-zip" name="zip_code" value="<?php echo esc_attr( $details_form['zip_code'] ); ?>" autocomplete="postal-code" required>
+								</div>
+								<div class="mtl-field">
+									<label for="mtl-ac-country">Country</label>
+									<select id="mtl-ac-country" name="country" required>
+										<?php foreach ( mtl_get_country_options() as $mtl_country_name ) : ?>
+											<option value="<?php echo esc_attr( $mtl_country_name ); ?>" <?php selected( $details_form['country'], $mtl_country_name ); ?>><?php echo esc_html( $mtl_country_name ); ?></option>
+										<?php endforeach; ?>
+									</select>
+								</div>
+							</div>
+
+							<div class="mtl-field">
+								<label for="mtl-ac-phone_national">Phone number</label>
+								<?php mtl_render_phone_input( $details_form['phone_iso'], $details_form['phone_national'], 'mtl-ac-' ); ?>
+							</div>
+
+							<p class="mtl-form-note">To change the email address you sign in with, ask library staff.</p>
+
+							<?php if ( $pending_details ) : ?>
+								<?php // autofocus scrolls the member straight to it; the form posts to a URL with no fragment, which autofocus needs. ?>
+								<div class="mtl-front-notice mtl-front-notice-error mtl-member-verif-confirm" role="alert" tabindex="-1" autofocus>
+									<p><strong>You&rsquo;ll lose your verified status</strong></p>
+									<p>Saving these changes to your personal information will reset your verified status. Staff will need to verify your account again before you can check out tools.</p>
+									<div class="mtl-form-actions">
+										<button type="submit" name="mtl_update_account" value="confirm" class="mtl-btn mtl-btn-primary">Yes, save my changes</button>
+										<a class="mtl-btn" href="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">No, keep my current details</a>
+									</div>
+								</div>
+							<?php else : ?>
+								<?php if ( $is_verified ) : ?>
+									<p class="mtl-form-note">Changing your name, address or phone number means staff will need to verify you again.</p>
+								<?php endif; ?>
+								<div class="mtl-form-actions">
+									<button type="submit" name="mtl_update_account" value="1" class="mtl-btn mtl-btn-primary">Save changes</button>
+								</div>
+							<?php endif; ?>
+						</form>
+					</div>
+				</details>
+
+				<details>
+					<summary>
+						<span class="mtl-acct-sum-title">Loan history</span>
+						<span class="mtl-acct-sum-note"><?php echo $past_loans ? esc_html( count( $past_loans ) . ( 1 === count( $past_loans ) ? ' past loan' : ' past loans' ) ) : 'No past loans'; ?></span>
+					</summary>
+					<div class="mtl-acct-body">
+						<?php if ( empty( $past_loans ) ) : ?>
+							<p class="mtl-form-note">Tools you return will be listed here.</p>
+						<?php else : ?>
+							<ul class="mtl-history">
+								<?php
+								foreach ( $past_loans as $l ) :
+									// Compare on the DATE portion only: return_date is a
+									// full timestamp, due_date stays a plain date, so a
+									// raw > comparison would wrongly call anything
+									// returned after 00:00 on the due date "late".
+									$mtl_late = gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date;
+									$mtl_meta = mtl_member_tool_meta( $l->tool_id, '' );
+									?>
+									<li>
+										<span class="mtl-history-name"><?php echo esc_html( stripslashes( $l->tool_name ) ); ?></span>
+										<p class="mtl-history-meta">
+											<?php echo '' !== $mtl_meta ? esc_html( $mtl_meta . '. ' ) : ''; ?>
+											Borrowed <?php echo mtl_format_date( $l->loan_date, 'M j, Y' ); ?>, returned <?php echo mtl_format_date( $l->return_date, 'M j, Y' ); ?>.
+										</p>
+										<span class="mtl-history-status mtl-status-note"><?php echo $mtl_late ? 'Returned late' : 'On time'; ?></span>
+									</li>
+								<?php endforeach; ?>
+							</ul>
+						<?php endif; ?>
+					</div>
+				</details>
+
+				<?php if ( ! empty( $my_trainings ) ) : ?>
+					<?php
+					$mtl_expired_count = count( $my_trainings ) - count( $my_current_trainings );
+					$mtl_training_note = array();
+					if ( $my_current_trainings ) {
+						$mtl_training_note[] = count( $my_current_trainings ) . ' current';
+					}
+					if ( $mtl_expired_count > 0 ) {
+						$mtl_training_note[] = $mtl_expired_count . ' expired';
+					}
+					?>
+					<details>
+						<summary>
+							<span class="mtl-acct-sum-title">Training record</span>
+							<span class="mtl-acct-sum-note"><?php echo esc_html( implode( ', ', $mtl_training_note ) ); ?></span>
+						</summary>
+						<div class="mtl-acct-body">
+							<p class="mtl-form-note">Every training you&rsquo;ve completed, including any that have since expired. Ask library staff if you&rsquo;d like to retake one.</p>
+							<ul class="mtl-history">
+								<?php foreach ( $my_trainings as $mtl_training ) : ?>
+									<li>
+										<span class="mtl-history-name"><?php echo esc_html( $mtl_training['name'] ); ?></span>
+										<p class="mtl-history-meta">
+											Completed <?php echo mtl_format_date( $mtl_training['start_date'], 'M j, Y' ); ?>.
+											<?php if ( '' === $mtl_training['expiry_date'] ) : ?>
+												Never expires.
+											<?php elseif ( $mtl_training['is_current'] ) : ?>
+												Good until <?php echo mtl_format_date( $mtl_training['expiry_date'], 'M j, Y' ); ?>.
+											<?php else : ?>
+												Expired <?php echo mtl_format_date( $mtl_training['expiry_date'], 'M j, Y' ); ?>.
+											<?php endif; ?>
+										</p>
+										<?php if ( $mtl_training['is_current'] ) : ?>
+											<span class="mtl-history-status mtl-status mtl-status-ok">Current</span>
+										<?php else : ?>
+											<span class="mtl-history-status mtl-status mtl-status-retired">Expired</span>
+										<?php endif; ?>
+									</li>
+								<?php endforeach; ?>
+							</ul>
+						</div>
+					</details>
 				<?php endif; ?>
 
-				<p style="margin-top:0;">
-					Trainings completed:
-					<?php if ( ! empty( $my_current_trainings ) ) : ?>
-						<?php foreach ( $my_current_trainings as $mtl_training ) : ?>
-							<?php if ( '' !== $mtl_training['badge'] ) : ?>
-								<img class="mtl-badge-img mtl-training-badge-img" src="<?php echo esc_url( $mtl_training['badge'] ); ?>" alt="<?php echo esc_attr( $mtl_training['name'] ); ?>" title="<?php echo esc_attr( $mtl_training['name'] ); ?>">
-							<?php else : ?>
-								<span class="mtl-pill mtl-pill-green" style="margin-left:6px;"><?php echo esc_html( $mtl_training['name'] ); ?></span>
-							<?php endif; ?>
-						<?php endforeach; ?>
-					<?php else : ?>
-						<span class="mtl-pill mtl-pill-grey" style="margin-left:6px;">None yet</span>
-					<?php endif; ?>
-				</p>
-				<p class="mtl-member-hint" style="font-size:0.9em;">
-					Trainings are recorded by library staff and show which tools you&rsquo;re qualified to use. Ask a staff member if you&rsquo;d like to take one.
-					<?php if ( count( $my_trainings ) > count( $my_current_trainings ) ) : ?>
-						Only trainings that are still current are shown here. See <strong>Trainings</strong> below for your full record.
-					<?php endif; ?>
-				</p>
+				<?php if ( $mtl_ag_receipt ) : ?>
+					<details>
+						<summary>
+							<span class="mtl-acct-sum-title">Member agreements</span>
+							<span class="mtl-acct-sum-note">Agreed <?php echo wp_kses_post( mtl_format_utc_datetime( $mtl_ag_latest, 'M j, Y' ) ); ?></span>
+						</summary>
+						<div class="mtl-acct-body">
+							<p class="mtl-form-note">You have agreed to the following.</p>
+							<ul class="mtl-agreement-receipt">
+								<?php foreach ( $mtl_ag_receipt as $mtl_acceptance ) : ?>
+									<?php
+									// Every value shown here comes from the acceptance
+									// row. The live agreement may have been revised
+									// since, and would show wording the member never saw.
+									$mtl_is_retired = in_array( (int) $mtl_acceptance->agreement_id, $mtl_ag_retired_ids, true );
+
+									// Drop the link where the attachment has since been
+									// deleted, so the member gets the text rather than
+									// a 404. One lookup per attached document, on one
+									// member's own page.
+									$mtl_file_live = ! empty( $mtl_acceptance->file_url )
+										&& attachment_url_to_postid( $mtl_acceptance->file_url ) > 0;
+									?>
+									<li>
+										<span class="mtl-chip-check" aria-hidden="true">&#10003;</span>
+										<div>
+											<div><?php echo nl2br( esc_html( $mtl_acceptance->agreement_text ) ); ?></div>
+											<p class="mtl-agreement-meta">
+												Agreed <?php echo wp_kses_post( mtl_format_utc_datetime( $mtl_acceptance->accepted_at, 'M j, Y' ) ); ?>.
+												<?php if ( $mtl_is_retired ) : ?>
+													<?php esc_html_e( 'No longer required.', 'my-tool-library' ); ?>
+												<?php endif; ?>
+												<?php if ( $mtl_file_live ) : ?>
+													<a href="<?php echo esc_url( $mtl_acceptance->file_url ); ?>" target="_blank" rel="noopener noreferrer"
+														aria-label="<?php echo esc_attr( 'View the document you agreed to for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $mtl_acceptance->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>"><?php esc_html_e( 'View the attached document', 'my-tool-library' ); ?></a>
+												<?php endif; ?>
+											</p>
+										</div>
+									</li>
+								<?php endforeach; ?>
+							</ul>
+						</div>
+					</details>
+				<?php endif; ?>
 			</div>
 
 			<?php
@@ -3058,241 +4010,9 @@ function mtl_render_account_page() {
 			echo mtl_tool_request_section_html();
 			?>
 
-			<?php
-			// Collapsed by default, but forced open when a submitted edit
-			// just failed validation, or is waiting on the verification
-			// warning; otherwise the member couldn't see what it refers to.
-			?>
-			<details class="mtl-member-card" <?php echo ( ! empty( $errors ) || $pending_details ) ? 'open' : ''; ?>>
-				<summary class="mtl-member-summary">Your details</summary>
-				<div class="mtl-member-collapsible-body">
-				<form method="post" action="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>" id="mtl-account-form">
-					<?php wp_nonce_field( 'mtl_account_action', 'mtl_account_nonce' ); ?>
-
-					<div class="mtl-member-row">
-						<div class="mtl-member-field">
-							<label for="mtl-ac-first">First name</label>
-							<input type="text" id="mtl-ac-first" name="first_name" value="<?php echo esc_attr( $details_form['first_name'] ); ?>" required>
-						</div>
-						<div class="mtl-member-field">
-							<label for="mtl-ac-last">Last name</label>
-							<input type="text" id="mtl-ac-last" name="last_name" value="<?php echo esc_attr( $details_form['last_name'] ); ?>" required>
-						</div>
-					</div>
-
-					<div class="mtl-member-field">
-						<label for="mtl-ac-email">Email</label>
-						<input type="email" id="mtl-ac-email" value="<?php echo esc_attr( $user->user_email ); ?>" readonly>
-						<p class="mtl-member-hint">You sign in with this address. To change it, contact library staff.</p>
-					</div>
-
-					<div class="mtl-member-field">
-						<label for="mtl-ac-phone_national">Phone number</label>
-						<?php mtl_render_phone_input( $details_form['phone_iso'], $details_form['phone_national'], 'mtl-ac-' ); ?>
-					</div>
-
-					<div class="mtl-member-field">
-						<label for="mtl-ac-address1">Address</label>
-						<input type="text" id="mtl-ac-address1" name="address_line1" value="<?php echo esc_attr( $details_form['address_line1'] ); ?>" required>
-					</div>
-
-					<div class="mtl-member-field">
-						<label for="mtl-ac-address2">Address line 2 <span style="font-weight:normal;">(optional)</span></label>
-						<input type="text" id="mtl-ac-address2" name="address_line2" value="<?php echo esc_attr( $details_form['address_line2'] ); ?>">
-					</div>
-
-					<div class="mtl-member-row">
-						<div class="mtl-member-field">
-							<label for="mtl-ac-city">City</label>
-							<input type="text" id="mtl-ac-city" name="city" value="<?php echo esc_attr( $details_form['city'] ); ?>" required>
-						</div>
-						<div class="mtl-member-field">
-							<label for="mtl-ac-state">State / Province</label>
-							<select id="mtl-ac-state" name="state" required>
-								<?php foreach ( mtl_get_state_options() as $mtl_state_code => $mtl_state_label ) : ?>
-									<option value="<?php echo esc_attr( $mtl_state_code ); ?>" <?php selected( $details_form['state'], $mtl_state_code ); ?>><?php echo esc_html( $mtl_state_label ); ?> (<?php echo esc_html( $mtl_state_code ); ?>)</option>
-								<?php endforeach; ?>
-							</select>
-						</div>
-					</div>
-
-					<div class="mtl-member-row">
-						<div class="mtl-member-field">
-							<label for="mtl-ac-zip">ZIP code</label>
-							<input type="text" id="mtl-ac-zip" name="zip_code" value="<?php echo esc_attr( $details_form['zip_code'] ); ?>" required>
-						</div>
-						<div class="mtl-member-field">
-							<label for="mtl-ac-country">Country</label>
-							<select id="mtl-ac-country" name="country" required>
-								<?php foreach ( mtl_get_country_options() as $mtl_country_name ) : ?>
-									<option value="<?php echo esc_attr( $mtl_country_name ); ?>" <?php selected( $details_form['country'], $mtl_country_name ); ?>><?php echo esc_html( $mtl_country_name ); ?></option>
-								<?php endforeach; ?>
-							</select>
-						</div>
-					</div>
-					<?php if ( $pending_details ) : ?>
-						<?php // autofocus scrolls the member straight to it; the form posts to a URL with no fragment, which autofocus needs. ?>
-						<div class="mtl-front-notice mtl-front-notice-error mtl-member-verif-confirm" role="alert" tabindex="-1" autofocus>
-							<strong>You&rsquo;ll lose your verified status</strong>
-							<p>Saving these changes to your personal information will reset your verified status. Staff will need to re-verify your account before you can check out tools.</p>
-							<div class="mtl-member-confirm-actions">
-								<button type="submit" name="mtl_update_account" value="confirm" class="mtl-member-btn">Yes, save my changes</button>
-								<a class="mtl-member-btn mtl-member-btn-ghost" href="<?php echo esc_url( mtl_front_page_url( 'account' ) ); ?>">No, keep my current details</a>
-							</div>
-						</div>
-					<?php else : ?>
-						<?php if ( $is_verified ) : ?>
-							<p class="mtl-member-hint"><strong>Note:</strong> changing your personal information will reset your verified status, and staff will need to re-verify your account.</p>
-						<?php endif; ?>
-
-						<p style="margin: 18px 0 0 0;">
-							<button type="submit" name="mtl_update_account" value="1" class="mtl-member-btn">Save Changes</button>
-						</p>
-					<?php endif; ?>
-				</form>
-				</div>
-			</details>
-
-			<details class="mtl-member-card">
-				<summary class="mtl-member-summary">Your loan history</summary>
-				<div class="mtl-member-collapsible-body">
-				<?php if ( empty( $loans ) ) : ?>
-					<p class="mtl-member-empty">You don&rsquo;t have any loans on record yet.</p>
-				<?php else : ?>
-					<table class="mtl-member-table">
-						<thead>
-							<tr>
-								<th>Tool</th>
-								<th>Tool ID</th>
-								<th>Borrowed</th>
-								<th>Due</th>
-								<th>Returned</th>
-								<th>Status</th>
-							</tr>
-						</thead>
-						<tbody>
-							<?php
-							$today = current_time( 'Y-m-d' );
-							foreach ( $loans as $l ) :
-								$is_returned = ! empty( $l->return_date );
-								if ( ! $is_returned ) {
-									$overdue      = ( $l->due_date < $today );
-									$status_class = $overdue ? 'mtl-pill-red' : 'mtl-pill-amber';
-									$status_label = $overdue ? 'Overdue' : 'On loan';
-								} elseif ( gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date ) {
-									// Compare on the DATE portion only: return_date is a
-									// full timestamp, due_date stays a plain date, so a
-									// raw > comparison would wrongly call anything
-									// returned after 00:00 on the due date "late".
-									$status_class = 'mtl-pill-grey';
-									$status_label = 'Returned late';
-								} else {
-									$status_class = 'mtl-pill-green';
-									$status_label = 'Returned';
-								}
-								?>
-								<tr>
-									<td><?php echo esc_html( stripslashes( $l->tool_name ) ); ?></td>
-									<td class="mtl-member-tool-id">#<?php echo (int) $l->tool_id; ?></td>
-									<td><?php echo mtl_format_date( $l->loan_date ); ?></td>
-									<td><?php echo mtl_format_date( $l->due_date ); ?></td>
-									<td><?php echo $is_returned ? mtl_format_date( $l->return_date ) : '<span style="color:#8c8f94;">&mdash;</span>'; ?></td>
-									<td><span class="mtl-pill <?php echo esc_attr( $status_class ); ?>"><?php echo esc_html( $status_label ); ?></span></td>
-								</tr>
-							<?php endforeach; ?>
-						</tbody>
-					</table>
-				<?php endif; ?>
-				</div>
-			</details>
-
-			<?php if ( ! empty( $my_trainings ) ) : ?>
-				<details class="mtl-member-card">
-					<summary class="mtl-member-summary">Trainings</summary>
-					<div class="mtl-member-collapsible-body">
-						<p class="mtl-member-hint" style="margin-top:0;">Every training you&rsquo;ve completed, including any that have since expired. Ask library staff if you&rsquo;d like to retake one.</p>
-						<table class="mtl-member-table">
-							<thead>
-								<tr>
-									<th>Training</th>
-									<th>Completed</th>
-									<th>Valid For</th>
-									<th>Expires</th>
-									<th>Status</th>
-								</tr>
-							</thead>
-							<tbody>
-								<?php foreach ( $my_trainings as $mtl_training ) : ?>
-									<tr>
-										<td><?php echo esc_html( $mtl_training['name'] ); ?></td>
-										<td><?php echo mtl_format_date( $mtl_training['start_date'] ); ?></td>
-										<td>
-											<?php
-											echo $mtl_training['months'] > 0
-												? esc_html( $mtl_training['months'] . ' month' . ( 1 === $mtl_training['months'] ? '' : 's' ) )
-												: '<span style="color:#8c8f94;">&mdash;</span>';
-											?>
-										</td>
-										<td><?php echo '' !== $mtl_training['expiry_date'] ? mtl_format_date( $mtl_training['expiry_date'] ) : '<span style="color:#8c8f94;">Never</span>'; ?></td>
-										<td>
-											<?php if ( $mtl_training['is_current'] ) : ?>
-												<span class="mtl-pill mtl-pill-green">Current</span>
-											<?php else : ?>
-												<span class="mtl-pill mtl-pill-grey">Expired</span>
-											<?php endif; ?>
-										</td>
-									</tr>
-								<?php endforeach; ?>
-							</tbody>
-						</table>
-					</div>
-				</details>
-			<?php endif; ?>
-
-			<?php if ( $mtl_ag_receipt ) : ?>
-				<div class="mtl-member-card">
-					<h3 style="margin-top:0;">You have agreed to the following:</h3>
-					<ul class="mtl-agreement-receipt">
-						<?php foreach ( $mtl_ag_receipt as $mtl_acceptance ) : ?>
-							<?php
-							// Every value shown here comes from the acceptance
-							// row. The live agreement may have been revised
-							// since, and would show wording the member never saw.
-							$mtl_is_retired = in_array( (int) $mtl_acceptance->agreement_id, $mtl_ag_retired_ids, true );
-
-							// Drop the link where the attachment has since been
-							// deleted, so the member gets the text rather than
-							// a 404. One lookup per attached document, on one
-							// member's own page.
-							$mtl_file_live = ! empty( $mtl_acceptance->file_url )
-								&& attachment_url_to_postid( $mtl_acceptance->file_url ) > 0;
-							?>
-							<li>
-								<span class="mtl-agreement-tick" aria-hidden="true">&#10003;</span>
-								<div>
-									<div><?php echo nl2br( esc_html( $mtl_acceptance->agreement_text ) ); ?></div>
-									<p class="mtl-agreement-meta">
-										Agreed <?php echo wp_kses_post( mtl_format_utc_datetime( $mtl_acceptance->accepted_at, 'j F Y' ) ); ?>
-										<?php if ( $mtl_file_live ) : ?>
-											&middot;
-											<a href="<?php echo esc_url( $mtl_acceptance->file_url ); ?>" target="_blank" rel="noopener noreferrer"
-												aria-label="<?php echo esc_attr( 'View the document you agreed to for &ldquo;' . wp_strip_all_tags( mtl_agreement_excerpt( $mtl_acceptance->agreement_text ) ) . '&rdquo; (opens in a new tab)' ); ?>"><?php esc_html_e( 'View the attached document', 'my-tool-library' ); ?> &#8599;</a>
-										<?php endif; ?>
-										<?php if ( $mtl_is_retired ) : ?>
-											&middot; <span class="mtl-agreement-retired-note"><?php esc_html_e( 'no longer required', 'my-tool-library' ); ?></span>
-										<?php endif; ?>
-									</p>
-								</div>
-							</li>
-						<?php endforeach; ?>
-					</ul>
-				</div>
-			<?php endif; ?>
-
-			<div class="mtl-member-card">
-				<h3 style="margin-top:0;">Danger Zone</h3>
-				<p class="mtl-member-hint">Deleting your account removes your personal information from our system. This cannot be undone.</p>
-				<a class="mtl-member-btn mtl-member-btn-danger" href="<?php echo esc_url( add_query_arg( 'mtl_confirm_delete', '1', mtl_front_page_url( 'account' ) ) ); ?>">Delete Account and Remove Personal Data</a>
+			<div class="mtl-acct-danger">
+				<a class="mtl-btn-danger" href="<?php echo esc_url( add_query_arg( 'mtl_confirm_delete', '1', mtl_front_page_url( 'account' ) ) ); ?>">Delete my account</a>
+				<p>Removes your personal details. Past loans stay in the library&rsquo;s records without your name.</p>
 			</div>
 
 		<?php endif; ?>
@@ -3300,7 +4020,7 @@ function mtl_render_account_page() {
 	<?php
 	$body = ob_get_clean();
 
-	mtl_render_front_shell( 'My Account', $body, mtl_member_page_footer() );
+	mtl_render_front_shell( 'My account', $body );
 }
 
 /**
@@ -3316,19 +4036,25 @@ function mtl_render_account_page() {
  * @return void Outputs the page directly (via mtl_render_front_shell()) and exits.
  */
 function mtl_render_member_only_notice( $page_title, $link_broken = false ) {
+	$contact = mtl_contact_email();
+
 	ob_start();
 	echo mtl_member_page_styles();
 	?>
-	<div class="mtl-member-wrap">
-		<div class="mtl-member-card">
-			<h2><?php echo esc_html( $page_title ); ?></h2>
-			<?php if ( $link_broken ) : ?>
-				<p>You&rsquo;re signed in, but we couldn&rsquo;t match your sign-in to a membership record, so there&rsquo;s nothing to show here yet.</p>
-				<p>This usually means the library&rsquo;s records were rebuilt recently. Please contact library staff, who can reconnect your account. Nothing about your membership has been lost.</p>
-			<?php else : ?>
-				<p>This area is for tool-library member accounts. You&rsquo;re signed in, but your account isn&rsquo;t a member account, so there&rsquo;s nothing to show here.</p>
+	<div class="mtl-front-card">
+		<h1><?php echo esc_html( $page_title ); ?></h1>
+		<?php if ( $link_broken ) : ?>
+			<p>You&rsquo;re signed in, but we couldn&rsquo;t match your sign-in to a membership record, so there&rsquo;s nothing to show here yet.</p>
+			<p>This usually means the library&rsquo;s records were rebuilt recently. Please contact library staff, who can reconnect your account. Nothing about your membership has been lost.</p>
+		<?php else : ?>
+			<p>This area is for tool-library member accounts. You&rsquo;re signed in, but your account isn&rsquo;t a member account, so there&rsquo;s nothing to show here.</p>
+		<?php endif; ?>
+		<div class="mtl-confirm-actions">
+			<a class="mtl-btn mtl-btn-primary" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">Browse tools</a>
+			<?php if ( $link_broken && '' !== $contact ) : ?>
+				<a class="mtl-btn" href="<?php echo esc_url( 'mailto:' . $contact ); ?>">Email library staff</a>
 			<?php endif; ?>
-			<p style="margin-bottom:0;"><a href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>">&larr; Back to the tool catalog</a></p>
+			<a class="mtl-btn" href="<?php echo esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ); ?>">Log out</a>
 		</div>
 	</div>
 	<?php
