@@ -1211,7 +1211,7 @@ body.mtl-front {
 	border-radius: var(--mtl-radius);
 }
 
-:where(.mtl-front) .mtl-front-card h2 {
+:where(.mtl-front) .mtl-front-card :is(h1, h2) {
 	font-size: 30px;
 	margin: 0 0 14px;
 }
@@ -1274,17 +1274,31 @@ body.mtl-front {
 	color: var(--mtl-ink);
 }
 
-/* The Coming soon card's link to the catalog: an outline button. */
-:where(.mtl-front) .mtl-front-card .mtl-front-button {
-	display: inline-flex;
-	align-items: center;
-	min-height: 44px;
-	padding: 0 20px;
-	border: 1px solid var(--mtl-ink);
-	border-radius: var(--mtl-btn-radius);
-	color: var(--mtl-ink);
-	font-weight: 700;
-	text-decoration: none;
+:where(.mtl-front) .mtl-front-card > :last-child {
+	margin-bottom: 0;
+}
+
+:where(.mtl-front) .mtl-front-card .mtl-hint {
+	display: block;
+	margin-top: 6px;
+}
+
+/* The links under a card's form ("Forgot your password?", "Back to sign in"). */
+:where(.mtl-front) .mtl-front-card .mtl-front-card-after {
+	margin: 20px 0 0;
+	padding-top: 16px;
+	border-top: 1px solid var(--mtl-rule-soft);
+}
+
+@media (max-width: 760px) {
+	:where(.mtl-front) .mtl-front-card {
+		margin: 24px auto;
+		padding: 22px;
+	}
+
+	:where(.mtl-front) .mtl-front-card :is(h1, h2) {
+		font-size: 26px;
+	}
 }
 
 /* ---------- Footer and preview bar ---------- */

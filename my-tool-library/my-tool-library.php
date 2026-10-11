@@ -2563,7 +2563,7 @@ function mtl_default_giving_text() {
 
 
 /**
- * The Consider Giving section, or '' when there is nothing to show.
+ * The "Consider giving" callout, or '' when there is nothing to show.
  *
  * Shared by the Account page and My Reservations so the two can never drift
  * apart in wording or behaviour.
@@ -2589,31 +2589,32 @@ function mtl_giving_section_html( $extra_class = '' ) {
 		return '';
 	}
 
-	$classes = 'mtl-member-card mtl-member-giving';
+	$classes = 'mtl-callout mtl-member-giving';
 	if ( '' !== $extra_class ) {
 		$classes .= ' ' . $extra_class;
 	}
 
-	$html  = '<div class="' . esc_attr( $classes ) . '">';
-	$html .= '<strong>Consider Giving</strong>';
-	$html .= '<p class="mtl-member-giving-text">' . nl2br( esc_html( $text ) ) . '</p>';
+	$html  = '<aside class="' . esc_attr( $classes ) . '">';
+	$html .= '<div class="mtl-callout-body">';
+	$html .= '<h2 class="mtl-callout-title">Consider giving</h2>';
+	$html .= '<p class="mtl-callout-text">' . nl2br( esc_html( $text ) ) . '</p>';
+	$html .= '</div>';
 	if ( '' !== $url || '' !== $wishlist_url ) {
 		// Opens in a new tab so a member part-way through renewing a loan or
 		// cancelling a reservation does not lose that page. rel="noopener"
 		// stops the opened page from reaching back through window.opener.
-		$html .= '<p class="mtl-member-giving-action">';
+		$html .= '<div class="mtl-callout-actions">';
 		if ( '' !== $url ) {
-			$html .= '<a class="mtl-member-btn mtl-member-btn-giving" href="' . esc_url( $url ) . '"';
-			$html .= ' target="_blank" rel="noopener noreferrer nofollow">Give Now</a>';
+			$html .= '<a class="mtl-btn" href="' . esc_url( $url ) . '"';
+			$html .= ' target="_blank" rel="noopener noreferrer nofollow">Give now</a>';
 		}
 		if ( '' !== $wishlist_url ) {
-			// Outlined so Give Now stays the primary ask when both are shown.
-			$html .= '<a class="mtl-member-btn mtl-member-btn-ghost mtl-member-btn-giving" href="' . esc_url( $wishlist_url ) . '"';
-			$html .= ' target="_blank" rel="noopener noreferrer nofollow">Wishlist</a>';
+			$html .= '<a class="mtl-btn" href="' . esc_url( $wishlist_url ) . '"';
+			$html .= ' target="_blank" rel="noopener noreferrer nofollow">See our wishlist</a>';
 		}
-		$html .= '</p>';
+		$html .= '</div>';
 	}
-	$html .= '</div>';
+	$html .= '</aside>';
 
 	return $html;
 }
@@ -2641,12 +2642,12 @@ function mtl_default_tool_request_text() {
 }
 
 /**
- * The Request a Tool card for the Account page, or '' when there is nothing
- * to show.
+ * The "Can't find a tool?" callout for the Account page, or '' when there is
+ * nothing to show.
  *
- * Laid out like mtl_giving_section_html(). Unlike the giving card, the link
- * alone is enough to show it: the card's heading already says what the
- * button is for, so it is not a bare button with no explanation.
+ * Laid out like mtl_giving_section_html(). Unlike the giving callout, the
+ * link alone is enough to show it: the heading already says what the button
+ * is for, so it is not a bare button with no explanation.
  *
  * @return string Ready-to-echo HTML, fully escaped.
  */
@@ -2659,18 +2660,20 @@ function mtl_tool_request_section_html() {
 		return '';
 	}
 
-	$html  = '<div class="mtl-member-card mtl-member-request">';
-	$html .= '<strong>Can&rsquo;t Find a Tool?</strong>';
+	$html  = '<aside class="mtl-callout mtl-member-request">';
+	$html .= '<div class="mtl-callout-body">';
+	$html .= '<h2 class="mtl-callout-title">Can&rsquo;t find a tool?</h2>';
 	if ( '' !== $text ) {
-		$html .= '<p class="mtl-member-request-text">' . nl2br( esc_html( $text ) ) . '</p>';
-	}
-	if ( '' !== $url ) {
-		$html .= '<p class="mtl-member-request-action">';
-		$html .= '<a class="mtl-member-btn mtl-member-btn-request" href="' . esc_url( $url ) . '"';
-		$html .= ' target="_blank" rel="noopener noreferrer nofollow">Request a Tool</a>';
-		$html .= '</p>';
+		$html .= '<p class="mtl-callout-text">' . nl2br( esc_html( $text ) ) . '</p>';
 	}
 	$html .= '</div>';
+	if ( '' !== $url ) {
+		$html .= '<div class="mtl-callout-actions">';
+		$html .= '<a class="mtl-btn" href="' . esc_url( $url ) . '"';
+		$html .= ' target="_blank" rel="noopener noreferrer nofollow">Request a tool</a>';
+		$html .= '</div>';
+	}
+	$html .= '</aside>';
 
 	return $html;
 }
@@ -8137,10 +8140,8 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '', $nav_cur
 }
 
 /**
- * The public main page: the customer-facing shopping catalog, with a
- * small, discreet Admin Sign In link at the bottom of the page. The
- * catalog itself is built (server-side, no JavaScript) in
- * public/shop-page.php.
+ * The public main page: the customer-facing catalog. The catalog itself is
+ * built (server-side, no JavaScript) in public/shop-page.php.
  */
 function mtl_render_front_main_page() {
 	// Process a "reserve a tool" POST before any output, so it can finish
@@ -8149,40 +8150,32 @@ function mtl_render_front_main_page() {
 
 	$body = mtl_render_shop_page();
 
-	// Discreet footer links, varying with login state. (The primary member
-	// sign-in / sign-up / account controls live in the catalog's own top-bar
-	// nav; these footer links are a quiet secondary path).
+	// The top bar carries the account links, so the footer only keeps what
+	// the top bar can't offer: staff sign-in before launch. Staff also get a
+	// second way into the portal at the bottom of a long catalog.
+	$footer = '';
 	if ( mtl_is_prelaunch_visitor() ) {
-		// The catalog preview before launch: no account links at all.
 		$footer = mtl_prelaunch_footer_html();
 	} elseif ( is_user_logged_in() && mtl_can_manage_library() ) {
-		$footer  = '<a href="' . esc_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) . '">Open Admin Portal</a>';
-		$footer .= '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
-	} elseif ( is_user_logged_in() ) {
-		$footer  = '<a href="' . esc_url( mtl_front_page_url( 'account' ) ) . '">My Account</a>';
-		$footer .= '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
-	} else {
-		$footer  = '<a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">Sign In</a>';
-		$footer .= '<a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Create an Account</a>';
+		$footer = '<a href="' . esc_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) . '">Admin portal</a>';
 	}
 
-	mtl_render_front_shell( 'Browse Tools', $body, $footer );
+	mtl_render_front_shell( 'Browse tools', $body, $footer, 'browse' );
 }
 
 /**
- * Footer links for customers before launch, on the Coming soon page and the
- * catalog preview. No account links, since none of those pages are open.
+ * Footer link for customers before launch, on the Coming soon page and the
+ * catalog preview: Staff sign in, through WordPress's own login, because the
+ * plugin's sign-in page is closed too.
  *
- * Staff sign in through WordPress's own login, because the plugin's sign-in
- * page is closed too. Anybody already signed in, such as a member left signed
- * in when the switch was turned back off, gets Log Out instead.
- * wp_logout_url() goes through wp-login.php, which is never closed.
+ * Anybody already signed in, such as a member left signed in when the switch
+ * was turned back off, gets nothing here: the top bar has their Log out.
  *
- * @return string HTML.
+ * @return string HTML, or ''.
  */
 function mtl_prelaunch_footer_html() {
 	if ( is_user_logged_in() ) {
-		return '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
+		return '';
 	}
 	return '<a href="' . esc_url( wp_login_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) ) . '">Staff sign in</a>';
 }
@@ -8195,17 +8188,15 @@ function mtl_prelaunch_footer_html() {
  */
 function mtl_render_coming_soon_page() {
 	$body  = '<div class="mtl-front-card">';
-	$body .= '<h2 style="margin-top: 0;">Coming soon</h2>';
+	$body .= '<h1>Coming soon</h1>';
 	$body .= '<p>' . nl2br( esc_html( mtl_coming_soon_message() ) ) . '</p>';
 	if ( mtl_catalog_preview_enabled() ) {
-		$body .= '<p style="margin-bottom: 0;"><a class="mtl-front-button" href="' . esc_url( mtl_front_page_url( 'main' ) ) . '">Browse our tools</a></p>';
+		$body .= '<p><a class="mtl-btn" href="' . esc_url( mtl_front_page_url( 'main' ) ) . '">Browse our tools</a></p>';
 	}
 	$body .= '</div>';
 
-	$footer  = '<a href="' . esc_url( mtl_home_page_url() ) . '">&larr; Home</a>';
-	$footer .= mtl_prelaunch_footer_html();
-
-	mtl_render_front_shell( 'Coming Soon', $body, $footer );
+	// The library name in the top bar already links to the home page.
+	mtl_render_front_shell( 'Coming soon', $body, mtl_prelaunch_footer_html() );
 }
 
 /**
@@ -8231,9 +8222,10 @@ function mtl_render_front_login_page() {
 		array(
 			'echo'           => false,
 			'redirect'       => mtl_front_page_url( 'admin' ),
-			'label_username' => 'Email Address',
+			'label_username' => 'Email address',
 			'label_password' => 'Password',
-			'label_log_in'   => 'Sign In',
+			'label_remember' => 'Remember me',
+			'label_log_in'   => 'Sign in',
 			'remember'       => true,
 		)
 	);
@@ -8243,18 +8235,17 @@ function mtl_render_front_login_page() {
 	// in mtl_block_empty_front_login() still covers a browser that ignores it.
 	$login_form = mtl_require_login_fields( $login_form );
 
+	// The catalog and Join are in the top bar, so the footer has nothing left
+	// to add; the password link sits under the form where people look for it.
 	$body  = '<div class="mtl-front-card">';
-	$body .= '<h2 style="margin-top: 0;">Sign In</h2>';
+	$body .= '<h1>Sign in</h1>';
 	$body .= mtl_front_notice_html();
-	$body .= '<p style="font-size: 0.9em; color: #666;">New members can <a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">create an account</a>.</p>';
+	$body .= '<p>New here? <a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Create a member account</a>.</p>';
 	$body .= $login_form;
+	$body .= '<p class="mtl-front-card-after"><a href="' . esc_url( mtl_front_page_url( 'lostpassword' ) ) . '">Forgot your password?</a></p>';
 	$body .= '</div>';
 
-	$footer  = '<a href="' . esc_url( mtl_front_page_url( 'main' ) ) . '">&larr; Back to the catalog</a>';
-	$footer .= '<a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Create an Account</a>';
-	$footer .= '<a href="' . esc_url( mtl_front_page_url( 'lostpassword' ) ) . '">Lost your password?</a>';
-
-	mtl_render_front_shell( 'Sign In', $body, $footer );
+	mtl_render_front_shell( 'Sign in', $body, '', 'signin' );
 }
 
 // ==========================================================================
@@ -8547,21 +8538,19 @@ function mtl_render_lost_password_page() {
 	}
 
 	$body  = '<div class="mtl-front-card">';
-	$body .= '<h2 style="margin-top: 0;">Reset Your Password</h2>';
+	$body .= '<h1>Reset your password</h1>';
 	$body .= mtl_front_notice_html();
-	$body .= '<p style="font-size: 0.9em; color: #666;">Enter the email address you signed up with and we&rsquo;ll send you a link to choose a new password.</p>';
+	$body .= '<p>Enter the email address you signed up with and we&rsquo;ll send you a link to choose a new password.</p>';
 	$body .= '<form method="post" action="' . esc_url( mtl_front_page_url( 'lostpassword' ) ) . '">';
 	$body .= wp_nonce_field( 'mtl_lostpassword_action', 'mtl_lostpassword_nonce', true, false );
-	$body .= '<p><label for="mtl_user_login">Email Address</label>';
+	$body .= '<p><label for="mtl_user_login">Email address</label>';
 	$body .= '<input type="email" name="user_login" id="mtl_user_login" class="input" autocomplete="username" required></p>';
-	$body .= '<p><input type="submit" value="Email me a reset link"></p>';
+	$body .= '<p><button type="submit" class="mtl-btn mtl-btn-primary mtl-btn-wide">Email me a reset link</button></p>';
 	$body .= '</form>';
+	$body .= '<p class="mtl-front-card-after"><a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">Back to sign in</a></p>';
 	$body .= '</div>';
 
-	$footer  = '<a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">&larr; Back to sign in</a>';
-	$footer .= '<a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Create an Account</a>';
-
-	mtl_render_front_shell( 'Reset Your Password', $body, $footer );
+	mtl_render_front_shell( 'Reset your password', $body );
 }
 
 // --------------------------------------------------------------------------
@@ -8904,25 +8893,25 @@ function mtl_render_reset_password_page() {
 	}
 
 	$body  = '<div class="mtl-front-card">';
-	$body .= '<h2 style="margin-top: 0;">Choose a New Password</h2>';
+	$body .= '<h1>Choose a new password</h1>';
 	if ( '' !== $error ) {
 		$body .= '<div class="mtl-front-notice mtl-front-notice-error">' . $error . '</div>';
 	}
-	$body .= '<p style="font-size: 0.9em; color: #666;">Setting a new password for <strong>' . esc_html( $user->user_email ) . '</strong>.</p>';
+	$body .= '<p>Setting a new password for <strong>' . esc_html( $user->user_email ) . '</strong>.</p>';
 	$body .= '<form method="post" action="' . esc_url( $self ) . '">';
 	$body .= wp_nonce_field( 'mtl_resetpass_action', 'mtl_resetpass_nonce', true, false );
 	$body .= '<input type="hidden" name="rp_key" value="' . esc_attr( $rp_key ) . '">';
-	$body .= '<p><label for="mtl_pass1">New Password</label>';
-	$body .= '<input type="password" name="pass1" id="mtl_pass1" class="input" autocomplete="new-password" minlength="8" required></p>';
-	$body .= '<p><label for="mtl_pass2">Confirm New Password</label>';
+	$body .= '<p><label for="mtl_pass1">New password</label>';
+	$body .= '<input type="password" name="pass1" id="mtl_pass1" class="input" autocomplete="new-password" minlength="8" required aria-describedby="mtl_pass1_hint">';
+	$body .= '<span class="mtl-hint" id="mtl_pass1_hint">At least 8 characters.</span></p>';
+	$body .= '<p><label for="mtl_pass2">Confirm new password</label>';
 	$body .= '<input type="password" name="pass2" id="mtl_pass2" class="input" autocomplete="new-password" minlength="8" required></p>';
-	$body .= '<p><input type="submit" value="Save my new password"></p>';
+	$body .= '<p><button type="submit" class="mtl-btn mtl-btn-primary mtl-btn-wide">Save my new password</button></p>';
 	$body .= '</form>';
+	$body .= '<p class="mtl-front-card-after"><a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">Back to sign in</a></p>';
 	$body .= '</div>';
 
-	$footer = '<a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">&larr; Back to sign in</a>';
-
-	mtl_render_front_shell( 'Choose a New Password', $body, $footer );
+	mtl_render_front_shell( 'Choose a new password', $body );
 }
 
 /**
