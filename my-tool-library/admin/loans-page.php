@@ -392,6 +392,8 @@ function mtl_lr_handle_bulk_checkout() {
 			'tool' => $tool_id,
 			'name' => $status['tool_name'],
 			'due'  => $due,
+			// Advisory only, as on the single checkout: reported, never blocking.
+			'gap'  => mtl_tool_training_gap( $tool_id, $member_id ),
 		);
 	}
 	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -409,13 +411,17 @@ function mtl_lr_handle_bulk_checkout() {
 		return '<div class="notice notice-warning is-dismissible"><p><strong>Nothing was checked out.</strong> ' . esc_html( $nothing ) . '</p></div>';
 	}
 
-	$loaned   = 0;
-	$reserved = 0;
-	$failed   = array();
+	$loaned    = 0;
+	$reserved  = 0;
+	$failed    = array();
+	$untrained = array();
 	foreach ( $plan as $item ) {
 		if ( 'loan' === $item['act'] ) {
 			if ( mtl_create_loan( $item['tool'], $member_id, $item['due'] ) > 0 ) {
 				++$loaned;
+				if ( $item['gap'] ) {
+					$untrained[] = $item['name'] . ' (' . implode( ', ', $item['gap'] ) . ')';
+				}
 			} else {
 				$failed[] = $item['name'];
 			}
@@ -448,6 +454,9 @@ function mtl_lr_handle_bulk_checkout() {
 
 	if ( $jumped ) {
 		$notice .= ' Reserved by another member at the time: ' . esc_html( implode( ', ', $jumped ) ) . '.';
+	}
+	if ( $untrained ) {
+		$notice .= ' <strong>Training not current:</strong> ' . esc_html( implode( '; ', $untrained ) ) . '. The loans were recorded anyway.';
 	}
 	if ( $failed ) {
 		$notice .= ' <strong>Could not be recorded:</strong> ' . esc_html( implode( ', ', $failed ) )
@@ -715,17 +724,22 @@ function mtl_render_loans_page() {
 
 	// --- Loans (current + previous) ---
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only ($wpdb->prefix-derived), no request-derived data.
+	// Days past due count from the site's date, not MySQL's CURDATE(), which
+	// follows the database server's time zone.
 	$loan_rows = $wpdb->get_results(
-		"
+		$wpdb->prepare(
+			"
         SELECT l.loan_id, l.tool_id, l.member_id, l.loan_date, l.due_date, l.return_date,
                t.tool_name, t.barcode, t.brand, t.location,
                m.first_name, m.last_name, m.email, m.phone_number, m.locked_at,
-               DATEDIFF(CURDATE(), l.due_date) AS days_past_due,
+               DATEDIFF(%s, l.due_date) AS days_past_due,
                (SELECT COUNT(*) FROM {$tbl_verifications} v WHERE v.member_id = l.member_id AND v.photo_id_scan_url IS NOT NULL AND v.address_proof_scan_url IS NOT NULL) AS is_verified
         FROM {$tbl_loans} l
         JOIN {$tbl_inventory} t ON t.tool_id = l.tool_id
         JOIN {$tbl_members} m ON m.member_id = l.member_id
-    "
+    ",
+			current_time( 'Y-m-d' )
+		)
 	);
 
 	// --- Active reservations, with queue position + size derived on the fly ---
@@ -1163,11 +1177,23 @@ function mtl_render_loans_page() {
 			font-size: 0.85em;
 		}
 
+		.mtl-adv-fields .mtl-adv-multi {
+			grid-column: span 2;
+		}
+
 		/* Sits beside the category tree, so it matches its height. */
 		.mtl-adv-fields .mtl-adv-multi select[multiple] {
 			height: 170px;
 			resize: vertical;
 			overflow: auto;
+		}
+
+		.mtl-adv-fields .mtl-adv-multi small {
+			display: block;
+			font-size: 0.72em;
+			color: #787c82;
+			line-height: 1.35;
+			margin-top: 2px;
 		}
 
 		/*
@@ -1723,20 +1749,23 @@ function mtl_render_loans_page() {
 						</select>
 					</div>
 				</div>
-				<div class="mtl-adv-multi">
-					<label>Categories</label>
-					<?php mtl_taxonomy_tree( $tx_rows, array(), array(), 'mtl-lr-tx' ); ?>
+				<?php // Inside .mtl-adv-fields, as on the Inventory page, so the sizing rules for these boxes apply. ?>
+				<div class="mtl-adv-fields">
+					<div class="mtl-adv-multi">
+						<label>Categories</label>
+						<?php mtl_taxonomy_tree( $tx_rows, array(), array(), 'mtl-lr-tx' ); ?>
+					</div>
+					<div class="mtl-adv-multi">
+						<label for="lr-adv-tag">Tags</label>
+						<select id="lr-adv-tag" multiple size="4">
+							<?php foreach ( $lr_tags as $lr_tag ) : ?>
+								<option value="<?php echo esc_attr( $lr_tag->tag_id ); ?>"><?php echo esc_html( $lr_tag->tag_name ); ?></option>
+							<?php endforeach; ?>
+						</select>
+						<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick several.</small>
+					</div>
+					<?php mtl_training_filter_select( $lr_trainings, 'lr-adv-training' ); ?>
 				</div>
-				<div class="mtl-adv-multi">
-					<label for="lr-adv-tag">Tags</label>
-					<select id="lr-adv-tag" multiple size="4">
-						<?php foreach ( $lr_tags as $lr_tag ) : ?>
-							<option value="<?php echo esc_attr( $lr_tag->tag_id ); ?>"><?php echo esc_html( $lr_tag->tag_name ); ?></option>
-						<?php endforeach; ?>
-					</select>
-					<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick several.</small>
-				</div>
-				<?php mtl_training_filter_select( $lr_trainings, 'lr-adv-training' ); ?>
 			</fieldset>
 
 			<fieldset class="mtl-adv-group">
@@ -1905,7 +1934,7 @@ function mtl_render_loans_page() {
 						<?php else : ?>
 							<tr>
 								<td colspan="8" style="text-align: center; padding: 20px;">
-									No loans or reservations found. Add loan and reservation records to the database to see them here.
+									No loans or reservations yet.
 								</td>
 							</tr>
 						<?php endif; ?>

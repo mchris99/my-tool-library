@@ -672,6 +672,7 @@ function mtl_render_dashboard_page() {
 	$on_hand_current = 0.0;
 	$on_loan_current = 0.0;
 	$total_age_years = 0.0;
+	$dated_count     = 0;
 	$oldest_tool     = null;
 	$newest_tool     = null;
 	$seen_tool_ids   = array();
@@ -688,8 +689,16 @@ function mtl_render_dashboard_page() {
 		if ( ! empty( $row->maintenance_at ) ) {
 			++$tools_maint;
 		}
-		$age_years        = max( 0, ( time() - strtotime( $row->date_acquired ) ) / 31557600 );
-		$total_age_years += $age_years;
+		// No acquired date (NULL, or MySQL's zero date) means no age to
+		// depreciate by, rather than one counted from 1970 or the year -1.
+		$acquired_ts = '' !== (string) $row->date_acquired && 0 !== strpos( (string) $row->date_acquired, '0000-00-00' ) ? strtotime( (string) $row->date_acquired ) : false;
+		$age_years   = $acquired_ts ? max( 0, ( time() - $acquired_ts ) / 31557600 ) : 0;
+		// An undated tool has no age to report, so it stays out of the
+		// average and the oldest/newest tiles rather than counting as new.
+		if ( $acquired_ts ) {
+			++$dated_count;
+			$total_age_years += $age_years;
+		}
 
 		$initial = (float) $row->initial_cash_value;
 		$current = max( 0, $initial - ( (float) $row->annual_depreciation_amount * $age_years ) );
@@ -703,14 +712,14 @@ function mtl_render_dashboard_page() {
 			$on_hand_current += $current;
 		}
 
-		if ( null === $oldest_tool || $age_years > $oldest_tool['age'] ) {
+		if ( $acquired_ts && ( null === $oldest_tool || $age_years > $oldest_tool['age'] ) ) {
 			$oldest_tool = array(
 				'name'    => $row->tool_name,
 				'barcode' => $row->barcode,
 				'age'     => $age_years,
 			);
 		}
-		if ( null === $newest_tool || $age_years < $newest_tool['age'] ) {
+		if ( $acquired_ts && ( null === $newest_tool || $age_years < $newest_tool['age'] ) ) {
 			$newest_tool = array(
 				'name'    => $row->tool_name,
 				'barcode' => $row->barcode,
@@ -719,7 +728,7 @@ function mtl_render_dashboard_page() {
 		}
 	}
 
-	$avg_age                = $tool_count > 0 ? $total_age_years / $tool_count : 0;
+	$avg_age                = $dated_count > 0 ? $total_age_years / $dated_count : 0;
 	$total_initial          = $on_hand_initial + $on_loan_initial;
 	$total_current          = $on_hand_current + $on_loan_current;
 	$total_depreciated_away = max( 0, $total_initial - $total_current );

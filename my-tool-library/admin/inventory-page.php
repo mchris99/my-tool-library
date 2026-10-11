@@ -11,10 +11,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Renders a comma-separated lookup value (categories/tags) as a row of
- * pill-style badges instead of a raw text blob.
+ * Renders a GROUP_CONCAT list of labels (categories, tags, sub-categories,
+ * trainings) as a row of pill-style badges instead of a raw text blob.
  *
- * @param string $csv Comma-separated list of labels.
+ * The inventory query joins the names with the ASCII unit separator (0x1F)
+ * rather than a comma, so a name like "First Aid, Level 1" stays one badge.
+ *
+ * @param string $csv Labels joined with "\x1F".
  * @return string HTML markup.
  */
 function mtl_render_pill_list( $csv ) {
@@ -24,7 +27,7 @@ function mtl_render_pill_list( $csv ) {
 	}
 
 	$out = '';
-	foreach ( array_filter( array_map( 'trim', explode( ',', $csv ) ) ) as $label ) {
+	foreach ( array_filter( array_map( 'trim', explode( "\x1F", $csv ) ) ) as $label ) {
 		$out .= '<span class="mtl-badge">' . esc_html( $label ) . '</span>';
 	}
 	return $out;
@@ -78,7 +81,8 @@ function mtl_resolve_depreciation_amount( $dollar_display, $percent_display, $in
  * @return float Resolved dollar amount.
  */
 function mtl_resolve_depreciation_csv_value( $raw_value, $initial_value ) {
-	$raw_value = trim( (string) $raw_value );
+	// Spreadsheet money formatting ("$50.00", "1,200") would otherwise read as 0 or 1.
+	$raw_value = trim( str_replace( array( '$', ',', ' ' ), '', (string) $raw_value ) );
 	if ( '' !== $raw_value && false !== strpos( $raw_value, '%' ) ) {
 		$percent = floatval( str_replace( '%', '', $raw_value ) );
 		return round( (float) $initial_value * ( $percent / 100 ), 2 );
@@ -111,7 +115,8 @@ function mtl_tool_usable_life( $initial_value, $annual_depreciation, $date_acqui
 	$annual   = (float) $annual_depreciation;
 	$now      = time();
 	$raw_date = trim( (string) $date_acquired );
-	$acquired = '' !== $raw_date ? strtotime( $raw_date ) : false;
+	// MySQL's zero date counts as no date: strtotime() reads it as the year -1.
+	$acquired = '' !== $raw_date && 0 !== strpos( $raw_date, '0000-00-00' ) ? strtotime( $raw_date ) : false;
 
 	// Named in the order an admin would fix them, so the meter points at the
 	// one field to go and fill in instead of listing everything it wanted.
@@ -1195,7 +1200,9 @@ function mtl_render_inventory_page() {
 					'initial_cash_value'         => $initial_value,
 					'annual_depreciation_amount' => $depreciation,
 					'donated_by'                 => $donated_by,
-					'date_acquired'              => $date_acquired,
+					// NULL for a blank date, which MySQL would otherwise store
+					// as 0000-00-00 (WordPress turns strict mode off).
+					'date_acquired'              => preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date_acquired ) ? $date_acquired : null,
 					'private_notes'              => '' !== $private_notes ? $private_notes : null,
 					// NULL rather than '' for an unfilled location, so
 					// "nothing recorded" is one value in the column instead
@@ -1437,7 +1444,10 @@ function mtl_render_inventory_page() {
 								$row_date_raw = $get_col( $row, 'date_acquired' );
 								$row_date     = ( '' !== $row_date_raw && strtotime( $row_date_raw ) ) ? gmdate( 'Y-m-d', strtotime( $row_date_raw ) ) : current_time( 'Y-m-d' );
 
-								$row_initial_value = floatval( $get_col( $row, 'initial_cash_value' ) );
+								// Spreadsheets often format money as "$1,299.00", which
+								// floatval() alone reads as 0 or 1.
+								$row_value_raw     = str_replace( array( '$', ',', ' ' ), '', $get_col( $row, 'initial_cash_value' ) );
+								$row_initial_value = floatval( $row_value_raw );
 								// A "%" in this column (e.g. "5%") is a percentage of
 								// initial_cash_value; anything else is a plain dollar amount.
 								$row_depreciation = mtl_resolve_depreciation_csv_value( $get_col( $row, 'annual_depreciation_amount' ), $row_initial_value );
@@ -1526,6 +1536,19 @@ function mtl_render_inventory_page() {
 								$row_training_ids = $resolve_names( $row, $row_number, 'trainings', $training_lookup, 'training' );
 
 								$row_tag_ids = $resolve_names( $row, $row_number, 'tags', $tag_lookup, 'tag' );
+
+								// Down here, once the row has passed its checks, so a
+								// refused row isn't also told what value was used.
+								if ( '' !== $row_date_raw && ! strtotime( $row_date_raw ) ) {
+									$bulk_warnings[] = 'Row ' . $row_number . ': date_acquired "' . $row_date_raw . '" was not understood, so today\'s date was used. Write dates as MM/DD/YYYY or YYYY-MM-DD.';
+								}
+								if ( '' !== $row_value_raw && ! is_numeric( $row_value_raw ) ) {
+									$bulk_warnings[] = 'Row ' . $row_number . ': initial_cash_value "' . $get_col( $row, 'initial_cash_value' ) . '" is not a number, so 0 was used.';
+								}
+								$row_dep_raw = str_replace( array( '$', ',', ' ', '%' ), '', $get_col( $row, 'annual_depreciation_amount' ) );
+								if ( '' !== $row_dep_raw && ! is_numeric( $row_dep_raw ) ) {
+									$bulk_warnings[] = 'Row ' . $row_number . ': annual_depreciation_amount "' . $get_col( $row, 'annual_depreciation_amount' ) . '" is not a number, so 0 was used.';
+								}
 
 								$row_data    = array(
 									'tool_name'          => $row_tool_name,
@@ -1707,7 +1730,8 @@ function mtl_render_inventory_page() {
 					'initial_cash_value'         => $initial_value,
 					'annual_depreciation_amount' => $depreciation,
 					'donated_by'                 => $donated_by,
-					'date_acquired'              => $date_acquired,
+					// NULL for a blank date, as on Add.
+					'date_acquired'              => preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date_acquired ) ? $date_acquired : null,
 					'private_notes'              => '' !== $private_notes ? $private_notes : null,
 					'location'                   => '' !== $location ? $location : null,
 				);
@@ -2123,10 +2147,13 @@ function mtl_render_inventory_page() {
 
 				$editing     = true;
 				$edit_values = array(
-					'tool_name'                   => stripslashes( $tool_row->tool_name ),
-					'barcode'                     => stripslashes( $tool_row->barcode ),
-					'brand'                       => stripslashes( $tool_row->brand ),
-					'location'                    => stripslashes( (string) $tool_row->location ),
+					// No stripslashes() on the way into the form: values are
+					// stored unslashed, so it would drop real backslashes, and
+					// the next save would store the stripped text.
+					'tool_name'                   => (string) $tool_row->tool_name,
+					'barcode'                     => (string) $tool_row->barcode,
+					'brand'                       => (string) $tool_row->brand,
+					'location'                    => (string) $tool_row->location,
 					'photo_url'                   => $tool_row->photo_url,
 					'initial_cash_value'          => $tool_row->initial_cash_value,
 					'annual_depreciation_amount'  => $tool_row->annual_depreciation_amount,
@@ -2134,11 +2161,13 @@ function mtl_render_inventory_page() {
 					// opens with the $ field populated and the % field empty, same
 					// as if the admin had originally typed a dollar amount.
 					'annual_depreciation_percent' => '',
-					'date_acquired'               => $tool_row->date_acquired,
-					'donated_by'                  => stripslashes( (string) $tool_row->donated_by ),
-					'components'                  => stripslashes( (string) $tool_row->components ),
-					'description'                 => stripslashes( (string) $tool_row->description ),
-					'private_notes'               => stripslashes( (string) $tool_row->private_notes ),
+					// A zero date (from before blanks were saved as NULL) opens
+					// as an empty field, so saving the form clears it.
+					'date_acquired'               => 0 === strpos( (string) $tool_row->date_acquired, '0000-00-00' ) ? '' : (string) $tool_row->date_acquired,
+					'donated_by'                  => (string) $tool_row->donated_by,
+					'components'                  => (string) $tool_row->components,
+					'description'                 => (string) $tool_row->description,
+					'private_notes'               => (string) $tool_row->private_notes,
 					'links'                       => mtl_tool_links_state_from_row( $tool_row ),
 					'category_ids'                => array_map( 'intval', $existing_cat_ids ),
 					'tag_ids'                     => array_map( 'intval', $existing_tag_ids ),
@@ -2971,10 +3000,11 @@ function mtl_render_inventory_page() {
             t.private_notes,
             t.location'
 		. mtl_tool_link_columns_sql() . "
-            , GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,
-            GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR ', ') AS tags
-            , GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR ', ') AS subcategories
-            , GROUP_CONCAT(DISTINCT tr.training_name ORDER BY tr.training_name SEPARATOR ', ') AS required_trainings
+            , GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR '\x1F') AS categories,
+            GROUP_CONCAT(DISTINCT tg.tag_name ORDER BY tg.tag_name SEPARATOR '\x1F') AS tags
+            , GROUP_CONCAT(DISTINCT sc.subcategory_name ORDER BY sc.subcategory_name SEPARATOR '\x1F') AS subcategories
+            , GROUP_CONCAT(DISTINCT tr.training_name ORDER BY tr.training_name SEPARATOR '\x1F') AS required_trainings
+            , GROUP_CONCAT(DISTINCT tg.tag_id) AS tag_ids
             , GROUP_CONCAT(DISTINCT c.category_id) AS category_ids
             , GROUP_CONCAT(DISTINCT sc.subcategory_id) AS subcategory_ids
             , GROUP_CONCAT(DISTINCT tr.training_id) AS training_ids
@@ -2997,15 +3027,20 @@ function mtl_render_inventory_page() {
 	// per row) to back the boolean advanced filters below: whether a tool is
 	// out right now, overdue, reserved, or has ever been borrowed at all.
 	$tool_loan_stats = array();
-	$tool_loan_rows  = $wpdb->get_results(
-		"
+	// Overdue against the site's date, not MySQL's CURDATE(), which follows
+	// the database server's time zone.
+	$tool_loan_rows = $wpdb->get_results(
+		$wpdb->prepare(
+			"
         SELECT tool_id,
                COUNT(*) AS total_loans,
                SUM(CASE WHEN return_date IS NULL THEN 1 ELSE 0 END) AS active_loans,
-               SUM(CASE WHEN return_date IS NULL AND due_date < CURDATE() THEN 1 ELSE 0 END) AS overdue_now
+               SUM(CASE WHEN return_date IS NULL AND due_date < %s THEN 1 ELSE 0 END) AS overdue_now
         FROM {$tbl_loans}
         GROUP BY tool_id
-    "
+    ",
+			current_time( 'Y-m-d' )
+		)
 	);
 	foreach ( $tool_loan_rows as $row ) {
 		$tool_loan_stats[ (int) $row->tool_id ] = $row;
@@ -3151,7 +3186,7 @@ function mtl_render_inventory_page() {
 						<label for="adv-tag">Tags</label>
 						<select id="adv-tag" multiple size="4">
 							<?php foreach ( $tags as $tag ) : ?>
-								<option value="<?php echo esc_attr( strtolower( $tag->tag_name ) ); ?>"><?php echo esc_html( $tag->tag_name ); ?></option>
+								<option value="<?php echo esc_attr( $tag->tag_id ); ?>"><?php echo esc_html( $tag->tag_name ); ?></option>
 							<?php endforeach; ?>
 						</select>
 						<small>Leave empty for any. Ctrl-click (&#8984;-click on Mac) to pick or unpick several.</small>
@@ -3332,13 +3367,16 @@ function mtl_render_inventory_page() {
 
 						// Straight-line depreciated value, floored at zero; the
 						// same calculation the dashboard's asset panels use.
-						$age_years  = max( 0, ( time() - strtotime( $item->date_acquired ) ) / 31557600 );
-						$t_curvalue = max( 0, (float) $item->initial_cash_value - ( (float) $item->annual_depreciation_amount * $age_years ) );
-
 						// Share of that same straight-line model still unspent,
 						// backing the meter in the detail panel and the life
 						// range filter. Derived per render, never stored.
 						$t_life = mtl_tool_usable_life( $item->initial_cash_value, $item->annual_depreciation_amount, $item->date_acquired );
+
+						// With no usable acquired date there is no age to
+						// depreciate by, so the value stays at its initial figure.
+						$t_acq_ts   = '' !== (string) $item->date_acquired && 0 !== strpos( (string) $item->date_acquired, '0000-00-00' ) ? strtotime( (string) $item->date_acquired ) : false;
+						$age_years  = $t_acq_ts ? max( 0, ( time() - $t_acq_ts ) / 31557600 ) : 0;
+						$t_curvalue = max( 0, (float) $item->initial_cash_value - ( (float) $item->annual_depreciation_amount * $age_years ) );
 						?>
 						<tr
 							class="mtl-tool-row"
@@ -3347,11 +3385,13 @@ function mtl_render_inventory_page() {
 							data-barcode="<?php echo esc_attr( strtolower( stripslashes( $item->barcode ) ) ); ?>"
 							data-brand="<?php echo esc_attr( strtolower( stripslashes( (string) $item->brand ) ) ); ?>"
 							data-location="<?php echo esc_attr( strtolower( stripslashes( (string) $item->location ) ) ); ?>"
-							data-categories="<?php echo esc_attr( strtolower( (string) $item->categories ) ); ?>"
+							<?php // The name lists come joined with "\x1F" (see mtl_render_pill_list()); commas read better in the search text. ?>
+							data-categories="<?php echo esc_attr( strtolower( str_replace( "\x1F", ', ', (string) $item->categories ) ) ); ?>"
 							data-category-ids="<?php echo esc_attr( (string) $item->category_ids ); ?>"
 							data-subcategory-ids="<?php echo esc_attr( (string) $item->subcategory_ids ); ?>"
 							data-training-ids="<?php echo esc_attr( (string) $item->training_ids ); ?>"
-							data-tags="<?php echo esc_attr( strtolower( (string) $item->tags ) ); ?>"
+							data-tags="<?php echo esc_attr( strtolower( str_replace( "\x1F", ', ', (string) $item->tags ) ) ); ?>"
+							data-tag-ids="<?php echo esc_attr( (string) $item->tag_ids ); ?>"
 							data-description="<?php echo esc_attr( strtolower( stripslashes( (string) $item->description ) ) ); ?>"
 							data-components="<?php echo esc_attr( strtolower( stripslashes( (string) $item->components ) ) ); ?>"
 							data-donor="<?php echo esc_attr( strtolower( stripslashes( (string) $item->donated_by ) ) ); ?>"
@@ -3416,6 +3456,43 @@ function mtl_render_inventory_page() {
 							<?php
 							$delete_form = ob_get_clean();
 						}
+
+						// Mark Returned and who has the tool. Built once because a
+						// retired tool can still be out on loan (Retire leaves the
+						// loan alone), so both branches of the action row offer it.
+						$active_loan  = $t_active > 0 && isset( $tool_active_loan[ $tid ] ) ? $tool_active_loan[ $tid ] : null;
+						$return_block = '';
+						if ( $active_loan ) {
+							// The return date defaults to today; backdating it covers drop-offs processed a day or more later.
+							$return_confirm = array(
+								'title'   => 'Mark Returned',
+								'message' => 'Mark %s as returned?',
+								'subject' => stripslashes( $item->tool_name ),
+								'details' => array( 'This ends the loan.' ),
+								'confirm' => 'Mark Returned',
+							);
+							// Same overdue test as the row's Overdue filter and the
+							// "Out / Overdue" stat below, so the three always agree.
+							$loan_late = $t_overdue > 0;
+							$late_days = max( 1, (int) floor( ( strtotime( current_time( 'Y-m-d' ) ) - strtotime( $active_loan->due_date ) ) / DAY_IN_SECONDS ) );
+							ob_start();
+							?>
+							<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;"<?php echo mtl_confirm_attr( $return_confirm ); ?>>
+								<?php wp_nonce_field( 'mtl_mark_returned_action', 'mtl_mark_returned_nonce' ); ?>
+								<input type="hidden" name="loan_id" value="<?php echo esc_attr( $active_loan->loan_id ); ?>">
+								<?php echo mtl_return_date_field_html( $active_loan->loan_date, 'mtl-return-date-' . (int) $active_loan->loan_id, false ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-escaped markup from the helper. ?>
+								<button type="submit" name="mtl_mark_returned" class="button button-primary">Mark Returned</button>
+							</form>
+							<span class="mtl-detail-actions-hint <?php echo $loan_late ? 'mtl-detail-actions-overdue' : 'mtl-detail-actions-out'; ?>">
+								On loan to <?php echo esc_html( trim( stripslashes( (string) $active_loan->first_name ) . ' ' . stripslashes( (string) $active_loan->last_name ) ) ); ?>,
+								due <?php echo mtl_format_date( $active_loan->due_date ); ?>.
+								<?php if ( $loan_late ) : ?>
+									<strong>Overdue by <?php echo esc_html( $late_days . ' day' . ( 1 === $late_days ? '' : 's' ) ); ?>.</strong>
+								<?php endif; ?>
+							</span>
+							<?php
+							$return_block = ob_get_clean();
+						}
 						// Hidden detail row: holds the FULL, untruncated text for
 						// this tool. Toggled open/closed by clicking anywhere on
 						// the row above (see the expand/collapse script below).
@@ -3426,6 +3503,7 @@ function mtl_render_inventory_page() {
 
 									<div class="mtl-detail-actions">
 										<?php if ( ! empty( $item->retired_at ) ) : ?>
+											<?php echo $return_block; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped where it was built above. ?>
 											<a href="<?php echo esc_url( $edit_url ); ?>" class="button">Edit</a>
 											<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;">
 												<?php wp_nonce_field( 'mtl_reactivate_tool_action', 'mtl_reactivate_tool_nonce' ); ?>
@@ -3441,43 +3519,10 @@ function mtl_render_inventory_page() {
 													data-mode="loan"
 													data-tool-id="<?php echo esc_attr( $item->tool_id ); ?>"
 													data-tool-name="<?php echo esc_attr( stripslashes( $item->tool_name ) ); ?>">Quick Loan</button>
-												<?php
-											else :
-												$active_loan = isset( $tool_active_loan[ $tid ] ) ? $tool_active_loan[ $tid ] : null;
-												?>
-												<?php if ( $active_loan ) : ?>
-													<?php // The return date defaults to today; backdating it covers drop-offs processed a day or more later. ?>
-													<?php
-													$return_confirm = array(
-														'title'   => 'Mark Returned',
-														'message' => 'Mark %s as returned?',
-														'subject' => stripslashes( $item->tool_name ),
-														'details' => array( 'This ends the loan.' ),
-														'confirm' => 'Mark Returned',
-													);
-													?>
-													<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;"<?php echo mtl_confirm_attr( $return_confirm ); ?>>
-														<?php wp_nonce_field( 'mtl_mark_returned_action', 'mtl_mark_returned_nonce' ); ?>
-														<input type="hidden" name="loan_id" value="<?php echo esc_attr( $active_loan->loan_id ); ?>">
-														<?php echo mtl_return_date_field_html( $active_loan->loan_date, 'mtl-return-date-' . (int) $active_loan->loan_id, false ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-escaped markup from the helper. ?>
-														<button type="submit" name="mtl_mark_returned" class="button button-primary">Mark Returned</button>
-													</form>
-													<?php
-													// Same overdue test as the row's Overdue filter and the
-													// "Out / Overdue" stat below, so the three always agree.
-													$loan_late = $t_overdue > 0;
-													$late_days = max( 1, (int) floor( ( strtotime( current_time( 'Y-m-d' ) ) - strtotime( $active_loan->due_date ) ) / DAY_IN_SECONDS ) );
-													?>
-													<span class="mtl-detail-actions-hint <?php echo $loan_late ? 'mtl-detail-actions-overdue' : 'mtl-detail-actions-out'; ?>">
-														On loan to <?php echo esc_html( trim( stripslashes( (string) $active_loan->first_name ) . ' ' . stripslashes( (string) $active_loan->last_name ) ) ); ?>,
-														due <?php echo mtl_format_date( $active_loan->due_date ); ?>.
-														<?php if ( $loan_late ) : ?>
-															<strong>Overdue by <?php echo esc_html( $late_days . ' day' . ( 1 === $late_days ? '' : 's' ) ); ?>.</strong>
-														<?php endif; ?>
-													</span>
-												<?php else : ?>
-													<span class="mtl-detail-actions-hint mtl-detail-actions-out">This tool is currently on loan, so it must be returned before it can be loaned again.</span>
-												<?php endif; ?>
+											<?php elseif ( '' !== $return_block ) : ?>
+												<?php echo $return_block; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped where it was built above. ?>
+											<?php else : ?>
+												<span class="mtl-detail-actions-hint mtl-detail-actions-out">This tool is currently on loan, so it must be returned before it can be loaned again.</span>
 											<?php endif; ?>
 											<button type="button" class="button mtl-ql-open"
 												data-mode="reserve"
@@ -3876,17 +3921,6 @@ function mtl_render_inventory_page() {
 				return Math.min(100, Math.max(0, n));
 			}
 
-			// Whether a row's comma-separated tag list contains ANY of the
-			// picked values. Split rather than substring-matched, so picking
-			// "Saw" can't also drag in "Sawhorse".
-			function listMatchesAny(rowList, picked) {
-				if (!picked.length) return true;
-				const values = rowList ? rowList.split(', ') : [];
-				return picked.some(function(value) {
-					return values.includes(value);
-				});
-			}
-
 			// --- Combined quick filter + advanced search ---
 			// A row must pass the quick filter (substring match anywhere in the
 			// row) AND every non-empty advanced field to stay visible.
@@ -3952,7 +3986,9 @@ function mtl_render_inventory_page() {
 					if (visible && f.brand && !d.brand.toLowerCase().includes(f.brand)) visible = false;
 					if (visible && f.location && !d.location.toLowerCase().includes(f.location)) visible = false;
 					if (visible && !window.mtlTaxonomyMatches(f.taxonomy, d.categoryIds, d.subcategoryIds)) visible = false;
-					if (visible && !listMatchesAny(d.tags, f.tags)) visible = false;
+					// By id, as on the Loans page, so a tag name with a comma
+					// in it still matches.
+					if (visible && !window.mtlIdsIntersect(d.tagIds, f.tags)) visible = false;
 					if (visible && !window.mtlTrainingMatches(f.trainings, d.trainingIds)) visible = false;
 					if (visible && f.description && !d.description.toLowerCase().includes(f.description)) visible = false;
 					if (visible && f.components && !d.components.toLowerCase().includes(f.components)) visible = false;
@@ -4244,6 +4280,34 @@ function mtl_render_inventory_page() {
 	</script>
 
 	<script>
+		// Arrow keys, Enter and Escape for the member lists below (Quick Loan
+		// and Donated By), so they work without the mouse, as the Loans page's
+		// bulk picker does. Top level so the donor script can use it too.
+		function mtlPickerKeydown(e, dropdown, close) {
+			if (dropdown.style.display === 'none') return;
+			// Checked before the options, so it also closes a "No matching
+			// members" list, and only the list, not the Quick Loan modal.
+			if (e.key === 'Escape') {
+				e.stopPropagation();
+				close();
+				return;
+			}
+			const opts = Array.prototype.slice.call(dropdown.querySelectorAll('.mtl-ql-option'));
+			if (!opts.length) return;
+			let at = opts.findIndex(function(o) { return o.classList.contains('mtl-ql-option-active'); });
+			if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+				e.preventDefault();
+				if (at >= 0) opts[at].classList.remove('mtl-ql-option-active');
+				at = e.key === 'ArrowDown' ? (at + 1) % opts.length : (at <= 0 ? opts.length - 1 : at - 1);
+				opts[at].classList.add('mtl-ql-option-active');
+				opts[at].scrollIntoView({ block: 'nearest' });
+			} else if (e.key === 'Enter' && at >= 0) {
+				// Picks the member instead of submitting the form around it.
+				e.preventDefault();
+				opts[at].dispatchEvent(new MouseEvent('mousedown'));
+			}
+		}
+
 		// ---- Quick Loan modal ----
 		document.addEventListener('DOMContentLoaded', function() {
 			<?php
@@ -4431,6 +4495,10 @@ function mtl_render_inventory_page() {
 				renderDropdown(matches);
 			});
 
+			searchInput.addEventListener('keydown', function(e) {
+				mtlPickerKeydown(e, dropdown, hideDropdown);
+			});
+
 			searchInput.addEventListener('focus', function() {
 				if (this.value.trim() && !memberIdInput.value) {
 					this.dispatchEvent(new Event('input'));
@@ -4519,6 +4587,10 @@ function mtl_render_inventory_page() {
 						dropdown.appendChild(opt);
 					});
 					dropdown.style.display = 'block';
+				});
+
+				input.addEventListener('keydown', function(e) {
+					mtlPickerKeydown(e, dropdown, function() { hideDonorDropdown(dropdown); });
 				});
 
 				input.addEventListener('focus', function() {

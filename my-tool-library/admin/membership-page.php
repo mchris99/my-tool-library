@@ -184,11 +184,12 @@ function mtl_bulk_agree_process( $path, $send_email = false ) {
 		return '<div class="notice notice-warning is-dismissible"><p><strong>Nothing was recorded.</strong> No dates were filled in.</p></div>';
 	}
 
-	$written   = 0;
-	$skipped   = 0;
-	$by_member = array();
-	$started   = microtime( true );
-	$ran_out   = false;
+	$written      = 0;
+	$skipped      = 0;
+	$write_failed = 0;
+	$by_member    = array();
+	$started      = microtime( true );
+	$ran_out      = false;
 
 	$outstanding_for = array();
 	foreach ( $planned as $item ) {
@@ -216,34 +217,45 @@ function mtl_bulk_agree_process( $path, $send_email = false ) {
 			$by_member[ $item['member'] ][]     = $acceptance_id;
 			$outstanding_for[ $item['member'] ] = array_diff( $outstanding_for[ $item['member'] ], array( $item['agreement'] ) );
 		} else {
-			++$skipped;
+			++$write_failed;
 		}
 	}
 
 	// Mail shares the same budget as the writing. A send is an SMTP round trip,
 	// so a few hundred of them will outrun a request on their own, and anyone
 	// left unmailed is reported rather than silently dropped.
-	$emailed   = 0;
-	$unemailed = 0;
+	$emailed      = 0;
+	$email_failed = 0;
+	$unemailed    = 0;
 	if ( $send_email ) {
 		foreach ( $by_member as $member_id => $ids ) {
 			if ( microtime( true ) - $started > 20 ) {
-				$unemailed = count( $by_member ) - $emailed;
+				$unemailed = count( $by_member ) - $emailed - $email_failed;
 				break;
 			}
 			if ( mtl_send_agreement_confirmation_email( $member_id, $ids ) ) {
 				++$emailed;
+			} else {
+				++$email_failed;
 			}
 		}
 	}
 
-	$notice = '<div class="notice notice-success is-dismissible"><p><strong>'
+	$notice = '<div class="notice notice-' . ( $write_failed || $email_failed ? 'warning' : 'success' ) . ' is-dismissible"><p><strong>'
 		. esc_html( sprintf( '%1$d recorded for %2$d member(s).', $written, count( $by_member ) ) ) . '</strong>';
 	if ( $skipped > 0 ) {
 		$notice .= ' ' . esc_html( sprintf( '%d already on record, so skipped.', $skipped ) );
 	}
+	if ( $write_failed > 0 ) {
+		// A re-upload skips what was recorded and tries these again.
+		$notice .= ' <strong>' . esc_html( sprintf( '%d could not be recorded.', $write_failed ) ) . '</strong> Upload the same file again to retry them.';
+	}
 	if ( $emailed > 0 ) {
 		$notice .= ' ' . esc_html( sprintf( '%d member(s) emailed their copy.', $emailed ) );
+	}
+	if ( $email_failed > 0 ) {
+		// A re-upload would skip these members, so it can't resend their copy.
+		$notice .= ' <strong>' . esc_html( sprintf( '%d member(s) could not be emailed.', $email_failed ) ) . '</strong> Use <em>Resend agreement email</em> on their detail panel to try again.';
 	}
 	if ( $unemailed > 0 ) {
 		$notice .= ' ' . esc_html( sprintf( '%d could not be emailed in time; their agreements are recorded either way.', $unemailed ) );
@@ -253,6 +265,53 @@ function mtl_bulk_agree_process( $path, $send_email = false ) {
 	}
 
 	return $notice . '</p></div>';
+}
+
+/**
+ * Makes a text cell safe to open in a spreadsheet.
+ *
+ * Excel, LibreOffice and Google Sheets run a cell starting with = + - @ (or a
+ * tab or carriage return ahead of one) as a formula, so a name typed as
+ * =HYPERLINK(...) would run on the administrator's computer. A leading
+ * apostrophe makes the spreadsheet show the text as typed.
+ *
+ * @param string $value Cell text.
+ * @return string
+ */
+function mtl_csv_text_cell( $value ) {
+	$value = (string) $value;
+	return '' !== $value && false !== strpos( "=+-@\t\r", $value[0] ) ? "'" . $value : $value;
+}
+
+/**
+ * The active agreements a member still owes, worked out from data the
+ * Membership page has already loaded for every member.
+ *
+ * Gives the same answer as mtl_member_outstanding_agreements(): an agreement is
+ * owed unless the member accepted its current version or a later one. Used in
+ * the member list, where calling that helper would be one query per member.
+ *
+ * @param object[] $active_agreements Rows from mtl_get_active_agreements(), in display order.
+ * @param string[] $accepted_versions This member's "agreement_id:version" pairs from mtl_get_member_acceptance_versions_map().
+ * @return object[] The owed agreements, in the same order.
+ */
+function mtl_outstanding_from_versions( $active_agreements, $accepted_versions ) {
+	$best = array();
+	foreach ( (array) $accepted_versions as $pair ) {
+		$parts = array_map( 'intval', explode( ':', (string) $pair ) );
+		if ( 2 === count( $parts ) ) {
+			$best[ $parts[0] ] = max( isset( $best[ $parts[0] ] ) ? $best[ $parts[0] ] : 0, $parts[1] );
+		}
+	}
+
+	$owed = array();
+	foreach ( (array) $active_agreements as $agreement ) {
+		$id = (int) $agreement->agreement_id;
+		if ( ! isset( $best[ $id ] ) || $best[ $id ] < (int) $agreement->version_num ) {
+			$owed[] = $agreement;
+		}
+	}
+	return $owed;
 }
 
 /**
@@ -354,11 +413,14 @@ function mtl_maybe_serve_bulk_agree_csv() {
 			continue;
 		}
 
+		// Members type their own names at signup, so these cells are
+		// neutralised against spreadsheet formulas. The upload reads only
+		// member_id and the agreement columns, so the round trip is unaffected.
 		$row = array(
 			$member_id,
-			stripslashes( (string) $member->first_name ),
-			stripslashes( (string) $member->last_name ),
-			(string) $member->email,
+			mtl_csv_text_cell( stripslashes( (string) $member->first_name ) ),
+			mtl_csv_text_cell( stripslashes( (string) $member->last_name ) ),
+			mtl_csv_text_cell( (string) $member->email ),
 		);
 		// Blank cells throughout. A pre-ticked file is a file somebody uploads
 		// without reading, and every row here is a permanent attestation.
@@ -2484,7 +2546,7 @@ function mtl_render_membership_page() {
 
 				if ( 'anonymized' === $result['outcome'] ) {
 					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $display_name is esc_html()'d above.
-					echo '<div class="notice notice-success is-dismissible"><p><strong>Personal data removed.</strong> ' . $display_name . ' is now shown as a former member. Their personal details, verification documents and online sign-in have been permanently removed, while their loans, reservations and completed trainings have been kept so the library&rsquo;s records stay accurate.' . esc_html( $res_note ) . wp_kses_post( $orphan_note ) . wp_kses_post( $cleanup_note ) . '</p></div>';
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Personal data removed.</strong> ' . $display_name . ' is now shown as a former member. Their personal details' . ( ! empty( $result['wp_user_deleted'] ) ? ', verification documents and online sign-in have' : ' and verification documents have' ) . ' been permanently removed, while their loans, reservations and completed trainings have been kept so the library&rsquo;s records stay accurate.' . esc_html( $res_note ) . wp_kses_post( $orphan_note ) . wp_kses_post( $cleanup_note ) . '</p></div>';
 				} else {
 					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That member could not be found or was already deleted.</p></div>';
 				}
@@ -2811,15 +2873,18 @@ function mtl_render_membership_page() {
 
 				$editing     = true;
 				$edit_values = array(
-					'first_name'                => stripslashes( $member_row->first_name ),
-					'last_name'                 => stripslashes( $member_row->last_name ),
+					// No stripslashes() on the way into the form: values are
+					// stored unslashed, so it would drop real backslashes, and
+					// the next save would store the stripped text.
+					'first_name'                => (string) $member_row->first_name,
+					'last_name'                 => (string) $member_row->last_name,
 					'email'                     => $member_row->email,
 					'phone_country'             => $edit_phone_parsed['iso'],
 					'phone_national'            => $edit_phone_parsed['national'],
-					'address_line1'             => stripslashes( $member_row->address_line1 ),
-					'address_line2'             => stripslashes( (string) $member_row->address_line2 ),
-					'city'                      => stripslashes( $member_row->city ),
-					'state'                     => stripslashes( $member_row->state ),
+					'address_line1'             => (string) $member_row->address_line1,
+					'address_line2'             => (string) $member_row->address_line2,
+					'city'                      => (string) $member_row->city,
+					'state'                     => (string) $member_row->state,
 					'zip_code'                  => $member_row->zip_code,
 					'country'                   => $member_row->country,
 					'signup_date'               => $member_row->signup_date,
@@ -2828,7 +2893,7 @@ function mtl_render_membership_page() {
 					'profile_photo_url'         => (string) $member_row->profile_photo_url,
 					'photo_id_scan_url'         => (string) $member_row->photo_id_scan_url,
 					'address_proof_scan_url'    => (string) $member_row->address_proof_scan_url,
-					'private_notes'             => stripslashes( (string) $member_row->private_notes ),
+					'private_notes'             => (string) $member_row->private_notes,
 					'training_starts'           => $existing_training_starts,
 				);
 			} else {
@@ -3728,8 +3793,9 @@ function mtl_render_membership_page() {
 		<details style="background: #fff; padding: 15px 20px; border: 1px solid #ccd0d4; max-width: 800px; margin-top: 20px; border-radius: 4px; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
 			<summary style="font-size: 1.1em; font-weight: 600; cursor: pointer; outline: none; color: var(--mtl-header-color);">
 				Member Agreements
-				<?php if ( $ag_outstanding > 0 ) : ?>
-					<span style="font-weight: 400; color: #8a6d00;">(<?php echo intval( $ag_outstanding ); ?> have not agreed)</span>
+				<?php // Both sets: those who can be asked and those who can't sign in yet, which don't overlap. ?>
+				<?php if ( $ag_outstanding + $ag_excluded > 0 ) : ?>
+					<span style="font-weight: 400; color: #8a6d00;">(<?php echo intval( $ag_outstanding + $ag_excluded ); ?> have not agreed)</span>
 				<?php endif; ?>
 			</summary>
 
@@ -3738,7 +3804,7 @@ function mtl_render_membership_page() {
 				<p style="margin-top: 0;">Ask members to review and agree to the current agreements. They receive an email with a link and agree on the website themselves.</p>
 
 				<ul style="margin: 0 0 15px 20px; list-style: disc;">
-					<li><strong><?php echo intval( $ag_outstanding ); ?></strong> member(s) have not agreed to all of the current agreements.</li>
+					<li><strong><?php echo intval( $ag_outstanding ); ?></strong> member(s) who can sign in have not agreed to all of the current agreements.</li>
 					<li><strong><?php echo intval( $ag_never_agreed ); ?></strong> of those have never agreed to anything.</li>
 					<?php if ( $ag_recent > 0 ) : ?>
 						<li><strong><?php echo intval( $ag_recent ); ?></strong> were emailed in the last 24 hours and will be skipped.</li>
@@ -3749,7 +3815,7 @@ function mtl_render_membership_page() {
 					<?php // Reported rather than silently dropped: a silent drop looks like a successful send. ?>
 					<div class="notice notice-warning inline" style="margin: 0 0 15px 0;">
 						<p style="margin: 6px 0;">
-							<strong>&#9888; <?php echo intval( $ag_excluded ); ?> of them cannot sign in yet, so they have no way to agree. Create their logins first. </strong>
+							<strong>&#9888; <?php echo intval( $ag_excluded ); ?> more have not agreed but cannot sign in yet, so they have no way to agree. Create their logins first. </strong>
 							See <em>Member Logins</em> above, then send setup emails. They will be left out of this send.
 						</p>
 					</div>
@@ -3981,25 +4047,32 @@ function mtl_render_membership_page() {
 	// Lifetime loan counts. "past due" deliberately counts BOTH loans returned
 	// after their due date AND loans still out that are overdue right now, so
 	// it reads as "how many times has this member kept a tool too long".
+	// Overdue is judged against the site's date, not MySQL's CURDATE(), which
+	// follows the database server's time zone.
+	$mtl_today      = current_time( 'Y-m-d' );
 	$loan_stats     = array();
 	$loan_stat_rows = $wpdb->get_results(
-		"
+		$wpdb->prepare(
+			"
         SELECT member_id,
                COUNT(*) AS total_loans,
                SUM(CASE WHEN return_date IS NULL THEN 1 ELSE 0 END) AS active_loans,
                SUM(CASE WHEN return_date IS NOT NULL THEN 1 ELSE 0 END) AS prior_loans,
-               SUM(CASE WHEN return_date IS NULL AND due_date < CURDATE() THEN 1 ELSE 0 END) AS overdue_now,
+               SUM(CASE WHEN return_date IS NULL AND due_date < %s THEN 1 ELSE 0 END) AS overdue_now,
                -- DATE(return_date), not a raw comparison: return_date is a full
                -- timestamp and due_date stays a plain date, so a bare > would
                -- wrongly count a same-day return (any time after midnight) as late.
                SUM(CASE
                      WHEN return_date IS NOT NULL AND DATE(return_date) > due_date THEN 1
-                     WHEN return_date IS NULL AND due_date < CURDATE() THEN 1
+                     WHEN return_date IS NULL AND due_date < %s THEN 1
                      ELSE 0
                    END) AS past_due_loans
         FROM {$tbl_loans}
         GROUP BY member_id
-    "
+    ",
+			$mtl_today,
+			$mtl_today
+		)
 	);
 	foreach ( $loan_stat_rows as $row ) {
 		$loan_stats[ (int) $row->member_id ] = $row;
@@ -4008,15 +4081,18 @@ function mtl_render_membership_page() {
 	// The tools each member currently has out.
 	$active_loans_by_member = array();
 	$active_loan_rows       = $wpdb->get_results(
-		"
+		$wpdb->prepare(
+			"
         SELECT l.loan_id, l.member_id, l.loan_date, l.due_date,
-               DATEDIFF(CURDATE(), l.due_date) AS days_past_due,
+               DATEDIFF(%s, l.due_date) AS days_past_due,
                t.tool_name, t.barcode
         FROM {$tbl_loans} l
         JOIN {$tbl_inventory} t ON t.tool_id = l.tool_id
         WHERE l.return_date IS NULL
         ORDER BY l.due_date ASC
-    "
+    ",
+			$mtl_today
+		)
 	);
 	foreach ( $active_loan_rows as $row ) {
 		$active_loans_by_member[ (int) $row->member_id ][] = $row;
@@ -4579,7 +4655,7 @@ function mtl_render_membership_page() {
 										// instead.
 										if ( mtl_agreements_tracking() ) :
 											$mtl_p_acceptances = isset( $member_acceptances[ $mid ] ) ? $member_acceptances[ $mid ] : array();
-											$mtl_p_outstanding = mtl_member_outstanding_agreements( $mid );
+											$mtl_p_outstanding = mtl_outstanding_from_versions( $mtl_active_agreements, isset( $member_agreement_vers[ $mid ] ) ? $member_agreement_vers[ $mid ] : array() );
 											$mtl_p_out_ids     = array_map( 'intval', wp_list_pluck( $mtl_p_outstanding, 'agreement_id' ) );
 											$mtl_p_active      = count( $mtl_active_agreements );
 											$mtl_p_accepted    = $mtl_p_active - count( $mtl_p_outstanding );
@@ -4660,10 +4736,11 @@ function mtl_render_membership_page() {
 													<p class="mtl-agreement-actions">
 														<?php if ( $mtl_p_can_record && $mtl_p_outstanding ) : ?>
 															<?php
-															// A real link, so the dialog works with scripting off:
-															// following it renders the identical form inline below.
-															// A staff member who cannot open the dialog would
-															// otherwise have NO way to record a signature.
+															// A real link: following it renders the identical form
+															// inline below and reopens this panel, so a browser
+															// without <dialog> support can still record a
+															// signature. The admin pages need scripting either way,
+															// since the panel itself only opens with it.
 															$mtl_p_launch = add_query_arg( 'mtl_record_agreement', $mid, $base_url ) . '#mtl-detail-' . $mid;
 															?>
 															<a class="button mtl-record-launch" data-member="<?php echo esc_attr( $mid ); ?>" href="<?php echo esc_url( $mtl_p_launch ); ?>">Record agreement</a>
@@ -5521,9 +5598,13 @@ function mtl_render_membership_page() {
 			// member's detail row so staff can see the result without having
 			// to re-find and re-click the member. Turns to the row's page first,
 			// since renderPage() hides every row outside the current page.
+			// A followed Record agreement link reopens its member the same way,
+			// so the form is in view behind the dialog, or inline where the
+			// browser has no <dialog>.
+			$mtl_reopen_id = $reopen_member_id > 0 ? $reopen_member_id : $record_agreement_id;
 			?>
-			<?php if ( $reopen_member_id > 0 ) : ?>
-				const reopenRow = document.querySelector('.mtl-member-row[data-member-id="<?php echo (int) $reopen_member_id; ?>"]');
+			<?php if ( $mtl_reopen_id > 0 ) : ?>
+				const reopenRow = document.querySelector('.mtl-member-row[data-member-id="<?php echo (int) $mtl_reopen_id; ?>"]');
 				if (reopenRow) {
 					const reopenIndex = Array.from(tbody.querySelectorAll('tr.mtl-member-row'))
 						.filter(function(r) { return r.dataset.matched !== '0'; })
@@ -5779,8 +5860,9 @@ function mtl_render_membership_page() {
 
 	<script>
 		// Record Agreement: moves the form the detail panel already rendered
-		// inline into a native <dialog>. The launcher is a real link, so with
-		// scripting off it just navigates and the inline form is what you get.
+		// inline into a native <dialog>. The launcher is a real link, so where
+		// <dialog> isn't supported it just navigates and the inline form, in
+		// the reopened panel, is what you get.
 		document.addEventListener('DOMContentLoaded', function() {
 			const launchers = document.querySelectorAll('.mtl-record-launch');
 			if (!launchers.length || typeof HTMLDialogElement === 'undefined') {
