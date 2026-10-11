@@ -1341,6 +1341,1491 @@ function mtl_restore_from_sql( $sql ) {
 	);
 }
 
+// --------------------------------------------------------------------------
+// Public pages look
+// --------------------------------------------------------------------------
+
+/**
+ * The preset a look's colors, corners and button style match, or 'custom'.
+ * Worked out on save rather than taken from the form, so a preset that was
+ * picked and then edited is not saved under the preset's name.
+ *
+ * @param array $look A sanitized look.
+ * @return string Preset slug or 'custom'.
+ */
+function mtl_public_look_matching_preset( $look ) {
+	foreach ( mtl_public_look_presets() as $slug => $preset ) {
+		unset( $preset['label'] );
+		$match = true;
+		foreach ( $preset as $key => $value ) {
+			if ( ! isset( $look[ $key ] ) || strtoupper( (string) $look[ $key ] ) !== strtoupper( (string) $value ) ) {
+				$match = false;
+				break;
+			}
+		}
+		if ( $match ) {
+			return $slug;
+		}
+	}
+	return 'custom';
+}
+
+/**
+ * Which color is checked against which for the contrast readouts on Setup.
+ * The main button is handled on its own: it is checked against its own text.
+ *
+ * @return array readout key => array( foreground key, background key, where ).
+ */
+function mtl_public_look_contrast_pairs() {
+	return array(
+		'text'    => array( 'text', 'page_bg', 'on page' ),
+		'heading' => array( 'heading', 'page_bg', 'on page' ),
+		'link'    => array( 'link', 'panel_bg', 'on panels' ),
+	);
+}
+
+/**
+ * One contrast readout beside a color on Setup, such as "11.5 : 1 on page".
+ * The section's script builds the same text as colors change, so keep the
+ * two in step.
+ *
+ * Rounded down, so 4.46 never shows as a passing 4.5.
+ *
+ * @param array  $look A sanitized look.
+ * @param string $key  text, heading, link or button.
+ * @return array { text: string, low: bool }
+ */
+function mtl_public_look_contrast_readout( $look, $key ) {
+	if ( 'button' === $key ) {
+		$bg     = $look['button'];
+		$fg     = mtl_readable_ink( $bg );
+		$prefix = '#FFFFFF' === $fg ? 'White text, ' : 'Dark text, ';
+		$where  = '';
+	} else {
+		$pairs  = mtl_public_look_contrast_pairs();
+		$fg     = $look[ $pairs[ $key ][0] ];
+		$bg     = $look[ $pairs[ $key ][1] ];
+		$prefix = '';
+		$where  = ' ' . $pairs[ $key ][2];
+	}
+
+	$ratio = floor( mtl_contrast_ratio( $fg, $bg ) * 10 ) / 10;
+	$text  = $prefix . number_format( $ratio, 1 ) . ' : 1' . $where;
+	$low   = $ratio < 4.5;
+	if ( $low ) {
+		// Light text on a dark ground needs to be lighter, and dark text on a
+		// light one darker. For the button it is the fill that needs to move.
+		$fg_lighter = mtl_relative_luminance( $fg ) > mtl_relative_luminance( $bg );
+		if ( 'button' === $key ) {
+			$fg_lighter = ! $fg_lighter;
+		}
+		$text .= $fg_lighter ? ', too dark' : ', too light';
+	}
+
+	return array(
+		'text' => $text,
+		'low'  => $low,
+	);
+}
+
+/**
+ * The values mtl_public_look_vars_css() prints for each choice, read back out
+ * of its CSS, so the preview script sets exactly what the public pages would
+ * without keeping a second copy of the tables.
+ *
+ * @return array corners, button_size and text_size: choice => property => value;
+ *               status: light|dark => property => value.
+ */
+function mtl_public_look_preview_tables() {
+	$defaults = mtl_public_look_defaults();
+	$read     = static function ( $changes, $props ) use ( $defaults ) {
+		$css    = mtl_public_look_vars_css( array_merge( $defaults, $changes ) );
+		$values = array();
+		foreach ( $props as $prop ) {
+			$values[ $prop ] = preg_match( '/\t' . preg_quote( $prop, '/' ) . ': ([^;]+);/', $css, $found ) ? $found[1] : '';
+		}
+		return $values;
+	};
+
+	$choices = mtl_public_look_choices();
+	$tables  = array();
+	foreach ( $choices['corners'] as $choice ) {
+		$tables['corners'][ $choice ] = $read( array( 'corners' => $choice ), array( '--mtl-radius', '--mtl-btn-radius' ) );
+	}
+	foreach ( $choices['button_size'] as $choice ) {
+		$tables['button_size'][ $choice ] = $read( array( 'button_size' => $choice ), array( '--mtl-btn-scale' ) );
+	}
+	foreach ( $choices['text_size'] as $choice ) {
+		$tables['text_size'][ $choice ] = $read( array( 'text_size' => $choice ), array( '--mtl-text-size' ) );
+	}
+
+	// The status colors switch to a brighter set on a dark panel.
+	$status           = array( '--mtl-ok', '--mtl-out', '--mtl-maint', '--mtl-late', '--mtl-wait', '--mtl-retired' );
+	$tables['status'] = array(
+		'light' => $read( array( 'panel_bg' => '#FFFFFF' ), $status ),
+		'dark'  => $read( array( 'panel_bg' => '#000000' ), $status ),
+	);
+
+	return $tables;
+}
+
+/**
+ * A row of radio buttons drawn as one segmented control.
+ *
+ * @param string $key    Look key, also the field name inside mtl_look[].
+ * @param string $legend Visible name of the group.
+ * @param array  $labels value => label.
+ * @param string $value  The current value.
+ */
+function mtl_public_look_segments( $key, $legend, $labels, $value ) {
+	?>
+	<fieldset class="mtl-look-row">
+		<legend><?php echo esc_html( $legend ); ?></legend>
+		<div class="mtl-look-seg">
+			<?php foreach ( $labels as $option => $label ) : ?>
+				<label>
+					<input type="radio" name="mtl_look[<?php echo esc_attr( $key ); ?>]" value="<?php echo esc_attr( $option ); ?>" <?php checked( $value, $option ); ?>>
+					<span><?php echo esc_html( $label ); ?></span>
+				</label>
+			<?php endforeach; ?>
+		</div>
+	</fieldset>
+	<?php
+}
+
+/**
+ * The Public pages look section of the Setup page: its form, the live
+ * preview beside it, and the script that ties them together.
+ *
+ * @param bool $open Whether the section starts open.
+ */
+function mtl_render_public_look_section( $open ) {
+	// Read here rather than through mtl_public_look(), whose copy is kept for
+	// the request and would miss a save made earlier in this one.
+	$look    = mtl_sanitize_public_look( get_option( 'mtl_public_look', array() ) );
+	$presets = mtl_public_look_presets();
+	$fonts   = mtl_public_font_choices();
+	$tables  = mtl_public_look_preview_tables();
+	$preset  = mtl_public_look_matching_preset( $look );
+	$preview = add_query_arg(
+		array(
+			'action'   => 'mtl_public_look_preview',
+			'_wpnonce' => wp_create_nonce( 'mtl_public_look_preview' ),
+		),
+		admin_url( 'admin-post.php' )
+	);
+
+	$colors = array(
+		'page_bg'  => array( 'Page background', 'Behind everything', '' ),
+		'panel_bg' => array( 'Panels and tiles', 'Tool tiles, the tool panel, forms', '' ),
+		'text'     => array( 'Text', 'Body text and labels', 'text' ),
+		'heading'  => array( 'Headings and library name', 'Page titles, tool names', 'heading' ),
+		'link'     => array( 'Links', 'Text links and the current-page marker', 'link' ),
+		'button'   => array( 'Main buttons', 'Search, Reserve, Save. Button text switches between dark and white to stay readable.', 'button' ),
+	);
+
+	$font_groups = array();
+	foreach ( $fonts as $key => $font ) {
+		$font_groups[ $font['group'] ][ $key ] = $font;
+	}
+	$has_library_fonts = (bool) mtl_public_library_fonts();
+
+	// WordPress 7.0 gave the Font Library its own screen under Appearance.
+	// Before that it lives in the Site Editor's styles.
+	$fonts_screen = file_exists( ABSPATH . 'wp-admin/font-library.php' )
+		? array( 'Appearance > Fonts', admin_url( 'font-library.php' ) )
+		: array( 'Appearance > Editor > Styles > Typography', admin_url( 'site-editor.php?path=%2Fwp_global_styles' ) );
+
+	$samples = array(
+		'catalog' => 'Catalog',
+		'tool'    => 'Tool',
+		'loans'   => 'My loans',
+	);
+
+	$reset_confirm = array(
+		'title'   => 'Reset to Lending desk',
+		'message' => 'Put every public pages setting back to the Lending desk defaults, fonts and catalog options included?',
+		'details' => array( 'The public pages change as soon as you confirm.' ),
+		'confirm' => 'Reset',
+	);
+
+	// Everything the script needs, from the same functions the public pages use.
+	$config = array(
+		'look'    => $look,
+		'presets' => $presets,
+		'fonts'   => wp_list_pluck( $fonts, 'stack' ),
+		'tables'  => $tables,
+		'pairs'   => mtl_public_look_contrast_pairs(),
+		'darkInk' => mtl_readable_ink( '#FFFFFF' ),
+	);
+
+	mtl_setup_section_start(
+		'look',
+		array(
+			'title' => 'Public pages look',
+			'desc'  => 'The catalog, member pages and sign-in pages. The staff portal keeps its own settings below.',
+			'open'  => $open,
+		)
+	);
+	?>
+	<style>
+		.mtl-look {
+			container-type: inline-size;
+		}
+
+		.mtl-look-split {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) 480px;
+			gap: 0 28px;
+			align-items: start;
+		}
+
+		/* Under 1000px of room the preview goes above the settings, so the
+			first thing changed is still in view. */
+		@container (max-width: 999px) {
+			.mtl-look-split {
+				grid-template-columns: minmax(0, 1fr);
+			}
+
+			/* .mtl-look in front to outrank the rules further down. */
+			.mtl-look .mtl-look-preview {
+				order: -1;
+				position: static;
+				margin-bottom: 20px;
+			}
+
+			.mtl-look .mtl-look-frame {
+				height: 520px;
+			}
+		}
+
+		.mtl-look-group {
+			padding: 18px 0;
+			border-top: 1px solid #f0f0f1;
+		}
+
+		.mtl-look-group:first-of-type {
+			padding-top: 0;
+			border-top: 0;
+		}
+
+		/* Outranks the shared heading rule in my-tool-library.php, which
+			sizes every h4 on the plugin's pages from the staff font size. */
+		.mtl-admin-wrapper .mtl-look h4 {
+			margin: 0 0 4px;
+			font-size: 14px;
+			line-height: 1.4;
+			text-transform: none;
+		}
+
+		.mtl-look-help {
+			margin: 0 0 12px;
+			color: #646970;
+		}
+
+		.mtl-look-presets {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+			gap: 10px;
+		}
+
+		.mtl-look-preset {
+			padding: 6px 6px 8px;
+			border: 1px solid #c3c4c7;
+			border-radius: 4px;
+			background: #fff;
+			color: #1d2327;
+			font: inherit;
+			font-size: 13px;
+			cursor: pointer;
+		}
+
+		.mtl-look-preset:hover {
+			border-color: #8c8f94;
+		}
+
+		.mtl-look-preset[aria-pressed="true"] {
+			border-color: #2271b1;
+			box-shadow: 0 0 0 1px #2271b1;
+		}
+
+		.mtl-look-preset:focus-visible,
+		.mtl-look-card:has(input:focus-visible),
+		.mtl-look-seg label:has(input:focus-visible) {
+			outline: 2px solid #2271b1;
+			outline-offset: 2px;
+		}
+
+		/* A tiny page in the preset's colors: heading, a panel, a button. */
+		.mtl-look-mini {
+			display: flex;
+			flex-direction: column;
+			gap: 5px;
+			height: 58px;
+			margin-bottom: 6px;
+			padding: 7px;
+			border-radius: 3px;
+			box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08);
+		}
+
+		.mtl-look-mini i {
+			display: block;
+			height: 6px;
+			width: 55%;
+			border-radius: 2px;
+		}
+
+		.mtl-look-mini i + i {
+			width: auto;
+			height: 14px;
+			box-shadow: 0 0 0 1px rgba(0, 0, 0, .12);
+		}
+
+		.mtl-look-mini b {
+			display: block;
+			height: 12px;
+			width: 55%;
+			border-radius: 3px;
+		}
+
+		.mtl-look-color {
+			display: grid;
+			grid-template-columns: 38px 86px minmax(0, 1fr) auto;
+			gap: 4px 12px;
+			align-items: center;
+			padding: 8px 0;
+			border-top: 1px solid #f6f7f7;
+		}
+
+		.mtl-look-color:first-child {
+			border-top: 0;
+		}
+
+		.mtl-look-color input[type="color"] {
+			width: 38px;
+			height: 30px;
+			padding: 2px;
+			border: 1px solid #8c8f94;
+			border-radius: 3px;
+			background: #fff;
+			cursor: pointer;
+		}
+
+		.mtl-look-color input[type="text"] {
+			width: 86px;
+			font-family: Consolas, Menlo, monospace;
+			text-transform: uppercase;
+		}
+
+		.mtl-look-color input[aria-invalid="true"] {
+			border-color: #d63638;
+			box-shadow: 0 0 0 1px #d63638;
+		}
+
+		.mtl-look-color label {
+			display: block;
+			font-weight: 600;
+		}
+
+		.mtl-look-color label span {
+			display: block;
+			font-weight: 400;
+			color: #646970;
+		}
+
+		.mtl-look-ratio {
+			color: #007017;
+			white-space: nowrap;
+		}
+
+		.mtl-look-ratio.is-low {
+			color: #b32d2e;
+			font-weight: 600;
+		}
+
+		@container (max-width: 560px) {
+			.mtl-look-color {
+				grid-template-columns: 38px 86px minmax(0, 1fr);
+			}
+
+			.mtl-look-ratio {
+				grid-column: 3;
+				white-space: normal;
+			}
+		}
+
+		.mtl-look-fixed {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 6px 14px;
+			margin: 10px 0 0;
+			padding: 8px 12px;
+			border-radius: 3px;
+			background: #f6f7f7;
+			color: #50575e;
+		}
+
+		.mtl-look-fixed span {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+		}
+
+		.mtl-look-fixed i {
+			width: 10px;
+			height: 10px;
+			border-radius: 2px;
+		}
+
+		/* A legend can't take part in a grid unless it is floated, which
+			makes it an ordinary box in the first column. */
+		.mtl-look-row {
+			display: grid;
+			grid-template-columns: 140px minmax(0, 1fr);
+			gap: 4px 12px;
+			align-items: center;
+			margin: 0;
+			padding: 6px 0;
+			border: 0;
+			min-width: 0;
+		}
+
+		.mtl-look-row > legend,
+		.mtl-look-row > label {
+			float: left;
+			padding: 0;
+			font-weight: 600;
+		}
+
+		.mtl-look-row > select {
+			justify-self: start;
+			max-width: 100%;
+		}
+
+		.mtl-look-note {
+			grid-column: 2;
+			margin: 0;
+			color: #646970;
+		}
+
+		@container (max-width: 560px) {
+			.mtl-look-row {
+				grid-template-columns: minmax(0, 1fr);
+			}
+
+			.mtl-look-note {
+				grid-column: 1;
+			}
+		}
+
+		/* Radio inputs stay in the page for the keyboard and screen readers,
+			drawn over by their labels. */
+		.mtl-look-seg input,
+		.mtl-look-card input {
+			position: absolute;
+			opacity: 0;
+			width: 1px;
+			height: 1px;
+			margin: 0;
+		}
+
+		.mtl-look-seg {
+			display: inline-flex;
+			justify-self: start;
+			border: 1px solid #8c8f94;
+			border-radius: 3px;
+			background: #fff;
+		}
+
+		.mtl-look-seg label {
+			position: relative;
+			cursor: pointer;
+		}
+
+		.mtl-look-seg label + label {
+			border-left: 1px solid #8c8f94;
+		}
+
+		.mtl-look-seg span {
+			display: block;
+			padding: 5px 13px;
+		}
+
+		.mtl-look-seg label:has(input:checked) {
+			background: #2271b1;
+			color: #fff;
+		}
+
+		.mtl-look-cards {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+		}
+
+		.mtl-look-card {
+			position: relative;
+			width: 96px;
+			padding: 9px 8px 7px;
+			border: 1px solid #c3c4c7;
+			border-radius: 4px;
+			background: #fff;
+			text-align: center;
+			cursor: pointer;
+		}
+
+		.mtl-look-card:has(input:checked) {
+			border-color: #2271b1;
+			box-shadow: 0 0 0 1px #2271b1;
+		}
+
+		/* A button drawn in the current button color. The script keeps
+			--mtl-look-btn and --mtl-look-btn-radius in step with the form. */
+		.mtl-look-drawn {
+			display: block;
+			width: 64px;
+			height: 22px;
+			margin: 0 auto 6px;
+			border: 2px solid var(--mtl-look-btn);
+			border-radius: var(--mtl-look-btn-radius);
+			background: var(--mtl-look-btn);
+		}
+
+		.mtl-look-drawn-raised {
+			box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .22);
+		}
+
+		.mtl-look-drawn-outline {
+			background: #fff;
+		}
+
+		.mtl-look-checks label {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			padding: 4px 0;
+		}
+
+		.mtl-look-foot {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 10px 14px;
+			padding-top: 16px;
+			border-top: 1px solid #dcdcde;
+		}
+
+		.mtl-look-foot .mtl-look-open {
+			margin-left: auto;
+		}
+
+		/* Sticky below the admin bar, so it stays in view while the settings
+			scroll past. */
+		.mtl-look-preview {
+			position: sticky;
+			top: 46px;
+		}
+
+		.mtl-look-preview-head {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			justify-content: space-between;
+			gap: 8px;
+			margin-bottom: 10px;
+		}
+
+		.mtl-admin-wrapper .mtl-look-preview-head h4 {
+			margin: 0;
+		}
+
+		.mtl-look-tabs {
+			display: inline-flex;
+			border: 1px solid #8c8f94;
+			border-radius: 3px;
+			background: #fff;
+		}
+
+		.mtl-admin-wrapper .mtl-look-tabs a {
+			padding: 5px 13px;
+			color: #1d2327;
+			font-size: 13px;
+			text-decoration: none;
+		}
+
+		.mtl-look-tabs a + a {
+			border-left: 1px solid #8c8f94;
+		}
+
+		.mtl-admin-wrapper .mtl-look-tabs a[aria-current="true"] {
+			background: #2271b1;
+			color: #fff;
+		}
+
+		.mtl-look-frame {
+			display: block;
+			width: 100%;
+			height: max(420px, min(680px, calc(100vh - 170px)));
+			border: 1px solid #c3c4c7;
+			border-radius: 4px;
+			background: #fff;
+		}
+
+		.mtl-look-preview-note {
+			margin: 8px 0 0;
+			color: #646970;
+		}
+	</style>
+
+	<div class="mtl-look" id="mtl-look" style="<?php echo esc_attr( '--mtl-look-btn: ' . $look['button'] . '; --mtl-look-btn-radius: ' . $tables['corners'][ $look['corners'] ]['--mtl-btn-radius'] . ';' ); ?>">
+		<div class="mtl-look-split">
+			<form method="post" action="" class="mtl-look-form">
+				<?php wp_nonce_field( 'mtl_save_settings_action', 'mtl_settings_nonce' ); ?>
+
+				<div class="mtl-look-group">
+					<h4>Start from a preset</h4>
+					<p class="mtl-look-help">A preset fills in the colors and button shape below, and the preview changes straight away. Nothing changes on the site until you save.</p>
+					<div class="mtl-look-presets">
+						<?php foreach ( $presets as $slug => $p ) : ?>
+							<button type="button" class="mtl-look-preset" data-preset="<?php echo esc_attr( $slug ); ?>" aria-pressed="<?php echo $slug === $preset ? 'true' : 'false'; ?>">
+								<span class="mtl-look-mini" style="<?php echo esc_attr( 'background: ' . $p['page_bg'] ); ?>" aria-hidden="true">
+									<i style="<?php echo esc_attr( 'background: ' . $p['heading'] ); ?>"></i>
+									<i style="<?php echo esc_attr( 'background: ' . $p['panel_bg'] ); ?>"></i>
+									<b style="<?php echo esc_attr( 'background: ' . $p['button'] ); ?>"></b>
+								</span>
+								<?php echo esc_html( $p['label'] ); ?>
+							</button>
+						<?php endforeach; ?>
+					</div>
+				</div>
+
+				<div class="mtl-look-group">
+					<h4>Colors</h4>
+					<p class="mtl-look-help">Contrast is checked as you pick. Aim for at least 4.5 : 1 for text.</p>
+					<?php
+					foreach ( $colors as $key => $color ) :
+						$field   = 'mtl-look-' . str_replace( '_', '-', $key );
+						$readout = '' !== $color[2] ? mtl_public_look_contrast_readout( $look, $color[2] ) : null;
+						$ratio   = $readout ? ' aria-describedby="' . esc_attr( $field . '-ratio' ) . '"' : '';
+						?>
+						<div class="mtl-look-color">
+							<input type="color" id="<?php echo esc_attr( $field ); ?>-picker" value="<?php echo esc_attr( strtolower( $look[ $key ] ) ); ?>" data-look-picker="<?php echo esc_attr( $key ); ?>" aria-label="<?php echo esc_attr( $color[0] . ' color picker' ); ?>"<?php echo $ratio; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built above with esc_attr(). ?>>
+							<input type="text" name="mtl_look[<?php echo esc_attr( $key ); ?>]" id="<?php echo esc_attr( $field ); ?>" value="<?php echo esc_attr( $look[ $key ] ); ?>" data-look-hex="<?php echo esc_attr( $key ); ?>" maxlength="7" pattern="#?([0-9A-Fa-f]{3}){1,2}" title="A hex color, such as #1F2D36" spellcheck="false" autocomplete="off"<?php echo $ratio; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built above with esc_attr(). ?>>
+							<label for="<?php echo esc_attr( $field ); ?>"><?php echo esc_html( $color[0] ); ?> <span><?php echo esc_html( $color[1] ); ?></span></label>
+							<?php if ( $readout ) : ?>
+								<span class="mtl-look-ratio<?php echo $readout['low'] ? ' is-low' : ''; ?>" id="<?php echo esc_attr( $field . '-ratio' ); ?>" data-look-ratio="<?php echo esc_attr( $color[2] ); ?>"><?php echo esc_html( $readout['text'] ); ?></span>
+							<?php else : ?>
+								<span></span>
+							<?php endif; ?>
+						</div>
+					<?php endforeach; ?>
+					<p class="mtl-look-fixed">
+						Status colors stay fixed so their meaning never changes:
+						<span><i style="background: <?php echo esc_attr( $tables['status']['light']['--mtl-ok'] ); ?>"></i>Available</span>
+						<span><i style="background: <?php echo esc_attr( $tables['status']['light']['--mtl-out'] ); ?>"></i>On loan</span>
+						<span><i style="background: <?php echo esc_attr( $tables['status']['light']['--mtl-maint'] ); ?>"></i>Under maintenance</span>
+						<span><i style="background: <?php echo esc_attr( $tables['status']['light']['--mtl-late'] ); ?>"></i>Overdue</span>
+					</p>
+				</div>
+
+				<div class="mtl-look-group">
+					<h4>Fonts and text size</h4>
+					<?php
+					foreach ( array(
+						'heading_font' => 'Headings',
+						'text_font'    => 'Text',
+					) as $key => $label ) :
+						?>
+						<div class="mtl-look-row">
+							<label for="mtl-look-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label>
+							<select name="mtl_look[<?php echo esc_attr( $key ); ?>]" id="mtl-look-<?php echo esc_attr( $key ); ?>" data-look-font="<?php echo esc_attr( $key ); ?>">
+								<?php foreach ( $font_groups as $group => $group_fonts ) : ?>
+									<optgroup label="<?php echo esc_attr( 'Built in' === $group ? 'Included with the plugin and standard fonts' : $group ); ?>">
+										<?php foreach ( $group_fonts as $font_key => $font ) : ?>
+											<option value="<?php echo esc_attr( $font_key ); ?>" <?php selected( $look[ $key ], $font_key ); ?>><?php echo esc_html( $font['label'] ); ?></option>
+										<?php endforeach; ?>
+									</optgroup>
+								<?php endforeach; ?>
+							</select>
+						</div>
+					<?php endforeach; ?>
+					<?php if ( ! $has_library_fonts ) : ?>
+						<div class="mtl-look-row">
+							<p class="mtl-look-note">
+								Fonts you install in WordPress&rsquo;s Font Library (<?php echo esc_html( $fonts_screen[0] ); ?>) appear here, served from your own site.
+								<?php if ( current_user_can( 'edit_theme_options' ) ) : ?>
+									<a href="<?php echo esc_url( $fonts_screen[1] ); ?>">Open the Font Library</a>
+								<?php endif; ?>
+							</p>
+						</div>
+					<?php endif; ?>
+					<?php
+					mtl_public_look_segments(
+						'text_size',
+						'Text size',
+						array(
+							'smaller'  => 'Smaller',
+							'standard' => 'Standard',
+							'larger'   => 'Larger',
+						),
+						$look['text_size']
+					);
+					?>
+				</div>
+
+				<div class="mtl-look-group">
+					<h4>Buttons</h4>
+					<fieldset class="mtl-look-row">
+						<legend>Corners</legend>
+						<div class="mtl-look-cards">
+							<?php
+							foreach ( array(
+								'square'  => 'Square',
+								'soft'    => 'Soft',
+								'rounded' => 'Rounded',
+								'pill'    => 'Pill',
+							) as $option => $label ) :
+								?>
+								<label class="mtl-look-card">
+									<input type="radio" name="mtl_look[corners]" value="<?php echo esc_attr( $option ); ?>" <?php checked( $look['corners'], $option ); ?>>
+									<span class="mtl-look-drawn" style="<?php echo esc_attr( 'border-radius: ' . $tables['corners'][ $option ]['--mtl-btn-radius'] ); ?>" aria-hidden="true"></span>
+									<?php echo esc_html( $label ); ?>
+								</label>
+							<?php endforeach; ?>
+						</div>
+					</fieldset>
+					<fieldset class="mtl-look-row">
+						<legend>Style</legend>
+						<div class="mtl-look-cards">
+							<?php
+							foreach ( array(
+								'flat'    => 'Flat',
+								'raised'  => 'Raised edge',
+								'outline' => 'Outline',
+							) as $option => $label ) :
+								?>
+								<label class="mtl-look-card">
+									<input type="radio" name="mtl_look[button_style]" value="<?php echo esc_attr( $option ); ?>" <?php checked( $look['button_style'], $option ); ?>>
+									<span class="mtl-look-drawn mtl-look-drawn-<?php echo esc_attr( $option ); ?>" aria-hidden="true"></span>
+									<?php echo esc_html( $label ); ?>
+								</label>
+							<?php endforeach; ?>
+						</div>
+					</fieldset>
+					<?php
+					mtl_public_look_segments(
+						'button_size',
+						'Size',
+						array(
+							'small'    => 'Small',
+							'standard' => 'Standard',
+							'large'    => 'Large',
+						),
+						$look['button_size']
+					);
+					?>
+				</div>
+
+				<div class="mtl-look-group">
+					<h4>Catalog</h4>
+					<?php
+					mtl_public_look_segments(
+						'default_view',
+						'Opens in',
+						array(
+							'cards'   => 'Cards',
+							'table'   => 'Table',
+							'compact' => 'Compact',
+						),
+						$look['default_view']
+					);
+					?>
+					<div class="mtl-look-checks">
+						<?php
+						// The hidden 0 goes first: an unticked box posts nothing,
+						// which the sanitizer would read as "keep the default".
+						foreach ( array(
+							'show_categories'   => 'Show category links under the search box',
+							'show_tool_numbers' => 'Show tool numbers on cards',
+						) as $key => $label ) :
+							?>
+							<label>
+								<input type="hidden" name="mtl_look[<?php echo esc_attr( $key ); ?>]" value="0">
+								<input type="checkbox" name="mtl_look[<?php echo esc_attr( $key ); ?>]" value="1" data-look-check="<?php echo esc_attr( $key ); ?>" <?php checked( $look[ $key ] ); ?>>
+								<?php echo esc_html( $label ); ?>
+							</label>
+						<?php endforeach; ?>
+					</div>
+				</div>
+
+				<div class="mtl-look-foot">
+					<button type="submit" name="mtl_save_settings" value="look" class="button button-primary">Save public look</button>
+					<button type="submit" name="mtl_save_settings" value="look-reset" class="button" formnovalidate<?php echo mtl_confirm_attr( $reset_confirm ); ?>>Reset to Lending desk</button>
+					<a class="mtl-look-open" href="<?php echo esc_url( mtl_front_page_url( 'main' ) ); ?>" target="_blank" rel="noopener">Open the catalog in a new tab</a>
+				</div>
+			</form>
+
+			<div class="mtl-look-preview">
+				<div class="mtl-look-preview-head">
+					<h4>Preview</h4>
+					<nav class="mtl-look-tabs" aria-label="Preview page">
+						<?php foreach ( $samples as $sample => $label ) : ?>
+							<a href="<?php echo esc_url( add_query_arg( 'sample', $sample, $preview ) ); ?>" target="mtl-look-frame" data-sample="<?php echo esc_attr( $sample ); ?>"<?php echo 'catalog' === $sample ? ' aria-current="true"' : ''; ?>><?php echo esc_html( $label ); ?></a>
+						<?php endforeach; ?>
+					</nav>
+				</div>
+				<iframe class="mtl-look-frame" id="mtl-look-frame" name="mtl-look-frame" title="Preview of the public pages" src="<?php echo esc_url( add_query_arg( 'sample', 'catalog', $preview ) ); ?>"></iframe>
+				<p class="mtl-look-preview-note">Changes as you pick, before anything is saved. It uses the same stylesheet as the public pages.</p>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		// Public pages look: presets, the color fields, the contrast readouts
+		// and the live preview. The preview is a page of its own (see
+		// mtl_render_public_look_preview()), drawn from the saved look; this
+		// sets the same CSS custom properties on it that the public pages
+		// would get from what the form holds now.
+		(function() {
+			var root = document.getElementById('mtl-look');
+			if (!root) {
+				return;
+			}
+			var cfg = <?php echo wp_json_encode( $config ); ?>;
+			var form = root.querySelector('.mtl-look-form');
+			var frame = document.getElementById('mtl-look-frame');
+			var colorKeys = ['page_bg', 'panel_bg', 'text', 'heading', 'link', 'button'];
+			var good = {};
+			colorKeys.forEach(function(key) {
+				good[key] = cfg.look[key];
+			});
+
+			function hex(value) {
+				var m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(value).trim());
+				if (!m) {
+					return '';
+				}
+				var h = m[1];
+				if (h.length === 3) {
+					h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+				}
+				return '#' + h.toUpperCase();
+			}
+
+			// The same formulas as mtl_relative_luminance() and
+			// mtl_contrast_ratio() in public/public-look.php.
+			function luminance(color) {
+				var h = hex(color);
+				var weights = [0.2126, 0.7152, 0.0722];
+				var lum = 0;
+				if (!h) {
+					return 0;
+				}
+				for (var i = 0; i < 3; i++) {
+					var c = parseInt(h.substr(1 + i * 2, 2), 16) / 255;
+					c = c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+					lum += weights[i] * c;
+				}
+				return lum;
+			}
+
+			function ratio(a, b) {
+				var la = luminance(a);
+				var lb = luminance(b);
+				return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+			}
+
+			function readableInk(bg) {
+				return ratio(cfg.darkInk, bg) >= ratio('#FFFFFF', bg) ? cfg.darkInk : '#FFFFFF';
+			}
+
+			// Mirrors mtl_public_look_contrast_readout().
+			function readout(look, key) {
+				var fg, bg, prefix = '', where = '';
+				if (key === 'button') {
+					bg = look.button;
+					fg = readableInk(bg);
+					prefix = fg === '#FFFFFF' ? 'White text, ' : 'Dark text, ';
+				} else {
+					fg = look[cfg.pairs[key][0]];
+					bg = look[cfg.pairs[key][1]];
+					where = ' ' + cfg.pairs[key][2];
+				}
+				var r = Math.floor(ratio(fg, bg) * 10) / 10;
+				var text = prefix + r.toFixed(1) + ' : 1' + where;
+				var low = r < 4.5;
+				if (low) {
+					var fgLighter = luminance(fg) > luminance(bg);
+					if (key === 'button') {
+						fgLighter = !fgLighter;
+					}
+					text += fgLighter ? ', too dark' : ', too light';
+				}
+				return { text: text, low: low };
+			}
+
+			function field(name) {
+				return form.querySelector('[name="mtl_look[' + name + ']"]');
+			}
+
+			function checked(name) {
+				var el = form.querySelector('[name="mtl_look[' + name + ']"]:checked');
+				return el ? el.value : cfg.look[name];
+			}
+
+			function read() {
+				var look = {};
+				colorKeys.forEach(function(key) {
+					look[key] = hex(field(key).value) || good[key];
+				});
+				look.heading_font = field('heading_font').value;
+				look.text_font = field('text_font').value;
+				['text_size', 'corners', 'button_style', 'button_size', 'default_view'].forEach(function(key) {
+					look[key] = checked(key);
+				});
+				form.querySelectorAll('[data-look-check]').forEach(function(box) {
+					look[box.getAttribute('data-look-check')] = box.checked;
+				});
+				return look;
+			}
+
+			function matchingPreset(look) {
+				for (var slug in cfg.presets) {
+					var preset = cfg.presets[slug];
+					var match = true;
+					for (var key in preset) {
+						if (key !== 'label' && String(look[key]).toUpperCase() !== String(preset[key]).toUpperCase()) {
+							match = false;
+							break;
+						}
+					}
+					if (match) {
+						return slug;
+					}
+				}
+				return 'custom';
+			}
+
+			function applyToPreview(look) {
+				var doc = frame && frame.contentDocument;
+				if (!doc || !doc.body || !doc.body.classList.contains('mtl-front')) {
+					return;
+				}
+				var corners = cfg.tables.corners[look.corners];
+				var status = cfg.tables.status[luminance(look.panel_bg) < 0.4 ? 'dark' : 'light'];
+				var vars = {
+					'--mtl-page': look.page_bg,
+					'--mtl-panel': look.panel_bg,
+					'--mtl-ink': look.text,
+					'--mtl-heading': look.heading,
+					'--mtl-link': look.link,
+					'--mtl-btn': look.button,
+					'--mtl-btn-ink': readableInk(look.button),
+					'--mtl-radius': corners['--mtl-radius'],
+					'--mtl-btn-radius': corners['--mtl-btn-radius'],
+					'--mtl-btn-scale': cfg.tables.button_size[look.button_size]['--mtl-btn-scale'],
+					'--mtl-font-display': cfg.fonts[look.heading_font],
+					'--mtl-font-text': cfg.fonts[look.text_font],
+					'--mtl-text-size': cfg.tables.text_size[look.text_size]['--mtl-text-size']
+				};
+				for (var name in status) {
+					vars[name] = status[name];
+				}
+				// The tints (--mtl-ink-2, --mtl-rule, --mtl-highlight and the
+				// rest) are color-mix() over these in the preview's own :root
+				// rule, so they follow without being set here.
+				var style = doc.documentElement.style;
+				for (var prop in vars) {
+					if (vars[prop]) {
+						style.setProperty(prop, vars[prop]);
+					}
+				}
+				style.colorScheme = luminance(look.page_bg) < 0.4 ? 'dark' : 'light';
+
+				var body = doc.body.classList;
+				['flat', 'raised', 'outline'].forEach(function(s) {
+					body.toggle('mtl-btn-style-' + s, s === look.button_style);
+				});
+				body.toggle('mtl-pv-no-numbers', !look.show_tool_numbers);
+				body.toggle('mtl-pv-no-cats', !look.show_categories);
+			}
+
+			function update() {
+				var look = read();
+				form.querySelectorAll('[data-look-ratio]').forEach(function(el) {
+					var r = readout(look, el.getAttribute('data-look-ratio'));
+					el.textContent = r.text;
+					el.classList.toggle('is-low', r.low);
+				});
+				var current = matchingPreset(look);
+				form.querySelectorAll('[data-preset]').forEach(function(button) {
+					button.setAttribute('aria-pressed', button.getAttribute('data-preset') === current ? 'true' : 'false');
+				});
+				root.style.setProperty('--mtl-look-btn', look.button);
+				root.style.setProperty('--mtl-look-btn-radius', cfg.tables.corners[look.corners]['--mtl-btn-radius']);
+				applyToPreview(look);
+			}
+
+			function setColor(key, value) {
+				var h = hex(value);
+				if (!h) {
+					return;
+				}
+				good[key] = h;
+				field(key).value = h;
+				field(key).removeAttribute('aria-invalid');
+				form.querySelector('[data-look-picker="' + key + '"]').value = h.toLowerCase();
+			}
+
+			form.querySelectorAll('[data-look-picker]').forEach(function(picker) {
+				picker.addEventListener('input', function() {
+					setColor(picker.getAttribute('data-look-picker'), picker.value);
+					update();
+				});
+			});
+
+			form.querySelectorAll('[data-look-hex]').forEach(function(input) {
+				var key = input.getAttribute('data-look-hex');
+				input.addEventListener('input', function() {
+					var h = hex(input.value);
+					if (h) {
+						good[key] = h;
+						input.removeAttribute('aria-invalid');
+						form.querySelector('[data-look-picker="' + key + '"]').value = h.toLowerCase();
+						update();
+					} else {
+						input.setAttribute('aria-invalid', 'true');
+					}
+				});
+				// Leaving the box tidies what was typed, or puts back the
+				// last color that worked.
+				input.addEventListener('change', function() {
+					setColor(key, hex(input.value) || good[key]);
+					update();
+				});
+			});
+
+			form.addEventListener('change', function(event) {
+				if (!event.target.hasAttribute('data-look-hex')) {
+					update();
+				}
+			});
+
+			form.addEventListener('submit', function() {
+				colorKeys.forEach(function(key) {
+					setColor(key, hex(field(key).value) || good[key]);
+				});
+			});
+
+			form.querySelectorAll('[data-preset]').forEach(function(button) {
+				button.addEventListener('click', function() {
+					var preset = cfg.presets[button.getAttribute('data-preset')];
+					colorKeys.forEach(function(key) {
+						setColor(key, preset[key]);
+					});
+					['corners', 'button_style'].forEach(function(key) {
+						var radio = form.querySelector('[name="mtl_look[' + key + ']"][value="' + preset[key] + '"]');
+						if (radio) {
+							radio.checked = true;
+						}
+					});
+					update();
+				});
+			});
+
+			// The tabs are links into the frame, so they work without this.
+			// With it, the preview switches in place and keeps what has been
+			// picked but not saved.
+			var tabs = root.querySelectorAll('.mtl-look-tabs a');
+			tabs.forEach(function(tab) {
+				tab.addEventListener('click', function(event) {
+					var doc = frame.contentDocument;
+					if (!doc || !doc.body || !doc.body.classList.contains('mtl-front')) {
+						return;
+					}
+					event.preventDefault();
+					var sample = tab.getAttribute('data-sample');
+					doc.body.setAttribute('data-sample', sample);
+					doc.querySelectorAll('[data-pv-nav]').forEach(function(link) {
+						if (link.getAttribute('data-pv-nav') === sample) {
+							link.setAttribute('aria-current', 'page');
+						} else {
+							link.removeAttribute('aria-current');
+						}
+					});
+					tabs.forEach(function(other) {
+						if (other === tab) {
+							other.setAttribute('aria-current', 'true');
+						} else {
+							other.removeAttribute('aria-current');
+						}
+					});
+				});
+			});
+
+			frame.addEventListener('load', update);
+			update();
+		}());
+	</script>
+	<?php
+	mtl_setup_section_end();
+}
+
+add_action( 'admin_post_mtl_public_look_preview', 'mtl_render_public_look_preview' );
+
+/**
+ * The Setup page's preview of the public pages: a standalone page with the
+ * public fonts and stylesheet and a little sample markup, shown in a frame
+ * beside the Public pages look settings.
+ *
+ * Drawn from the saved look. The Setup page's script then sets the custom
+ * properties to whatever its form holds, so the preview follows changes
+ * that haven't been saved yet.
+ */
+function mtl_render_public_look_preview() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( 'Only administrators can see this preview.', '', array( 'response' => 403 ) );
+	}
+	$nonce = isset( $_GET['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) : '';
+	if ( ! wp_verify_nonce( $nonce, 'mtl_public_look_preview' ) ) {
+		wp_die( 'This preview has expired. Reload the Setup page to see it again.', '', array( 'response' => 403 ) );
+	}
+	$sample = isset( $_GET['sample'] ) ? sanitize_key( wp_unslash( $_GET['sample'] ) ) : '';
+	if ( ! in_array( $sample, array( 'catalog', 'tool', 'loans' ), true ) ) {
+		$sample = 'catalog';
+	}
+
+	global $wpdb;
+	$look     = mtl_sanitize_public_look( get_option( 'mtl_public_look', array() ) );
+	$org_name = get_option( 'mtl_org_name', '' );
+	$org_name = '' !== $org_name ? $org_name : 'My Tool Library';
+	$logo_url = get_option( 'mtl_logo_url', '' );
+
+	// The library's own first tools, so the preview shows its real photos.
+	$tools      = array();
+	$categories = array();
+	if ( mtl_members_table_exists() ) {
+		$tbl_inventory  = $wpdb->prefix . 'tool_inventory';
+		$tbl_categories = $wpdb->prefix . 'tool_categories';
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, no request-derived data.
+		$tools      = (array) $wpdb->get_results( "SELECT tool_id, tool_name, brand, description, photo_url FROM {$tbl_inventory} WHERE retired_at IS NULL ORDER BY tool_id ASC LIMIT 3" );
+		$categories = (array) $wpdb->get_col( "SELECT category_name FROM {$tbl_categories} ORDER BY category_name ASC LIMIT 4" );
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	$cards = array();
+	foreach ( $tools as $tool ) {
+		$state = mtl_tool_row_status( (int) $tool->tool_id );
+		if ( $state['maintenance'] ) {
+			$status = array( 'maint', 'Under maintenance' );
+		} elseif ( $state['on_loan_by'] > 0 ) {
+			$status = array( 'out', 'On loan' );
+		} else {
+			$status = array( 'ok', 'Available' );
+		}
+		$cards[] = array(
+			'id'      => (int) $tool->tool_id,
+			'name'    => stripslashes( (string) $tool->tool_name ),
+			'brand'   => stripslashes( (string) $tool->brand ),
+			'about'   => wp_trim_words( stripslashes( (string) $tool->description ), 28 ),
+			'photo'   => (string) $tool->photo_url,
+			'status'  => $status,
+			'waiting' => (int) $state['queue_size'],
+		);
+	}
+	// Neutral stand-ins for a library with fewer than three tools.
+	$stand_ins = array( array( 'Cordless drill', 'ok', 'Available' ), array( 'Step ladder', 'out', 'On loan' ), array( 'Multimeter', 'ok', 'Available' ) );
+	for ( $i = count( $cards ); $i < 3; $i++ ) {
+		$cards[] = array(
+			'id'      => $i + 1,
+			'name'    => $stand_ins[ $i ][0],
+			'brand'   => 'Sample brand',
+			'about'   => 'A short description of the tool and what it is good for.',
+			'photo'   => '',
+			'status'  => array( $stand_ins[ $i ][1], $stand_ins[ $i ][2] ),
+			'waiting' => 0,
+		);
+	}
+	if ( ! $categories ) {
+		$categories = array( 'Electrical', 'Gardening', 'Woodworking' );
+	}
+
+	$photo = static function ( $card ) {
+		if ( '' === $card['photo'] ) {
+			return '<span class="mtl-pv-nophoto">No photo yet</span>';
+		}
+		return '<img src="' . esc_url( $card['photo'] ) . '" alt="">';
+	};
+
+	$due      = time() + 3 * DAY_IN_SECONDS;
+	$borrowed = $due - 21 * DAY_IN_SECONDS;
+	$tool     = $cards[0];
+
+	nocache_headers();
+	header( 'Content-Type: text/html; charset=utf-8' );
+	?>
+	<!DOCTYPE html>
+	<html <?php language_attributes(); ?>>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<meta name="robots" content="noindex">
+		<title>Preview</title>
+		<?php
+		// Every font on offer, not only the saved pair, so the preview can
+		// switch to any of them without reloading.
+		$faces   = mtl_public_font_faces_html(
+			array(
+				'heading_font' => 'archivo',
+				'text_font'    => 'atkinson',
+			)
+		);
+		$library = array_values(
+			array_filter(
+				array_keys( mtl_public_font_choices() ),
+				static function ( $key ) {
+					return 0 === strpos( $key, 'lib-' );
+				}
+			)
+		);
+		$count   = count( $library );
+		for ( $i = 0; $i < $count; $i += 2 ) {
+			$faces .= mtl_public_font_faces_html(
+				array(
+					'heading_font' => $library[ $i ],
+					'text_font'    => $library[ min( $i + 1, $count - 1 ) ],
+				)
+			);
+		}
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- <style> built from esc_url()'d plugin URLs and core's wp_print_font_faces().
+		echo $faces;
+		?>
+		<style>
+		<?php
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CSS from the sanitized look; every setting value passes mtl_css_value().
+		echo mtl_public_look_css( $look );
+		?>
+
+		/* Preview only. The frame is narrow, so the top bar keeps its row of
+			links rather than the phone menu, and the type steps down a size. */
+		.mtl-pv .mtl-nav { display: flex; }
+		.mtl-pv .mtl-menu { display: none; }
+		.mtl-pv .mtl-topbar-inner { padding: 0 16px; min-height: 56px; gap: 12px; }
+		.mtl-pv .mtl-brand { font-size: 19px; }
+		.mtl-pv .mtl-brand img { max-height: 30px; }
+		.mtl-pv .mtl-nav a { padding: 0 8px; font-size: 14.5px; }
+		.mtl-pv-body { padding: 20px 16px 28px; }
+		.mtl-pv .mtl-page-title { margin-bottom: 14px; font-size: 30px; }
+		.mtl-pv .mtl-section-head { margin: 26px 0 10px; }
+		.mtl-pv .mtl-section-head h2 { font-size: 22px; }
+		.mtl-pv-sample { display: none; }
+		[data-sample="catalog"] .mtl-pv-catalog,
+		[data-sample="tool"] .mtl-pv-tool,
+		[data-sample="loans"] .mtl-pv-loans { display: block; }
+		.mtl-pv p { margin: 0; }
+
+		.mtl-pv-search { display: flex; gap: 8px; }
+		.mtl-pv-search input {
+			flex: 1;
+			min-width: 0;
+			min-height: 44px;
+			padding: 0 12px;
+			border: 2px solid var(--mtl-ink);
+			border-radius: var(--mtl-radius);
+			background: var(--mtl-panel);
+			color: var(--mtl-ink);
+			font: inherit;
+		}
+		.mtl-pv-cats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+		.mtl-pv-no-cats .mtl-pv-cats { display: none; }
+		.mtl-pv-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+		.mtl-pv-photo {
+			display: grid;
+			place-items: center;
+			aspect-ratio: 4 / 3;
+			overflow: hidden;
+			background: var(--mtl-panel);
+			border: 1px solid var(--mtl-rule);
+			border-radius: var(--mtl-radius);
+		}
+		.mtl-pv-photo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+		.mtl-pv-nophoto { color: var(--mtl-ink-2); font-size: 13px; }
+		.mtl-pv-name {
+			margin-top: 8px;
+			font-family: var(--mtl-font-display);
+			font-stretch: 82%;
+			font-size: 17px;
+			font-weight: 700;
+			line-height: 1.15;
+			color: var(--mtl-heading);
+		}
+		.mtl-pv-meta { color: var(--mtl-ink-2); font-size: 14px; }
+		.mtl-pv-no-numbers .mtl-pv-num { display: none; }
+		.mtl-pv-card .mtl-status,
+		.mtl-pv-card .mtl-status-note { font-size: 13px; }
+
+		.mtl-pv-panel { margin-top: 18px; padding: 16px; }
+		.mtl-pv-panel h2 { font-size: 24px; }
+		.mtl-pv-panel .mtl-btn { margin: 12px 0 8px; }
+		.mtl-pv-tool .mtl-pv-panel { margin-top: 0; padding: 0; overflow: hidden; }
+		.mtl-pv-tool .mtl-pv-photo { border: 0; border-bottom: 1px solid var(--mtl-rule); border-radius: 0; }
+		.mtl-pv-tool-body { padding: 18px; }
+		.mtl-pv-state {
+			margin-top: 14px;
+			padding: 10px 14px;
+			border-left: 4px solid currentColor;
+			background: var(--mtl-hover);
+		}
+		.mtl-pv-state p { margin-top: 4px; color: var(--mtl-ink); }
+		.mtl-pv-tool h3 { margin: 18px 0 4px; font-size: 18px; }
+		.mtl-pv-tool .mtl-field { margin: 18px 0 0; }
+
+		.mtl-pv-slip {
+			display: grid;
+			grid-template-columns: 64px minmax(0, 1fr) auto;
+			gap: 14px;
+			align-items: center;
+			padding: 12px 16px;
+		}
+		.mtl-pv-date {
+			padding-right: 12px;
+			border-right: 1px dashed var(--mtl-rule);
+			color: var(--mtl-ink-2);
+			font-size: 13px;
+			line-height: 1.15;
+			text-align: center;
+		}
+		.mtl-pv-date b {
+			display: block;
+			font-family: var(--mtl-font-display);
+			font-stretch: 82%;
+			font-size: 32px;
+			font-weight: 800;
+			color: var(--mtl-ink);
+		}
+		.mtl-pv-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; padding: 12px 16px; }
+		.mtl-pv-row h3 { font-size: 18px; }
+		.mtl-pv-row h3 a { color: var(--mtl-heading); }
+		.mtl-pv-row-status { text-align: right; }
+		.mtl-pv-row-status .mtl-status { display: flex; justify-content: flex-end; }
+		</style>
+	</head>
+	<body class="<?php echo esc_attr( 'mtl-front mtl-pv mtl-btn-style-' . $look['button_style'] . ( $look['show_tool_numbers'] ? '' : ' mtl-pv-no-numbers' ) . ( $look['show_categories'] ? '' : ' mtl-pv-no-cats' ) ); ?>" data-sample="<?php echo esc_attr( $sample ); ?>">
+		<header class="mtl-topbar">
+			<div class="mtl-topbar-inner">
+				<a class="mtl-brand">
+					<?php if ( ! empty( $logo_url ) ) : ?>
+						<img src="<?php echo esc_url( $logo_url ); ?>" alt="">
+					<?php endif; ?>
+					<span><?php echo esc_html( $org_name ); ?></span>
+				</a>
+				<nav class="mtl-nav" aria-label="Library">
+					<a data-pv-nav="catalog"<?php echo 'loans' !== $sample ? ' aria-current="page"' : ''; ?>>Browse tools</a>
+					<a data-pv-nav="loans"<?php echo 'loans' === $sample ? ' aria-current="page"' : ''; ?>>My loans</a>
+				</nav>
+			</div>
+		</header>
+		<main class="mtl-pv-body">
+			<div class="mtl-pv-sample mtl-pv-catalog">
+				<h1 class="mtl-page-title">Find a tool to borrow</h1>
+				<div class="mtl-pv-search">
+					<input type="search" aria-label="Search tools" placeholder="Drill, ladder, tile saw, brand...">
+					<button type="button" class="mtl-btn mtl-btn-primary">Search</button>
+				</div>
+				<div class="mtl-pv-cats">
+					<?php foreach ( $categories as $category ) : ?>
+						<a class="mtl-chip"><?php echo esc_html( stripslashes( (string) $category ) ); ?></a>
+					<?php endforeach; ?>
+				</div>
+				<div class="mtl-pv-cards">
+					<?php foreach ( $cards as $card ) : ?>
+						<div class="mtl-pv-card">
+							<div class="mtl-pv-photo">
+								<?php
+								// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built in $photo with esc_url().
+								echo $photo( $card );
+								?>
+							</div>
+							<h3 class="mtl-pv-name"><?php echo esc_html( $card['name'] ); ?></h3>
+							<p class="mtl-pv-meta"><?php echo esc_html( $card['brand'] ); ?><span class="mtl-pv-num"><?php echo esc_html( ', no. ' . $card['id'] ); ?></span></p>
+							<p>
+								<span class="mtl-status mtl-status-<?php echo esc_attr( $card['status'][0] ); ?>"><?php echo esc_html( $card['status'][1] ); ?></span>
+								<?php if ( $card['waiting'] > 0 ) : ?>
+									<span class="mtl-status-note"><?php echo esc_html( $card['waiting'] . ' waiting' ); ?></span>
+								<?php endif; ?>
+							</p>
+						</div>
+					<?php endforeach; ?>
+				</div>
+				<div class="mtl-panel mtl-pv-panel">
+					<h2><?php echo esc_html( $tool['name'] ); ?></h2>
+					<p class="mtl-pv-meta"><?php echo esc_html( $tool['brand'] . ', tool no. ' . $tool['id'] ); ?></p>
+					<button type="button" class="mtl-btn mtl-btn-primary mtl-btn-wide">Reserve</button>
+					<p><a href="#">Copy a link to this tool</a></p>
+				</div>
+			</div>
+
+			<div class="mtl-pv-sample mtl-pv-tool">
+				<div class="mtl-panel mtl-pv-panel">
+					<div class="mtl-pv-photo">
+						<?php
+						// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built in $photo with esc_url().
+						echo $photo( $tool );
+						?>
+					</div>
+					<div class="mtl-pv-tool-body">
+						<h2><?php echo esc_html( $tool['name'] ); ?></h2>
+						<p class="mtl-pv-meta"><?php echo esc_html( $tool['brand'] ); ?><span class="mtl-pv-num"><?php echo esc_html( ', tool no. ' . $tool['id'] ); ?></span></p>
+						<div class="mtl-pv-state mtl-status-<?php echo esc_attr( $tool['status'][0] ); ?>">
+							<span class="mtl-status mtl-status-<?php echo esc_attr( $tool['status'][0] ); ?>"><?php echo esc_html( $tool['status'][1] ); ?></span>
+							<p><?php echo esc_html( $tool['waiting'] > 0 ? $tool['waiting'] . ' waiting. Reserve now to join the line.' : 'Reserve now and you will be first in line.' ); ?></p>
+						</div>
+						<button type="button" class="mtl-btn mtl-btn-primary mtl-btn-wide">Reserve</button>
+						<p class="mtl-hint">You can follow your place in line under My loans &amp; reservations.</p>
+						<?php if ( '' !== $tool['about'] ) : ?>
+							<h3>About this tool</h3>
+							<p><?php echo esc_html( $tool['about'] ); ?></p>
+						<?php endif; ?>
+						<div class="mtl-field">
+							<label for="mtl-pv-link">Link to this tool</label>
+							<input type="text" id="mtl-pv-link" readonly value="<?php echo esc_attr( add_query_arg( 'mtl_tool', $tool['id'], mtl_front_page_url( 'main' ) ) ); ?>">
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="mtl-pv-sample mtl-pv-loans">
+				<h1 class="mtl-page-title">Your loans and reservations</h1>
+				<div class="mtl-section-head"><h2>Checked out</h2><span>1 tool</span></div>
+				<div class="mtl-panel mtl-pv-slip">
+					<p class="mtl-pv-date"><?php echo esc_html( wp_date( 'M', $due ) ); ?><b><?php echo esc_html( wp_date( 'j', $due ) ); ?></b><?php echo esc_html( wp_date( 'D', $due ) ); ?></p>
+					<div>
+						<h3 class="mtl-pv-name"><?php echo esc_html( $cards[1]['name'] ); ?></h3>
+						<p class="mtl-pv-meta"><?php echo esc_html( 'No. ' . $cards[1]['id'] . ', borrowed ' . wp_date( 'M j', $borrowed ) ); ?></p>
+					</div>
+					<span class="mtl-status mtl-status-out">Due in 3 days</span>
+				</div>
+				<div class="mtl-section-head"><h2>Reservations</h2><span>1 tool</span></div>
+				<div class="mtl-panel mtl-pv-row">
+					<div>
+						<h3><a href="#"><?php echo esc_html( $cards[2]['name'] ); ?></a></h3>
+						<p class="mtl-pv-meta"><?php echo esc_html( 'No. ' . $cards[2]['id'] . ', ' . $cards[2]['brand'] ); ?></p>
+						<p><strong>1st</strong> of 2 in line</p>
+					</div>
+					<div class="mtl-pv-row-status">
+						<span class="mtl-status mtl-status-out">On loan</span>
+						<p class="mtl-status-note">Waiting for its return</p>
+						<button type="button" class="mtl-btn-danger">Cancel</button>
+					</div>
+				</div>
+			</div>
+		</main>
+	</body>
+	</html>
+	<?php
+	exit;
+}
+
 /**
  * Renders the Setup & Settings admin page.
  */
@@ -1475,11 +2960,12 @@ function mtl_render_setup_page() {
 	// ==========================================
 	// HANDLE SETTINGS FORM SUBMISSIONS
 	// ==========================================
-	// Organization, Appearance, Member Page Messages and Reservations & Loans
-	// each have their own form, and the Save button's value names the one
-	// sent. Each branch saves only its own section's options. Every field
-	// falls back to blank when it is missing from the post, so a branch that
-	// also saved another section's options would wipe them.
+	// Organization, Public pages look, Staff portal look, Member Page Messages
+	// and Reservations & Loans each have their own form, and the Save button's
+	// value names the one sent. Each branch saves only its own section's
+	// options. Every field falls back to blank when it is missing from the
+	// post, so a branch that also saved another section's options would wipe
+	// them.
 	if ( isset( $_POST['mtl_save_settings'] ) && mtl_can_manage_settings() ) {
 		if ( isset( $_POST['mtl_settings_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_settings_nonce'] ) ), 'mtl_save_settings_action' ) ) {
 			$mtl_settings_section = sanitize_key( wp_unslash( $_POST['mtl_save_settings'] ) );
@@ -1550,7 +3036,25 @@ function mtl_render_setup_page() {
 				$posted_btn_scale   = isset( $_POST['mtl_button_scale'] ) ? sanitize_text_field( wp_unslash( $_POST['mtl_button_scale'] ) ) : '';
 				update_option( 'mtl_button_scale', in_array( $posted_btn_scale, $allowed_btn_scales, true ) ? $posted_btn_scale : '1' );
 
-				$mtl_settings_saved = 'Appearance settings';
+				$mtl_settings_saved = 'Staff portal look settings';
+			} elseif ( 'look' === $mtl_settings_section ) {
+				// mtl_sanitize_public_look() checks every value against a fixed
+				// list or as a hex color and drops unknown keys.
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized as a whole by mtl_sanitize_public_look() below.
+				$mtl_look = isset( $_POST['mtl_look'] ) && is_array( $_POST['mtl_look'] ) ? wp_unslash( $_POST['mtl_look'] ) : array();
+				foreach ( array( 'page_bg', 'panel_bg', 'text', 'heading', 'link', 'button' ) as $mtl_look_key ) {
+					// A color typed without its "#" is still a color.
+					if ( isset( $mtl_look[ $mtl_look_key ] ) && is_string( $mtl_look[ $mtl_look_key ] ) && preg_match( '/^([0-9a-f]{3}){1,2}$/i', trim( $mtl_look[ $mtl_look_key ] ) ) ) {
+						$mtl_look[ $mtl_look_key ] = '#' . trim( $mtl_look[ $mtl_look_key ] );
+					}
+				}
+				$mtl_look           = mtl_sanitize_public_look( $mtl_look );
+				$mtl_look['preset'] = mtl_public_look_matching_preset( $mtl_look );
+				update_option( 'mtl_public_look', $mtl_look );
+				$mtl_settings_saved = 'Public pages look settings';
+			} elseif ( 'look-reset' === $mtl_settings_section ) {
+				update_option( 'mtl_public_look', mtl_public_look_defaults() );
+				echo '<div class="notice notice-success is-dismissible"><p><strong>Success:</strong> The public pages are back to the Lending desk look.</p></div>';
 			} elseif ( 'messages' === $mtl_settings_section ) {
 				// A saved blank value is meaningful, not "unset": get_option()'s
 				// default only applies before the option row exists, so an empty
@@ -3422,11 +4926,13 @@ function mtl_render_setup_page() {
 		<?php mtl_setup_section_end(); ?>
 
 		<?php
+		mtl_render_public_look_section( in_array( $mtl_requested_section, array( 'look', 'look-reset' ), true ) );
+
 		mtl_setup_section_start(
 			'appearance',
 			array(
-				'title' => 'Appearance',
-				'desc'  => 'Logo, badge image, colors, fonts and buttons, for the staff pages and the public pages.',
+				'title' => 'Staff portal look',
+				'desc'  => 'Colors and fonts for the admin pages.',
 				'open'  => 'appearance' === $mtl_requested_section,
 			)
 		);
@@ -3438,7 +4944,7 @@ function mtl_render_setup_page() {
 						<th scope="row"><label for="mtl_logo_url">Logo URL</label></th>
 						<td>
 							<input type="url" name="mtl_logo_url" id="mtl_logo_url" class="regular-text" value="<?php echo esc_url( $logo_url ); ?>" placeholder="https://...">
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Upload to the Media Library and paste the File URL here.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Shown in the top bar of the public pages and at the foot of the staff pages. Upload to the Media Library and paste the File URL here.</p>
 						</td>
 					</tr>
 					<tr>
@@ -3454,7 +4960,7 @@ function mtl_render_setup_page() {
 
 				<!-- Quick Theme Presets -->
 				<h4 style="margin-bottom: 5px;">Quick Theme Presets</h4>
-				<p style="font-size: 0.85em; color: #666; margin: 0 0 10px 0;">A preset fills in the settings below; adjust anything before saving. <strong>Inherit</strong> restores the site defaults.</p>
+				<p style="font-size: 0.85em; color: #666; margin: 0 0 10px 0;">A preset fills in the staff page settings below; adjust anything before saving. <strong>Inherit</strong> restores the site defaults. The public pages have their own presets under Public pages look.</p>
 				<div class="mtl-swatch-row">
 					<button type="button" class="mtl-swatch mtl-swatch-inherit" onclick="mtlApplyInherit()">Inherit</button>
 					<button type="button" class="mtl-swatch" style="background: linear-gradient(135deg, #ff6600, #096491);" onclick="mtlApplySwatch('#ff6600', '#096491', '#00b3ff', '#f7c600')">Classic</button>
@@ -3583,7 +5089,7 @@ function mtl_render_setup_page() {
 				</table>
 
 				<p class="submit">
-					<button type="submit" name="mtl_save_settings" value="appearance" class="button button-primary">Save Appearance</button>
+					<button type="submit" name="mtl_save_settings" value="appearance" class="button button-primary">Save staff portal look</button>
 				</p>
 			</form>
 		<?php mtl_setup_section_end(); ?>
@@ -4480,7 +5986,7 @@ function mtl_render_setup_page() {
 			});
 		}());
 
-		// Fills in the color pickers from a "Quick Theme Presets" swatch; still requires clicking "Save Appearance".
+		// Fills in the color pickers from a "Quick Theme Presets" swatch; still requires clicking "Save staff portal look".
 		function mtlApplySwatch(headerColor, bodyColor, linkColor, accentColor) {
 			document.getElementById('mtl_header_color').value = headerColor;
 			document.getElementById('mtl_body_color').value = bodyColor;
@@ -4489,7 +5995,7 @@ function mtl_render_setup_page() {
 		}
 
 		// Restores every appearance field to the plugin's defaults (matching
-		// get_option()'s fallbacks); nothing is saved until "Save Appearance" is clicked.
+		// get_option()'s fallbacks); nothing is saved until "Save staff portal look" is clicked.
 		function mtlApplyInherit() {
 			var defaults = {
 				mtl_header_color: '#ff6600',
