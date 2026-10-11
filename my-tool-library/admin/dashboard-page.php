@@ -182,6 +182,11 @@ function mtl_dash_bars( $items, $bar_color_var = '--mtl-header-color' ) {
 	if ( empty( $items ) ) {
 		return '<p class="mtl-empty">No data yet.</p>';
 	}
+	// esc_attr() can't stop CSS injection inside var(), so accept only a
+	// custom property name.
+	if ( ! preg_match( '/^--[a-z0-9-]+$/', $bar_color_var ) ) {
+		$bar_color_var = '--mtl-header-color';
+	}
 	$max = 0;
 	foreach ( $items as $item ) {
 		$max = max( $max, $item[1] );
@@ -224,6 +229,8 @@ function mtl_dash_tool_history_html( $tool_id ) {
 	$tbl_members   = $wpdb->prefix . 'members';
 	$tbl_inventory = $wpdb->prefix . 'tool_inventory';
 	$tbl_loans     = $wpdb->prefix . 'loans';
+	// The site's date, as the Loans page uses, not MySQL's or UTC.
+	$today = current_time( 'Y-m-d' );
 
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$tool = $wpdb->get_row(
@@ -240,12 +247,13 @@ function mtl_dash_tool_history_html( $tool_id ) {
 			"SELECT m.member_id, m.first_name, m.last_name, m.email,
                     COUNT(l.loan_id) AS loan_count, MAX(l.loan_date) AS last_loan,
                     SUM(CASE WHEN l.return_date IS NULL THEN 1 ELSE 0 END) AS currently_out,
-                    SUM(CASE WHEN l.return_date IS NULL AND l.due_date < CURDATE() THEN 1 ELSE 0 END) AS overdue_out
+                    SUM(CASE WHEN l.return_date IS NULL AND l.due_date < %s THEN 1 ELSE 0 END) AS overdue_out
              FROM {$tbl_loans} l
              JOIN {$tbl_members} m ON m.member_id = l.member_id
              WHERE l.tool_id = %d
              GROUP BY m.member_id
              ORDER BY loan_count DESC, last_loan DESC",
+			$today,
 			$tool_id
 		)
 	);
@@ -324,7 +332,7 @@ function mtl_dash_tool_history_html( $tool_id ) {
 						<?php
 						foreach ( $loans as $l ) :
 							$late        = ( null !== $l->return_date && gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
-							$out_overdue = ( null === $l->return_date && $l->due_date < gmdate( 'Y-m-d' ) );
+							$out_overdue = ( null === $l->return_date && $l->due_date < $today );
 							?>
 							<tr>
 								<td><?php echo esc_html( trim( stripslashes( $l->first_name ) . ' ' . stripslashes( $l->last_name ) ) ); ?></td>
@@ -374,6 +382,7 @@ function mtl_dash_member_history_html( $member_id ) {
 	$tbl_inventory     = $wpdb->prefix . 'tool_inventory';
 	$tbl_loans         = $wpdb->prefix . 'loans';
 	$tbl_reservations  = $wpdb->prefix . 'tool_reservations';
+	$today             = current_time( 'Y-m-d' );
 
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, built from $wpdb->prefix, not user input.
 	$member = $wpdb->get_row(
@@ -454,7 +463,7 @@ function mtl_dash_member_history_html( $member_id ) {
 					<?php
 					foreach ( $loans as $l ) :
 						$late        = ( null !== $l->return_date && gmdate( 'Y-m-d', strtotime( $l->return_date ) ) > $l->due_date );
-						$out_overdue = ( null === $l->return_date && $l->due_date < gmdate( 'Y-m-d' ) );
+						$out_overdue = ( null === $l->return_date && $l->due_date < $today );
 						?>
 						<tr>
 							<td><strong><?php echo esc_html( stripslashes( $l->tool_name ) ); ?></strong><br><span style="color:#999;"><?php echo esc_html( stripslashes( $l->barcode ) ); ?></span></td>
@@ -536,6 +545,8 @@ function mtl_ajax_dash_history() {
 
 /**
  * Renders the Dashboard admin page.
+ *
+ * @return void
  */
 function mtl_render_dashboard_page() {
 	global $wpdb;
@@ -549,11 +560,12 @@ function mtl_render_dashboard_page() {
 	$tbl_inventory     = $wpdb->prefix . 'tool_inventory';
 	$tbl_loans         = $wpdb->prefix . 'loans';
 	$tbl_reservations  = $wpdb->prefix . 'tool_reservations';
-	// Every {$tbl_*} fragment interpolated in the queries below is a table
-	// name built only from $wpdb->prefix, never request data; all actual
-	// values go through $wpdb->prepare() placeholders. phpcs can't verify
-	// that across this many queries, hence disabling for this data-gathering
-	// section (through the layout/render section below).
+	// The site's date, as the Loans page uses, not MySQL's or UTC.
+	$today = current_time( 'Y-m-d' );
+	// Every {$tbl_*} interpolated in the queries below is a table name built
+	// from $wpdb->prefix, never request data, and every value goes through a
+	// $wpdb->prepare() placeholder. phpcs can't follow that across this many
+	// queries, so both sniffs are off until the data gathering ends.
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
 
 	$base_url = menu_page_url( 'mtl-dashboard', false );
@@ -565,15 +577,15 @@ function mtl_render_dashboard_page() {
 	// ==========================================
 	// 1. HANDLE "SAVE LAYOUT" / "RESET LAYOUT" SUBMISSIONS
 	// ==========================================
-	if ( isset( $_POST['mtl_save_dashboard_layout'] ) && mtl_can_manage_library() ) {
+	if ( isset( $_POST['mtl_save_dashboard_layout'] ) ) {
 		if ( isset( $_POST['mtl_dashboard_layout_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_dashboard_layout_nonce'] ) ), 'mtl_dashboard_layout_action' ) ) {
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- validated below: json_decode() must succeed, then every field is whitelist-checked against mtl_dashboard_panels() before use.
 			$raw     = isset( $_POST['mtl_dashboard_layout_json'] ) ? wp_unslash( $_POST['mtl_dashboard_layout_json'] ) : '';
 			$decoded = json_decode( $raw, true );
 
 			if ( is_array( $decoded ) ) {
-				// Whitelist-sanitize every field before storing. Unknown panel
-				// ids and invalid sizes are dropped entirely.
+				// Whitelist every field before storing: unknown panel ids are
+				// dropped, and an invalid size falls back to the panel's default.
 				$panels = mtl_dashboard_panels();
 				$clean  = array();
 				foreach ( $decoded as $id => $prefs ) {
@@ -587,7 +599,7 @@ function mtl_render_dashboard_page() {
 					);
 				}
 				update_user_meta( get_current_user_id(), 'mtl_dashboard_layout', $clean );
-				echo '<div class="notice notice-success is-dismissible"><p><strong>Saved.</strong> Your dashboard layout has been saved and will be restored on your next visit.</p></div>';
+				echo '<div class="notice notice-success is-dismissible"><p>Dashboard layout saved.</p></div>';
 			} else {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The layout could not be read. Please try again.</p></div>';
 			}
@@ -596,7 +608,7 @@ function mtl_render_dashboard_page() {
 		}
 	}
 
-	if ( isset( $_POST['mtl_reset_dashboard_layout'] ) && mtl_can_manage_library() ) {
+	if ( isset( $_POST['mtl_reset_dashboard_layout'] ) ) {
 		if ( isset( $_POST['mtl_dashboard_layout_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_dashboard_layout_nonce'] ) ), 'mtl_dashboard_layout_action' ) ) {
 			delete_user_meta( get_current_user_id(), 'mtl_dashboard_layout' );
 			echo '<div class="notice notice-success is-dismissible"><p><strong>Reset.</strong> The dashboard layout is back to its defaults.</p></div>';
@@ -607,8 +619,8 @@ function mtl_render_dashboard_page() {
 
 	// ==========================================
 	// 2. DATE-RANGE FILTER (GET)
-	// Applies to the popularity panels and the rental leaderboard. Values are
-	// strictly validated as YYYY-MM-DD; anything else is treated as unset.
+	// Applies to the popularity panels and the rental leaderboard. Values must
+	// match YYYY-MM-DD; anything else counts as unset.
 	// ==========================================
 	$date_from = '';
 	$date_to   = '';
@@ -621,9 +633,8 @@ function mtl_render_dashboard_page() {
 		$date_to = $get_to;
 	}
 
-	// $date_from/$date_to themselves stay ISO below (SQL params + the
-	// <input type="date"> value attributes require it); only this display
-	// label is human-formatted.
+	// $date_from/$date_to stay ISO, since the SQL and the <input type="date">
+	// values need it; only this label is formatted for display.
 	if ( '' !== $date_from && '' !== $date_to ) {
 		$range_label = mtl_format_date( $date_from ) . ' to ' . mtl_format_date( $date_to );
 	} elseif ( '' !== $date_from ) {
@@ -639,20 +650,20 @@ function mtl_render_dashboard_page() {
 	// ==========================================
 
 	// --- Membership stats ---
-	// Anonymized members are excluded from headcounts, having deleted
-	// their account, so they're no longer a current member.
+	// Anonymized members deleted their accounts, so they aren't counted as
+	// current members.
 	$member_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$tbl_members} WHERE anonymized_at IS NULL" );
 	// A row can exist with only one scan URL on file (a member with just one
-	// form of ID so far), so only count it here once BOTH are present.
+	// form of ID so far), so count it only once both are present.
 	$verified_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$tbl_verifications} WHERE photo_id_scan_url IS NOT NULL AND address_proof_scan_url IS NOT NULL" );
-	$new_members_90 = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$tbl_members} WHERE anonymized_at IS NULL AND signup_date >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)" );
+	$new_members_90 = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$tbl_members} WHERE anonymized_at IS NULL AND signup_date >= DATE_SUB(%s, INTERVAL 90 DAY)", $today ) );
 
 	// --- Inventory + active-loan flags, one row per tool ---
 	// The LEFT JOIN keys on return_date IS NULL so l.loan_id is non-null only
 	// when the tool is currently checked out. Depreciated value and age are
-	// computed in PHP from these rows so one query feeds four panels.
-	// Retired tools are excluded, being no longer active holdings, so
-	// counting them would overstate current inventory/asset value.
+	// computed in PHP from these rows, so one query feeds the loan, age and
+	// value panels. Retired tools are left out: they're no longer holdings
+	// and would inflate inventory and asset value.
 	$inventory_rows = $wpdb->get_results(
 		"
         SELECT t.tool_id, t.tool_name, t.barcode, t.brand, t.initial_cash_value,
@@ -678,7 +689,7 @@ function mtl_render_dashboard_page() {
 	$seen_tool_ids   = array();
 
 	foreach ( $inventory_rows as $row ) {
-		// Guard against duplicate rows if bad data ever leaves a tool with
+		// Skip the duplicate row a tool gets if bad data ever leaves it with
 		// two open loans at once.
 		if ( isset( $seen_tool_ids[ $row->tool_id ] ) ) {
 			continue;
@@ -736,9 +747,8 @@ function mtl_render_dashboard_page() {
 	$value_retained_pct     = $total_initial > 0 ? round( $total_current / $total_initial * 100 ) : 0;
 
 	// --- Member areas (by ZIP code) ---
-	// Excludes anonymized members, since their real address is gone, and this
-	// panel is identity-adjacent (it's about where members live).
-	$zip_rows   = $wpdb->get_results( "SELECT zip_code FROM {$tbl_members} WHERE anonymized_at IS NULL" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name only, no request-derived data.
+	// Anonymized members are left out, since their real address is gone.
+	$zip_rows   = $wpdb->get_results( "SELECT zip_code FROM {$tbl_members} WHERE anonymized_at IS NULL" );
 	$zip_counts = array();
 	foreach ( $zip_rows as $row ) {
 		$zip                = trim( (string) $row->zip_code ) !== '' ? $row->zip_code : 'Unknown';
@@ -748,30 +758,35 @@ function mtl_render_dashboard_page() {
 
 	// --- Overdue loans ---
 	$overdue_rows = $wpdb->get_results(
-		"
+		$wpdb->prepare(
+			"
         SELECT l.loan_id, l.loan_date, l.due_date,
-               DATEDIFF(CURDATE(), l.due_date) AS days_overdue,
+               DATEDIFF(%s, l.due_date) AS days_overdue,
                t.tool_name, t.barcode,
                m.first_name, m.last_name, m.email, m.phone_number
         FROM {$tbl_loans} l
         JOIN {$tbl_inventory} t ON t.tool_id = l.tool_id
         JOIN {$tbl_members} m ON m.member_id = l.member_id
-        WHERE l.return_date IS NULL AND l.due_date < CURDATE()
+        WHERE l.return_date IS NULL AND l.due_date < %s
         ORDER BY days_overdue DESC
-    "
+    ",
+			$today,
+			$today
+		)
 	);
 
 	// --- Upcoming reservations (unexpired), flagged if the tool is still out ---
-	// reservation_date is a TIMESTAMP, so a tool can carry a multi-member
-	// waiting queue; queue_place/queue_size are derived here rather than stored
-	// (earliest reservation for a tool is position 1, ties broken by id).
+	// Several members can be waiting on one tool. queue_place/queue_size are
+	// computed here, not stored: the earliest reservation_date (a TIMESTAMP)
+	// is place 1, with ties broken by reservation_id.
 	$reservation_rows = $wpdb->get_results(
-		"
+		$wpdb->prepare(
+			"
         SELECT r.reservation_id, r.reservation_date,
                t.tool_name, t.barcode, t.maintenance_at,
                m.first_name, m.last_name, m.email,
                l.loan_id AS tool_out_loan_id,
-               (l.due_date < CURDATE()) AS tool_out_overdue,
+               (l.due_date < %s) AS tool_out_overdue,
                (SELECT COUNT(*) FROM {$tbl_reservations} r2
                   WHERE r2.tool_id = r.tool_id
                     AND r2.expiry_date IS NULL
@@ -787,13 +802,15 @@ function mtl_render_dashboard_page() {
         LEFT JOIN {$tbl_loans} l ON l.tool_id = r.tool_id AND l.return_date IS NULL
         WHERE r.expiry_date IS NULL
         ORDER BY r.reservation_date ASC
-    "
+    ",
+			$today
+		)
 	);
 
 	// --- Tool popularity (loan counts per tool, optionally date-filtered) ---
-	// The range conditions live in the LEFT JOIN's ON clause (not WHERE) so
-	// never-borrowed tools still appear with a count of 0, which is essential for
-	// the "least popular" panel.
+	// The range conditions go in the LEFT JOIN's ON clause, not WHERE, so
+	// never-borrowed tools still appear with a count of 0 for the Least
+	// Popular panel.
 	$pop_on     = 'l.tool_id = t.tool_id';
 	$pop_params = array();
 	if ( '' !== $date_from ) {
@@ -801,14 +818,12 @@ function mtl_render_dashboard_page() {
 		$pop_params[] = $date_from;
 	}
 	if ( '' !== $date_to ) {
-		// DATE(), not a raw <=: loan_date is a full timestamp, so a bare
-		// comparison against a plain "to" date would exclude any loan later
-		// that same day (its time-of-day would push it past midnight).
+		// DATE() because loan_date is a full timestamp: a bare <= against the
+		// "to" date would drop any loan made after midnight that day.
 		$pop_on      .= ' AND DATE(l.loan_date) <= %s';
 		$pop_params[] = $date_to;
 	}
-	// Retired tools are excluded, since a retired tool showing up as "least
-	// popular" would be misleading (it's retired, not unpopular).
+	// Retired tools are left out so they don't show up as "least popular".
 	$pop_sql = "
         SELECT t.tool_id, t.tool_name, t.barcode, t.brand, COUNT(l.loan_id) AS loan_count
         FROM {$tbl_inventory} t
@@ -871,8 +886,8 @@ function mtl_render_dashboard_page() {
 	$lb_rent_start = $lb_has_range ? 'range' : 'all';
 
 	// --- Member rental leaderboard ---
-	// One query per period. 'range' is the toolbar's date range, offered only
-	// while one is applied, so the leaderboard keeps following it as before.
+	// One query per period. 'range' is the toolbar's date range, offered (and
+	// selected) only while one is applied.
 	$rent_periods = $lb_periods;
 	if ( $lb_has_range ) {
 		$rent_periods = array(
@@ -924,7 +939,8 @@ function mtl_render_dashboard_page() {
 			$donor_params[] = $period['from'];
 		}
 		$donor_sql = "
-            SELECT donated_by, COUNT(*) AS items_donated, SUM(initial_cash_value) AS total_value
+            SELECT donated_by, COUNT(*) AS items_donated, SUM(initial_cash_value) AS total_value,
+                   SUM(CASE WHEN retired_at IS NULL THEN initial_cash_value ELSE 0 END) AS live_value
             FROM {$tbl_inventory}
             WHERE {$donor_where}
             GROUP BY donated_by
@@ -937,18 +953,16 @@ function mtl_render_dashboard_page() {
 	}
 
 	// --- Tool History Lookup / Member History Lookup panels ---
-	// Both panels are search-first: staff type a name into an autocomplete
-	// box (preloaded below, same client-side pattern as Quick Loan on the
-	// Inventory page), and picking one loads that history into the panel in
-	// place (mtl_ajax_dash_history()) and records the id in the URL. The ids
-	// read here are for a page opened from such a URL. The detail queries
-	// only run for whatever is picked; there is no reason to compute a full
-	// history for every tool/member on every dashboard load.
+	// Each panel starts as an autocomplete box, with its options preloaded
+	// below (the same pattern as Quick Loan on the Inventory page). Picking a
+	// name loads its history in place via mtl_ajax_dash_history() and puts
+	// the id in the URL; the ids read here cover a page opened from such a
+	// URL. History queries run only for the picked tool or member.
 	$th_tool_id   = isset( $_GET['mtl_th_tool'] ) ? intval( $_GET['mtl_th_tool'] ) : 0;
 	$mh_member_id = isset( $_GET['mtl_mh_member'] ) ? intval( $_GET['mtl_mh_member'] ) : 0;
 
-	// Tools are intentionally not filtered by retired_at here, because a retired
-	// tool's rental history is exactly the kind of thing this lookup is for.
+	// Retired tools are included: looking up their rental history is one of
+	// the things this panel is for.
 	$dash_tool_options = array();
 	foreach ( $wpdb->get_results( "SELECT tool_id, tool_name, barcode FROM {$tbl_inventory} ORDER BY tool_name ASC" ) as $t ) {
 		$t_name              = stripslashes( (string) $t->tool_name );
@@ -961,9 +975,8 @@ function mtl_render_dashboard_page() {
 		);
 	}
 
-	// Anonymized members are excluded, since they no longer have a real name to
-	// search by. Their history can still be found via a tool's own lookup
-	// (it will just show as "Former Member").
+	// Anonymized members are left out, having no real name to search by.
+	// Their loans still appear in a tool's lookup, as "Former Member".
 	$dash_member_options = array();
 	foreach ( $wpdb->get_results( "SELECT member_id, first_name, last_name, email FROM {$tbl_members} WHERE anonymized_at IS NULL ORDER BY last_name ASC, first_name ASC" ) as $m ) {
 		$m_name                = trim( stripslashes( (string) $m->first_name ) . ' ' . stripslashes( (string) $m->last_name ) );
@@ -976,11 +989,10 @@ function mtl_render_dashboard_page() {
 		);
 	}
 
-	// Donor display lookup: email (lowercased) => "First Last". Reuses the
-	// member list above so the donor leaderboard can resolve a donated_by
-	// that matches a member's email (their username) to their name, without
-	// an extra query. See mtl_maybe_flag_donor_as_donated() in
-	// admin/inventory-page.php, which does the matching write-side.
+	// Lowercased email => "First Last", built from the member list above so
+	// the donor leaderboard can show a member's name when donated_by matches
+	// their email (their username), without another query. The write side of
+	// that match is mtl_maybe_flag_donor_as_donated() in admin/inventory-page.php.
 	$donor_name_by_email = array();
 	foreach ( $dash_member_options as $m ) {
 		$donor_name_by_email[ strtolower( $m['sub'] ) ] = $m['name'];
@@ -1010,7 +1022,7 @@ function mtl_render_dashboard_page() {
 	$panels = mtl_dashboard_panels();
 
 	// Pre-fill the save form with the layout as currently rendered, so if
-	// JavaScript is unavailable, clicking Save simply re-saves the existing
+	// JavaScript is unavailable, clicking Save re-saves the existing
 	// arrangement instead of wiping it.
 	$layout_json = wp_json_encode( $layout );
 
@@ -1056,7 +1068,7 @@ function mtl_render_dashboard_page() {
 			z-index: 50;
 			background: #fff;
 			border: 1px solid #ccd0d4;
-			/* Same pill-clamp reasoning as .mtl-panel above. */
+			/* Same pill-clamp reasoning as .mtl-panel below. */
 			border-radius: min(var(--mtl-radius, 4px), 12px);
 			box-shadow: 0 4px 12px rgba(0, 0, 0, .12);
 			padding: 12px 15px;
@@ -1085,11 +1097,9 @@ function mtl_render_dashboard_page() {
 			background: #fff;
 			border: 1px solid #ccd0d4;
 			/*
-			 * Clamp the themed corner radius so the "Pill" setting (999px)
-			 * can't carve giant quarter-circles out of the card corners and
-			 * clip the charts inside (the card has overflow:hidden). Sharp
-			 * (0), Soft (4px) and Rounded (10px) still pass through unchanged;
-			 * only the extreme pill value is capped to a sane 12px.
+			 * Cap the themed radius at 12px: the "Pill" setting (999px) would
+			 * round the corners so far that overflow:hidden clips the charts.
+			 * Sharp, Soft and Rounded (0, 4px, 10px) pass through unchanged.
 			 */
 			border-radius: min(var(--mtl-radius, 4px), 12px);
 			box-shadow: 0 1px 2px rgba(0, 0, 0, .05);
@@ -1145,9 +1155,9 @@ function mtl_render_dashboard_page() {
 			cursor: grab;
 		}
 
-		/* Card titles must stay compact, since the theme's h4 header size (often
-			2em) is meant for section headings, not card chrome. Higher
-			specificity than the injected .mtl-admin-wrapper h4 rule. */
+		/* Keep card titles compact: the theme's h4 size (often 2em) suits
+			section headings, not card headers. This selector outranks the
+			injected .mtl-admin-wrapper h4 rule. */
 		.mtl-admin-wrapper .mtl-panel-head h4 {
 			font-size: 1em;
 			margin: 0;
@@ -1178,10 +1188,9 @@ function mtl_render_dashboard_page() {
 			padding: 2px 5px;
 			border-radius: 3px;
 			/*
-			 * The hide control is an emoji (eye), which browsers render in
-			 * full color regardless of `color`. Desaturating it keeps both
-			 * controls looking like plain grey UI glyphs rather than a
-			 * colorful sticker; the muted opacity brightens on hover.
+			 * The hide button is an emoji (eye), which ignores `color`.
+			 * Greyscale makes it match the resize glyph; the opacity lifts
+			 * on hover.
 			 */
 			filter: grayscale(100%);
 			opacity: 0.55;
@@ -1459,7 +1468,7 @@ function mtl_render_dashboard_page() {
 			padding: 1px 8px;
 		}
 
-		/* "View full data" expanders inside chart panels */
+		/* "View full ..." / "View all ..." expanders at the foot of a panel */
 		.mtl-panel-more {
 			margin-top: 12px;
 			border-top: 1px solid #eef0f2;
@@ -1472,7 +1481,7 @@ function mtl_render_dashboard_page() {
 			color: var(--mtl-link-color, #00b3ff);
 		}
 
-		/* Save button attention state when the layout has unsaved changes */
+		/* Save button while the layout has unsaved changes */
 		#mtl-save-layout-btn.mtl-dirty {
 			background: var(--mtl-accent-color, #f7c600) !important;
 			border-color: var(--mtl-accent-color, #f7c600) !important;
@@ -1545,7 +1554,7 @@ function mtl_render_dashboard_page() {
 			display: none;
 		}
 
-		/* Dimmed while a picked history is on its way. */
+		/* Dimmed while a picked history loads. */
 		.mtl-dash-lookup-result.mtl-loading {
 			opacity: 0.5;
 		}
@@ -1770,11 +1779,7 @@ function mtl_render_dashboard_page() {
 				break;
 
 			case 'popular':
-				// $range_label already carries pre-escaped, formatted dates
-				// (mtl_format_date()) plus plain literal text, not re-escaped
-				// here, since esc_html() would corrupt the em dash entity.
-				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $range_label is built from mtl_format_date() (self-escaping) plus literal text; esc_html() here would corrupt the &mdash;/&ndash; entities.
-				echo '<p class="mtl-panel-sub">' . $range_label . '</p>';
+				echo '<p class="mtl-panel-sub">' . esc_html( $range_label ) . '</p>';
 				$bar_items = array();
 				foreach ( $most_popular as $row ) {
 					$bar_items[] = array( stripslashes( $row->tool_name ), (int) $row->loan_count, stripslashes( (string) $row->barcode ) );
@@ -1812,16 +1817,14 @@ function mtl_render_dashboard_page() {
 				break;
 
 			case 'unpopular':
-				// See 'popular' case above re: $range_label escaping.
-				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $range_label is built from mtl_format_date() (self-escaping) plus literal text; esc_html() here would corrupt the &mdash;/&ndash; entities.
-				echo '<p class="mtl-panel-sub">' . $range_label . '</p>';
+				echo '<p class="mtl-panel-sub">' . esc_html( $range_label ) . '</p>';
 				$bar_items = array();
 				foreach ( $least_popular as $row ) {
 					$bar_items[] = array( stripslashes( $row->tool_name ), (int) $row->loan_count, stripslashes( (string) $row->barcode ) );
 				}
 				echo mtl_dash_bars( $bar_items, '--mtl-link-color' );
 				if ( $never_borrowed_count > 0 ) {
-					echo '<p class="mtl-insight"><strong>' . esc_html( $never_borrowed_count ) . '</strong> tool(s) have never been borrowed in this period.</p>';
+					echo '<p class="mtl-insight"><strong>' . esc_html( $never_borrowed_count ) . '</strong> ' . ( 1 === $never_borrowed_count ? 'tool has' : 'tools have' ) . ' never been borrowed in this period.</p>';
 				}
 				break;
 
@@ -1884,8 +1887,7 @@ function mtl_render_dashboard_page() {
 				<div class="mtl-lb-controls">
 					<select class="mtl-lb-period" aria-label="Leaderboard period">
 						<?php foreach ( $rent_periods as $period_key => $period ) : ?>
-							<?php // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- the 'range' label is $range_label, built from mtl_format_date() (self-escaping) plus literal text; the rest are literals. ?>
-							<option value="<?php echo esc_attr( $period_key ); ?>" <?php selected( $period_key, $lb_rent_start ); ?>><?php echo $period['label']; ?></option>
+							<option value="<?php echo esc_attr( $period_key ); ?>" <?php selected( $period_key, $lb_rent_start ); ?>><?php echo esc_html( $period['label'] ); ?></option>
 						<?php endforeach; ?>
 					</select>
 				</div>
@@ -1934,9 +1936,11 @@ function mtl_render_dashboard_page() {
 				</div>
 				<?php
 				foreach ( $donor_rows as $period_key => $rows ) :
-					$donated_total = 0;
+					// Retired tools still count on the leaderboard, but not in
+					// the share, since $total_initial leaves them out.
+					$donated_live = 0;
 					foreach ( $rows as $row ) {
-						$donated_total += (float) $row->total_value;
+						$donated_live += (float) $row->live_value;
 					}
 					?>
 					<div class="mtl-lb-view" data-period="<?php echo esc_attr( $period_key ); ?>"<?php echo 'all' === $period_key ? '' : ' hidden'; ?>>
@@ -1977,7 +1981,7 @@ function mtl_render_dashboard_page() {
 							</div>
 							<?php // A share of the whole collection, so only meaningful for all time. ?>
 							<?php if ( 'all' === $period_key ) : ?>
-								<p class="mtl-insight">Donated tools account for <strong><?php echo esc_html( $currency . number_format( $donated_total, 2 ) ); ?></strong> of inventory value (<?php echo esc_html( $total_initial > 0 ? round( $donated_total / $total_initial * 100 ) : 0 ); ?>%).</p>
+								<p class="mtl-insight">Donated tools account for <strong><?php echo esc_html( $currency . number_format( $donated_live, 2 ) ); ?></strong> of inventory value (<?php echo esc_html( $total_initial > 0 ? round( $donated_live / $total_initial * 100 ) : 0 ); ?>%).</p>
 							<?php endif; ?>
 						<?php endif; ?>
 					</div>
@@ -1988,8 +1992,7 @@ function mtl_render_dashboard_page() {
 			case 'tool_history':
 			case 'member_history':
 				// Both lookups share this markup and the script below; only the
-				// ids, labels and result differ. Picking a name loads its history
-				// into the result box without reloading the page.
+				// ids, labels and result differ.
 				if ( 'tool_history' === $panel_id ) {
 					$lk = array(
 						'kind'        => 'tool',
@@ -2023,7 +2026,8 @@ function mtl_render_dashboard_page() {
 						</div>
 						<button type="button" class="button mtl-dash-lookup-clear"<?php echo $lk['picked'] ? '' : ' hidden'; ?>>Clear</button>
 					</div>
-					<div class="mtl-dash-lookup-result" aria-live="polite"><?php echo $lk['result']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built and escaped by mtl_dash_tool_history_html() / mtl_dash_member_history_html(). ?></div>				</div>
+					<div class="mtl-dash-lookup-result" aria-live="polite"><?php echo $lk['result']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built and escaped by mtl_dash_tool_history_html() / mtl_dash_member_history_html(). ?></div>
+				</div>
 				<?php
 				break;
 		}
@@ -2043,7 +2047,7 @@ function mtl_render_dashboard_page() {
 			const sizes = ['small', 'medium', 'large'];
 
 			// Leaderboard periods: every period is already rendered, so
-			// switching just shows the matching one, with no reload.
+			// switching just shows the matching one.
 			document.querySelectorAll('.mtl-lb-period').forEach(function(select) {
 				select.addEventListener('change', function() {
 					select.closest('.mtl-panel-body').querySelectorAll('.mtl-lb-view').forEach(function(view) {
@@ -2057,9 +2061,8 @@ function mtl_render_dashboard_page() {
 				saveBtn.textContent = 'Save Layout *';
 			}
 
-			// Serializes the current DOM state (order, size, visibility) into
-			// the hidden field the Save Layout form posts. Runs on submit so
-			// the server always receives exactly what is on screen.
+			// Writes the on-screen order, size and visibility into the hidden
+			// field on submit, so the server saves exactly what is shown.
 			function serializeLayout() {
 				const layout = {};
 				grid.querySelectorAll('.mtl-panel').forEach(function(panel, i) {
@@ -2074,7 +2077,7 @@ function mtl_render_dashboard_page() {
 
 			document.getElementById('mtl-layout-form').addEventListener('submit', serializeLayout);
 
-			// --- Resize (cycle small -> medium -> large) ---
+			// --- Resize (cycles small -> medium -> large) and hide buttons ---
 			grid.addEventListener('click', function(e) {
 				const resizeBtn = e.target.closest('.mtl-resize-btn');
 				if (resizeBtn) {
@@ -2109,8 +2112,8 @@ function mtl_render_dashboard_page() {
 			});
 
 			// --- Drag & drop rearranging ---
-			// Panels become draggable only while the pointer is on the header,
-			// so text selection and clicks inside panel bodies stay normal.
+			// A panel becomes draggable only on mousedown in its header, so
+			// text selection and clicks inside the body work normally.
 			let dragged = null;
 
 			grid.querySelectorAll('.mtl-panel').forEach(function(panel) {
@@ -2120,16 +2123,25 @@ function mtl_render_dashboard_page() {
 					panel.setAttribute('draggable', 'true');
 				});
 
+				let startNext = null;
+
 				panel.addEventListener('dragstart', function(e) {
-					dragged = panel;
+					dragged   = panel;
+					startNext = panel.nextSibling;
 					panel.classList.add('mtl-dragging');
 					e.dataTransfer.effectAllowed = 'move';
 				});
 
+				// Check for a change here, not on drop: panels move during
+				// dragover, so the order can change even when the drop lands
+				// outside the grid.
 				panel.addEventListener('dragend', function() {
 					panel.classList.remove('mtl-dragging');
 					panel.removeAttribute('draggable');
 					dragged = null;
+					if (panel.nextSibling !== startNext) {
+						markDirty();
+					}
 				});
 
 				panel.addEventListener('dragover', function(e) {
@@ -2149,7 +2161,17 @@ function mtl_render_dashboard_page() {
 
 			grid.addEventListener('drop', function(e) {
 				e.preventDefault();
-				markDirty();
+			});
+
+			// A header click that never becomes a drag fires no dragend, so
+			// clear draggable here; otherwise the panel stays draggable and
+			// its text can't be selected.
+			document.addEventListener('mouseup', function() {
+				if (!dragged) {
+					grid.querySelectorAll('.mtl-panel[draggable]').forEach(function(p) {
+						p.removeAttribute('draggable');
+					});
+				}
 			});
 
 			grid.addEventListener('dragover', function(e) {
@@ -2163,7 +2185,7 @@ function mtl_render_dashboard_page() {
 		document.addEventListener('DOMContentLoaded', function() {
 			<?php
 			// JSON_HEX_TAG/AMP/APOS/QUOT so a tool/member name containing
-					// "</script>" or quotes can't break out of this inline script.
+			// "</script>" or quotes can't break out of this inline script.
 			?>
 			const dashToolOptions   = <?php echo wp_json_encode( $dash_tool_options, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>;
 			const dashMemberOptions = <?php echo wp_json_encode( $dash_member_options, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>;
@@ -2179,7 +2201,8 @@ function mtl_render_dashboard_page() {
 				const input    = box.querySelector('.mtl-dash-lookup-input');
 				const dropdown = box.querySelector('.mtl-dash-dropdown');
 				const clearBtn = box.querySelector('.mtl-dash-lookup-clear');
-				const result   = box.querySelector('.mtl-dash-lookup-result');				let matches = [];
+				const result   = box.querySelector('.mtl-dash-lookup-result');
+				let matches = [];
 				let active  = -1;
 				let request = 0; // Only the newest pick's answer is shown.
 
@@ -2220,7 +2243,8 @@ function mtl_render_dashboard_page() {
 						sub.textContent = '(' + opt.sub + ')';
 						row.appendChild(name);
 						row.appendChild(sub);
-						// mousedown (not click) so it fires before the input's blur.
+						// mousedown + preventDefault, so picking doesn't take focus
+						// away from the input.
 						row.addEventListener('mousedown', function(e) {
 							e.preventDefault();
 							pick(opt);
@@ -2281,7 +2305,7 @@ function mtl_render_dashboard_page() {
 						return;
 					}
 					matches = options.filter(function(opt) {
-						return opt.search.indexOf(q) !== -1;
+						return opt.search.toLowerCase().indexOf(q) !== -1;
 					}).slice(0, 8);
 					render();
 				});
@@ -2298,7 +2322,7 @@ function mtl_render_dashboard_page() {
 						const step = 'ArrowDown' === e.key ? 1 : -1;
 						highlight((active + step + matches.length) % matches.length);
 					} else if ('Enter' === e.key) {
-						// Never submits anything; it only ever picks.
+						// Enter only ever picks a match.
 						e.preventDefault();
 						if (open && active >= 0 && matches[active]) pick(matches[active]);
 					} else if ('Escape' === e.key && open) {

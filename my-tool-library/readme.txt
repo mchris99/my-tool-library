@@ -194,6 +194,8 @@ Yes. Under Setup > Automatic Backups, choose how often (every 1 to 90 days) and 
 
 The encryption key is stored in the database and shown on the Setup page. Save a copy somewhere else, such as a password manager: if the database is ever lost, the backups cannot be opened without it, and nobody can recover it. Uninstalling the plugin leaves the key in place for the same reason.
 
+Backups are hidden from Editors only while the plugin is active. If it is deactivated or deleted, the backups stay in the Media Library, where Editors can see and delete them. The files stay encrypted, so their contents remain safe.
+
 Backups run through WordPress's scheduler, which only fires when someone visits the site, so on a quiet site a backup can run some hours late. Because these backups live on the same server, keep downloading a dump from Export Data now and then and store it somewhere else.
 
 = What happens when I delete a member, or a member deletes their own account? =

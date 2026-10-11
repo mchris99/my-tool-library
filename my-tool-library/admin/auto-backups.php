@@ -57,8 +57,8 @@ define( 'MTL_BACKUP_CHUNK', 65536 );
  * The value of libsodium's
  * SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_TAG_MESSAGE, the tag on every
  * chunk but the last. The polyfill WordPress loads on hosts without the
- * sodium extension defines the other tags but not this one (it calls the
- * same 0 TAG_PUSH), so the constant can't be relied on.
+ * sodium extension doesn't define this one (it gives the value 0 to TAG_PUSH
+ * instead), so the constant can't be relied on.
  */
 define( 'MTL_BACKUP_TAG_MESSAGE', 0 );
 
@@ -97,9 +97,11 @@ function mtl_backup_key( $create = true ) {
 	}
 
 	$key = sodium_crypto_secretstream_xchacha20poly1305_keygen();
-	// add_option(), not update_option(): when two requests both find no key,
-	// only one may set it, or backups would be made with a key that was then
-	// overwritten. The loser uses the winner's.
+	// add_option(), not update_option(), so a request that finds a key another
+	// request has just saved uses that one rather than overwriting it and
+	// stranding backups already made with it. This is a best-effort guard,
+	// not a lock: core's add_option() checks and then upserts, so two
+	// near-simultaneous requests can both succeed and the later key wins.
 	if ( ! add_option( 'mtl_backup_key', bin2hex( $key ), '', 'no' ) ) {
 		return mtl_backup_key( false );
 	}
@@ -149,13 +151,18 @@ function mtl_is_backup( $attachment_id ) {
 function mtl_backup_list( $limit = 100 ) {
 	return get_posts(
 		array(
-			'post_type'   => 'attachment',
-			'post_status' => array( 'private', 'inherit' ),
-			'meta_key'    => '_mtl_backup',
-			'meta_value'  => '1',
-			'orderby'     => 'date',
-			'order'       => 'DESC',
-			'numberposts' => (int) $limit,
+			'post_type'       => 'attachment',
+			'post_status'     => array( 'private', 'inherit' ),
+			'meta_key'        => '_mtl_backup',
+			'meta_value'      => '1',
+			'orderby'         => 'date',
+			'order'           => 'DESC',
+			'numberposts'     => (int) $limit,
+			// Lets this query past mtl_backup_hide_from_non_admins(). Without
+			// it, a backup run during a signed-in non-administrator's request
+			// (ALTERNATE_WP_CRON) would find no backups, and mtl_backup_prune()
+			// would delete their files as orphaned.
+			'mtl_backup_list' => true,
 		)
 	);
 }
@@ -401,8 +408,8 @@ function mtl_backup_create() {
 		return $dir;
 	}
 
-	// Site time, which is what an administrator reads the name in. The
-	// random part is what keeps the URL unguessable.
+	// The date is in site time, as an administrator expects to read it. The
+	// random part keeps the URL unguessable.
 	$path   = $dir . '/my-tool-library-backup-' . wp_date( 'Y-m-d-His' ) . '-' . bin2hex( random_bytes( 12 ) ) . '.sql.enc';
 	$writer = mtl_backup_encrypt_open( $path, $key );
 	if ( is_wp_error( $writer ) ) {
@@ -432,9 +439,9 @@ function mtl_backup_create() {
 		return new WP_Error( 'mtl_backup_write', '' !== $failure ? 'The export failed: ' . $failure : 'The backup file could not be written. The server may be out of disk space.' );
 	}
 
-	// The marker goes in with the post itself, through meta_input, so there
-	// is no moment when the attachment exists without it and an Editor's
-	// Media Library could list it.
+	// The marker goes in through meta_input, which saves it straight after
+	// the row and before add_attachment and the other insert hooks run, so an
+	// Editor's Media Library has only that instant to list it unmarked.
 	$attachment_id = wp_insert_attachment(
 		array(
 			'post_title'     => 'My Tool Library backup ' . wp_date( 'Y-m-d H:i' ),
@@ -489,9 +496,10 @@ function mtl_backup_prune() {
  * @return int|WP_Error The new attachment's ID.
  */
 function mtl_backup_run( $trigger = 'schedule' ) {
-	// One at a time. add_option() only succeeds for whoever creates the row,
-	// which makes it a lock. One older than half an hour was left by a run
-	// that died, and is taken over.
+	// One at a time. add_option() refuses when the row already exists, which
+	// makes it a best-effort lock: core checks and then upserts, so two runs
+	// started within moments of each other can both get past it. A lock older
+	// than half an hour was left by a run that died, and is taken over.
 	$now = time();
 	if ( ! add_option( 'mtl_backup_lock', $now, '', 'no' ) ) {
 		if ( (int) get_option( 'mtl_backup_lock', 0 ) > $now - 30 * MINUTE_IN_SECONDS ) {
@@ -619,10 +627,14 @@ add_action( 'admin_post_mtl_download_backup', 'mtl_backup_download' );
  * @param WP_Query $query The query about to run.
  */
 function mtl_backup_hide_from_non_admins( $query ) {
-	if ( ! is_user_logged_in() || current_user_can( 'manage_options' ) ) {
+	if ( ! is_user_logged_in() || current_user_can( 'manage_options' ) || $query->get( 'mtl_backup_list' ) ) {
 		return;
 	}
 	$types = $query->get( 'post_type' );
+	// A search with no post type becomes 'any' only after this hook runs.
+	if ( '' === $types && $query->is_search() ) {
+		$types = 'any';
+	}
 	if ( 'any' !== $types && ! in_array( 'attachment', (array) $types, true ) ) {
 		return;
 	}
