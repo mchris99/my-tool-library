@@ -2579,10 +2579,9 @@ function mtl_giving_section_html() {
 	$url          = mtl_normalize_web_url( get_option( 'mtl_giving_url', '' ) );
 	$wishlist_url = mtl_normalize_web_url( get_option( 'mtl_giving_wishlist_url', '' ) );
 
-	// The message is what carries the ask, so it decides whether the section
-	// exists at all, because bare buttons with no explanation would be worse
-	// than showing nothing. The links are independent: each one only adds its
-	// own button, and without either the message stands on its own.
+	// No message, no section: buttons with nothing explaining them would be
+	// worse than showing nothing. Each link adds its own button, and the
+	// message works with neither.
 	if ( '' === $text ) {
 		return '';
 	}
@@ -2638,9 +2637,8 @@ function mtl_default_tool_request_text() {
  * The "Can't find a tool?" callout for the Account page, or '' when there is
  * nothing to show.
  *
- * Laid out like mtl_giving_section_html(). Unlike the giving callout, the
- * link alone is enough to show it: the heading already says what the button
- * is for, so it is not a bare button with no explanation.
+ * Laid out like mtl_giving_section_html(), but the link alone is enough to
+ * show it, since the heading already says what the button is for.
  *
  * @return string Ready-to-echo HTML, fully escaped.
  */
@@ -7959,14 +7957,13 @@ function mtl_contact_line_html() {
  * appearance settings.
  *
  * @param string $title       Page title.
- * @param string $body_html   Fills the main area, which lays out nothing of
- *                             its own. Built internally from escaped pieces,
+ * @param string $body_html   Fills the main area, which adds no layout of its
+ *                             own. Built internally from escaped pieces,
  *                             never from raw user input.
- * @param string $footer_html Fills the discreet footer link row at the bottom.
- *                             The public contact line is appended below it
- *                             automatically, so callers never pass it in;
- *                             that is what puts the address on every one of
- *                             these pages from this single place.
+ * @param string $footer_html Fills the footer link row. Built the same way
+ *                             as $body_html. The public contact line is added
+ *                             below it here, so every page gets it from one
+ *                             place and callers never pass it in.
  * @param string $nav_current Top bar item to mark as the current page: browse,
  *                             loans, account, signin, join, or '' to work it
  *                             out from the requested mtl_page.
@@ -8086,6 +8083,8 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '', $nav_cur
 /**
  * The public main page: the customer-facing catalog. The catalog itself is
  * built (server-side, no JavaScript) in public/shop-page.php.
+ *
+ * @return void Outputs the page and exits.
  */
 function mtl_render_front_main_page() {
 	// Process a "reserve a tool" POST before any output, so it can finish
@@ -8094,9 +8093,9 @@ function mtl_render_front_main_page() {
 
 	$body = mtl_render_shop_page();
 
-	// The top bar carries the account links, so the footer only keeps what
-	// the top bar can't offer: staff sign-in before launch. Staff also get a
-	// second way into the portal at the bottom of a long catalog.
+	// The account links are in the top bar, so the footer only adds staff
+	// sign-in before launch, and for signed-in staff a second portal link at
+	// the bottom of a long catalog.
 	$footer = '';
 	if ( mtl_is_prelaunch_visitor() ) {
 		$footer = mtl_prelaunch_footer_html();
@@ -8108,12 +8107,12 @@ function mtl_render_front_main_page() {
 }
 
 /**
- * Footer link for customers before launch, on the Coming soon page and the
- * catalog preview: Staff sign in, through WordPress's own login, because the
- * plugin's sign-in page is closed too.
+ * The "Staff sign in" footer link shown to visitors before launch, on the
+ * Coming soon page and the catalog preview. It uses WordPress's own login
+ * because the plugin's sign-in page is closed until launch.
  *
- * Anybody already signed in, such as a member left signed in when the switch
- * was turned back off, gets nothing here: the top bar has their Log out.
+ * Anybody already signed in (say, a member still signed in after the library
+ * was taken back off live) gets nothing, since the top bar has their Log out.
  *
  * @return string HTML, or ''.
  */
@@ -8139,16 +8138,18 @@ function mtl_render_coming_soon_page() {
 	}
 	$body .= '</div>';
 
-	// The library name in the top bar already links to the home page.
+	// No home link in the footer: the library name in the top bar goes there.
 	mtl_render_front_shell( 'Coming soon', $body, mtl_prelaunch_footer_html() );
 }
 
 /**
- * Branded sign-in screen for members AND administrators. The form itself
- * is core's wp_login_form(): it posts to wp-login.php, so WordPress
- * performs the actual authentication and cookie handling. On success the
- * user lands on the admin gate below, which sends admins to the portal
- * and members back to the catalog.
+ * Branded sign-in screen for members and staff. The form itself is core's
+ * wp_login_form(): it posts to wp-login.php, so WordPress does the actual
+ * authentication and cookie handling. On success the user lands on the admin
+ * gate, mtl_handle_admin_gate(), which sends staff to the portal and members
+ * to the catalog.
+ *
+ * @return void Outputs the page or redirects, then exits.
  */
 function mtl_render_front_login_page() {
 	// Already signed in? Skip the form and go straight to the gate.
@@ -8179,8 +8180,8 @@ function mtl_render_front_login_page() {
 	// in mtl_block_empty_front_login() still covers a browser that ignores it.
 	$login_form = mtl_require_login_fields( $login_form );
 
-	// The catalog and Join are in the top bar, so the footer has nothing left
-	// to add; the password link sits under the form where people look for it.
+	// Browse and Join are in the top bar, so there is no footer. The password
+	// link goes under the form, where people look for it.
 	$body  = '<div class="mtl-front-card">';
 	$body .= '<h1>Sign in</h1>';
 	$body .= mtl_front_notice_html();
@@ -8436,6 +8437,8 @@ function mtl_setup_login_for_unclaimed_member( $submitted ) {
  * test whether a given person is a member here; for a library holding home
  * addresses that is worth avoiding, at the cost of a typo'd address looking
  * like success until no email arrives.
+ *
+ * @return void Outputs the page or redirects, then exits.
  */
 function mtl_render_lost_password_page() {
 	if ( is_user_logged_in() ) {
@@ -8751,6 +8754,8 @@ function mtl_validate_new_password( $expected_key, $posted_key, $pass1, $pass2 )
  * moved into an HttpOnly cookie, and the URL is then reloaded without them.
  * That keeps the reset key out of browser history, out of bookmarks, and out
  * of the Referer header sent to anything the page later loads.
+ *
+ * @return void Outputs the page or redirects, then exits.
  */
 function mtl_render_reset_password_page() {
 	if ( is_user_logged_in() ) {

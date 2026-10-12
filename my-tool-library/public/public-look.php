@@ -1,7 +1,8 @@
 <?php
 /**
  * The look of the public pages: the saved settings, the fonts, the CSS custom
- * properties built from them, the shared component styles, and the top bar.
+ * properties built from them, the shared component styles, the top bar, and
+ * the suggested privacy policy text.
  *
  * Everything public is styled from one option, mtl_public_look, an array that
  * is checked against fixed lists on the way in (mtl_sanitize_public_look()), so
@@ -10,12 +11,10 @@
  * only and are never read here.
  *
  * mtl_render_front_shell() in my-tool-library.php prints the fonts, the
- * variables and the base styles into every public page. The Setup page's
- * preview calls the same functions, which is why every rule below is scoped
- * under :where(.mtl-front): the preview can wrap its markup in that class
- * without the styles leaking into the admin screen, and :where() keeps each
- * selector's specificity what it would be unscoped, so page styles override
- * these as if they were plain class rules.
+ * variables and the base styles into every public page. The Setup preview
+ * prints the same CSS into its own document in an iframe. Both put .mtl-front
+ * on <body>. Most rules sit under :where(.mtl-front), which adds no
+ * specificity, so a page's own styles override them like plain class rules.
  *
  * @package My_Tool_Library
  */
@@ -89,8 +88,8 @@ function mtl_public_look_presets() {
 			'corners'      => 'square',
 			'button_style' => 'flat',
 		),
-		// Today's orange and blue. The heading orange is a shade darker than
-		// the button's, since #D65A00 on white is only 3.9:1.
+		// The staff pages' default orange and blue. Headings use the darker
+		// #B84D00 (5.1:1 on white), since the button's #FF6600 is only 2.9:1.
 		'classic'       => array(
 			'label'        => 'Classic',
 			'page_bg'      => '#FFFFFF',
@@ -527,9 +526,9 @@ function mtl_public_library_font_faces( $font ) {
  * expressions over the variables themselves, so they need no PHP color math.
  *
  * @param array  $look     A look; it is sanitized again here.
- * @param string $selector Where the properties go. The public pages use
- *                         :root; the Setup preview passes its own wrapper.
- *                         A literal from code, never from input.
+ * @param string $selector Where the properties go. Defaults to :root; no
+ *                         caller changes it today. A literal from code,
+ *                         never from input.
  * @return string CSS.
  */
 function mtl_public_look_vars_css( $look, $selector = ':root' ) {

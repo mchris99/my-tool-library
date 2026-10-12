@@ -432,9 +432,10 @@ function mtl_front_notice_html() {
  * Shared <style> for the member pages (sign up, My loans & reservations,
  * Account and the member-only notice).
  *
- * Built only on the Public pages look's custom properties and the shared
- * classes in public/public-look.php (buttons, fields, notices, status line),
- * so nothing here repeats them or names a color of its own.
+ * Builds on the shared classes in public/public-look.php (buttons, fields,
+ * notices, status line) and only adds to or adjusts them for these pages.
+ * Every color is one of the Public pages look's custom properties, or a
+ * color-mix() of two of them.
  *
  * @return string The <style> element.
  */
@@ -1650,8 +1651,8 @@ function mtl_member_page_styles() {
  * Not a live region: it is present on page load rather than injected, so
  * announcing it would be noise on every page view.
  *
- * Gated on mtl_agreements_online(), since paper mode gives the member nowhere
- * to act on it.
+ * Only shown when mtl_agreements_online(), since paper mode gives the member
+ * nowhere to act on it.
  *
  * @return string HTML, or '' when there is nothing to say.
  */
@@ -1727,7 +1728,7 @@ function mtl_agreement_excerpt( $text, $words = 8 ) {
  * Renders a group of agreements as a fieldset of checkboxes.
  *
  * These forms are the legal gate. A member who cannot operate them cannot
- * join the library, so the accessible structure is load-bearing:
+ * join the library, so they must work with assistive technology:
  *
  * - the whole clause is the label, so it is both the click target and the
  *   accessible name;
@@ -2254,9 +2255,9 @@ function mtl_render_signup_page() {
 					$errors[]          = 'One or more of our agreements changed while you were reading them. The updated wording is shown below; please review and agree again.';
 				} elseif ( $check['missing'] ) {
 					$agreement_missing = $check['missing'];
-					// The summary block lists these as links; the names are what
-					// appears in the ordinary error list beside the field
-					// errors, naming them rather than counting them.
+					// The error list shows this entry as links to the unticked
+					// boxes (see $agreement_error_at), so these excerpts are
+					// only its plain-text stand-in.
 					$mtl_names = array();
 					foreach ( $check['missing'] as $mtl_missed ) {
 						$agreement_invalid[] = (int) $mtl_missed->agreement_id;
@@ -2621,8 +2622,9 @@ function mtl_member_reservation_state( $r ) {
 }
 
 /**
- * How a tool is named under its title on the member pages: "No. 63, Makita",
- * or less when the library hides tool numbers or there is no brand.
+ * The line under a tool's name in the reservation list and the loan history:
+ * "No. 63, Makita", or less when the library hides tool numbers or there is
+ * no brand.
  *
  * @param int    $tool_id Tool row ID.
  * @param string $brand   Brand, possibly slashed or empty.
@@ -3424,7 +3426,7 @@ function mtl_render_account_page() {
 		}
 	}
 
-	// --- Handle "Delete Account and Remove Personal Data" (POST + nonce). ---
+	// --- Handle account deletion (POST + nonce). ---
 	// The GET link to ?mtl_confirm_delete=1 only shows the confirmation; this
 	// runs on the POST from that confirmation form.
 	if ( mtl_is_post_request() && isset( $_POST['mtl_delete_account'] ) ) {
@@ -3766,9 +3768,9 @@ function mtl_render_account_page() {
 
 			<div class="mtl-panel mtl-acct-panels">
 				<?php
-				// Closed by default, but forced open when a submitted edit just
-				// failed validation, or is waiting on the verification warning;
-				// otherwise the member couldn't see what it refers to.
+				// Closed by default, but forced open whenever the page has an error
+				// to show or an edit is waiting on the verification warning, so the
+				// form the message is about is in view.
 				?>
 				<details <?php echo ( ! empty( $errors ) || $pending_details ) ? 'open' : ''; ?>>
 					<summary><span class="mtl-acct-sum-title">Your details</span><span class="mtl-acct-sum-note">Name, address, phone</span></summary>

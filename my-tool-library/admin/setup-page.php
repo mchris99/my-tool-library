@@ -1347,8 +1347,8 @@ function mtl_restore_from_sql( $sql ) {
 
 /**
  * The preset a look's colors, corners and button style match, or 'custom'.
- * Worked out on save rather than taken from the form, so a preset that was
- * picked and then edited is not saved under the preset's name.
+ * Setup uses it to mark the matching preset button, and the save stores it
+ * as the look's 'preset' value.
  *
  * @param array $look A sanitized look.
  * @return string Preset slug or 'custom'.
@@ -1610,7 +1610,7 @@ function mtl_render_public_look_section( $open ) {
 		}
 
 		/* Outranks the shared heading rule in my-tool-library.php, which
-			sizes every h4 on the plugin's pages from the staff font size. */
+			gives every h4 on the plugin's pages the staff portal's heading size. */
 		.mtl-admin-wrapper .mtl-look h4 {
 			margin: 0 0 4px;
 			font-size: 14px;
@@ -2186,11 +2186,9 @@ function mtl_render_public_look_section( $open ) {
 	</div>
 
 	<script>
-		// Public pages look: presets, the color fields, the contrast readouts
-		// and the live preview. The preview is a page of its own (see
-		// mtl_render_public_look_preview()), drawn from the saved look; this
-		// sets the same CSS custom properties on it that the public pages
-		// would get from what the form holds now.
+		// The preview frame (mtl_render_public_look_preview()) loads with the
+		// saved look. This script then sets on it the CSS custom properties
+		// the public pages would get from the form's current values.
 		(function() {
 			var root = document.getElementById('mtl-look');
 			if (!root) {

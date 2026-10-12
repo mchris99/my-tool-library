@@ -25,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * word.
  *
  * A retired tool is never "Available": it can't be borrowed or reserved at
- * all (mtl_reserve_tool() refuses one), so it says Retired in place of that.
+ * all (mtl_handle_reserve_action() refuses one), so it says Retired instead.
  * One retired mid-loan still says On loan, since that is a fact about where
  * the tool is right now.
  *
@@ -51,9 +51,8 @@ function mtl_shop_status_word( $on_loan, $retired = false, $maintenance = false 
 }
 
 /**
- * Renders the status line shared by the catalog views, the tool panel and
- * My loans & reservations: the status word and, when members are queued for
- * the tool, how many.
+ * The card view's status line: the status word and, when members are queued
+ * for the tool, how many.
  *
  * A retired tool's count still shows, since those members are still queued
  * behind it.
@@ -80,8 +79,8 @@ function mtl_shop_status_badges( $on_loan, $res_count, $retired = false, $mainte
  *
  * Both checks live here, not at the call sites, so a page can't forget one
  * and leak a location; it fails closed. That's also why it takes the raw
- * column value rather than a "show it" flag. Used by My Reservations, and by
- * mtl_shop_location_fact() for the catalog's tool panel.
+ * column value rather than a "show it" flag. Used by My loans & reservations,
+ * and by mtl_shop_location_fact() for the catalog's tool panel.
  *
  * @param string $location Raw tool_inventory.location value; NULL/'' for a
  *                         tool with no location recorded.
@@ -384,9 +383,9 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 }
 
 /**
- * The catalog's own styles. Built only from the shared custom properties
- * (public/public-look.php), so every Setup look reaches it, and the same text
- * whatever the look.
+ * The catalog's own styles. Colors and fonts come from the shared custom
+ * properties (public/public-look.php), so every Setup look restyles the
+ * catalog while this CSS stays the same.
  *
  * Under 900px the tool panel becomes a bottom sheet over a dimmed catalog.
  * That needs :has(); a browser without it shows the panel below the list.
@@ -1054,8 +1053,8 @@ function mtl_shop_page_css() {
 			border-style: dashed;
 		}
 
-		/* The padding gives the name a 44px tap target; the margin keeps the
-			row height as it was. */
+		/* The padding gives the name a 44px tap target; the negative margin
+			stops it from making the row taller. */
 		.mtl-shop-t-name a {
 			display: block;
 			padding: 11px 0;
@@ -2004,8 +2003,9 @@ function mtl_render_shop_page() {
 		. " LEFT JOIN {$tbl_tool_train} ttr ON t.tool_id = ttr.tool_id"
 		. " LEFT JOIN {$tbl_trainings} tr ON ttr.training_id = tr.training_id";
 
-	// Total matching count (for pagination). Every filter is its own EXISTS
-	// subquery, so the count skips $from's joins, which only multiply rows.
+	// Total matching count (for pagination). Every filter is a column of t or
+	// its own EXISTS subquery, so the count skips $from's joins, which only
+	// multiply rows.
 	$count_sql = "SELECT COUNT(*) FROM (SELECT t.tool_id, {$sub_loans} AS active_loans, {$sub_res} AS active_res FROM {$tbl_inv} t {$where_sql} GROUP BY t.tool_id {$having}) sub";
 	$total     = (int) ( $args ? $wpdb->get_var( $wpdb->prepare( $count_sql, $args ) ) : $wpdb->get_var( $count_sql ) );
 
@@ -2165,8 +2165,8 @@ function mtl_render_shop_page() {
 		$active_chips[] = array( 'include' === $a_retired ? 'Including retired' : 'Retired only', $drop_url( 'mtl_retired' ) );
 	}
 
-	// The category links: the six with the most tools, and every category in
-	// a fold when there are too many to show at once.
+	// The category links, most tools first. Past eight categories, only the
+	// top six show as chips and every category goes in a fold.
 	$shelf = array();
 	if ( $look['show_categories'] ) {
 		foreach ( $cat_names as $id => $name ) {
@@ -2204,7 +2204,7 @@ function mtl_render_shop_page() {
 
 	// Viewer's member context, fetched once and handed to every detail panel
 	// so the Reserve control can adapt to who's looking (see
-	// mtl_shop_render_detail_panel). The lookups only run when signed in.
+	// mtl_shop_render_detail_panel). The lookups only run for a signed-in member.
 	$member_ctx = array(
 		// The catalog preview before launch: every visitor counts as signed
 		// out, even one who is signed in, and no tool offers a way to reserve.
