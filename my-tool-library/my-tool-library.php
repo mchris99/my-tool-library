@@ -4,7 +4,7 @@
  * Plugin URI: https://mkelibrary.org
  * Description: An open-source WordPress plugin for Tool Librarians to manage their membership and inventory in one place.
  * Version: 1.0.0
- * Requires at least: 5.8
+ * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Milwaukee Tool Library (Evan Maruszewski & Chris McHenry)
  * Author URI: https://mkelibrary.org
@@ -2563,16 +2563,14 @@ function mtl_default_giving_text() {
 
 
 /**
- * The Consider Giving section, or '' when there is nothing to show.
+ * The "Consider giving" callout, or '' when there is nothing to show.
  *
  * Shared by the Account page and My Reservations so the two can never drift
  * apart in wording or behaviour.
  *
- * @param string $extra_class Optional extra class on the wrapper, for callers
- *                            that need to adjust spacing in their layout.
  * @return string Ready-to-echo HTML, fully escaped.
  */
-function mtl_giving_section_html( $extra_class = '' ) {
+function mtl_giving_section_html() {
 	$text = trim( (string) get_option( 'mtl_giving_text', mtl_default_giving_text() ) );
 
 	// Re-normalized on read, not trusted from storage: an option can also be
@@ -2581,39 +2579,34 @@ function mtl_giving_section_html( $extra_class = '' ) {
 	$url          = mtl_normalize_web_url( get_option( 'mtl_giving_url', '' ) );
 	$wishlist_url = mtl_normalize_web_url( get_option( 'mtl_giving_wishlist_url', '' ) );
 
-	// The message is what carries the ask, so it decides whether the section
-	// exists at all, because bare buttons with no explanation would be worse
-	// than showing nothing. The links are independent: each one only adds its
-	// own button, and without either the message stands on its own.
+	// No message, no section: buttons with nothing explaining them would be
+	// worse than showing nothing. Each link adds its own button, and the
+	// message works with neither.
 	if ( '' === $text ) {
 		return '';
 	}
 
-	$classes = 'mtl-member-card mtl-member-giving';
-	if ( '' !== $extra_class ) {
-		$classes .= ' ' . $extra_class;
-	}
-
-	$html  = '<div class="' . esc_attr( $classes ) . '">';
-	$html .= '<strong>Consider Giving</strong>';
-	$html .= '<p class="mtl-member-giving-text">' . nl2br( esc_html( $text ) ) . '</p>';
+	$html  = '<aside class="mtl-callout mtl-member-giving">';
+	$html .= '<div class="mtl-callout-body">';
+	$html .= '<h2 class="mtl-callout-title">Consider giving</h2>';
+	$html .= '<p class="mtl-callout-text">' . nl2br( esc_html( $text ) ) . '</p>';
+	$html .= '</div>';
 	if ( '' !== $url || '' !== $wishlist_url ) {
 		// Opens in a new tab so a member part-way through renewing a loan or
 		// cancelling a reservation does not lose that page. rel="noopener"
 		// stops the opened page from reaching back through window.opener.
-		$html .= '<p class="mtl-member-giving-action">';
+		$html .= '<div class="mtl-callout-actions">';
 		if ( '' !== $url ) {
-			$html .= '<a class="mtl-member-btn mtl-member-btn-giving" href="' . esc_url( $url ) . '"';
-			$html .= ' target="_blank" rel="noopener noreferrer nofollow">Give Now</a>';
+			$html .= '<a class="mtl-btn" href="' . esc_url( $url ) . '"';
+			$html .= ' target="_blank" rel="noopener noreferrer nofollow">Give now</a>';
 		}
 		if ( '' !== $wishlist_url ) {
-			// Outlined so Give Now stays the primary ask when both are shown.
-			$html .= '<a class="mtl-member-btn mtl-member-btn-ghost mtl-member-btn-giving" href="' . esc_url( $wishlist_url ) . '"';
-			$html .= ' target="_blank" rel="noopener noreferrer nofollow">Wishlist</a>';
+			$html .= '<a class="mtl-btn" href="' . esc_url( $wishlist_url ) . '"';
+			$html .= ' target="_blank" rel="noopener noreferrer nofollow">See our wishlist</a>';
 		}
-		$html .= '</p>';
+		$html .= '</div>';
 	}
-	$html .= '</div>';
+	$html .= '</aside>';
 
 	return $html;
 }
@@ -2641,12 +2634,11 @@ function mtl_default_tool_request_text() {
 }
 
 /**
- * The Request a Tool card for the Account page, or '' when there is nothing
- * to show.
+ * The "Can't find a tool?" callout for the Account page, or '' when there is
+ * nothing to show.
  *
- * Laid out like mtl_giving_section_html(). Unlike the giving card, the link
- * alone is enough to show it: the card's heading already says what the
- * button is for, so it is not a bare button with no explanation.
+ * Laid out like mtl_giving_section_html(), but the link alone is enough to
+ * show it, since the heading already says what the button is for.
  *
  * @return string Ready-to-echo HTML, fully escaped.
  */
@@ -2659,18 +2651,20 @@ function mtl_tool_request_section_html() {
 		return '';
 	}
 
-	$html  = '<div class="mtl-member-card mtl-member-request">';
-	$html .= '<strong>Can&rsquo;t Find a Tool?</strong>';
+	$html  = '<aside class="mtl-callout mtl-member-request">';
+	$html .= '<div class="mtl-callout-body">';
+	$html .= '<h2 class="mtl-callout-title">Can&rsquo;t find a tool?</h2>';
 	if ( '' !== $text ) {
-		$html .= '<p class="mtl-member-request-text">' . nl2br( esc_html( $text ) ) . '</p>';
-	}
-	if ( '' !== $url ) {
-		$html .= '<p class="mtl-member-request-action">';
-		$html .= '<a class="mtl-member-btn mtl-member-btn-request" href="' . esc_url( $url ) . '"';
-		$html .= ' target="_blank" rel="noopener noreferrer nofollow">Request a Tool</a>';
-		$html .= '</p>';
+		$html .= '<p class="mtl-callout-text">' . nl2br( esc_html( $text ) ) . '</p>';
 	}
 	$html .= '</div>';
+	if ( '' !== $url ) {
+		$html .= '<div class="mtl-callout-actions">';
+		$html .= '<a class="mtl-btn" href="' . esc_url( $url ) . '"';
+		$html .= ' target="_blank" rel="noopener noreferrer nofollow">Request a tool</a>';
+		$html .= '</div>';
+	}
+	$html .= '</aside>';
 
 	return $html;
 }
@@ -2994,7 +2988,7 @@ function mtl_tool_link_lists() {
 			'url_hint'  => 'example.com/chainsaw-basics',
 		),
 		'partner_links' => array(
-			'label'     => 'Partner Links',
+			'label'     => 'Partner links',
 			'noun'      => 'partner link',
 			'name_hint' => 'Store Name',
 			'url_hint'  => 'example.com/sanding-belts',
@@ -3320,61 +3314,6 @@ function mtl_tool_links_html( $pairs, $link_list ) {
 	$out .= '</ul></details>';
 
 	return $out;
-}
-
-/**
- * The front-end CSS for what mtl_tool_links_html() renders.
- *
- * The catalog and My Reservations both show these sections, so this lives
- * beside the renderer for the same reason mtl_shop_badge_pill_css() does: one
- * copy, so restyling a link list restyles it on both. The count's pill shape
- * comes from that helper; only its spacing is set here.
- *
- * Each page styles its own <summary> typography, so the section heading
- * matches the headings around it rather than importing the other page's.
- *
- * @param string $accent The site's accent colour, for the link text.
- * @return string CSS, ready to drop inside a <style> block.
- */
-function mtl_tool_links_css( $accent ) {
-	ob_start();
-	?>
-		.mtl-links {
-			margin: 0;
-		}
-
-		.mtl-links > summary {
-			cursor: pointer;
-		}
-
-		.mtl-links-count {
-			margin: 0;
-			min-width: 16px;
-			text-align: center;
-		}
-
-		.mtl-links-list {
-			list-style: none;
-			margin: 0;
-			padding: 0;
-		}
-
-		.mtl-links-list li {
-			padding: 5px 0;
-			border-top: 1px solid #f0f1f2;
-		}
-
-		.mtl-links-list a {
-			color: <?php echo esc_html( $accent ); ?>;
-			text-decoration: none;
-		}
-
-		.mtl-links-list a:hover,
-		.mtl-links-list a:focus {
-			text-decoration: underline;
-		}
-	<?php
-	return ob_get_clean();
 }
 
 /**
@@ -4824,7 +4763,9 @@ require_once MTL_PLUGIN_DIR . 'admin/auto-backups.php';
 // mtl_handle_front_pages().
 require_once MTL_PLUGIN_DIR . 'admin/go-live.php';
 
-// Public-facing customer pages.
+// Public-facing customer pages. The look comes first, since the page files
+// build on its settings and styles.
+require_once MTL_PLUGIN_DIR . 'public/public-look.php';
 require_once MTL_PLUGIN_DIR . 'public/shop-page.php';
 require_once MTL_PLUGIN_DIR . 'public/member-pages.php';
 
@@ -8010,25 +7951,49 @@ function mtl_contact_line_html() {
 }
 
 /**
- * Shared standalone HTML shell for the front-end pages, themed from the same
- * appearance settings as the admin pages.
+ * Shared standalone HTML shell for the front-end pages: the top bar, the
+ * page, the footer and, for staff before launch, the preview bar. Styled
+ * from the Public pages look (public/public-look.php), never from the staff
+ * appearance settings.
  *
  * @param string $title       Page title.
- * @param string $body_html   Fills the centered main area. Built internally
- *                             from escaped pieces, never from raw user input.
- * @param string $footer_html Fills the discreet footer link row at the bottom.
- *                             The public contact line is appended below it
- *                             automatically, so callers never pass it in;
- *                             that is what puts the address on every one of
- *                             these pages from this single place.
+ * @param string $body_html   Fills the main area, which adds no layout of its
+ *                             own. Built internally from escaped pieces,
+ *                             never from raw user input.
+ * @param string $footer_html Fills the footer link row. Built the same way
+ *                             as $body_html. The public contact line is added
+ *                             below it here, so every page gets it from one
+ *                             place and callers never pass it in.
+ * @param string $nav_current Top bar item to mark as the current page: browse,
+ *                             loans, account, signin, join, or '' to work it
+ *                             out from the requested mtl_page.
  * @return void Outputs the page directly and exits.
  */
-function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
+function mtl_render_front_shell( $title, $body_html, $footer_html = '', $nav_current = '' ) {
 	$org_name = get_option( 'mtl_org_name', '' );
 	if ( '' === $org_name ) {
 		$org_name = 'My Tool Library';
 	}
 	$logo_url = get_option( 'mtl_logo_url', '' );
+	$look     = mtl_public_look();
+
+	if ( '' === $nav_current ) {
+		$by_page = array(
+			'main'         => 'browse',
+			'reservations' => 'loans',
+			'account'      => 'account',
+			'login'        => 'signin',
+			'lostpassword' => 'signin',
+			'resetpass'    => 'signin',
+			'signup'       => 'join',
+		);
+		$page    = sanitize_key( (string) get_query_var( 'mtl_page' ) );
+		// The router also accepts a raw ?mtl_page=, so this does too.
+		if ( '' === $page && isset( $_GET['mtl_page'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only: picks which nav item to mark.
+			$page = sanitize_key( wp_unslash( $_GET['mtl_page'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- as above.
+		}
+		$nav_current = isset( $by_page[ $page ] ) ? $by_page[ $page ] : '';
+	}
 
 	// Resolved once here so the footer markup below stays a plain echo.
 	$contact_html = mtl_contact_line_html();
@@ -8044,22 +8009,6 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 		$preview_note .= ' ' . mtl_go_live_next_step_html();
 	}
 
-	$h_color = get_option( 'mtl_header_color', '#ff6600' );
-	$b_color = get_option( 'mtl_body_color', '#096491' );
-	$l_color = get_option( 'mtl_link_color', '#00b3ff' );
-	$bg      = get_option( 'mtl_background_color', '#ffffff' );
-	$radius  = get_option( 'mtl_border_radius', '4px' );
-	// Same button scale the admin pages use, so the Setup page's Button Size
-	// setting reaches the public-facing pages too.
-	$btn_scale = get_option( 'mtl_button_scale', '1' );
-
-	// On a standalone page "inherit" would fall back to the browser's default
-	// serif; substitute a neutral system stack instead.
-	$b_font = get_option( 'mtl_body_font', 'inherit' );
-	if ( 'inherit' === $b_font || '' === $b_font ) {
-		$b_font = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-	}
-
 	status_header( 200 );
 	header( 'Content-Type: text/html; charset=utf-8' );
 	?>
@@ -8071,192 +8020,32 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<meta name="robots" content="noindex">
 		<title><?php echo esc_html( $title . ' - ' . $org_name ); ?></title>
+		<?php
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- <style> built from esc_url()'d plugin URLs and core's wp_print_font_faces().
+		echo mtl_public_font_faces_html( $look );
+		?>
 		<style>
-			body {
-				margin: 0;
-				min-height: 100vh;
-				display: flex;
-				flex-direction: column;
-				background: <?php echo mtl_css_value( $bg, '#ffffff' ); ?>;
-				color: <?php echo mtl_css_value( $b_color, '#096491' ); ?>;
-				font-family: <?php echo mtl_css_value( $b_font ); ?>;
-			}
-
-			.mtl-front-header {
-				text-align: center;
-				padding: 40px 20px 10px 20px;
-			}
-
-			.mtl-front-header img {
-				max-height: 80px;
-				width: auto;
-			}
-
-			.mtl-front-header h1 {
-				color: <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
-				margin: 10px 0 0 0;
-			}
-
-			.mtl-front-content {
-				flex: 1;
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				padding: 20px;
-			}
-
-			.mtl-front-card {
-				max-width: 480px;
-				width: 100%;
-				background: #fff;
-				border: 1px solid #ccd0d4;
-				border-radius: <?php echo esc_html( '999px' === $radius ? '16px' : $radius ); ?>;
-				box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
-				padding: 30px;
-				text-align: center;
-			}
-
-			.mtl-front-card p {
-				line-height: 1.6;
-			}
-
-			a {
-				color: <?php echo mtl_css_value( $l_color, '#00b3ff' ); ?>;
-			}
-
-			.mtl-front-footer {
-				text-align: center;
-				padding: 25px 20px;
-				font-size: 0.8em;
-			}
-
-			.mtl-front-footer a {
-				color: #8c8f94;
-				text-decoration: none;
-				margin: 0 8px;
-			}
-
-			.mtl-front-footer a:hover {
-				text-decoration: underline;
-			}
-
-			/* Contact line: its own row under the footer links. Kept in the
-				footer's quiet grey, but underlined, since it is the one thing down
-				here a member may actively need, and it should not read as
-				body text. */
-			.mtl-front-contact {
-				margin: 10px 0 0 0;
-				color: #8c8f94;
-			}
-
-			.mtl-front-contact a {
-				margin: 0;
-				text-decoration: underline;
-			}
-
-			/* Status banner (e.g. a failed sign-in). Same colors as the member
-				pages' .mtl-front-notice, but sized for the narrower card:
-				full width, no auto-centering. */
-			.mtl-front-card .mtl-front-notice {
-				margin: 0 0 16px 0;
-				padding: 12px 16px;
-				border-radius: 6px;
-				font-size: 0.95em;
-				text-align: left;
-			}
-
-			.mtl-front-card .mtl-front-notice-success {
-				background: #edf7ed;
-				border: 1px solid #b6dcb6;
-				color: #1e5b25;
-			}
-
-			.mtl-front-card .mtl-front-notice-error {
-				background: #fcf0f1;
-				border: 1px solid #f0c0c4;
-				color: #8a1f28;
-			}
-
-			/* Make the core wp_login_form() output match the card. */
-			.mtl-front-card form p {
-				text-align: left;
-				margin: 0 0 14px 0;
-			}
-
-			.mtl-front-card label {
-				display: block;
-				font-weight: 600;
-				margin-bottom: 4px;
-			}
-
-			.mtl-front-card input[type="text"],
-			.mtl-front-card input[type="password"] {
-				width: 100%;
-				box-sizing: border-box;
-				padding: 8px 10px;
-				border: 1px solid #8c8f94;
-				border-radius: 4px;
-				font-size: 1em;
-			}
-
-			.mtl-front-card input[type="submit"] {
-				background: <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
-				border: 1px solid <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
-				color: #fff;
-				padding: calc(9px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>) calc(22px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
-				border-radius: <?php echo mtl_css_value( $radius, '4px' ); ?>;
-				font-size: calc(1em * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
-				cursor: pointer;
-			}
-
-			.login-remember {
-				font-weight: 400;
-			}
-
-			.login-remember label {
-				font-weight: 400;
-			}
-
-			/* A link that reads as the card's main action, matching the
-				submit button above. */
-			.mtl-front-card .mtl-front-button {
-				display: inline-block;
-				background: <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
-				border: 1px solid <?php echo mtl_css_value( $h_color, '#ff6600' ); ?>;
-				color: #fff;
-				padding: calc(9px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>) calc(22px * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
-				border-radius: <?php echo mtl_css_value( $radius, '4px' ); ?>;
-				font-size: calc(1em * <?php echo mtl_css_value( $btn_scale, '1' ); ?>);
-				text-decoration: none;
-			}
-
-			/* Staff only, before launch: a thin strip saying what customers
-				see in place of this page. Held to the bottom of the window, since
-				the catalog pins its Home and account buttons to the top. Sticky
-				rather than fixed, so it covers nothing at the end of the page. */
-			.mtl-front-preview-bar {
-				position: sticky;
-				bottom: 0;
-				background: #1d2327;
-				color: #f0f0f1;
-				font-size: 0.85em;
-				line-height: 1.5;
-				padding: 8px 16px;
-				text-align: center;
-			}
-
-			.mtl-front-preview-bar a {
-				color: #72aee6;
-			}
+		<?php
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CSS from the sanitized look; every setting value passes mtl_css_value().
+		echo mtl_public_look_css( $look );
+		?>
 		</style>
 	</head>
 
-	<body>
-		<header class="mtl-front-header">
-			<?php if ( ! empty( $logo_url ) ) : ?>
-				<img src="<?php echo esc_url( $logo_url ); ?>" alt="<?php echo esc_attr( $org_name ); ?>">
-			<?php endif; ?>
-			<h1><?php echo esc_html( $org_name ); ?></h1>
+	<body class="mtl-front mtl-btn-style-<?php echo esc_attr( $look['button_style'] ); ?>">
+		<header class="mtl-topbar">
+			<div class="mtl-topbar-inner">
+				<a class="mtl-brand" href="<?php echo esc_url( mtl_home_page_url() ); ?>">
+					<?php if ( ! empty( $logo_url ) ) : ?>
+						<img src="<?php echo esc_url( $logo_url ); ?>" alt="">
+					<?php endif; ?>
+					<span><?php echo esc_html( $org_name ); ?></span>
+				</a>
+				<?php
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url()/esc_html()-wrapped in mtl_front_nav_html().
+				echo mtl_front_nav_html( $nav_current );
+				?>
+			</div>
 		</header>
 		<main class="mtl-front-content">
 			<?php
@@ -8266,12 +8055,14 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 		</main>
 		<?php if ( '' !== $footer_html || '' !== $contact_html ) : ?>
 			<footer class="mtl-front-footer">
-				<?php
-				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built internally from esc_*()-wrapped pieces, never from raw user input (see docblock).
-				echo $footer_html;
-				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url()/esc_html()-wrapped in mtl_contact_line_html().
-				echo $contact_html;
-				?>
+				<div class="mtl-front-footer-inner">
+					<?php
+					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built internally from esc_*()-wrapped pieces, never from raw user input (see docblock).
+					echo $footer_html;
+					// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url()/esc_html()-wrapped in mtl_contact_line_html().
+					echo $contact_html;
+					?>
+				</div>
 			</footer>
 		<?php endif; ?>
 		<?php if ( $preview_note ) : ?>
@@ -8290,10 +8081,10 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '' ) {
 }
 
 /**
- * The public main page: the customer-facing shopping catalog, with a
- * small, discreet Admin Sign In link at the bottom of the page. The
- * catalog itself is built (server-side, no JavaScript) in
- * public/shop-page.php.
+ * The public main page: the customer-facing catalog. The catalog itself is
+ * built (server-side, no JavaScript) in public/shop-page.php.
+ *
+ * @return void Outputs the page and exits.
  */
 function mtl_render_front_main_page() {
 	// Process a "reserve a tool" POST before any output, so it can finish
@@ -8302,40 +8093,32 @@ function mtl_render_front_main_page() {
 
 	$body = mtl_render_shop_page();
 
-	// Discreet footer links, varying with login state. (The primary member
-	// sign-in / sign-up / account controls live in the catalog's own top-bar
-	// nav; these footer links are a quiet secondary path).
+	// The account links are in the top bar, so the footer only adds staff
+	// sign-in before launch, and for signed-in staff a second portal link at
+	// the bottom of a long catalog.
+	$footer = '';
 	if ( mtl_is_prelaunch_visitor() ) {
-		// The catalog preview before launch: no account links at all.
 		$footer = mtl_prelaunch_footer_html();
 	} elseif ( is_user_logged_in() && mtl_can_manage_library() ) {
-		$footer  = '<a href="' . esc_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) . '">Open Admin Portal</a>';
-		$footer .= '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
-	} elseif ( is_user_logged_in() ) {
-		$footer  = '<a href="' . esc_url( mtl_front_page_url( 'account' ) ) . '">My Account</a>';
-		$footer .= '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
-	} else {
-		$footer  = '<a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">Sign In</a>';
-		$footer .= '<a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Create an Account</a>';
+		$footer = '<a href="' . esc_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) . '">Admin portal</a>';
 	}
 
-	mtl_render_front_shell( 'Browse Tools', $body, $footer );
+	mtl_render_front_shell( 'Browse tools', $body, $footer, 'browse' );
 }
 
 /**
- * Footer links for customers before launch, on the Coming soon page and the
- * catalog preview. No account links, since none of those pages are open.
+ * The "Staff sign in" footer link shown to visitors before launch, on the
+ * Coming soon page and the catalog preview. It uses WordPress's own login
+ * because the plugin's sign-in page is closed until launch.
  *
- * Staff sign in through WordPress's own login, because the plugin's sign-in
- * page is closed too. Anybody already signed in, such as a member left signed
- * in when the switch was turned back off, gets Log Out instead.
- * wp_logout_url() goes through wp-login.php, which is never closed.
+ * Anybody already signed in (say, a member still signed in after the library
+ * was taken back off live) gets nothing, since the top bar has their Log out.
  *
- * @return string HTML.
+ * @return string HTML, or ''.
  */
 function mtl_prelaunch_footer_html() {
 	if ( is_user_logged_in() ) {
-		return '<a href="' . esc_url( wp_logout_url( mtl_front_page_url( 'main' ) ) ) . '">Log Out</a>';
+		return '';
 	}
 	return '<a href="' . esc_url( wp_login_url( admin_url( 'admin.php?page=mtl-dashboard' ) ) ) . '">Staff sign in</a>';
 }
@@ -8348,25 +8131,25 @@ function mtl_prelaunch_footer_html() {
  */
 function mtl_render_coming_soon_page() {
 	$body  = '<div class="mtl-front-card">';
-	$body .= '<h2 style="margin-top: 0;">Coming soon</h2>';
+	$body .= '<h1>Coming soon</h1>';
 	$body .= '<p>' . nl2br( esc_html( mtl_coming_soon_message() ) ) . '</p>';
 	if ( mtl_catalog_preview_enabled() ) {
-		$body .= '<p style="margin-bottom: 0;"><a class="mtl-front-button" href="' . esc_url( mtl_front_page_url( 'main' ) ) . '">Browse our tools</a></p>';
+		$body .= '<p><a class="mtl-btn" href="' . esc_url( mtl_front_page_url( 'main' ) ) . '">Browse our tools</a></p>';
 	}
 	$body .= '</div>';
 
-	$footer  = '<a href="' . esc_url( mtl_home_page_url() ) . '">&larr; Home</a>';
-	$footer .= mtl_prelaunch_footer_html();
-
-	mtl_render_front_shell( 'Coming Soon', $body, $footer );
+	// No home link in the footer: the library name in the top bar goes there.
+	mtl_render_front_shell( 'Coming soon', $body, mtl_prelaunch_footer_html() );
 }
 
 /**
- * Branded sign-in screen for members AND administrators. The form itself
- * is core's wp_login_form(): it posts to wp-login.php, so WordPress
- * performs the actual authentication and cookie handling. On success the
- * user lands on the admin gate below, which sends admins to the portal
- * and members back to the catalog.
+ * Branded sign-in screen for members and staff. The form itself is core's
+ * wp_login_form(): it posts to wp-login.php, so WordPress does the actual
+ * authentication and cookie handling. On success the user lands on the admin
+ * gate, mtl_handle_admin_gate(), which sends staff to the portal and members
+ * to the catalog.
+ *
+ * @return void Outputs the page or redirects, then exits.
  */
 function mtl_render_front_login_page() {
 	// Already signed in? Skip the form and go straight to the gate.
@@ -8384,9 +8167,10 @@ function mtl_render_front_login_page() {
 		array(
 			'echo'           => false,
 			'redirect'       => mtl_front_page_url( 'admin' ),
-			'label_username' => 'Email Address',
+			'label_username' => 'Email address',
 			'label_password' => 'Password',
-			'label_log_in'   => 'Sign In',
+			'label_remember' => 'Remember me',
+			'label_log_in'   => 'Sign in',
 			'remember'       => true,
 		)
 	);
@@ -8396,18 +8180,17 @@ function mtl_render_front_login_page() {
 	// in mtl_block_empty_front_login() still covers a browser that ignores it.
 	$login_form = mtl_require_login_fields( $login_form );
 
+	// Browse and Join are in the top bar, so there is no footer. The password
+	// link goes under the form, where people look for it.
 	$body  = '<div class="mtl-front-card">';
-	$body .= '<h2 style="margin-top: 0;">Sign In</h2>';
+	$body .= '<h1>Sign in</h1>';
 	$body .= mtl_front_notice_html();
-	$body .= '<p style="font-size: 0.9em; color: #666;">New members can <a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">create an account</a>.</p>';
+	$body .= '<p>New here? <a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Create a member account</a>.</p>';
 	$body .= $login_form;
+	$body .= '<p class="mtl-front-card-after"><a href="' . esc_url( mtl_front_page_url( 'lostpassword' ) ) . '">Forgot your password?</a></p>';
 	$body .= '</div>';
 
-	$footer  = '<a href="' . esc_url( mtl_front_page_url( 'main' ) ) . '">&larr; Back to the catalog</a>';
-	$footer .= '<a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Create an Account</a>';
-	$footer .= '<a href="' . esc_url( mtl_front_page_url( 'lostpassword' ) ) . '">Lost your password?</a>';
-
-	mtl_render_front_shell( 'Sign In', $body, $footer );
+	mtl_render_front_shell( 'Sign in', $body, '', 'signin' );
 }
 
 // ==========================================================================
@@ -8654,6 +8437,8 @@ function mtl_setup_login_for_unclaimed_member( $submitted ) {
  * test whether a given person is a member here; for a library holding home
  * addresses that is worth avoiding, at the cost of a typo'd address looking
  * like success until no email arrives.
+ *
+ * @return void Outputs the page or redirects, then exits.
  */
 function mtl_render_lost_password_page() {
 	if ( is_user_logged_in() ) {
@@ -8700,21 +8485,19 @@ function mtl_render_lost_password_page() {
 	}
 
 	$body  = '<div class="mtl-front-card">';
-	$body .= '<h2 style="margin-top: 0;">Reset Your Password</h2>';
+	$body .= '<h1>Reset your password</h1>';
 	$body .= mtl_front_notice_html();
-	$body .= '<p style="font-size: 0.9em; color: #666;">Enter the email address you signed up with and we&rsquo;ll send you a link to choose a new password.</p>';
+	$body .= '<p>Enter the email address you signed up with and we&rsquo;ll send you a link to choose a new password.</p>';
 	$body .= '<form method="post" action="' . esc_url( mtl_front_page_url( 'lostpassword' ) ) . '">';
 	$body .= wp_nonce_field( 'mtl_lostpassword_action', 'mtl_lostpassword_nonce', true, false );
-	$body .= '<p><label for="mtl_user_login">Email Address</label>';
+	$body .= '<p><label for="mtl_user_login">Email address</label>';
 	$body .= '<input type="email" name="user_login" id="mtl_user_login" class="input" autocomplete="username" required></p>';
-	$body .= '<p><input type="submit" value="Email me a reset link"></p>';
+	$body .= '<p><button type="submit" class="mtl-btn mtl-btn-primary mtl-btn-wide">Email me a reset link</button></p>';
 	$body .= '</form>';
+	$body .= '<p class="mtl-front-card-after"><a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">Back to sign in</a></p>';
 	$body .= '</div>';
 
-	$footer  = '<a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">&larr; Back to sign in</a>';
-	$footer .= '<a href="' . esc_url( mtl_front_page_url( 'signup' ) ) . '">Create an Account</a>';
-
-	mtl_render_front_shell( 'Reset Your Password', $body, $footer );
+	mtl_render_front_shell( 'Reset your password', $body );
 }
 
 // --------------------------------------------------------------------------
@@ -8971,6 +8754,8 @@ function mtl_validate_new_password( $expected_key, $posted_key, $pass1, $pass2 )
  * moved into an HttpOnly cookie, and the URL is then reloaded without them.
  * That keeps the reset key out of browser history, out of bookmarks, and out
  * of the Referer header sent to anything the page later loads.
+ *
+ * @return void Outputs the page or redirects, then exits.
  */
 function mtl_render_reset_password_page() {
 	if ( is_user_logged_in() ) {
@@ -9057,25 +8842,25 @@ function mtl_render_reset_password_page() {
 	}
 
 	$body  = '<div class="mtl-front-card">';
-	$body .= '<h2 style="margin-top: 0;">Choose a New Password</h2>';
+	$body .= '<h1>Choose a new password</h1>';
 	if ( '' !== $error ) {
 		$body .= '<div class="mtl-front-notice mtl-front-notice-error">' . $error . '</div>';
 	}
-	$body .= '<p style="font-size: 0.9em; color: #666;">Setting a new password for <strong>' . esc_html( $user->user_email ) . '</strong>.</p>';
+	$body .= '<p>Setting a new password for <strong>' . esc_html( $user->user_email ) . '</strong>.</p>';
 	$body .= '<form method="post" action="' . esc_url( $self ) . '">';
 	$body .= wp_nonce_field( 'mtl_resetpass_action', 'mtl_resetpass_nonce', true, false );
 	$body .= '<input type="hidden" name="rp_key" value="' . esc_attr( $rp_key ) . '">';
-	$body .= '<p><label for="mtl_pass1">New Password</label>';
-	$body .= '<input type="password" name="pass1" id="mtl_pass1" class="input" autocomplete="new-password" minlength="8" required></p>';
-	$body .= '<p><label for="mtl_pass2">Confirm New Password</label>';
+	$body .= '<p><label for="mtl_pass1">New password</label>';
+	$body .= '<input type="password" name="pass1" id="mtl_pass1" class="input" autocomplete="new-password" minlength="8" required aria-describedby="mtl_pass1_hint">';
+	$body .= '<span class="mtl-hint" id="mtl_pass1_hint">At least 8 characters.</span></p>';
+	$body .= '<p><label for="mtl_pass2">Confirm new password</label>';
 	$body .= '<input type="password" name="pass2" id="mtl_pass2" class="input" autocomplete="new-password" minlength="8" required></p>';
-	$body .= '<p><input type="submit" value="Save my new password"></p>';
+	$body .= '<p><button type="submit" class="mtl-btn mtl-btn-primary mtl-btn-wide">Save my new password</button></p>';
 	$body .= '</form>';
+	$body .= '<p class="mtl-front-card-after"><a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">Back to sign in</a></p>';
 	$body .= '</div>';
 
-	$footer = '<a href="' . esc_url( mtl_front_page_url( 'login' ) ) . '">&larr; Back to sign in</a>';
-
-	mtl_render_front_shell( 'Choose a New Password', $body, $footer );
+	mtl_render_front_shell( 'Choose a new password', $body );
 }
 
 /**

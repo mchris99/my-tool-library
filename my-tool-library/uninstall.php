@@ -56,6 +56,7 @@ $mtl_options = array(
 	'mtl_logo_url',
 	'mtl_org_name',
 	'mtl_pickup_directions',
+	'mtl_public_look',
 	'mtl_reservation_hold_days',
 	'mtl_show_tool_location',
 	'mtl_tool_request_text',

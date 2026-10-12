@@ -2,7 +2,7 @@
 Contributors: chrismchenry5, ToolLibrarian
 Donate link: https://mkelibrary.org
 Tags: tool library, lending library, inventory, reservations, membership
-Requires at least: 5.8
+Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
 Stable tag: 1.0.0
@@ -18,6 +18,7 @@ My Tool Library turns a WordPress site into the online home of a physical tool-l
 = For your community =
 
 * Browse and search the catalog without an account. Filter by name, brand, category, sub-category, tag and availability.
+* View the catalog as photo cards, a table, or compact rows that suit a phone. The catalog remembers the choice.
 * Share a link to any tool.
 * Sign up free, reserve tools, and see your place in each queue.
 * See your loans flagged due soon, due today or overdue, plus your full loan history.
@@ -41,7 +42,7 @@ My Tool Library turns a WordPress site into the online home of a physical tool-l
 * Reservations expire on their own after a hold period you set, and keep a record of why each one closed.
 * Advanced search on every staff list, including a category tree, shelf location and required training.
 * Workflows: a step-by-step staff guide inside the admin.
-* Setup: branding, fonts and colors; categories, tags and trainings; loan and hold defaults; full SQL or CSV export, encrypted automatic backups to the Media Library, and restore from either.
+* Setup: the public pages' look (presets, colors with a contrast check, fonts, buttons, the catalog's default view, with a live preview) and the staff portal's own colors and fonts; categories, tags and trainings; loan and hold defaults; full SQL or CSV export, encrypted automatic backups to the Media Library, and restore from either.
 * Go Live: set the library up behind a Coming soon page, optionally with the catalog open to browse, then open sign-up, sign-in and reservations at once. A launch checklist flags anything worth fixing first.
 * Admin view switch: administrators can hide admin-only actions while working the desk.
 
@@ -148,7 +149,11 @@ Your site's timezone (Settings > General > Timezone) is probably still set to it
 
 = Can I customize how the catalog and account pages look? =
 
-Yes. The Setup page lets you set your organization's logo, colors, fonts, button style, and corner radius, applied consistently across both the admin pages and the public-facing pages.
+Yes. The Setup page's Public pages look section styles the catalog, member pages and sign-in pages: start from one of five presets, then change the six colors (each shows its contrast, with a warning when text gets hard to read), the heading and text fonts, the text size, the buttons' corners, style and size, and which view the catalog opens in. A live preview shows the result before you save. Status colors (available, on loan, overdue) stay fixed so their meaning never changes.
+
+Fonts come from the plugin (Archivo and Atkinson Hyperlegible Next are included), from standard system fonts, or from WordPress's own Font Library: any font installed there, including Google Fonts, appears in the font menus and is served from your own site.
+
+The staff pages have their own Staff portal look section, so you can change one without the other.
 
 = Is there a way to quickly test the plugin and database? =
 
@@ -214,7 +219,11 @@ Deleting the plugin through the Plugins screen removes its own settings (brandin
 
 = Does this plugin phone home, load anything from a third-party CDN, or track my visitors? =
 
-No. There are no external network calls, no bundled third-party analytics, and no assets loaded from any CDN. The only request the plugin makes is to its own site: once a day, when automatic backups are in use, the Setup page checks whether the backup folder can be downloaded from.
+No. There are no external network calls, no bundled third-party analytics, and no assets loaded from any CDN. Fonts are served from your own site, including any installed through WordPress's Font Library. The only request the plugin makes is to its own site: once a day, when automatic backups are in use, the Setup page checks whether the backup folder can be downloaded from.
+
+= Does the plugin set cookies? =
+
+Besides WordPress's own sign-in cookies, two. A password-reset cookie exists only while someone is resetting their password. `mtl_catalog_view` remembers which catalog view a visitor picked (cards, table or compact). It is set only when they use the view switch, holds nothing but that word, and lasts a year. The plugin adds suggested wording for your privacy policy under Settings > Privacy > Policy Guide.
 
 == Screenshots ==
 
@@ -231,6 +240,7 @@ No. There are no external network calls, no bundled third-party analytics, and n
 = 1.0.0 =
 * Initial release: public catalog, member accounts, reservations, loans, and the full admin back office (Dashboard, Inventory, Membership, Loans & Reservations, Workflows, Setup).
 * Go Live switch: a new install stays behind a Coming soon page, optionally with the catalog open to browse, until an administrator opens it from Setup.
+* Redesigned public pages: a top bar for navigation, catalog views as cards, a table or compact rows, foldable category links and a filter panel with removable filter chips, due-date slips and place-in-line on the loans page, and Setup controls for the public look with presets and a live preview. Requires WordPress 6.5 or later.
 
 == Upgrade Notice ==
 

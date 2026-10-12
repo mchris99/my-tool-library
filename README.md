@@ -1,7 +1,7 @@
 # My Tool Library
 
 ![License: GPLv2 or later](https://img.shields.io/badge/license-GPLv2%20or%20later-blue)
-![WordPress](https://img.shields.io/badge/WordPress-5.8%2B-21759b)
+![WordPress](https://img.shields.io/badge/WordPress-6.5%2B-21759b)
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4)
 ![Stable](https://img.shields.io/badge/stable-1.0.0-brightgreen)
 
@@ -40,7 +40,7 @@ Built by the [Milwaukee Tool Library](https://mkelibrary.org) (Evan Maruszewski 
 
 ## Requirements
 
-- WordPress 5.8+
+- WordPress 6.5+
 - PHP 7.4+
 
 ## Installation
@@ -64,6 +64,7 @@ This plugin is built around a specific, deliberately simple operating model: sin
 
 - [`my-tool-library/readme.txt`](my-tool-library/readme.txt) — full WordPress.org-style readme (Description, Installation, FAQ, Screenshots, Changelog)
 - [`my-tool-library/documentation/staff-workflows.md`](my-tool-library/documentation/staff-workflows.md) — staff workflow guide
+- [`PRIVACY.md`](PRIVACY.md) — what the plugin stores, and what to put in your library's privacy policy
 - [`my-tool-library/documentation/schema.dbml`](my-tool-library/documentation/schema.dbml) — database schema
 - [`my-tool-library/documentation/dummy-data.sql`](my-tool-library/documentation/dummy-data.sql) — sample data for local testing
 - Database Schema

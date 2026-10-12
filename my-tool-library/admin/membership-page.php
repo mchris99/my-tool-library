@@ -1681,10 +1681,8 @@ function mtl_render_membership_page() {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The upload could not be verified. Please try again.</p></div>';
 			} elseif (
 				// Content-based check, layered on top of the extension check
-				// above. An explicit $mimes override is required: WordPress
-				// did not add "csv" to its default allowed-uploads list until
-				// 5.9, and this plugin supports 5.8+, so relying on core's
-				// default list would reject every CSV on a 5.8 install.
+				// above. The explicit $mimes list accepts CSV and nothing else,
+				// whatever other types the site allows for uploads.
 				'csv' !== wp_check_filetype_and_ext(
 					$csv_tmp_name,
 					$csv_name,

@@ -1309,8 +1309,8 @@ function mtl_render_inventory_page() {
 				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The upload could not be verified. Please try again.</p></div>';
 			} elseif (
 				// Content-based check on top of the extension check above. The explicit
-				// $mimes override is required because core didn't allow "csv" uploads by
-				// default until WP 5.9, and this plugin supports 5.8+.
+				// $mimes list accepts CSV and nothing else, whatever other types the
+				// site allows for uploads.
 				'csv' !== wp_check_filetype_and_ext(
 					$csv_tmp_name,
 					$csv_name,
