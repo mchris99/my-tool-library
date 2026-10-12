@@ -64,6 +64,7 @@ This plugin is built around a specific, deliberately simple operating model: sin
 
 - [`my-tool-library/readme.txt`](my-tool-library/readme.txt) — full WordPress.org-style readme (Description, Installation, FAQ, Screenshots, Changelog)
 - [`my-tool-library/documentation/staff-workflows.md`](my-tool-library/documentation/staff-workflows.md) — staff workflow guide
+- [`PRIVACY.md`](PRIVACY.md) — what the plugin stores, and what to put in your library's privacy policy
 - [`my-tool-library/documentation/schema.dbml`](my-tool-library/documentation/schema.dbml) — database schema
 - [`my-tool-library/documentation/dummy-data.sql`](my-tool-library/documentation/dummy-data.sql) — sample data for local testing
 - Database Schema
