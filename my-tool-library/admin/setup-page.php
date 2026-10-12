@@ -2451,8 +2451,10 @@ function mtl_render_public_look_section( $open ) {
 					event.preventDefault();
 					var sample = tab.getAttribute('data-sample');
 					doc.body.setAttribute('data-sample', sample);
+					// Same rule as the server: only the loans sample marks "My loans".
+					var navKey = 'loans' === sample ? 'loans' : 'catalog';
 					doc.querySelectorAll('[data-pv-nav]').forEach(function(link) {
-						if (link.getAttribute('data-pv-nav') === sample) {
+						if (link.getAttribute('data-pv-nav') === navKey) {
 							link.setAttribute('aria-current', 'page');
 						} else {
 							link.removeAttribute('aria-current');

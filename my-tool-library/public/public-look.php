@@ -200,8 +200,8 @@ function mtl_sanitize_public_look( $raw ) {
 function mtl_public_look() {
 	static $look = null;
 	if ( null === $look ) {
-		$saved = get_option( 'mtl_public_look', array() );
-		$look  = mtl_sanitize_public_look( wp_parse_args( is_array( $saved ) ? $saved : array(), mtl_public_look_defaults() ) );
+		// The sanitizer fills any missing key from the defaults.
+		$look = mtl_sanitize_public_look( get_option( 'mtl_public_look', array() ) );
 	}
 	return $look;
 }
@@ -989,11 +989,6 @@ body.mtl-front {
 
 :where(.mtl-btn-style-outline) .mtl-btn-primary:hover {
 	background: var(--mtl-highlight);
-}
-
-:where(.mtl-front) .mtl-btn-small {
-	padding: 0 calc(14px * var(--mtl-btn-scale));
-	font-size: calc(15px * var(--mtl-btn-scale));
 }
 
 :where(.mtl-front) .mtl-btn-wide {

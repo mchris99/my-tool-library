@@ -112,41 +112,6 @@ function mtl_shop_location_fact( $location ) {
 }
 
 /**
- * The CSS for the row mtl_shop_status_badges() renders into, and for the
- * link sections' count chip.
- *
- * The status words themselves (.mtl-status) are styled by the shared base
- * stylesheet.
- *
- * @return string CSS, ready to drop inside a <style> block.
- */
-function mtl_shop_badge_pill_css() {
-	ob_start();
-	?>
-		.mtl-shop-badges {
-			display: flex;
-			flex-wrap: wrap;
-			align-items: center;
-			gap: 2px 10px;
-		}
-
-		.mtl-links-count {
-			display: inline-block;
-			margin: 2px 4px 0 0;
-			padding: 1px 9px;
-			background: var(--mtl-panel);
-			border: 1px solid var(--mtl-rule);
-			border-radius: 999px;
-			color: var(--mtl-ink-2);
-			font-size: 14px;
-			font-weight: 400;
-			line-height: 1.4;
-		}
-	<?php
-	return ob_get_clean();
-}
-
-/**
  * DOM id ("tool-<id>") of a tool's detail panel, which is also its :target
  * fragment. Every link and panel builds it here so they always match.
  *
@@ -1006,6 +971,7 @@ function mtl_shop_page_css() {
 
 		.mtl-shop-card-name {
 			margin: 10px 0 1px;
+			color: var(--mtl-ink);
 			font-size: 19px;
 			font-weight: 700;
 			line-height: 1.15;
@@ -1215,10 +1181,6 @@ function mtl_shop_page_css() {
 
 		.mtl-shop-empty p {
 			margin: 12px 0 0;
-		}
-
-		.mtl-shop-card-name {
-			color: var(--mtl-ink);
 		}
 
 		/* An empty result has nothing to select. */
@@ -1753,7 +1715,25 @@ function mtl_shop_page_css() {
 			}
 		}
 
-		<?php echo mtl_shop_badge_pill_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static CSS from a developer-defined string, never user input. ?>
+		.mtl-shop-badges {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 2px 10px;
+		}
+
+		.mtl-links-count {
+			display: inline-block;
+			margin: 2px 4px 0 0;
+			padding: 1px 9px;
+			background: var(--mtl-panel);
+			border: 1px solid var(--mtl-rule);
+			border-radius: 999px;
+			color: var(--mtl-ink-2);
+			font-size: 14px;
+			font-weight: 400;
+			line-height: 1.4;
+		}
 	<?php
 	return ob_get_clean();
 }
@@ -2608,7 +2588,7 @@ function mtl_render_shop_page() {
 				<?php endif; ?>
 			</div>
 
-			<div class="mtl-shop-detail-col<?php echo empty( $tools ) && empty( $panel_tools ) ? ' mtl-shop-detail-col-empty' : ''; ?>">
+			<div class="mtl-shop-detail-col<?php echo empty( $panel_tools ) ? ' mtl-shop-detail-col-empty' : ''; ?>">
 				<?php // The dimmed catalog behind the phone sheet; tapping it closes the sheet. ?>
 				<a href="#mtl-shop-closed" class="mtl-shop-scrim" aria-hidden="true" tabindex="-1"></a>
 				<aside class="mtl-shop-detail" id="mtl-shop-detail" aria-label="Tool details">

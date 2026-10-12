@@ -100,11 +100,9 @@
                 <element value="mtl_css_value"/>
                 <element value="mtl_format_date"/>
                 <element value="mtl_shop_status_badges"/>
-                <element value="mtl_shop_pills"/>
                 <element value="mtl_lr_detail_html"/>
                 <element value="mtl_shop_render_detail_panel"/>
                 <element value="mtl_render_shop_page"/>
-                <element value="mtl_member_nav_html"/>
                 <element value="mtl_front_notice_html"/>
                 <element value="mtl_dash_bars"/>
                 <element value="mtl_dash_donut"/>

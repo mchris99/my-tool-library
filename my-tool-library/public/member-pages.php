@@ -1490,11 +1490,6 @@ function mtl_member_page_styles() {
 
 		/* ---------- Member-only notice ---------- */
 
-		.mtl-front-card h1 {
-			margin: 0 0 14px;
-			font-size: 30px;
-		}
-
 		.mtl-front-card .mtl-confirm-actions {
 			margin-top: 20px;
 		}
@@ -2259,15 +2254,13 @@ function mtl_render_signup_page() {
 					$errors[]          = 'One or more of our agreements changed while you were reading them. The updated wording is shown below; please review and agree again.';
 				} elseif ( $check['missing'] ) {
 					$agreement_missing = $check['missing'];
-					foreach ( $check['missing'] as $mtl_missed ) {
-						$agreement_invalid[] = (int) $mtl_missed->agreement_id;
-					}
-					// The summary block lists these as links; this line is what
+					// The summary block lists these as links; the names are what
 					// appears in the ordinary error list beside the field
 					// errors, naming them rather than counting them.
 					$mtl_names = array();
 					foreach ( $check['missing'] as $mtl_missed ) {
-						$mtl_names[] = wp_strip_all_tags( mtl_agreement_excerpt( $mtl_missed->agreement_text ) );
+						$agreement_invalid[] = (int) $mtl_missed->agreement_id;
+						$mtl_names[]         = wp_strip_all_tags( mtl_agreement_excerpt( $mtl_missed->agreement_text ) );
 					}
 					$agreement_error_at = count( $errors );
 					$errors[]           = __( 'You must agree to:', 'my-tool-library' ) . ' ' . implode( '; ', $mtl_names );
