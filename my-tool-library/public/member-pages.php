@@ -1484,7 +1484,7 @@ function mtl_member_page_styles() {
 			is styled here rather than given new classes. */
 		.mtl-phone-widget {
 			display: grid;
-			grid-template-columns: 170px minmax(0, 1fr);
+			grid-template-columns: 220px minmax(0, 1fr);
 			gap: 8px;
 		}
 
@@ -1625,8 +1625,9 @@ function mtl_member_page_styles() {
 				padding: 4px 16px 22px;
 			}
 
+			/* Stacked on phones, so the country menu can show its dial code. */
 			.mtl-phone-widget {
-				grid-template-columns: 150px minmax(0, 1fr);
+				grid-template-columns: minmax(0, 1fr);
 			}
 
 			.mtl-btn-primary.mtl-member-submit {

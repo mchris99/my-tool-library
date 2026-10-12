@@ -2990,7 +2990,7 @@ function mtl_tool_link_lists() {
 			'url_hint'  => 'example.com/chainsaw-basics',
 		),
 		'partner_links' => array(
-			'label'     => 'Partner Links',
+			'label'     => 'Partner links',
 			'noun'      => 'partner link',
 			'name_hint' => 'Store Name',
 			'url_hint'  => 'example.com/sanding-belts',
@@ -7986,6 +7986,8 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '', $nav_cur
 			'reservations' => 'loans',
 			'account'      => 'account',
 			'login'        => 'signin',
+			'lostpassword' => 'signin',
+			'resetpass'    => 'signin',
 			'signup'       => 'join',
 		);
 		$page    = sanitize_key( (string) get_query_var( 'mtl_page' ) );

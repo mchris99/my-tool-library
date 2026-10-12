@@ -569,12 +569,12 @@ function mtl_public_look_vars_css( $look, $selector = ':root' ) {
 			'retired' => '#A3AEA9',
 		)
 		: array(
-			'ok'      => '#2E7D4F',
+			'ok'      => '#276B43',
 			'out'     => '#A34D06',
 			'maint'   => '#7A6200',
 			'late'    => '#B42318',
 			'wait'    => '#2B5C8A',
-			'retired' => '#5F6B72',
+			'retired' => '#56616A',
 		);
 
 	$values = array(

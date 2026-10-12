@@ -914,6 +914,9 @@ function mtl_shop_page_css() {
 		}
 
 		.mtl-shop-clear-all {
+			display: inline-flex;
+			align-items: center;
+			min-height: 44px;
 			margin-left: 6px;
 		}
 
@@ -1085,8 +1088,12 @@ function mtl_shop_page_css() {
 			border-style: dashed;
 		}
 
+		/* The padding gives the name a 44px tap target; the margin keeps the
+			row height as it was. */
 		.mtl-shop-t-name a {
 			display: block;
+			padding: 11px 0;
+			margin: -11px 0;
 			color: var(--mtl-ink);
 			font-family: var(--mtl-font-display);
 			font-stretch: 82%;
@@ -1208,6 +1215,19 @@ function mtl_shop_page_css() {
 
 		.mtl-shop-empty p {
 			margin: 12px 0 0;
+		}
+
+		.mtl-shop-card-name {
+			color: var(--mtl-ink);
+		}
+
+		/* An empty result has nothing to select. */
+		.mtl-shop-detail-col-empty {
+			display: none;
+		}
+
+		.mtl-shop-layout:has(.mtl-shop-detail-col-empty) {
+			grid-template-columns: minmax(0, 1fr);
 		}
 
 		.mtl-shop-empty .mtl-shop-empty-title {
@@ -1418,9 +1438,29 @@ function mtl_shop_page_css() {
 			display: flex;
 			align-items: center;
 			gap: 8px;
-			min-height: 36px;
+			min-height: 44px;
 			font-weight: 700;
 			cursor: pointer;
+			list-style: none;
+		}
+
+		.mtl-shop-links .mtl-links > summary::-webkit-details-marker {
+			display: none;
+		}
+
+		/* display:flex drops the browser's own triangle, so draw a chevron. */
+		.mtl-shop-links .mtl-links > summary::after {
+			content: "";
+			width: 7px;
+			height: 7px;
+			margin-left: auto;
+			border-right: 2px solid currentColor;
+			border-bottom: 2px solid currentColor;
+			transform: translateY(-2px) rotate(45deg);
+		}
+
+		.mtl-shop-links .mtl-links[open] > summary::after {
+			transform: translateY(2px) rotate(-135deg);
 		}
 
 		.mtl-shop-links .mtl-links-count {
@@ -1444,7 +1484,9 @@ function mtl_shop_page_css() {
 		}
 
 		.mtl-shop-share > summary {
-			display: inline-block;
+			display: inline-flex;
+			align-items: center;
+			min-height: 44px;
 			color: var(--mtl-link);
 			text-decoration: underline;
 			text-underline-offset: 2px;
@@ -1579,10 +1621,13 @@ function mtl_shop_page_css() {
 				margin-right: -16px;
 			}
 
+			/* The padding, offset by the margin, keeps a focused chip's ring
+				inside the scrolling row instead of clipped by it. */
 			.mtl-shop-shelf-chips {
 				flex-wrap: nowrap;
 				overflow-x: auto;
-				padding: 0 16px 4px 0;
+				margin: -6px 0 0 -6px;
+				padding: 6px 16px 6px 6px;
 			}
 
 			.mtl-shop-shelf-chips:has(.mtl-shop-cats[open]) {
@@ -1604,6 +1649,13 @@ function mtl_shop_page_css() {
 
 			.mtl-shop-cats-list {
 				columns: 1;
+			}
+
+			/* The Sort button sits at the left on phones, so its menu opens
+				rightward instead of off the screen. */
+			.mtl-shop-sort-menu {
+				left: 0;
+				right: auto;
 			}
 
 			.mtl-shop-filters-panel {
@@ -2556,7 +2608,7 @@ function mtl_render_shop_page() {
 				<?php endif; ?>
 			</div>
 
-			<div class="mtl-shop-detail-col">
+			<div class="mtl-shop-detail-col<?php echo empty( $tools ) && empty( $panel_tools ) ? ' mtl-shop-detail-col-empty' : ''; ?>">
 				<?php // The dimmed catalog behind the phone sheet; tapping it closes the sheet. ?>
 				<a href="#mtl-shop-closed" class="mtl-shop-scrim" aria-hidden="true" tabindex="-1"></a>
 				<aside class="mtl-shop-detail" id="mtl-shop-detail" aria-label="Tool details">

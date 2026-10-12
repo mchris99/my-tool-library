@@ -1817,6 +1817,10 @@ function mtl_render_public_look_section( $open ) {
 			.mtl-look-note {
 				grid-column: 1;
 			}
+
+			.mtl-look-row > select {
+				width: 100%;
+			}
 		}
 
 		/* Radio inputs stay in the page for the keyboard and screen readers,
@@ -2025,6 +2029,7 @@ function mtl_render_public_look_section( $open ) {
 						<span><i style="background: <?php echo esc_attr( $tables['status']['light']['--mtl-out'] ); ?>"></i>On loan</span>
 						<span><i style="background: <?php echo esc_attr( $tables['status']['light']['--mtl-maint'] ); ?>"></i>Under maintenance</span>
 						<span><i style="background: <?php echo esc_attr( $tables['status']['light']['--mtl-late'] ); ?>"></i>Overdue</span>
+						A brighter set takes over automatically when panels are dark.
 					</p>
 				</div>
 
