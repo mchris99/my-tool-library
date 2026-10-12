@@ -2568,11 +2568,9 @@ function mtl_default_giving_text() {
  * Shared by the Account page and My Reservations so the two can never drift
  * apart in wording or behaviour.
  *
- * @param string $extra_class Optional extra class on the wrapper, for callers
- *                            that need to adjust spacing in their layout.
  * @return string Ready-to-echo HTML, fully escaped.
  */
-function mtl_giving_section_html( $extra_class = '' ) {
+function mtl_giving_section_html() {
 	$text = trim( (string) get_option( 'mtl_giving_text', mtl_default_giving_text() ) );
 
 	// Re-normalized on read, not trusted from storage: an option can also be
@@ -2589,12 +2587,7 @@ function mtl_giving_section_html( $extra_class = '' ) {
 		return '';
 	}
 
-	$classes = 'mtl-callout mtl-member-giving';
-	if ( '' !== $extra_class ) {
-		$classes .= ' ' . $extra_class;
-	}
-
-	$html  = '<aside class="' . esc_attr( $classes ) . '">';
+	$html  = '<aside class="mtl-callout mtl-member-giving">';
 	$html .= '<div class="mtl-callout-body">';
 	$html .= '<h2 class="mtl-callout-title">Consider giving</h2>';
 	$html .= '<p class="mtl-callout-text">' . nl2br( esc_html( $text ) ) . '</p>';
@@ -7988,14 +7981,18 @@ function mtl_render_front_shell( $title, $body_html, $footer_html = '', $nav_cur
 	$look     = mtl_public_look();
 
 	if ( '' === $nav_current ) {
-		$by_page     = array(
+		$by_page = array(
 			'main'         => 'browse',
 			'reservations' => 'loans',
 			'account'      => 'account',
 			'login'        => 'signin',
 			'signup'       => 'join',
 		);
-		$page        = sanitize_key( (string) get_query_var( 'mtl_page' ) );
+		$page    = sanitize_key( (string) get_query_var( 'mtl_page' ) );
+		// The router also accepts a raw ?mtl_page=, so this does too.
+		if ( '' === $page && isset( $_GET['mtl_page'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only: picks which nav item to mark.
+			$page = sanitize_key( wp_unslash( $_GET['mtl_page'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- as above.
+		}
 		$nav_current = isset( $by_page[ $page ] ) ? $by_page[ $page ] : '';
 	}
 

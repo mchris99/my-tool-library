@@ -2568,25 +2568,6 @@ function mtl_render_signup_page() {
 }
 
 /**
- * A place in line as an English ordinal: 1st, 2nd, 3rd, 4th, 11th, 22nd.
- *
- * @param int $n A positive whole number.
- * @return string
- */
-function mtl_member_ordinal( $n ) {
-	$n = (int) $n;
-	if ( in_array( $n % 100, array( 11, 12, 13 ), true ) ) {
-		return $n . 'th';
-	}
-	$suffixes = array(
-		1 => 'st',
-		2 => 'nd',
-		3 => 'rd',
-	);
-	return $n . ( isset( $suffixes[ $n % 10 ] ) ? $suffixes[ $n % 10 ] : 'th' );
-}
-
-/**
  * The queue drawn as small squares: filled for the people ahead, the button
  * color for the member, empty for the people behind. Ten at most, then "+N".
  *
@@ -2724,7 +2705,7 @@ function mtl_render_reservation_detail_panel( $r, $self_url ) {
 		<div class="mtl-res-info mtl-res-info-<?php echo esc_attr( $state[0] ); ?>">
 			<strong><?php echo esc_html( $state[1] ); ?></strong>
 			<p>
-				You&rsquo;re <?php echo esc_html( mtl_member_ordinal( $r->queue_place ) ); ?> of <?php echo (int) $r->queue_size; ?> in line.
+				You&rsquo;re <?php echo esc_html( mtl_shop_ordinal( $r->queue_place ) ); ?> of <?php echo (int) $r->queue_size; ?> in line.
 				Reserved on <?php echo mtl_format_date( $r->reservation_date, 'M j, Y' ); ?>.
 			</p>
 			<?php if ( 'out' === $state[0] ) : ?>
@@ -3153,7 +3134,7 @@ function mtl_render_member_reservations_page() {
 										<?php endif; ?>
 									</div>
 									<div class="mtl-res-line">
-										<strong><?php echo esc_html( mtl_member_ordinal( $r->queue_place ) ); ?></strong> of <?php echo (int) $r->queue_size; ?> in line
+										<strong><?php echo esc_html( mtl_shop_ordinal( $r->queue_place ) ); ?></strong> of <?php echo (int) $r->queue_size; ?> in line
 										<?php echo mtl_member_line_dots_html( $r->queue_place, $r->queue_size ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from integers only. ?>
 									</div>
 									<div class="mtl-res-state">

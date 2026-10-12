@@ -73,24 +73,6 @@ function mtl_shop_status_badges( $on_loan, $res_count, $retired = false, $mainte
 }
 
 /**
- * Renders a comma-separated lookup value as a row of quiet chips.
- *
- * @param string $csv Comma-separated list of labels.
- * @return string HTML markup.
- */
-function mtl_shop_pills( $csv ) {
-	$csv = trim( (string) $csv );
-	if ( '' === $csv ) {
-		return '';
-	}
-	$out = '';
-	foreach ( array_filter( array_map( 'trim', explode( ',', $csv ) ) ) as $label ) {
-		$out .= '<span class="mtl-shop-pill">' . esc_html( $label ) . '</span>';
-	}
-	return $out;
-}
-
-/**
  * Renders a tool's shelf location for a member, or nothing at all.
  *
  * It renders nothing, and shows no message, when the library keeps shelf
@@ -130,12 +112,11 @@ function mtl_shop_location_fact( $location ) {
 }
 
 /**
- * The CSS for what mtl_shop_status_badges() and mtl_shop_pills() render.
+ * The CSS for the row mtl_shop_status_badges() renders into, and for the
+ * link sections' count chip.
  *
- * The catalog (mtl_render_shop_page()) and the member pages
- * (mtl_member_page_styles()) both use those helpers, so the rules live here
- * once for both. The status words themselves (.mtl-status) are styled by the
- * shared base stylesheet.
+ * The status words themselves (.mtl-status) are styled by the shared base
+ * stylesheet.
  *
  * @return string CSS, ready to drop inside a <style> block.
  */
@@ -149,7 +130,6 @@ function mtl_shop_badge_pill_css() {
 			gap: 2px 10px;
 		}
 
-		.mtl-shop-pill,
 		.mtl-links-count {
 			display: inline-block;
 			margin: 2px 4px 0 0;
@@ -225,6 +205,11 @@ function mtl_shop_ordinal( $n ) {
  * @return array array( tone, title, sentence ). Plain text, not yet escaped.
  */
 function mtl_shop_availability_text( $on_loan, $res, $retired, $maintenance, $can_queue ) {
+	// A retired tool still out on loan reads "On loan", as its card does, since
+	// that is where it is right now.
+	if ( $retired && $on_loan ) {
+		return array( 'out', 'On loan', 'It has been retired from the collection, so it won’t be lent again once it’s returned.' );
+	}
 	if ( $retired ) {
 		return array( 'retired', 'Retired', 'It has been retired from the collection and can no longer be borrowed or reserved.' );
 	}

@@ -176,7 +176,11 @@ function mtl_sanitize_public_look( $raw ) {
 		$value = is_scalar( $value ) ? trim( (string) $value ) : '';
 
 		if ( in_array( $key, array( 'page_bg', 'panel_bg', 'text', 'heading', 'link', 'button' ), true ) ) {
-			$hex           = sanitize_hex_color( $value );
+			$hex = sanitize_hex_color( $value );
+			// Always six digits: a color input can't show "#FFF".
+			if ( $hex && 4 === strlen( $hex ) ) {
+				$hex = '#' . $hex[1] . $hex[1] . $hex[2] . $hex[2] . $hex[3] . $hex[3];
+			}
 			$clean[ $key ] = $hex ? strtoupper( $hex ) : $default;
 		} elseif ( 'heading_font' === $key || 'text_font' === $key ) {
 			$clean[ $key ] = isset( $fonts[ $value ] ) ? $value : $default;

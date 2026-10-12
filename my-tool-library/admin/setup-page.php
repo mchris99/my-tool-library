@@ -4915,7 +4915,7 @@ function mtl_render_setup_page() {
 						<th scope="row"><label for="mtl_home_url">Home Page Link</label></th>
 						<td>
 							<input type="url" name="mtl_home_url" id="mtl_home_url" class="regular-text" value="<?php echo esc_attr( $home_url ); ?>" placeholder="https://...">
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Where the <strong>Home</strong> button on the public pages goes. Starts as this site&rsquo;s home page.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Where the library name in the public pages&rsquo; top bar links to. Starts as this site&rsquo;s home page.</p>
 						</td>
 					</tr>
 				</table>
@@ -4932,7 +4932,7 @@ function mtl_render_setup_page() {
 			'appearance',
 			array(
 				'title' => 'Staff portal look',
-				'desc'  => 'Colors and fonts for the admin pages.',
+				'desc'  => 'Colors and fonts for the admin pages. The logo and verified badge here show on the public pages too.',
 				'open'  => 'appearance' === $mtl_requested_section,
 			)
 		);
@@ -4951,7 +4951,7 @@ function mtl_render_setup_page() {
 						<th scope="row"><label for="mtl_verified_badge_image_url">Verified Badge Image URL</label></th>
 						<td>
 							<input type="url" name="mtl_verified_badge_image_url" id="mtl_verified_badge_image_url" class="regular-text" value="<?php echo esc_url( $verified_badge_image_url ); ?>" placeholder="https://...">
-							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Replaces the green &ldquo;Verified&rdquo; pill on a verified member&rsquo;s account page. Blank keeps the pill.</p>
+							<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Replaces the green check beside &ldquo;Verified&rdquo; on a verified member&rsquo;s account page. Blank keeps the check.</p>
 						</td>
 					</tr>
 				</table>
