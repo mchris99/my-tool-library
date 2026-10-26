@@ -247,6 +247,27 @@ function mtl_maybe_flag_donor_as_donated( $donated_by ) {
 }
 
 /**
+ * The barcode Free Barcode gives a retired tool, so a new tool can take its
+ * old one: the old code plus " (retired #57)". Keeping the old code means the
+ * retired tool's history still shows which label it carried, and the tool ID
+ * keeps two retired tools that once shared a code apart. The old code is cut
+ * short if needed to fit the column's 100 characters. A barcode that already
+ * ends in its suffix comes back unchanged, which is how callers tell that it
+ * was already freed.
+ *
+ * @param string $barcode Current barcode.
+ * @param int    $tool_id Tool row ID.
+ * @return string
+ */
+function mtl_freed_barcode( $barcode, $tool_id ) {
+	$suffix = ' (retired #' . (int) $tool_id . ')';
+	if ( substr( $barcode, -strlen( $suffix ) ) === $suffix ) {
+		return $barcode;
+	}
+	return mb_substr( $barcode, 0, 100 - mb_strlen( $suffix ) ) . $suffix;
+}
+
+/**
  * Serves a downloadable CSV template for the Bulk Import feature.
  *
  * Runs on admin_init (before any HTML is sent) rather than inside
@@ -2120,6 +2141,35 @@ function mtl_render_inventory_page() {
 		}
 	}
 
+	// 3H. HANDLE "FREE BARCODE" SUBMISSION: renames a retired tool's barcode
+	// (see mtl_freed_barcode()) so a new tool can take the old one. Retired
+	// tools only, since an active tool's label is still in use on the shelf.
+	if ( isset( $_POST['mtl_free_barcode'] ) && mtl_can_manage_library() ) {
+		if ( isset( $_POST['mtl_free_barcode_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['mtl_free_barcode_nonce'] ) ), 'mtl_free_barcode_action' ) ) {
+			$fb_tool_id = isset( $_POST['tool_id'] ) ? intval( $_POST['tool_id'] ) : 0;
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only, built from $wpdb->prefix, not user input.
+			$fb_old = $wpdb->get_var( $wpdb->prepare( "SELECT barcode FROM {$tbl_inventory} WHERE tool_id = %d AND retired_at IS NOT NULL", $fb_tool_id ) );
+			$fb_new = null !== $fb_old ? mtl_freed_barcode( (string) $fb_old, $fb_tool_id ) : '';
+			if ( null === $fb_old || $fb_new === $fb_old ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> That tool could not be found, isn&rsquo;t retired, or its barcode was already freed.</p></div>';
+			} elseif ( $wpdb->get_var( $wpdb->prepare( "SELECT tool_id FROM {$tbl_inventory} WHERE barcode = %s AND tool_id != %d LIMIT 1", $fb_new, $fb_tool_id ) ) ) {
+				echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> Another tool already uses the barcode &ldquo;' . esc_html( stripslashes( $fb_new ) ) . '&rdquo;, so nothing was changed. Edit this tool to give it a different barcode instead.</p></div>';
+			} else {
+				// Matching on the old barcode too, so an Edit saved in between is
+				// not overwritten.
+				$fb_done = $wpdb->query( $wpdb->prepare( "UPDATE {$tbl_inventory} SET barcode = %s WHERE tool_id = %d AND barcode = %s AND retired_at IS NOT NULL", $fb_new, $fb_tool_id, $fb_old ) );
+				if ( $fb_done ) {
+					echo '<div class="notice notice-success is-dismissible"><p><strong>Barcode freed.</strong> &ldquo;' . esc_html( stripslashes( $fb_old ) ) . '&rdquo; can now go on a new tool. This retired tool&rsquo;s barcode is now &ldquo;' . esc_html( stripslashes( $fb_new ) ) . '&rdquo;.</p></div>';
+				} else {
+					echo '<div class="notice notice-error is-dismissible"><p><strong>Error:</strong> The barcode could not be changed. It may have just been edited, so please try again.</p></div>';
+				}
+			}
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p><strong>Security Error:</strong> Form submission could not be verified.</p></div>';
+		}
+	}
+
 	// 4. HANDLE "EDIT" LINK (GET): load the requested tool into the Edit panel.
 	// Skipped if a submitted edit above already failed validation, since that
 	// block already populated $editing/$edit_values with the admin's input.
@@ -3510,6 +3560,26 @@ function mtl_render_inventory_page() {
 												<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
 												<button type="submit" name="mtl_reactivate_tool" class="button">Reactivate</button>
 											</form>
+											<?php
+											$freed_barcode = mtl_freed_barcode( (string) $item->barcode, (int) $item->tool_id );
+											if ( $freed_barcode !== (string) $item->barcode ) :
+												$free_confirm = array(
+													'title'   => 'Free Barcode',
+													'message' => 'Free the barcode %s?',
+													'subject' => stripslashes( $item->barcode ),
+													'details' => array(
+														'This tool’s barcode becomes “' . stripslashes( $freed_barcode ) . '”, so the old one can go on a new tool.',
+														'Its past loans and reservations will show the new barcode.',
+													),
+													'confirm' => 'Free Barcode',
+												);
+												?>
+												<form method="post" action="<?php echo esc_url( $base_url ); ?>" style="display: inline;"<?php echo mtl_confirm_attr( $free_confirm ); ?>>
+													<?php wp_nonce_field( 'mtl_free_barcode_action', 'mtl_free_barcode_nonce' ); ?>
+													<input type="hidden" name="tool_id" value="<?php echo esc_attr( $item->tool_id ); ?>">
+													<button type="submit" name="mtl_free_barcode" class="button">Free Barcode</button>
+												</form>
+											<?php endif; ?>
 											<?php echo $delete_form; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped where it was built above. ?>
 										<?php else : ?>
 											<?php if ( $t_active < 1 && ! empty( $item->maintenance_at ) ) : ?>

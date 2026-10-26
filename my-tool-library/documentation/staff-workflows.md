@@ -243,6 +243,8 @@ To list them, use **Under Maintenance?** under Advanced Search on Inventory. The
 
 Retiring can be undone: click **Reactivate**. Retired tools drop out of the default list, so set **Retired?** under Advanced Search to "Active + retired" or "Retired only" to find them. Deleting can't be undone, so [export a backup](#backing-up-your-data) first if you're unsure.
 
+No two tools can share a barcode, retired ones included. To put a retired tool's barcode on a new tool, click **Free Barcode** in the retired tool's panel. This renames it, for example from `B1234` to `B1234 (retired #57)`, and then you can add the new tool as `B1234`. The retired tool's past loans show its new barcode, and the new tool starts with no history. If you'd rather pick the name yourself, **Edit** the retired tool and give it any other barcode.
+
 [Back to contents](#contents)
 
 ---
