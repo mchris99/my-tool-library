@@ -64,6 +64,7 @@ function mtl_export_table_names() {
 		'member_trainings',
 		'member_training_mappings',
 		'tool_inventory',
+		'tool_photos',
 		'tool_categories',
 		'tool_category_mappings',
 		'tool_subcategories',

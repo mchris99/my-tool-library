@@ -82,7 +82,6 @@ Table tool_inventory {
   brand varchar(50) [not null]
   description text
   components text
-  photo_url varchar(255)
   initial_cash_value decimal(10,2) [not null, default: 0.00]
   annual_depreciation_amount decimal(10,2) [default: 0.00]
   donated_by varchar(255)
@@ -96,6 +95,21 @@ Table tool_inventory {
 
   Note: 'One row per physical tool the library owns.'
 }
+
+Table tool_photos {
+  photo_id int [pk, increment]
+  tool_id int [not null]
+  url varchar(255) [not null, note: 'Link to a photo hosted outside the plugin. Public: shown on the catalog.']
+  caption varchar(150) [note: 'Optional. Shown under the photo in the catalog detail view and used as its alt text, falling back to the tool name.']
+  sort_order tinyint [not null, note: '1, 2, 3... with no gaps, up to 10 (MTL_MAX_TOOL_PHOTOS). Photo 1 is the primary, shown on the catalog card, My Reservations and the Inventory list.']
+
+  Indexes {
+    (tool_id, sort_order) [unique, name: 'tool_position']
+  }
+
+  Note: 'A tool has no photos or up to ten. Saves replace the whole set (mtl_sync_tool_photos()), so renumbering never collides with the unique key.'
+}
+Ref: tool_photos.tool_id > tool_inventory.tool_id [delete: cascade]
 
 Table tool_categories {
   category_id int [pk, increment]

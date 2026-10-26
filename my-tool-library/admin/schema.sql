@@ -13,6 +13,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS {{prefix}}tool_reservations;
 DROP TABLE IF EXISTS {{prefix}}loans;
 DROP TABLE IF EXISTS {{prefix}}tool_training_mappings;
+DROP TABLE IF EXISTS {{prefix}}tool_photos;
 DROP TABLE IF EXISTS {{prefix}}tool_tag_mappings;
 DROP TABLE IF EXISTS {{prefix}}tool_subcategory_mappings;
 DROP TABLE IF EXISTS {{prefix}}tool_subcategories;
@@ -167,7 +168,6 @@ CREATE TABLE {{prefix}}tool_inventory (
     brand VARCHAR(50) NOT NULL,
     description TEXT,
     components TEXT,
-    photo_url VARCHAR(255),
     initial_cash_value DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
     annual_depreciation_amount DECIMAL(10, 2) DEFAULT 0.00,
     donated_by VARCHAR(255),
@@ -178,6 +178,30 @@ CREATE TABLE {{prefix}}tool_inventory (
     location VARCHAR(100) DEFAULT NULL,
     resources TEXT DEFAULT NULL,
     partner_links TEXT DEFAULT NULL
+);
+
+-- Tool Photos
+-- Links to a tool's photos, hosted outside the plugin like every other image
+-- it shows. A tool has none or up to ten (MTL_MAX_TOOL_PHOTOS), numbered 1, 2,
+-- 3... by sort_order with no gaps. Photo 1 is the primary: the one on the
+-- catalog card, My Reservations and the Inventory list. The rest follow it in
+-- the catalog's detail view. Making another photo primary just renumbers the
+-- rows, so the link is never typed twice.
+--
+-- The unique key is what makes "one photo per position, so one primary" a
+-- database guarantee. Saves replace a tool's whole set at once (see
+-- mtl_sync_tool_photos()), so renumbering never collides with it.
+--
+-- caption is optional and public: it is shown under the photo in the detail
+-- view and used as its alt text, falling back to the tool name.
+CREATE TABLE {{prefix}}tool_photos (
+    photo_id INT AUTO_INCREMENT PRIMARY KEY,
+    tool_id INT NOT NULL,
+    url VARCHAR(255) NOT NULL,
+    caption VARCHAR(150) DEFAULT NULL,
+    sort_order TINYINT UNSIGNED NOT NULL,
+    UNIQUE KEY tool_position (tool_id, sort_order),
+    FOREIGN KEY (tool_id) REFERENCES {{prefix}}tool_inventory(tool_id) ON DELETE CASCADE
 );
 
 -- ==========================================
