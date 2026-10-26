@@ -287,7 +287,8 @@ function mtl_maybe_serve_csv_template() {
 		'location',
 		'description',
 		'components',
-		'photo_url',
+		'photo_urls',
+		'photo_captions',
 		'initial_cash_value',
 		'annual_depreciation_amount',
 		'donated_by',
@@ -306,7 +307,8 @@ function mtl_maybe_serve_csv_template() {
 		'Aisle 3, Shelf 4',
 		'A short description of the tool.',
 		'Battery;Charger;Case',
-		'https://example.com/photo.jpg',
+		'https://example.com/front.jpg|https://example.com/side.jpg',
+		'Front view|Battery removed',
 		'49.99',
 		'5.00',
 		'Jane Doe',
@@ -1796,7 +1798,6 @@ function mtl_render_inventory_page() {
 								$row_barcode       = sanitize_text_field( $get_col( $row, 'barcode' ) );
 								$row_brand         = sanitize_text_field( $get_col( $row, 'brand' ) );
 								$row_location      = sanitize_text_field( $get_col( $row, 'location' ) );
-								$row_photo_url     = sanitize_url( $get_col( $row, 'photo_url' ) );
 								$row_donated_by    = sanitize_text_field( $get_col( $row, 'donated_by' ) );
 								$row_description   = sanitize_textarea_field( $get_col( $row, 'description' ) );
 								$row_components    = sanitize_textarea_field( $get_col( $row, 'components' ) );
@@ -1874,6 +1875,39 @@ function mtl_render_inventory_page() {
 									continue;
 								}
 
+								// Photos too: checked before the tool is inserted, so a
+								// bad link fails the row instead of adding a tool without
+								// them. Links and captions pair up by position, and
+								// running out of captions just leaves the rest without.
+								$row_photo_urls     = '' !== $get_col( $row, 'photo_urls' ) ? explode( '|', $get_col( $row, 'photo_urls' ) ) : array();
+								$row_photo_captions = '' !== $get_col( $row, 'photo_captions' ) ? explode( '|', $get_col( $row, 'photo_captions' ) ) : array();
+								if ( count( $row_photo_captions ) > count( $row_photo_urls ) ) {
+									$bulk_failed_rows[] = array(
+										'row'    => $row_number,
+										'reason' => 'photo_captions has ' . count( $row_photo_captions ) . ' captions but photo_urls has only ' . count( $row_photo_urls ) . ' links.',
+									);
+									continue;
+								}
+								$row_raw_photos = array();
+								foreach ( $row_photo_urls as $photo_index => $photo_url ) {
+									// An empty slot ("a.jpg||b.jpg") is a stray separator;
+									// mtl_validate_tool_photos() skips it unless it was
+									// given a caption.
+									$row_raw_photos[] = array(
+										'url'     => trim( wp_strip_all_tags( $photo_url ) ),
+										'caption' => isset( $row_photo_captions[ $photo_index ] ) ? sanitize_text_field( $row_photo_captions[ $photo_index ] ) : '',
+									);
+								}
+								$row_photos = mtl_validate_tool_photos( $row_raw_photos );
+								if ( '' !== $row_photos['error'] ) {
+									$bulk_failed_rows[] = array(
+										'row'    => $row_number,
+										// Written for an admin notice, as with the links above.
+										'reason' => wp_strip_all_tags( html_entity_decode( $row_photos['error'], ENT_QUOTES, 'UTF-8' ) ),
+									);
+									continue;
+								}
+
 								$row_category_ids = $resolve_names( $row, $row_number, 'categories', $category_lookup, 'category' );
 
 								// Written qualified, as "Woodworking > Saws". A sub-category
@@ -1917,7 +1951,6 @@ function mtl_render_inventory_page() {
 									'brand'              => $row_brand,
 									'description'        => $row_description,
 									'components'         => $row_components,
-									'photo_url'          => $row_photo_url,
 									'initial_cash_value' => $row_initial_value,
 									'annual_depreciation_amount' => $row_depreciation,
 									'donated_by'         => $row_donated_by,
@@ -1925,7 +1958,7 @@ function mtl_render_inventory_page() {
 									'private_notes'      => '' !== $row_private_notes ? $row_private_notes : null,
 									'location'           => '' !== $row_location ? $row_location : null,
 								);
-								$row_formats = array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' );
+								$row_formats = array( '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' );
 								// Merged in lockstep, as on the Add and Edit paths.
 								$row_data    = array_merge( $row_data, $row_links );
 								$row_formats = array_merge( $row_formats, array_fill( 0, count( $row_links ), '%s' ) );
@@ -1949,6 +1982,7 @@ function mtl_render_inventory_page() {
 								mtl_sync_tool_mappings( $tbl_tag_map, 'tag_id', $row_tool_id, $row_tag_ids );
 								mtl_sync_tool_subcategories( $tbl_subcat_map, $row_tool_id, $row_subcategory_pairs );
 								mtl_sync_tool_mappings( $tbl_tool_training_map, 'training_id', $row_tool_id, $row_training_ids );
+								mtl_sync_tool_photos( $row_tool_id, $row_photos['photos'] );
 
 								mtl_maybe_flag_donor_as_donated( $row_donated_by );
 
@@ -3300,6 +3334,7 @@ function mtl_render_inventory_page() {
 			<ul style="font-size: 0.85em; color: #666; margin: 0 0 15px 20px;">
 				<li><code>tool_name</code> and <code>barcode</code> are required. No two tools can share a barcode.</li>
 				<li><code>categories</code>, <code>subcategories</code>, <code>trainings</code> and <code>tags</code> are semicolon separated and must match names that already exist. Write a sub-category as &ldquo;Category &gt; Sub-category&rdquo;.</li>
+				<li><code>photo_urls</code> takes up to <?php echo esc_html( (string) MTL_MAX_TOOL_PHOTOS ); ?> photo links separated by <code>|</code>, and the first is the primary. <code>photo_captions</code> is optional, also separated by <code>|</code>, and matched to the links in order: leave a slot empty (<code>||</code>) to skip one. These use <code>|</code> rather than a semicolon because captions often contain one, so neither can contain a <code>|</code> itself.</li>
 				<li><code>annual_depreciation_amount</code> takes a dollar amount, or a percentage of that row&rsquo;s <code>initial_cash_value</code> if it contains a % (e.g. &ldquo;5%&rdquo;).</li>
 				<li><code>donated_by</code> credits a member if it matches their email exactly; anything else is stored as plain text.</li>
 				<li><code>resources</code> and <code>partner_links</code> take the JSON from the Add/Edit form&rsquo;s <strong>Edit JSON</strong> box, e.g. <code>{"Chainsaw tutorial": "example.com/chainsaw-basics"}</code>.</li>
