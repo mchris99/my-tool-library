@@ -59,7 +59,7 @@ The plugin doesn't hook into WordPress's **Tools › Export Personal Data** and 
 The suggested text covers the three cookies: WordPress's sign-in cookies, a password-reset cookie that exists only during a reset, and `mtl_catalog_view`. The last one remembers which catalog view a visitor picked, for a year, and holds nothing about them. A cookie that only remembers a visitor's own choice usually needs no consent banner, but check the rules where your library operates.
 
 **8. Other parties.**
-The plugin sends nothing to anyone. Fonts are served from your site, including any installed through WordPress's Font Library. The parties to list are the ones your library chose: your web host, your mail service, and wherever you keep member photos and documents.
+The plugin sends nothing to anyone. Fonts are served from your site, including any installed through WordPress's Font Library. The parties to list are the ones your library chose: your web host, your mail service, wherever you keep member photos and documents, and wherever you keep tool photos. Visitors' browsers load tool photos straight from that host, so it sees who views the catalog. Tool videos are links in a tool's Resources, so a video's host only sees the people who open one.
 
 ## What the plugin doesn't do
 

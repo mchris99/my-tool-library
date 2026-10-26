@@ -6,7 +6,7 @@ How to do the everyday jobs at the desk, plus the setup work an administrator do
 
 - [Common tasks](#common-tasks)
 - [Getting started](#getting-started): [Roles and permissions](#staff-roles-and-permissions) · [Admin view switch](#working-the-desk-as-an-administrator) · [First-time setup](#first-time-setup) · [Going live](#going-live) · [Bulk import](#bulk-importing-tools-and-members) · [Staff accounts](#creating-staff-accounts)
-- [Tools](#tools): [Adding a tool](#adding-a-tool) · [Shelf location](#shelf-location) · [Resources and partner links](#resources-and-partner-links) · [Private notes](#private-notes) · [Sub-categories](#sub-categories) · [Maintenance](#putting-a-tool-under-maintenance) · [Retiring or deleting](#retiring-or-deleting-a-tool)
+- [Tools](#tools): [Adding a tool](#adding-a-tool) · [Tool photos](#tool-photos) · [Shelf location](#shelf-location) · [Resources and partner links](#resources-and-partner-links) · [Private notes](#private-notes) · [Sub-categories](#sub-categories) · [Maintenance](#putting-a-tool-under-maintenance) · [Retiring or deleting](#retiring-or-deleting-a-tool)
 - [Members](#members): [Adding a member](#adding-a-member) · [Online sign-ins](#online-sign-ins) · [Logins after a CSV import](#creating-logins-after-a-csv-import) · [Verifying identity](#verifying-identity) · [Profile photos](#profile-photos) · [Hosting photos and documents](#hosting-photos-and-documents) · [Trainings](#trainings-and-certifications) · [Forgotten passwords](#forgotten-passwords) · [Locking an account](#locking-a-members-account) · [Deleting a member](#deleting-a-member)
 - [Loans and reservations](#loans-and-reservations): [Checking out a reservation](#checking-out-a-reservation) · [Quick Loan](#quick-loan) · [Quick Reserve](#quick-reserve) · [Bulk checkout](#bulk-checkout) · [From a member's record](#working-from-a-members-record) · [Renewing or returning](#renewing-or-returning-a-loan) · [Backdating a return](#backdating-a-return) · [Hold period](#reservation-hold-period) · [Overdue tools](#overdue-tools)
 - [Member agreements](#member-agreements): [Modes](#choosing-a-mode) · [Writing and revising](#writing-and-revising-agreements) · [How members agree](#how-members-agree) · [Recording paper signatures](#recording-paper-signatures) · [Agreement requests](#sending-agreement-requests) · [After a CSV import](#agreements-after-a-csv-import) · [Agreement record](#downloading-a-members-agreement-record)
@@ -30,6 +30,7 @@ How to do the everyday jobs at the desk, plus the setup work an administrator do
 | Add a member's photo                               | [Profile photos](#profile-photos)                                    |
 | Take a broken tool out of circulation              | [Putting a tool under maintenance](#putting-a-tool-under-maintenance) |
 | Add a new tool                                     | [Adding a tool](#adding-a-tool)                                      |
+| Add or reorder a tool's photos                     | [Tool photos](#tool-photos)                                          |
 | Help a member who can't sign in                    | [Forgotten passwords](#forgotten-passwords)                          |
 | See everything a member or tool has done           | [Dashboard](#dashboard)                                              |
 | Back up the library                                | [Backing up your data](#backing-up-your-data)                        |
@@ -150,6 +151,8 @@ You can turn **Go Live** back off, but members then lose access to their account
 
 The members template's `trainings` column takes a training name, a colon and the completion date, separated by semicolons: `Ladder Safety: 8/4/2026; Welding Basics: 8/3/2026`. Names must match Setup, though capitalization doesn't matter. A bad entry still imports the member, without that training, and the report tells you why.
 
+The tools template's `photo_urls` column takes up to 10 photo links separated by `|`, primary first: `https://example.com/front.jpg|https://example.com/side.jpg`. `photo_captions` is optional and matches them in order, also separated by `|`: `Front view|Battery removed`. Leave a slot empty to skip one, as in `|Battery removed`. These two use `|` rather than a semicolon because captions often contain one. A row with a bad link, more than 10 photos, or more captions than links fails and is reported.
+
 A member import creates no sign-ins and records no agreements. See [Creating logins after a CSV import](#creating-logins-after-a-csv-import) and [Agreements after a CSV import](#agreements-after-a-csv-import).
 
 ### Creating staff accounts
@@ -177,11 +180,26 @@ Administrators who also work the desk can use a second Editor account, or the [A
 On **Inventory**, click **Add a New Tool**.
 
 1. Enter the name, barcode, brand, description, and any components or accessories that come with it. The barcode must be unique; otherwise it can be any text or number up to 100 characters.
-2. Add a **photo URL**, a link to an image hosted elsewhere (see [Hosting photos and documents](#hosting-photos-and-documents)). It's optional but shown on the public catalog.
+2. Add **photos**, links to images hosted elsewhere (see [Tool photos](#tool-photos)). They're optional, and the first one is shown on the public catalog.
 3. Fill in the money fields: initial value, annual depreciation (a dollar amount or a percentage of the initial value, not both), date acquired, and who donated it. Pick a member from the **Donated By** suggestions to credit them on the [Donor Leaderboard](#dashboard), or type any name.
 4. Choose categories, sub-categories and tags, and any [required trainings](#trainings-and-certifications).
 5. Optionally add a [shelf location](#shelf-location), [resources and partner links](#resources-and-partner-links), and [private notes](#private-notes).
 6. Save. The tool appears in the public catalog right away.
+
+### Tool photos
+
+A tool can have up to 10 photos. The first is the **primary**: it's the one on the catalog card, in the Inventory list and on My Reservations. In the catalog, a tool with more than one photo shows thumbnails under the main photo, and clicking one shows that photo.
+
+1. On **Inventory**, add or **Edit** the tool and find **Photos**.
+2. Paste each photo's link into a row, with a caption if you like ("Battery removed", "What's in the case"). Captions appear under the photo in the catalog and are read out by screen readers. Click **+ Add photo** for another row.
+3. Use **↑** and **↓** to change the order, or **Make primary** to move a photo to the top. Nothing has to be pasted again.
+4. Click **×** to remove a photo, then save.
+
+A small preview appears beside each link. If it stays broken, the link isn't shared publicly (see [Hosting photos and documents](#hosting-photos-and-documents)).
+
+Photos load at full size, so resize them to about 1,600 pixels wide before uploading. A photo straight off a phone can be several megabytes, and a tool with 10 of those is slow to open on mobile data.
+
+For a video, such as a how-to or a safety demonstration, upload it to Google Drive or YouTube and add the link under [Resources](#resources-and-partner-links). It opens in a new tab.
 
 ### Shelf location
 
@@ -323,7 +341,7 @@ To remove a photo, clear the field and save, then delete the file from wherever 
 
 Photos and documents are links to files hosted elsewhere, such as Google Drive:
 
-- **Tool photos and training badges** are public, so share them with "Anyone with the link".
+- **Tool photos, tool videos and training badges** are public, so share them with "Anyone with the link".
 - **Profile photos** are personal. Share them only with staff, like verification documents.
 - **Verification documents** are sensitive. Share them only with staff.
 - **Agreement files** are the exception. They're uploaded to this site's Media Library and are public. See [Writing and revising agreements](#writing-and-revising-agreements).
