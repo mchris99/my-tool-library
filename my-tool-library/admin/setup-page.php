@@ -2513,8 +2513,9 @@ function mtl_render_public_look_preview() {
 	if ( mtl_members_table_exists() ) {
 		$tbl_inventory  = $wpdb->prefix . 'tool_inventory';
 		$tbl_categories = $wpdb->prefix . 'tool_categories';
-		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only, no request-derived data.
-		$tools      = (array) $wpdb->get_results( "SELECT tool_id, tool_name, brand, description, photo_url FROM {$tbl_inventory} WHERE retired_at IS NULL ORDER BY tool_id ASC LIMIT 3" );
+		$photo_sql      = mtl_tool_primary_photo_sql();
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names and the fixed primary-photo subquery only, no request-derived data.
+		$tools      = (array) $wpdb->get_results( "SELECT t.tool_id, t.tool_name, t.brand, t.description, {$photo_sql} FROM {$tbl_inventory} t WHERE t.retired_at IS NULL ORDER BY t.tool_id ASC LIMIT 3" );
 		$categories = (array) $wpdb->get_col( "SELECT category_name FROM {$tbl_categories} ORDER BY category_name ASC LIMIT 4" );
 		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}

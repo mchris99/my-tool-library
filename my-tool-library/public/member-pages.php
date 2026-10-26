@@ -2912,11 +2912,11 @@ function mtl_render_member_reservations_page() {
 	// queue_place counts this reservation and those ahead of it (earlier
 	// reservation_date, ties broken by reservation_id), the same way the
 	// admin Loans & Reservations page does. ---
-	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- table names only, built from $wpdb->prefix, not user input; the one concatenated fragment is mtl_tool_link_columns_sql(), which is column names from the registry.
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- table names only, built from $wpdb->prefix, not user input; the concatenated fragments are mtl_tool_primary_photo_sql(), a fixed subquery, and mtl_tool_link_columns_sql(), column names from the registry.
 	$rows = $wpdb->get_results(
 		$wpdb->prepare(
 			'SELECT r.reservation_id, r.tool_id, r.reservation_date, r.ready_since,
-                t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.maintenance_at'
+                t.tool_name, t.brand, t.description, t.components, ' . mtl_tool_primary_photo_sql() . ', t.location, t.maintenance_at'
 			. mtl_tool_link_columns_sql() . ",
                 (SELECT COUNT(*) FROM {$tbl_res} r2
                     WHERE r2.tool_id = r.tool_id AND r2.expiry_date IS NULL

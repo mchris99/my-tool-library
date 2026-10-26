@@ -205,6 +205,64 @@ function mtl_shop_availability_text( $on_loan, $res, $retired, $maintenance, $ca
 }
 
 /**
+ * The photo at the top of a tool's detail panel, or a gallery when it has
+ * more than one.
+ *
+ * No JavaScript, like the rest of the catalog. Each photo has a visually
+ * hidden radio button and a thumbnail that is its label, and CSS shows the
+ * photo whose radio is checked (see mtl_shop_page_css()). Picking a photo
+ * never touches the URL fragment, so the :target panel stays open, and
+ * keyboard users get arrow keys between photos from the radio group itself.
+ *
+ * Hidden photos keep loading="lazy", so the large version of a photo is not
+ * fetched until it is shown. The thumbnails are the same files scaled down,
+ * since a link is all the plugin has.
+ *
+ * @param int    $tool_id   Tool row ID, for unique radio names and ids.
+ * @param string $tool_name Tool name, the alt text of a photo with no caption.
+ * @param array  $photos    Photos in order, from mtl_get_tool_photos().
+ * @return string HTML markup, or '' for a tool with no photos.
+ */
+function mtl_shop_gallery_html( $tool_id, $tool_name, $photos ) {
+	$photos = array_values( (array) $photos );
+	$count  = count( $photos );
+	if ( ! $count ) {
+		return '';
+	}
+
+	$slides = '';
+	foreach ( $photos as $i => $photo ) {
+		$slides .= '<figure class="mtl-shop-gallery-slide">'
+			. '<div class="mtl-shop-detail-photo"><img src="' . esc_url( $photo['url'] ) . '" alt="'
+			. esc_attr( '' !== $photo['caption'] ? $photo['caption'] : $tool_name ) . '" loading="lazy"></div>'
+			. ( '' !== $photo['caption'] ? '<figcaption class="mtl-shop-gallery-caption">' . esc_html( $photo['caption'] ) . '</figcaption>' : '' )
+			. '</figure>';
+	}
+	if ( 1 === $count ) {
+		return $slides;
+	}
+
+	$picks  = '';
+	$thumbs = '';
+	foreach ( $photos as $i => $photo ) {
+		$pick_id = 'mtl-photo-' . (int) $tool_id . '-' . ( $i + 1 );
+		$picks  .= '<input type="radio" class="mtl-shop-gallery-pick mtl-sr-only" name="' . esc_attr( 'mtl-photos-' . (int) $tool_id ) . '" id="' . esc_attr( $pick_id ) . '"' . ( 0 === $i ? ' checked' : '' ) . '>';
+		$thumbs .= '<li><label for="' . esc_attr( $pick_id ) . '">'
+			. '<img src="' . esc_url( $photo['url'] ) . '" alt="" loading="lazy">'
+			. '<span class="mtl-sr-only">' . esc_html( 'Photo ' . ( $i + 1 ) . ' of ' . $count ) . '</span>'
+			. '</label></li>';
+	}
+
+	// The radios come first because the CSS reaches the slides and thumbnails
+	// through "~", which only looks forward.
+	return '<div class="mtl-shop-gallery" role="group" aria-label="' . esc_attr( 'Photos of ' . $tool_name ) . '">'
+		. $picks
+		. '<div class="mtl-shop-gallery-stage">' . $slides . '</div>'
+		. '<ul class="mtl-shop-gallery-thumbs">' . $thumbs . '</ul>'
+		. '</div>';
+}
+
+/**
  * Renders the body of one tool's detail panel: photo, name, availability,
  * then the Reserve control for whoever is viewing (none for a retired tool),
  * then the tool's description and facts.
@@ -217,7 +275,8 @@ function mtl_shop_availability_text( $on_loan, $res, $retired, $maintenance, $ca
  *                     reserve_nonce_field (pre-rendered wp_nonce_field
  *                     string); login_url, signup_url, reservations_url;
  *                     cat_names (category_id => name) and sub_parents
- *                     (subcategory_id => array( category_id, name )).
+ *                     (subcategory_id => array( category_id, name ));
+ *                     photos (tool_id => photos, from mtl_get_tool_photos()).
  * @return string
  */
 function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
@@ -276,9 +335,10 @@ function mtl_shop_render_detail_panel( $tool, $base, $ctx = array() ) {
 
 	ob_start();
 	?>
-	<?php if ( ! empty( $tool->photo_url ) ) : ?>
-		<div class="mtl-shop-detail-photo"><img src="<?php echo esc_url( $tool->photo_url ); ?>" alt="<?php echo esc_attr( stripslashes( $tool->tool_name ) ); ?>" loading="lazy"></div>
-	<?php endif; ?>
+	<?php
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts in mtl_shop_gallery_html().
+	echo mtl_shop_gallery_html( $tool_id, stripslashes( $tool->tool_name ), isset( $ctx['photos'][ $tool_id ] ) ? $ctx['photos'][ $tool_id ] : array() );
+	?>
 	<div class="mtl-shop-detail-body">
 		<h2 class="mtl-shop-detail-name"><?php echo esc_html( stripslashes( $tool->tool_name ) ); ?></h2>
 		<?php if ( '' !== $sub ) : ?>
@@ -1264,6 +1324,80 @@ function mtl_shop_page_css() {
 			object-fit: contain;
 		}
 
+		/* The photo gallery: see mtl_shop_gallery_html(). Positioned so the
+			hidden radios are placed inside it, not somewhere up the page. */
+		.mtl-shop-gallery {
+			position: relative;
+		}
+
+		.mtl-shop-gallery-slide {
+			margin: 0;
+		}
+
+		.mtl-shop-gallery-caption {
+			padding: 8px 22px 0;
+			color: var(--mtl-ink-2);
+			font-size: 14px;
+			line-height: 1.4;
+		}
+
+		.mtl-shop-gallery .mtl-shop-gallery-slide {
+			display: none;
+		}
+
+		.mtl-shop-gallery-thumbs {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 6px;
+			margin: 0;
+			padding: 10px 22px 0;
+			list-style: none;
+		}
+
+		.mtl-shop-gallery-thumbs label {
+			display: block;
+			width: 56px;
+			height: 56px;
+			overflow: hidden;
+			background: var(--mtl-panel);
+			border: 1px solid var(--mtl-rule);
+			border-radius: 4px;
+			cursor: pointer;
+		}
+
+		.mtl-shop-gallery-thumbs img {
+			display: block;
+			width: 100%;
+			height: 100%;
+			object-fit: contain;
+		}
+
+		.mtl-shop-gallery-thumbs label:hover {
+			border-color: var(--mtl-ink);
+		}
+
+		<?php
+		// One rule per position, since CSS can't pair the Nth radio with the
+		// Nth slide on its own. The selected thumbnail is marked the way a
+		// selected catalog card is: a border plus a second pixel drawn
+		// outside, never anything over the photo.
+		for ( $n = 1; $n <= MTL_MAX_TOOL_PHOTOS; $n++ ) :
+			?>
+		.mtl-shop-gallery-pick:nth-of-type(<?php echo (int) $n; ?>):checked ~ .mtl-shop-gallery-stage .mtl-shop-gallery-slide:nth-child(<?php echo (int) $n; ?>) {
+			display: block;
+		}
+
+		.mtl-shop-gallery-pick:nth-of-type(<?php echo (int) $n; ?>):checked ~ .mtl-shop-gallery-thumbs li:nth-child(<?php echo (int) $n; ?>) label {
+			border-color: var(--mtl-ink);
+			box-shadow: 0 0 0 1px var(--mtl-ink);
+		}
+
+		.mtl-shop-gallery-pick:nth-of-type(<?php echo (int) $n; ?>):focus-visible ~ .mtl-shop-gallery-thumbs li:nth-child(<?php echo (int) $n; ?>) label {
+			outline: 3px solid var(--mtl-link);
+			outline-offset: 2px;
+		}
+		<?php endfor; ?>
+
 		.mtl-shop-detail-body {
 			padding: 18px 22px 22px;
 		}
@@ -2021,7 +2155,7 @@ function mtl_render_shop_page() {
 	// The selected-tool query below reuses $select, so both give the panel the
 	// same columns. The id lists let the panel pair each sub-category with
 	// its category.
-	$select    = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, t.photo_url, t.location, t.retired_at, t.maintenance_at'
+	$select    = 'SELECT t.tool_id, t.tool_name, t.brand, t.description, t.components, ' . mtl_tool_primary_photo_sql() . ', t.location, t.retired_at, t.maintenance_at'
 		. mtl_tool_link_columns_sql() . ','
 		. " GROUP_CONCAT(DISTINCT c.category_name ORDER BY c.category_name SEPARATOR ', ') AS categories,"
 		. ' GROUP_CONCAT(DISTINCT c.category_id) AS category_ids,'
@@ -2224,8 +2358,11 @@ function mtl_render_shop_page() {
 		'show_numbers'        => $look['show_tool_numbers'],
 		'cat_names'           => $cat_names,
 		'sub_parents'         => $sub_parents,
+		// Every pre-rendered panel's photos in one query; the cards and table
+		// only need the primary, which the catalog query carries.
+		'photos'              => mtl_get_tool_photos( array_column( $panel_tools, 'tool_id' ) ),
 	);
-	$viewer     = $member_ctx['not_live'] ? null : mtl_current_member();
+	$viewer = $member_ctx['not_live'] ? null : mtl_current_member();
 	if ( $viewer ) {
 		$mid                               = (int) $viewer->member_id;
 		$member_ctx['is_member']           = true;
