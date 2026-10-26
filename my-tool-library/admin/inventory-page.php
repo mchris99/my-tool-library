@@ -853,6 +853,370 @@ function mtl_tool_links_editor_script() {
 }
 
 /**
+ * Renders the Photos editor row inside the Add/Edit tool form.
+ *
+ * One row per photo, in order, with the first labelled as the primary. The
+ * script adds the buttons that reorder, promote and remove rows. Without it
+ * the rows are still real inputs, so links and captions can be typed, changed
+ * or emptied, and a spare row is there whenever the tool has room for another
+ * photo.
+ *
+ * @param array $photos Rows to show, as array{url:string,caption:string}: from
+ *                      the database, or from a rejected submission.
+ */
+function mtl_render_tool_photos_field( $photos ) {
+	$rows = array_values( (array) $photos );
+	// No spare at the limit: an eleventh box would only lead to an error.
+	if ( count( $rows ) < MTL_MAX_TOOL_PHOTOS ) {
+		$rows[] = array(
+			'url'     => '',
+			'caption' => '',
+		);
+	}
+	?>
+	<tr>
+		<th scope="row">Photos</th>
+		<td>
+			<div class="mtl-photos-editor" data-max="<?php echo esc_attr( (string) MTL_MAX_TOOL_PHOTOS ); ?>">
+				<ol class="mtl-photos-rows">
+					<?php foreach ( $rows as $row_index => $row ) : ?>
+						<?php
+						$number = $row_index + 1;
+						$url    = isset( $row['url'] ) ? (string) $row['url'] : '';
+						?>
+						<li class="mtl-photos-row">
+							<span class="mtl-photos-thumb">
+								<?php if ( '' !== $url ) : ?>
+									<img src="<?php echo esc_url( $url ); ?>" alt="" loading="lazy">
+								<?php endif; ?>
+							</span>
+							<span class="mtl-photos-fields">
+								<span class="mtl-photos-position"><?php echo 1 === $number ? 'Primary photo, shown on the catalog' : esc_html( 'Photo ' . $number ); ?></span>
+								<?php
+								// type="text", not type="url", as in the link lists:
+								// the browser refuses a bare "example.com/drill.jpg".
+								?>
+								<input type="text" class="mtl-photos-url"
+									name="mtl_photos[<?php echo esc_attr( (string) $row_index ); ?>][url]"
+									value="<?php echo esc_attr( $url ); ?>"
+									placeholder="https://..."
+									aria-label="<?php echo esc_attr( 'Photo ' . $number . ' link' ); ?>">
+								<input type="text" class="mtl-photos-caption"
+									name="mtl_photos[<?php echo esc_attr( (string) $row_index ); ?>][caption]"
+									value="<?php echo esc_attr( isset( $row['caption'] ) ? (string) $row['caption'] : '' ); ?>"
+									maxlength="<?php echo esc_attr( (string) MTL_TOOL_PHOTO_CAPTION_MAXLENGTH ); ?>"
+									placeholder="Caption (optional)"
+									aria-label="<?php echo esc_attr( 'Photo ' . $number . ' caption' ); ?>">
+							</span>
+							<?php
+							// Hidden here and revealed by the script, so a browser
+							// with JavaScript off never sees buttons that do nothing.
+							?>
+							<span class="mtl-photos-buttons" hidden>
+								<button type="button" class="button button-small mtl-photos-up" aria-label="Move this photo up" title="Move up">&uarr;</button>
+								<button type="button" class="button button-small mtl-photos-down" aria-label="Move this photo down" title="Move down">&darr;</button>
+								<button type="button" class="button button-small mtl-photos-primary">Make primary</button>
+								<button type="button" class="button button-small mtl-photos-remove" aria-label="Remove this photo" title="Remove this photo">&times;</button>
+							</span>
+						</li>
+					<?php endforeach; ?>
+				</ol>
+				<p class="mtl-photos-actions">
+					<button type="button" class="button button-small mtl-photos-add" hidden>+ Add photo</button>
+				</p>
+			</div>
+			<p style="font-size: 0.85em; color: #666; margin: 8px 0 0 0;">Optional, up to <?php echo esc_html( (string) MTL_MAX_TOOL_PHOTOS ); ?>. The primary photo is shown on the catalog, and the rest follow it in the tool&rsquo;s details. Make sure each link is viewable by anyone. To share a video, add its link under <strong>Resources</strong>.</p>
+		</td>
+	</tr>
+	<?php
+}
+
+/**
+ * Reads the Photos editor off a submitted Add/Edit tool form.
+ *
+ * Rows come back in the order they were on screen. They post as
+ * mtl_photos[<n>][url|caption], and PHP keeps the keys in the order the
+ * browser sent them, which is document order however the script moved the
+ * rows; <n> only pairs a link with its caption.
+ *
+ * What comes back for redisplay is what was typed, as with the link lists, so
+ * a rejected save never eats anyone's work.
+ *
+ * @return array{photos:array,state:array,error:string} photos is ready for
+ *         mtl_sync_tool_photos(); state refills the editor; error is '' when
+ *         the submission is usable.
+ */
+function mtl_collect_posted_tool_photos() {
+	// phpcs:disable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- the Add/Edit handlers verify their form nonce before calling this; every link and caption is sanitized below.
+	$posted = isset( $_POST['mtl_photos'] ) ? (array) wp_unslash( $_POST['mtl_photos'] ) : array();
+	// phpcs:enable WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+	$raw_photos = array();
+	foreach ( $posted as $posted_row ) {
+		if ( ! is_array( $posted_row ) ) {
+			continue;
+		}
+		$photo = array(
+			// Not sanitize_url(), for the reason given in
+			// mtl_collect_posted_tool_links().
+			'url'     => trim( wp_strip_all_tags( (string) ( $posted_row['url'] ?? '' ) ) ),
+			'caption' => sanitize_text_field( (string) ( $posted_row['caption'] ?? '' ) ),
+		);
+		// The spare row, which would otherwise grow by one on every failed save.
+		if ( '' === $photo['url'] && '' === $photo['caption'] ) {
+			continue;
+		}
+		$raw_photos[] = $photo;
+	}
+
+	$result = mtl_validate_tool_photos( $raw_photos );
+
+	return array(
+		'photos' => $result['photos'],
+		'state'  => $raw_photos,
+		'error'  => $result['error'],
+	);
+}
+
+/**
+ * Drives every Photos editor on the page: add, reorder, make primary, remove,
+ * and the thumbnail beside each link.
+ *
+ * Printed once per page and scoped to each .mtl-photos-editor, so the Add and
+ * Edit forms both get it without knowing about each other, like
+ * mtl_tool_links_editor_script().
+ */
+function mtl_tool_photos_editor_script() {
+	?>
+	<style>
+		.mtl-photos-rows {
+			list-style: none;
+			margin: 0;
+			padding: 0;
+			max-width: 720px;
+		}
+
+		.mtl-photos-row {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			margin: 0 0 8px 0;
+			padding: 6px;
+			border: 1px solid #dcdcde;
+			border-radius: 4px;
+			background: #fff;
+		}
+
+		/* The primary is the one the catalog shows, so it stands out here too. */
+		.mtl-photos-row:first-child {
+			border-color: #2271b1;
+		}
+
+		.mtl-photos-thumb {
+			flex: 0 0 56px;
+			height: 56px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			background: #f6f7f7;
+			border-radius: 3px;
+			overflow: hidden;
+		}
+
+		.mtl-photos-thumb img {
+			max-width: 100%;
+			max-height: 100%;
+			object-fit: contain;
+		}
+
+		.mtl-photos-fields {
+			flex: 1 1 auto;
+			min-width: 0;
+			display: flex;
+			flex-wrap: wrap;
+			gap: 4px 6px;
+		}
+
+		.mtl-photos-position {
+			flex: 1 1 100%;
+			font-size: 0.85em;
+			font-weight: 600;
+			color: #50575e;
+		}
+
+		.mtl-photos-url {
+			flex: 1 1 55%;
+			min-width: 0;
+		}
+
+		.mtl-photos-caption {
+			flex: 1 1 35%;
+			min-width: 0;
+		}
+
+		.mtl-photos-buttons {
+			flex: 0 0 auto;
+			display: flex;
+			gap: 4px;
+		}
+
+		.mtl-photos-buttons[hidden],
+		.mtl-photos-primary[hidden] {
+			display: none;
+		}
+
+		.mtl-photos-actions {
+			margin: 4px 0 0 0;
+		}
+	</style>
+	<script>
+		document.querySelectorAll( '.mtl-photos-editor' ).forEach( function ( editor ) {
+			var list      = editor.querySelector( '.mtl-photos-rows' );
+			var addButton = editor.querySelector( '.mtl-photos-add' );
+			var max       = parseInt( editor.getAttribute( 'data-max' ), 10 ) || 10;
+			var first     = list ? list.querySelector( '.mtl-photos-row' ) : null;
+			if ( ! addButton || ! first ) {
+				return;
+			}
+
+			// An emptied copy of the first row is the template for added ones,
+			// so the markup stays whatever PHP wrote. At the limit there is no
+			// spare row to copy, hence emptying a filled one.
+			var blank = first.cloneNode( true );
+			blank.querySelectorAll( 'input' ).forEach( function ( input ) {
+				input.value = '';
+			} );
+			blank.querySelector( '.mtl-photos-thumb' ).textContent = '';
+			blank.querySelector( '.mtl-photos-buttons' ).hidden = false;
+
+			// Indices only pair a link with its caption, and removing a row
+			// leaves a gap, so a counter rather than the row count.
+			var nextIndex = list.querySelectorAll( '.mtl-photos-row' ).length;
+
+			function rows() {
+				return list.querySelectorAll( '.mtl-photos-row' );
+			}
+
+			// Labels, button states and the Add button follow the order, so
+			// they are redrawn after anything that changes it.
+			function renumber() {
+				var all = rows();
+				all.forEach( function ( row, i ) {
+					var number = i + 1;
+					row.querySelector( '.mtl-photos-position' ).textContent = 0 === i ? 'Primary photo, shown on the catalog' : 'Photo ' + number;
+					row.querySelector( '.mtl-photos-url' ).setAttribute( 'aria-label', 'Photo ' + number + ' link' );
+					row.querySelector( '.mtl-photos-caption' ).setAttribute( 'aria-label', 'Photo ' + number + ' caption' );
+					row.querySelector( '.mtl-photos-up' ).disabled = ( 0 === i );
+					row.querySelector( '.mtl-photos-down' ).disabled = ( all.length - 1 === i );
+					row.querySelector( '.mtl-photos-primary' ).hidden = ( 0 === i );
+				} );
+				addButton.disabled = all.length >= max;
+			}
+
+			function addRow() {
+				if ( rows().length >= max ) {
+					return null;
+				}
+				var row = blank.cloneNode( true );
+				row.querySelectorAll( 'input' ).forEach( function ( input ) {
+					input.name = input.name.replace( /^mtl_photos\[\d+\]/, 'mtl_photos[' + nextIndex + ']' );
+				} );
+				nextIndex++;
+				list.appendChild( row );
+				renumber();
+				return row;
+			}
+
+			// The thumbnail follows the link as it is typed, so a wrong or
+			// private link shows up as a broken image before the save.
+			function showThumb( row ) {
+				var thumb = row.querySelector( '.mtl-photos-thumb' );
+				var url   = row.querySelector( '.mtl-photos-url' ).value.trim();
+				thumb.textContent = '';
+				if ( '' === url ) {
+					return;
+				}
+				if ( ! /^https?:\/\//i.test( url ) ) {
+					// The server reads a link with no scheme as https, so preview
+					// it the same way; any other scheme is never an image source.
+					if ( /^[a-z][a-z0-9+.-]*:/i.test( url ) ) {
+						return;
+					}
+					url = 'https://' + url.replace( /^\/\//, '' );
+				}
+				var img = document.createElement( 'img' );
+				img.alt = '';
+				img.src = url;
+				thumb.appendChild( img );
+			}
+
+			editor.querySelectorAll( '.mtl-photos-buttons' ).forEach( function ( buttons ) {
+				buttons.hidden = false;
+			} );
+			addButton.hidden = false;
+			renumber();
+
+			addButton.addEventListener( 'click', function () {
+				var row = addRow();
+				if ( row ) {
+					row.querySelector( '.mtl-photos-url' ).focus();
+				}
+			} );
+
+			list.addEventListener( 'change', function ( e ) {
+				if ( e.target.classList.contains( 'mtl-photos-url' ) ) {
+					showThumb( e.target.closest( '.mtl-photos-row' ) );
+				}
+			} );
+
+			// Delegated, so rows added after this runs are covered too.
+			list.addEventListener( 'click', function ( e ) {
+				var button = e.target.closest( 'button' );
+				if ( ! button ) {
+					return;
+				}
+				var row = button.closest( '.mtl-photos-row' );
+
+				if ( button.classList.contains( 'mtl-photos-remove' ) ) {
+					// Focus goes to the row that takes this one's place, or the
+					// one above it, rather than falling back to the page.
+					var neighbour = row.nextElementSibling || row.previousElementSibling;
+					row.remove();
+					// Always leave one row, so emptying the list never leaves
+					// nothing to type into.
+					if ( ! neighbour ) {
+						neighbour = addRow();
+					}
+					renumber();
+					neighbour.querySelector( '.mtl-photos-url' ).focus();
+					return;
+				}
+
+				if ( button.classList.contains( 'mtl-photos-up' ) && row.previousElementSibling ) {
+					list.insertBefore( row, row.previousElementSibling );
+				} else if ( button.classList.contains( 'mtl-photos-down' ) && row.nextElementSibling ) {
+					list.insertBefore( row.nextElementSibling, row );
+				} else if ( button.classList.contains( 'mtl-photos-primary' ) ) {
+					list.insertBefore( row, list.firstElementChild );
+				} else {
+					return;
+				}
+
+				renumber();
+				// The focused button moved with its row. If it has just been
+				// disabled or hidden, keep focus on that row's link instead.
+				if ( button.disabled || button.hidden ) {
+					row.querySelector( '.mtl-photos-url' ).focus();
+				} else {
+					button.focus();
+				}
+			} );
+		} );
+	</script>
+	<?php
+}
+
+/**
  * Renders the shared set of tool fields used by both the "Add a New Tool"
  * and "Edit Tool" forms, so the two stay in sync automatically.
  *
@@ -970,13 +1334,7 @@ function mtl_render_tool_form_fields( $values, $categories, $tags, $trainings, $
 			</div>
 		</td>
 	</tr>
-	<tr>
-		<th scope="row"><label for="<?php echo $field_id( 'photo_url' ); ?>">Photo URL</label></th>
-		<td>
-			<input type="url" name="photo_url" id="<?php echo $field_id( 'photo_url' ); ?>" class="regular-text" value="<?php echo esc_url( $values['photo_url'] ); ?>" placeholder="https://...">
-			<p style="font-size: 0.85em; color: #666; margin: 4px 0 0 0;">Make sure the link is viewable by anyone.</p>
-		</td>
-	</tr>
+	<?php mtl_render_tool_photos_field( $values['photos'] ); ?>
 	<tr>
 		<th scope="row"><label for="<?php echo $field_id( 'initial_cash_value' ); ?>">Initial Cash Value ($)</label></th>
 		<td>
@@ -1073,12 +1431,12 @@ function mtl_render_inventory_page() {
 	// on a failed submission so the admin doesn't lose their work. Barcode is
 	// deliberately NOT preserved (it's the field that must change to fix the error).
 	// $keep_form_open forces the panel open after an error so the data is visible.
-	$form_values    = array(
+	$form_values = array(
 		'tool_name'                   => '',
 		'barcode'                     => '',
 		'brand'                       => '',
 		'location'                    => '',
-		'photo_url'                   => '',
+		'photos'                      => array(),
 		'initial_cash_value'          => '',
 		'annual_depreciation_amount'  => '',
 		'annual_depreciation_percent' => '',
@@ -1127,7 +1485,6 @@ function mtl_render_inventory_page() {
 			$barcode       = sanitize_text_field( wp_unslash( $_POST['barcode'] ?? '' ) );
 			$brand         = sanitize_text_field( wp_unslash( $_POST['brand'] ?? '' ) );
 			$location      = sanitize_text_field( wp_unslash( $_POST['location'] ?? '' ) );
-			$photo_url     = sanitize_url( wp_unslash( $_POST['photo_url'] ?? '' ) );
 			$donated_by    = sanitize_text_field( wp_unslash( $_POST['donated_by'] ?? '' ) );
 			$date_acquired = sanitize_text_field( wp_unslash( $_POST['date_acquired'] ?? '' ) );
 			$description   = sanitize_textarea_field( wp_unslash( $_POST['description'] ?? '' ) );
@@ -1151,7 +1508,8 @@ function mtl_render_inventory_page() {
 			$posted_subcategories = isset( $_POST['subcategory_id'] ) ? array_map( 'absint', (array) wp_unslash( $_POST['subcategory_id'] ) ) : array();
 			$subcategory_pairs    = mtl_resolve_tool_subcategories( $posted_subcategories, $category_ids, $subcategories );
 
-			$links = mtl_collect_posted_tool_links();
+			$links  = mtl_collect_posted_tool_links();
+			$photos = mtl_collect_posted_tool_photos();
 
 			// --- Validate ---
 			$error         = false;
@@ -1163,6 +1521,9 @@ function mtl_render_inventory_page() {
 			} elseif ( '' !== $links['error'] ) {
 				$error         = true;
 				$error_message = $links['error'];
+			} elseif ( '' !== $photos['error'] ) {
+				$error         = true;
+				$error_message = $photos['error'];
 			} elseif ( '' === $tool_name ) {
 				$error         = true;
 				$error_message = 'A tool name is required. The tool was not added.';
@@ -1196,7 +1557,6 @@ function mtl_render_inventory_page() {
 					'brand'                      => $brand,
 					'description'                => $description,
 					'components'                 => $components,
-					'photo_url'                  => $photo_url,
 					'initial_cash_value'         => $initial_value,
 					'annual_depreciation_amount' => $depreciation,
 					'donated_by'                 => $donated_by,
@@ -1209,7 +1569,7 @@ function mtl_render_inventory_page() {
 					// of two; clearing it on Edit puts it back to NULL too.
 					'location'                   => '' !== $location ? $location : null,
 				);
-				$tool_formats = array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' );
+				$tool_formats = array( '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' );
 				// Merged rather than listed above, so the formats cannot drift
 				// when a list is added to mtl_tool_link_lists(). An empty list
 				// is NULL, which is how a tool's last link is removed.
@@ -1226,6 +1586,7 @@ function mtl_render_inventory_page() {
 					mtl_sync_tool_mappings( $tbl_tag_map, 'tag_id', $new_tool_id, $tag_ids );
 					mtl_sync_tool_mappings( $tbl_tool_training_map, 'training_id', $new_tool_id, $training_ids );
 					mtl_sync_tool_subcategories( $tbl_subcat_map, $new_tool_id, $subcategory_pairs );
+					mtl_sync_tool_photos( $new_tool_id, $photos['photos'] );
 
 					mtl_maybe_flag_donor_as_donated( $donated_by );
 
@@ -1246,7 +1607,7 @@ function mtl_render_inventory_page() {
 				$form_values['tool_name']                   = $tool_name;
 				$form_values['brand']                       = $brand;
 				$form_values['location']                    = $location;
-				$form_values['photo_url']                   = $photo_url;
+				$form_values['photos']                      = $photos['state'];
 				$form_values['initial_cash_value']          = $initial_value_display;
 				$form_values['annual_depreciation_amount']  = $depreciation_display;
 				$form_values['annual_depreciation_percent'] = $depreciation_pct_display;
@@ -1650,7 +2011,6 @@ function mtl_render_inventory_page() {
 			$barcode       = sanitize_text_field( wp_unslash( $_POST['barcode'] ?? '' ) );
 			$brand         = sanitize_text_field( wp_unslash( $_POST['brand'] ?? '' ) );
 			$location      = sanitize_text_field( wp_unslash( $_POST['location'] ?? '' ) );
-			$photo_url     = sanitize_url( wp_unslash( $_POST['photo_url'] ?? '' ) );
 			$donated_by    = sanitize_text_field( wp_unslash( $_POST['donated_by'] ?? '' ) );
 			$date_acquired = sanitize_text_field( wp_unslash( $_POST['date_acquired'] ?? '' ) );
 			$description   = sanitize_textarea_field( wp_unslash( $_POST['description'] ?? '' ) );
@@ -1670,7 +2030,8 @@ function mtl_render_inventory_page() {
 			$posted_subcategories = isset( $_POST['subcategory_id'] ) ? array_map( 'absint', (array) wp_unslash( $_POST['subcategory_id'] ) ) : array();
 			$subcategory_pairs    = mtl_resolve_tool_subcategories( $posted_subcategories, $category_ids, $subcategories );
 
-			$links = mtl_collect_posted_tool_links();
+			$links  = mtl_collect_posted_tool_links();
+			$photos = mtl_collect_posted_tool_photos();
 
 			$error         = false;
 			$error_message = '';
@@ -1681,6 +2042,9 @@ function mtl_render_inventory_page() {
 			} elseif ( '' !== $links['error'] ) {
 				$error         = true;
 				$error_message = $links['error'];
+			} elseif ( '' !== $photos['error'] ) {
+				$error         = true;
+				$error_message = $photos['error'];
 			} elseif ( $edit_tool_id <= 0 ) {
 				$error         = true;
 				$error_message = 'Could not determine which tool to update. Please try again.';
@@ -1726,7 +2090,6 @@ function mtl_render_inventory_page() {
 					'brand'                      => $brand,
 					'description'                => $description,
 					'components'                 => $components,
-					'photo_url'                  => $photo_url,
 					'initial_cash_value'         => $initial_value,
 					'annual_depreciation_amount' => $depreciation,
 					'donated_by'                 => $donated_by,
@@ -1735,7 +2098,7 @@ function mtl_render_inventory_page() {
 					'private_notes'              => '' !== $private_notes ? $private_notes : null,
 					'location'                   => '' !== $location ? $location : null,
 				);
-				$tool_formats = array( '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' );
+				$tool_formats = array( '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' );
 				// Merged rather than listed above, so the formats cannot drift
 				// when a list is added to mtl_tool_link_lists(). An empty list
 				// is NULL, which is how a tool's last link is removed.
@@ -1761,6 +2124,7 @@ function mtl_render_inventory_page() {
 					mtl_sync_tool_mappings( $tbl_tag_map, 'tag_id', $edit_tool_id, $tag_ids );
 					mtl_sync_tool_mappings( $tbl_tool_training_map, 'training_id', $edit_tool_id, $training_ids );
 					mtl_sync_tool_subcategories( $tbl_subcat_map, $edit_tool_id, $subcategory_pairs );
+					mtl_sync_tool_photos( $edit_tool_id, $photos['photos'] );
 
 					mtl_maybe_flag_donor_as_donated( $donated_by );
 
@@ -1779,7 +2143,7 @@ function mtl_render_inventory_page() {
 					'barcode'                     => $barcode,
 					'brand'                       => $brand,
 					'location'                    => $location,
-					'photo_url'                   => $photo_url,
+					'photos'                      => $photos['state'],
 					'initial_cash_value'          => $initial_value_display,
 					'annual_depreciation_amount'  => $depreciation_display,
 					'annual_depreciation_percent' => $depreciation_pct_display,
@@ -2145,6 +2509,8 @@ function mtl_render_inventory_page() {
 					$existing_subcategory_pairs[ (int) $sub_row->category_id ] = (int) $sub_row->subcategory_id;
 				}
 
+				$edit_photos = mtl_get_tool_photos( array( $edit_tool_id ) );
+
 				$editing     = true;
 				$edit_values = array(
 					// No stripslashes() on the way into the form: values are
@@ -2154,7 +2520,7 @@ function mtl_render_inventory_page() {
 					'barcode'                     => (string) $tool_row->barcode,
 					'brand'                       => (string) $tool_row->brand,
 					'location'                    => (string) $tool_row->location,
-					'photo_url'                   => $tool_row->photo_url,
+					'photos'                      => isset( $edit_photos[ $edit_tool_id ] ) ? $edit_photos[ $edit_tool_id ] : array(),
 					'initial_cash_value'          => $tool_row->initial_cash_value,
 					'annual_depreciation_amount'  => $tool_row->annual_depreciation_amount,
 					// DB only ever stores a dollar amount; this stays blank so Edit
@@ -2413,13 +2779,30 @@ function mtl_render_inventory_page() {
 			min-width: 280px;
 		}
 
+		.mtl-detail-photos {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 6px;
+			list-style: none;
+			margin: 4px 0 0 0;
+			padding: 0;
+		}
+
+		.mtl-detail-photos li {
+			margin: 0;
+		}
+
 		.mtl-detail-photo {
 			display: block;
-			max-width: 160px;
-			max-height: 160px;
+			max-width: 120px;
+			max-height: 120px;
 			border-radius: 4px;
 			border: 1px solid #ddd;
-			margin-top: 4px;
+		}
+
+		/* The primary is the photo the catalog shows. */
+		.mtl-detail-photos li:first-child .mtl-detail-photo {
+			border-color: #2271b1;
 		}
 
 		.mtl-detail-panel p {
@@ -2967,6 +3350,7 @@ function mtl_render_inventory_page() {
 
 	<?php mtl_subcategory_picker_script(); ?>
 	<?php mtl_tool_links_editor_script(); ?>
+	<?php mtl_tool_photos_editor_script(); ?>
 	<?php mtl_taxonomy_tree_assets(); ?>
 	<?php mtl_taxonomy_matcher_script(); ?>
 
@@ -2978,7 +3362,8 @@ function mtl_render_inventory_page() {
 	// multiplying each other's values.
 	// Every {$tbl_*} fragment interpolated through the end of this
 	// data-gathering section is a table name only, built from $wpdb->prefix,
-	// never request data; the one concatenated fragment is
+	// never request data; the concatenated fragments are
+	// mtl_tool_primary_photo_sql(), which is a fixed subquery, and
 	// mtl_tool_link_columns_sql(), which is column names from the registry.
 	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
 	$inventory = $wpdb->get_results(
@@ -2990,7 +3375,7 @@ function mtl_render_inventory_page() {
             t.brand,
             t.description,
             t.components,
-            t.photo_url,
+            ' . mtl_tool_primary_photo_sql() . ',
             t.initial_cash_value,
             t.annual_depreciation_amount,
             t.donated_by,
@@ -3021,6 +3406,11 @@ function mtl_render_inventory_page() {
         ORDER BY t.tool_id DESC
     "
 	);
+
+	// Every tool's photos for the detail rows, in one query rather than one
+	// per tool. The list itself only needs the primary, which the query above
+	// already carries as photo_url.
+	$inventory_photos = mtl_get_tool_photos( array_column( (array) $inventory, 'tool_id' ) );
 
 	// 5B. PER-TOOL LOAN / RESERVATION ACTIVITY
 	// Whole-table queries folded into tool_id-keyed maps (rather than querying
@@ -3612,8 +4002,25 @@ function mtl_render_inventory_page() {
 											</div>
 										<?php endif; ?>
 
-										<?php if ( ! empty( $item->photo_url ) ) : ?>
-											<img src="<?php echo esc_url( $item->photo_url ); ?>" alt="" class="mtl-detail-photo">
+										<?php
+										$item_photos = isset( $inventory_photos[ (int) $item->tool_id ] ) ? $inventory_photos[ (int) $item->tool_id ] : array();
+										if ( $item_photos ) :
+											$item_photo_count = count( $item_photos );
+											?>
+											<strong><?php echo esc_html( 1 === $item_photo_count ? 'Photo' : 'Photos (' . $item_photo_count . ')' ); ?></strong>
+											<ul class="mtl-detail-photos">
+												<?php foreach ( $item_photos as $photo_index => $photo ) : ?>
+													<?php
+													$photo_label = ( 0 === $photo_index ? 'Primary photo' : 'Photo ' . ( $photo_index + 1 ) )
+														. ( '' !== $photo['caption'] ? ': ' . $photo['caption'] : '' );
+													?>
+													<li>
+														<a href="<?php echo esc_url( $photo['url'] ); ?>" target="_blank" rel="noopener noreferrer" title="<?php echo esc_attr( $photo_label . ' (opens full size in a new tab)' ); ?>">
+															<img src="<?php echo esc_url( $photo['url'] ); ?>" alt="<?php echo esc_attr( $photo_label ); ?>" class="mtl-detail-photo" loading="lazy">
+														</a>
+													</li>
+												<?php endforeach; ?>
+											</ul>
 										<?php endif; ?>
 									</div>
 

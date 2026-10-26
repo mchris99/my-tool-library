@@ -3334,6 +3334,188 @@ function mtl_tool_all_links_html( $tool ) {
 	return $out;
 }
 
+// ==========================================================================
+// TOOL PHOTOS
+//
+// A tool's photos live in the tool_photos table, one row per link, numbered
+// by sort_order. Photo 1 is the primary: the only one the catalog card, the
+// Inventory list and My Reservations show. The catalog's detail view shows
+// the rest after it.
+//
+// Like every other image the plugin shows, a photo is a link to a file hosted
+// elsewhere. Links are normalized to absolute http(s) on the way in, by the
+// same mtl_normalize_web_url() the tool link lists use. Videos are not photos:
+// staff add those to the tool's Resources list.
+// ==========================================================================
+
+/**
+ * Most photos one tool can carry. Enough for every side of a tool and its
+ * accessories, few enough that the detail view's thumbnail row stays short.
+ */
+define( 'MTL_MAX_TOOL_PHOTOS', 10 );
+
+/**
+ * Longest caption a photo can carry, matching tool_photos.caption.
+ */
+define( 'MTL_TOOL_PHOTO_CAPTION_MAXLENGTH', 150 );
+
+/**
+ * The primary photo's link, as a SQL fragment to paste into a SELECT list.
+ *
+ * A correlated subquery rather than a join, because the queries it goes into
+ * group by tool, and MySQL's ONLY_FULL_GROUP_BY mode cannot tell that a joined
+ * photo column has one value per tool. Aliased photo_url, so the markup that
+ * reads it did not have to change when the column moved out of tool_inventory.
+ *
+ * @param string $alias Alias of tool_inventory in the caller's query.
+ * @return string e.g. "(SELECT ... ) AS photo_url", with no leading comma.
+ */
+function mtl_tool_primary_photo_sql( $alias = 't' ) {
+	global $wpdb;
+	return "(SELECT tp.url FROM {$wpdb->prefix}tool_photos tp WHERE tp.tool_id = {$alias}.tool_id AND tp.sort_order = 1) AS photo_url";
+}
+
+/**
+ * Every photo of the given tools, in order, in one query.
+ *
+ * @param int[] $tool_ids Tools to look up.
+ * @return array<int, array<int, array{url:string,caption:string}>> tool_id =>
+ *         photos in sort_order. A tool with none has no key.
+ */
+function mtl_get_tool_photos( $tool_ids ) {
+	global $wpdb;
+
+	$tool_ids = array_values( array_unique( array_filter( array_map( 'intval', (array) $tool_ids ) ) ) );
+	if ( ! $tool_ids ) {
+		return array();
+	}
+
+	$placeholders = implode( ',', array_fill( 0, count( $tool_ids ), '%d' ) );
+	$rows         = $wpdb->get_results(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- table name from $wpdb->prefix and a %d placeholder per id; the ids themselves are prepared.
+			"SELECT tool_id, url, caption FROM {$wpdb->prefix}tool_photos WHERE tool_id IN ({$placeholders}) ORDER BY tool_id, sort_order",
+			$tool_ids
+		)
+	);
+
+	$out = array();
+	foreach ( (array) $rows as $row ) {
+		$out[ (int) $row->tool_id ][] = array(
+			'url'     => (string) $row->url,
+			'caption' => (string) $row->caption,
+		);
+	}
+	return $out;
+}
+
+/**
+ * Holds a list of typed photo links and captions to the rules the table keeps.
+ *
+ * All-or-nothing, like mtl_validate_tool_links(): the first problem stops the
+ * save, so nobody is told "saved" while a photo was quietly dropped. A row
+ * with neither a link nor a caption is a spare nobody filled in, so it is
+ * skipped rather than refused.
+ *
+ * Shared by the Add/Edit form and the CSV import, so both refuse the same
+ * things in the same words.
+ *
+ * @param array $raw_photos List of array{url:string,caption:string}, in order,
+ *                          already sanitized by the caller.
+ * @return array{photos:array,error:string} photos is in submitted order with
+ *         normalized links, and empty on error; error is '' on success, and
+ *         otherwise HTML-escaped text for an admin notice.
+ */
+function mtl_validate_tool_photos( $raw_photos ) {
+	$photos = array();
+
+	foreach ( (array) $raw_photos as $raw ) {
+		$url     = is_array( $raw ) && isset( $raw['url'] ) ? trim( (string) $raw['url'] ) : '';
+		$caption = is_array( $raw ) && isset( $raw['caption'] ) ? trim( (string) $raw['caption'] ) : '';
+
+		if ( '' === $url && '' === $caption ) {
+			continue;
+		}
+
+		if ( '' === $url ) {
+			return array(
+				'photos' => array(),
+				'error'  => sprintf( 'The caption &ldquo;%s&rdquo; has no photo link.', esc_html( $caption ) ),
+			);
+		}
+
+		$safe_url = mtl_normalize_web_url( $url );
+		if ( '' === $safe_url ) {
+			return array(
+				'photos' => array(),
+				'error'  => sprintf( '&ldquo;%s&rdquo; is not a web address a photo can be shown from. Photo links have to be ordinary http:// or https:// addresses.', esc_html( $url ) ),
+			);
+		}
+		// The column is VARCHAR(255), and a longer link would be cut off mid-way
+		// rather than refused.
+		if ( strlen( $safe_url ) > 255 ) {
+			return array(
+				'photos' => array(),
+				'error'  => sprintf( 'The photo link &ldquo;%s&rdquo; is longer than 255 characters. Use the file&rsquo;s shorter share link.', esc_html( $url ) ),
+			);
+		}
+
+		if ( mb_strlen( $caption ) > MTL_TOOL_PHOTO_CAPTION_MAXLENGTH ) {
+			return array(
+				'photos' => array(),
+				'error'  => sprintf( 'The caption &ldquo;%1$s&rdquo; is longer than %2$d characters.', esc_html( $caption ), MTL_TOOL_PHOTO_CAPTION_MAXLENGTH ),
+			);
+		}
+
+		$photos[] = array(
+			'url'     => $safe_url,
+			'caption' => $caption,
+		);
+	}
+
+	if ( count( $photos ) > MTL_MAX_TOOL_PHOTOS ) {
+		return array(
+			'photos' => array(),
+			'error'  => sprintf( 'A tool can have up to %1$d photos, and this one has %2$d.', MTL_MAX_TOOL_PHOTOS, count( $photos ) ),
+		);
+	}
+
+	return array(
+		'photos' => $photos,
+		'error'  => '',
+	);
+}
+
+/**
+ * Replaces a tool's photos with $photos, numbered 1, 2, 3... in list order.
+ *
+ * Delete-then-insert, like mtl_sync_tool_mappings(), and for the same reason:
+ * the set is always saved whole. That is also what keeps renumbering clear of
+ * the (tool_id, sort_order) unique key: no row is ever moved onto a position
+ * another row still holds.
+ *
+ * @param int   $tool_id Tool whose photos are being replaced.
+ * @param array $photos  Photos from mtl_validate_tool_photos(), in order.
+ */
+function mtl_sync_tool_photos( $tool_id, $photos ) {
+	global $wpdb;
+
+	$table = $wpdb->prefix . 'tool_photos';
+	$wpdb->delete( $table, array( 'tool_id' => $tool_id ), array( '%d' ) );
+	foreach ( array_values( (array) $photos ) as $index => $photo ) {
+		$wpdb->insert(
+			$table,
+			array(
+				'tool_id'    => $tool_id,
+				'url'        => $photo['url'],
+				'caption'    => '' !== $photo['caption'] ? $photo['caption'] : null,
+				'sort_order' => $index + 1,
+			),
+			array( '%d', '%s', '%s', '%d' )
+		);
+	}
+}
+
 /**
  * The member list behind every "type a name or email" picker: Quick Loan,
  * Quick Reserve, the donor field on Inventory, and Bulk Checkout.
